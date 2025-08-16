@@ -1,0 +1,63 @@
+{
+  "slug": "shapetaker",
+  "name": "shapetaker",
+  "version": "2.0.0",
+  "license": "GPL-3.0-or-later",
+  "brand": "shapetaker",
+  "author": "Josh Panzarella",
+  "authorEmail": "joshpanzarella@gmail.com",
+  "sourceUrl": "https://github.com/[username]/shapetaker",
+  "modules": [
+    {
+      "slug": "Clairaudient",
+      "name": "Clairaudient",
+      "description": "Dual sigmoid oscillator with morphing waveforms and stereo crossfading",
+      "tags": ["Oscillator", "VCO", "Dual", "Stereo"]
+    },
+        {
+      "slug": "Chiaroscuro",
+      "name": "Chiaroscuro",
+      "description": "Stereo VCA with sidechain-controlled distortion engine. Named after the artistic technique of dramatic light/dark contrast, features 6 intense distortion algorithms with full CV control.",
+      "tags": [
+        "VCA",
+        "Distortion", 
+        "Effect",
+        "Stereo",
+        "Sidechain"
+      ]
+    },
+        {
+      "slug": "Fatebinder",
+      "name": "Fatebinder",
+      "description": "Strange attractor chaotic LFO with chaos/order morphing",
+      "tags": [
+        "LFO",
+        "Random"
+      ]
+    },    {
+      "slug": "Involution",
+      "name": "Involution",
+      "description": "Dual 6th order morphing filters with cross-feedback, chaos modulation, shimmer processing, and magical stereo effects",
+      "tags": [
+        "Filter",
+        "Dual",
+        "Lowpass filter",
+        "Highpass filter",
+        "Allpass filter",
+        "Effect",
+        "Distortion"
+      ]
+    },    {
+      "slug": "Evocation",
+      "name": "Evocation",
+      "description": "Gesture-based envelope generator with multi-speed outputs",
+      "manualUrl": "https://github.com/yourusername/shapetaker/blob/main/docs/Evocation.md",
+      "modularGridUrl": "",
+      "tags": [
+        "Envelope generator",
+        "Controller",
+        "Polyphonic"
+      ]
+    }
+  ]
+}

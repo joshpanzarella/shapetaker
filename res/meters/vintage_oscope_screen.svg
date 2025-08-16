@@ -1,0 +1,98 @@
+<svg width="200" height="200" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <!-- Glow filter for phosphor effect -->
+    <filter id="phosphorGlow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="1" result="coloredBlur"/>
+      <feMerge> 
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    
+    <!-- Inner glow for screen -->
+    <filter id="innerGlow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="2" result="coloredBlur"/>
+      <feMerge> 
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    
+    <!-- Shadow filter -->
+    <filter id="shadow" x="-50%" y="-50%" width="200%" height="200%">
+      <feDropShadow dx="3" dy="3" stdDeviation="3" flood-color="#000000" flood-opacity="0.4"/>
+    </filter>
+  </defs>
+  
+  <!-- Outer shadow -->
+  <circle cx="100" cy="100" r="98" fill="#000000" opacity="0.3" />
+  
+  <!-- Main bezel ring with layered spherical effect -->
+  <circle cx="100" cy="100" r="95" fill="#4a4a4a" />
+  <circle cx="100" cy="100" r="93" fill="#3a3a3a" opacity="0.9" />
+  <circle cx="100" cy="100" r="91" fill="#2a2a2a" opacity="0.8" />
+  <circle cx="100" cy="100" r="89" fill="#1a1a1a" opacity="0.7" />
+  <circle cx="100" cy="100" r="87" fill="#0a0a0a" opacity="0.6" />
+  
+  <!-- Inner bezel detail -->
+  <circle cx="100" cy="100" r="85" fill="#1a1a1a" />
+  <circle cx="100" cy="100" r="82" fill="#2a2a2a" />
+  
+  <!-- Screen glass with layered spherical depth -->
+  <circle cx="100" cy="100" r="80" fill="#003a00" />
+  <circle cx="100" cy="100" r="78" fill="#003200" opacity="0.9" />
+  <circle cx="100" cy="100" r="76" fill="#002a00" opacity="0.8" />
+  <circle cx="100" cy="100" r="74" fill="#002200" opacity="0.7" />
+  <circle cx="100" cy="100" r="72" fill="#001a00" opacity="0.6" />
+  
+  <!-- Screen active area with subtle edge darkening for CRT curvature -->
+  <circle cx="100" cy="100" r="70" fill="#001a00" />
+  <circle cx="100" cy="100" r="68" fill="#001f00" opacity="0.9" />
+  <circle cx="100" cy="100" r="66" fill="#002400" opacity="0.8" />
+  
+  <!-- CRT curvature highlight (upper left) -->
+  <ellipse cx="85" cy="85" rx="20" ry="12" fill="#004000" opacity="0.4" transform="rotate(-25 85 85)" />
+  
+  <!-- CRT surface reflection ring -->
+  <circle cx="100" cy="100" r="75" fill="none" stroke="#004400" stroke-width="0.3" opacity="0.5" />
+  
+  <!-- Grid lines for oscilloscope -->
+  <g stroke="#006600" stroke-width="0.4" opacity="0.7" fill="none" filter="url(#phosphorGlow)">
+    <!-- Vertical grid lines -->
+    <line x1="50" y1="35" x2="50" y2="165" />
+    <line x1="70" y1="35" x2="70" y2="165" />
+    <line x1="85" y1="35" x2="85" y2="165" />
+    <line x1="100" y1="35" x2="100" y2="165" stroke-width="0.6" stroke="#008800" />
+    <line x1="115" y1="35" x2="115" y2="165" />
+    <line x1="130" y1="35" x2="130" y2="165" />
+    <line x1="150" y1="35" x2="150" y2="165" />
+    
+    <!-- Horizontal grid lines -->
+    <line x1="35" y1="50" x2="165" y2="50" />
+    <line x1="35" y1="70" x2="165" y2="70" />
+    <line x1="35" y1="85" x2="165" y2="85" />
+    <line x1="35" y1="100" x2="165" y2="100" stroke-width="0.6" stroke="#008800" />
+    <line x1="35" y1="115" x2="165" y2="115" />
+    <line x1="35" y1="130" x2="165" y2="130" />
+    <line x1="35" y1="150" x2="165" y2="150" />
+  </g>
+  
+  <!-- CRT screen reflection -->
+  <ellipse cx="80" cy="80" rx="15" ry="8" fill="#ffffff" opacity="0.08" transform="rotate(-30 80 80)" />
+  
+  <!-- Bezel screws -->
+  <g fill="#333333" stroke="#1a1a1a" stroke-width="0.5">
+    <circle cx="100" cy="25" r="3" />
+    <circle cx="175" cy="100" r="3" />
+    <circle cx="100" cy="175" r="3" />
+    <circle cx="25" cy="100" r="3" />
+  </g>
+  
+  <!-- Screw slots -->
+  <g stroke="#666666" stroke-width="0.8">
+    <line x1="98" y1="25" x2="102" y2="25" />
+    <line x1="175" y1="98" x2="175" y2="102" />
+    <line x1="98" y1="175" x2="102" y2="175" />
+    <line x1="25" y1="98" x2="25" y2="102" />
+  </g>
+</svg>

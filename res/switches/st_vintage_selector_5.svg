@@ -1,0 +1,72 @@
+<svg width="35" height="35" xmlns="http://www.w3.org/2000/svg">
+  
+  <!-- Outer background circle -->
+  <circle cx="17.5" cy="17.5" r="16" fill="#2a2a2a" stroke="#1a1a1a" stroke-width="0.6"/>
+  
+  <!-- Position indicator ring -->
+  <circle cx="17.5" cy="17.5" r="13" fill="none" stroke="#1a1a1a" stroke-width="2.3"/>
+  <circle cx="17.5" cy="17.5" r="13" fill="none" stroke="#252525" stroke-width="2" opacity="0.9"/>
+  <circle cx="17.5" cy="17.5" r="13" fill="none" stroke="#2a2a2a" stroke-width="1.7" opacity="0.8"/>
+  <circle cx="17.5" cy="17.5" r="13" fill="none" stroke="#303030" stroke-width="1.4" opacity="0.7"/>
+  <circle cx="17.5" cy="17.5" r="13" fill="none" stroke="#353535" stroke-width="1.1" opacity="0.6"/>
+  <circle cx="17.5" cy="17.5" r="13" fill="none" stroke="#3a3a3a" stroke-width="0.8" opacity="0.5"/>
+  
+  <!-- Position markers (6 positions) -->
+  <g stroke="#e0e0e0" stroke-width="0.4" fill="#e0e0e0">
+    <!-- Position 1 (0°) -->
+    <line x1="17.5" y1="5.3" x2="17.5" y2="7.3" stroke-width="0.6"/>
+    <text x="17.5" y="4.1" text-anchor="middle" font-family="Arial, sans-serif" font-size="1.7">1</text>
+    
+    <!-- Position 2 (60°) -->
+    <line x1="28.1" y1="11.4" x2="26.3" y2="12.4"/>
+    <text x="29.8" y="12" text-anchor="middle" font-family="Arial, sans-serif" font-size="1.7">2</text>
+    
+    <!-- Position 3 (120°) -->
+    <line x1="28.1" y1="23.6" x2="26.3" y2="22.6"/>
+    <text x="29.8" y="25" text-anchor="middle" font-family="Arial, sans-serif" font-size="1.7">3</text>
+    
+    <!-- Position 4 (180°) -->
+    <line x1="17.5" y1="29.7" x2="17.5" y2="27.7" stroke-width="0.6"/>
+    <text x="17.5" y="32.7" text-anchor="middle" font-family="Arial, sans-serif" font-size="1.7">4</text>
+    
+    <!-- Position 5 (240°) -->
+    <line x1="6.9" y1="23.6" x2="8.7" y2="22.6"/>
+    <text x="5.2" y="25" text-anchor="middle" font-family="Arial, sans-serif" font-size="1.7">5</text>
+    
+    <!-- Position 6 (300°) - ACTIVE -->
+    <line x1="6.9" y1="11.4" x2="8.7" y2="12.4" stroke-width="0.8" stroke="#00ffcc"/>
+    <text x="5.2" y="12" text-anchor="middle" font-family="Arial, sans-serif" font-size="1.7" fill="#00ffcc">6</text>
+  </g>
+  
+  <!-- Center mounting circle -->
+  <circle cx="17.5" cy="17.5" r="9.3" fill="#1a1a1a" stroke="#000" stroke-width="0.3"/>
+  <circle cx="17.5" cy="17.5" r="9" fill="#202020" opacity="0.9"/>
+  <circle cx="17.5" cy="17.5" r="8.7" fill="#252525" opacity="0.85"/>
+  <circle cx="17.5" cy="17.5" r="8.4" fill="#2a2a2a" opacity="0.8"/>
+  <circle cx="17.5" cy="17.5" r="8.1" fill="#303030" opacity="0.75"/>
+  <circle cx="17.5" cy="17.5" r="7.8" fill="#353535" opacity="0.7"/>
+  <circle cx="17.5" cy="17.5" r="7.5" fill="#3a3a3a" opacity="0.65"/>
+  <circle cx="17.5" cy="17.5" r="7.2" fill="#404040" opacity="0.6"/>
+  <circle cx="17.5" cy="17.5" r="6.9" fill="#454545" opacity="0.55"/>
+  <circle cx="17.5" cy="17.5" r="6.6" fill="#4a4a4a" opacity="0.5"/>
+  <circle cx="17.5" cy="17.5" r="6.3" fill="#505050" opacity="0.45"/>
+  <circle cx="17.5" cy="17.5" r="6" fill="#555555" opacity="0.4"/>
+  <circle cx="17.5" cy="17.5" r="5.7" fill="#5a5a5a" opacity="0.35"/>
+  
+  <!-- Rim detail -->
+  <circle cx="17.5" cy="17.5" r="8.1" fill="none" stroke="#4a4a4a" stroke-width="0.15"/>
+  
+  <!-- Highlight for 3D effect -->
+  <ellipse cx="14.6" cy="14.6" rx="2.3" ry="1.6" fill="#ffffff" opacity="0.12" transform="rotate(-25 14.6 14.6)"/>
+  <ellipse cx="14.3" cy="14.3" rx="1.4" ry="1" fill="#ffffff" opacity="0.15" transform="rotate(-25 14.3 14.3)"/>
+  <ellipse cx="14.1" cy="14.1" rx="0.7" ry="0.5" fill="#ffffff" opacity="0.18" transform="rotate(-25 14.1 14.1)"/>
+  
+  <!-- Chicken head pointer (pointing to position 6 - 300°) -->
+  <g fill="#3a3a3a" stroke="#000" stroke-width="0.2" transform="rotate(300 17.5 17.5)">
+    <!-- Main pointer body -->
+    <polygon points="17.5,9.3 19.5,16 17.5,16.9 15.5,16" />
+    <!-- Pointer tip -->
+    <circle cx="17.5" cy="9.3" r="0.9" fill="#5a5a5a"/>
+  </g>
+
+</svg>

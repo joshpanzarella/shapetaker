@@ -1,0 +1,23 @@
+<svg width="20" height="30" viewBox="0 0 20 30" xmlns="http://www.w3.org/2000/svg">
+  <!-- Switch body - dark metallic -->
+  <rect x="7" y="2" width="6" height="26" rx="3" fill="#2a2a2a" stroke="#1a1a1a" stroke-width="0.5"/>
+  <rect x="7.5" y="2.5" width="5" height="25" rx="2.5" fill="#333333" stroke="#555555" stroke-width="0.3"/>
+  
+  <!-- Switch toggle in position 1 (down) - illuminated teal -->
+  <rect x="8" y="18" width="4" height="8" rx="2" fill="#00a080" stroke="#006656" stroke-width="0.3"/>
+  <rect x="8.2" y="18.2" width="3.6" height="7.6" rx="1.8" fill="#00c099"/>
+  
+  <!-- Bright highlight on illuminated toggle -->
+  <rect x="8.5" y="18.5" width="1.5" height="3" rx="0.75" fill="#ffffff" opacity="0.3"/>
+  
+  <!-- Subtle glow effect around toggle -->
+  <rect x="7.7" y="17.7" width="4.6" height="8.6" rx="2.3" fill="none" stroke="#00ffcc" stroke-width="0.5" opacity="0.4"/>
+  
+  <!-- Position indicators -->
+  <circle cx="5" cy="7" r="0.8" fill="#ffffff" opacity="0.3"/>
+  <circle cx="5" cy="23" r="0.8" fill="#ffffff" opacity="0.8"/>
+  
+  <!-- Switch guide rails -->
+  <rect x="6.5" y="3" width="0.3" height="24" fill="#1a1a1a"/>
+  <rect x="13.2" y="3" width="0.3" height="24" fill="#1a1a1a"/>
+</svg>
