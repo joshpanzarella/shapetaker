@@ -647,16 +647,51 @@ struct VintageOscilloscopeWidget : widget::Widget {
                 nvgRestore(vg);
             }
             
-            // --- Spherical Highlight Effect (Restored) ---
-            // Draw a very subtle, wide radial gradient to simulate a convex glass surface.
+            // --- Enhanced Spherical CRT Effect ---
+            // Create a pronounced spherical bulging effect with multiple layers
+            
+            // Layer 1: Main spherical highlight (larger and more prominent)
             nvgBeginPath(vg);
-            nvgCircle(vg, box.size.x / 2.f, box.size.y / 2.f, box.size.x * 0.9f);
-            NVGpaint highlightPaint = nvgRadialGradient(vg,
-                box.size.x * 0.4f, box.size.y * 0.4f, // Offset highlight to top-left
-                box.size.x * 0.1f, box.size.x * 0.8f,
-                nvgRGBA(255, 255, 255, 10), // Subtle white highlight
+            nvgCircle(vg, box.size.x / 2.f, box.size.y / 2.f, box.size.x * 0.85f);
+            NVGpaint mainHighlight = nvgRadialGradient(vg,
+                box.size.x * 0.35f, box.size.y * 0.35f, // Offset highlight to top-left
+                box.size.x * 0.05f, box.size.x * 0.6f,
+                nvgRGBA(255, 255, 255, 35), // More visible white highlight
                 nvgRGBA(255, 255, 255, 0));  // Fades to nothing
-            nvgFillPaint(vg, highlightPaint);
+            nvgFillPaint(vg, mainHighlight);
+            nvgFill(vg);
+            
+            // Layer 2: Bright center hotspot for glass dome effect
+            nvgBeginPath(vg);
+            nvgCircle(vg, box.size.x * 0.38f, box.size.y * 0.38f, box.size.x * 0.15f);
+            NVGpaint centerHighlight = nvgRadialGradient(vg,
+                box.size.x * 0.38f, box.size.y * 0.38f,
+                0, box.size.x * 0.15f,
+                nvgRGBA(255, 255, 255, 60), // Bright center
+                nvgRGBA(255, 255, 255, 0));
+            nvgFillPaint(vg, centerHighlight);
+            nvgFill(vg);
+            
+            // Layer 3: Edge darkening for spherical depth
+            nvgBeginPath(vg);
+            nvgCircle(vg, box.size.x / 2.f, box.size.y / 2.f, box.size.x * 0.48f);
+            NVGpaint edgeDarken = nvgRadialGradient(vg,
+                box.size.x / 2.f, box.size.y / 2.f,
+                box.size.x * 0.3f, box.size.x * 0.48f,
+                nvgRGBA(0, 0, 0, 0),     // Transparent center
+                nvgRGBA(0, 0, 0, 25));    // Dark edges
+            nvgFillPaint(vg, edgeDarken);
+            nvgFill(vg);
+            
+            // Layer 4: Subtle green phosphor glow enhancement
+            nvgBeginPath(vg);
+            nvgCircle(vg, box.size.x / 2.f, box.size.y / 2.f, box.size.x * 0.45f);
+            NVGpaint phosphorGlow = nvgRadialGradient(vg,
+                box.size.x / 2.f, box.size.y / 2.f,
+                box.size.x * 0.1f, box.size.x * 0.45f,
+                nvgRGBA(0, 180, 120, 15), // Green glow center
+                nvgRGBA(0, 60, 40, 0));   // Fades to dark green
+            nvgFillPaint(vg, phosphorGlow);
             nvgFill(vg);
 
             if (!source) return;

@@ -2,6 +2,42 @@
 #include <cmath>
 #include <atomic>
 
+// Small teal hexagon widget for attenuverter visual distinction
+struct HexagonWidget : Widget {
+    NVGcolor color = nvgRGBA(64, 224, 208, 255);
+    
+    void draw(const DrawArgs& args) override {
+        nvgBeginPath(args.vg);
+        
+        // Draw hexagon centered in the widget box
+        float cx = box.size.x / 2.0f;
+        float cy = box.size.y / 2.0f;
+        float radius = std::min(box.size.x, box.size.y) / 2.0f * 0.8f;
+        
+        for (int i = 0; i < 6; i++) {
+            float angle = i * M_PI / 3.0f;
+            float x = cx + radius * cosf(angle);
+            float y = cy + radius * sinf(angle);
+            
+            if (i == 0) {
+                nvgMoveTo(args.vg, x, y);
+            } else {
+                nvgLineTo(args.vg, x, y);
+            }
+        }
+        nvgClosePath(args.vg);
+        
+        nvgFillColor(args.vg, color);
+        nvgFill(args.vg);
+        
+        // Optional stroke for better visibility
+        nvgStrokeColor(args.vg, nvgRGBA(32, 112, 104, 255)); // Darker teal
+        nvgStrokeWidth(args.vg, 0.5f);
+        nvgStroke(args.vg);
+    }
+};
+
+
 struct ClairaudientModule : Module, IOscilloscopeSource {
     enum ParamId {
         FREQ1_PARAM,
@@ -39,15 +75,22 @@ struct ClairaudientModule : Module, IOscilloscopeSource {
         LIGHTS_LEN
     };
 
-    // Oscillator state
-    float phase1A = 0.f;  // Independent phase for osc 1A
-    float phase1B = 0.f;  // Independent phase for osc 1B
-    float phase2A = 0.f;  // Independent phase for osc 2A  
-    float phase2B = 0.f;  // Independent phase for osc 2B
+    // Polyphonic oscillator state (up to 6 voices)
+    static const int MAX_POLY_VOICES = 6;
+    float phase1A[MAX_POLY_VOICES] = {};  // Independent phase for osc 1A per voice
+    float phase1B[MAX_POLY_VOICES] = {};  // Independent phase for osc 1B per voice
+    float phase2A[MAX_POLY_VOICES] = {};  // Independent phase for osc 2A per voice
+    float phase2B[MAX_POLY_VOICES] = {};  // Independent phase for osc 2B per voice
     
-    // Organic variation state
-    float drift1A = 0.f, drift1B = 0.f, drift2A = 0.f, drift2B = 0.f;
-    float noise1A = 0.f, noise1B = 0.f, noise2A = 0.f, noise2B = 0.f;
+    // Organic variation state per voice
+    float drift1A[MAX_POLY_VOICES] = {};
+    float drift1B[MAX_POLY_VOICES] = {};
+    float drift2A[MAX_POLY_VOICES] = {};
+    float drift2B[MAX_POLY_VOICES] = {};
+    float noise1A[MAX_POLY_VOICES] = {};
+    float noise1B[MAX_POLY_VOICES] = {};
+    float noise2A[MAX_POLY_VOICES] = {};
+    float noise2B[MAX_POLY_VOICES] = {};
     
     // Simple one-pole low-pass filter for anti-aliasing
     // --- Oscilloscope Buffering ---
@@ -66,7 +109,11 @@ struct ClairaudientModule : Module, IOscilloscopeSource {
             z1 = z1 + alpha * (input - z1);
             return z1;
         }
-    } antiAliasFilter, antiAliasFilterRight;
+    };
+    
+    // Anti-aliasing filters per voice
+    OnePoleFilter antiAliasFilterLeft[MAX_POLY_VOICES];
+    OnePoleFilter antiAliasFilterRight[MAX_POLY_VOICES];
 
     ClairaudientModule() {
         config(PARAMS_LEN, INPUTS_LEN, OUTPUTS_LEN, LIGHTS_LEN);
@@ -116,143 +163,156 @@ struct ClairaudientModule : Module, IOscilloscopeSource {
     }
 
     void process(const ProcessArgs& args) override {
+        // Determine number of polyphonic voices (max 6)
+        int channels = std::min(std::max(inputs[VOCT1_INPUT].getChannels(), 1), MAX_POLY_VOICES);
+        
+        // Set output channels to match
+        outputs[LEFT_OUTPUT].setChannels(channels);
+        outputs[RIGHT_OUTPUT].setChannels(channels);
+        
         // 2x oversampling for smoother sound
         const int oversample = 2;
         float oversampleRate = args.sampleRate * oversample;
-        
-        float finalLeft = 0.f;
-        float finalRight = 0.f;
 
-        // --- Pre-calculate parameters outside the loop ---
-        // Get V/Oct inputs with fallback logic
-        float voct1 = inputs[VOCT1_INPUT].getVoltage();
-        float voct2 = inputs[VOCT2_INPUT].isConnected() ? 
-                        inputs[VOCT2_INPUT].getVoltage() : voct1;
-        
-        // Get parameters
-        float pitch1 = params[FREQ1_PARAM].getValue() + voct1;
-        float pitch2 = params[FREQ2_PARAM].getValue() + voct2;
-        
-        float fineTune1 = params[FINE1_PARAM].getValue();
-        if (inputs[FINE1_CV_INPUT].isConnected()) {
-            float cvAmount = params[FINE1_ATTEN_PARAM].getValue();
-            fineTune1 = clamp(fineTune1 + inputs[FINE1_CV_INPUT].getVoltage() * cvAmount / 50.f, -0.2f, 0.2f);
-        }
-        
-        float fineTune2 = params[FINE2_PARAM].getValue();
-        if (inputs[FINE2_CV_INPUT].isConnected()) {
-            float cvAmount = params[FINE2_ATTEN_PARAM].getValue();
-            fineTune2 = clamp(fineTune2 + inputs[FINE2_CV_INPUT].getVoltage() * cvAmount / 50.f, -0.2f, 0.2f);
-        }
+        // Process each voice
+        for (int ch = 0; ch < channels; ch++) {
+            float finalLeft = 0.f;
+            float finalRight = 0.f;
 
-        // Convert cents to octaves
-        fineTune1 /= 12.f;
-        fineTune2 /= 12.f;
-
-        // Get shape parameters with attenuverters
-        float shape1 = params[SHAPE1_PARAM].getValue();
-        if (inputs[SHAPE1_CV_INPUT].isConnected()) {
-            float cvAmount = params[SHAPE1_ATTEN_PARAM].getValue();
-            shape1 = clamp(shape1 + inputs[SHAPE1_CV_INPUT].getVoltage() * cvAmount / 10.f, 0.f, 1.f);
-        }
-        
-        float shape2 = params[SHAPE2_PARAM].getValue();
-        if (inputs[SHAPE2_CV_INPUT].isConnected()) {
-            float cvAmount = params[SHAPE2_ATTEN_PARAM].getValue();
-            shape2 = clamp(shape2 + inputs[SHAPE2_CV_INPUT].getVoltage() * cvAmount / 10.f, 0.f, 1.f);
-        }
-
-        // Get crossfade parameter with attenuverter
-        float xfade = params[XFADE_PARAM].getValue();
-        if (inputs[XFADE_CV_INPUT].isConnected()) {
-            float cvAmount = params[XFADE_ATTEN_PARAM].getValue();
-            xfade = clamp(xfade + inputs[XFADE_CV_INPUT].getVoltage() * cvAmount / 10.f, 0.f, 1.f);
-        }
-        
-        // --- Adaptive Oscilloscope Timescale ---
-        // Determine the dominant frequency based on the crossfader position
-        float baseFreq1 = 261.626f * std::pow(2.f, pitch1);
-        float baseFreq2 = 261.626f * std::pow(2.f, pitch2);
-        float dominantFreq = (xfade < 0.5f) ? baseFreq1 : baseFreq2;
-        dominantFreq = std::max(dominantFreq, 1.f); // Prevent division by zero or very small numbers
-
-        const float targetCyclesInDisplay = 2.f; // Aim to show this many waveform cycles
-        int downsampleFactor = (int)roundf((targetCyclesInDisplay * args.sampleRate) / (OSCILLOSCOPE_BUFFER_SIZE * dominantFreq));
-        downsampleFactor = clamp(downsampleFactor, 1, 256); // Clamp to a reasonable range
-
-        for (int os = 0; os < oversample; os++) {
-            // Add organic frequency drift (very subtle)
-            updateOrganicDrift(args.sampleTime * oversample);
+            // --- Pre-calculate parameters for this voice ---
+            // Get V/Oct inputs with fallback logic
+            float voct1 = inputs[VOCT1_INPUT].getVoltage(ch);
+            float voct2 = inputs[VOCT2_INPUT].isConnected() ? 
+                            inputs[VOCT2_INPUT].getPolyVoltage(ch) : voct1;
             
-            float freq1A = 261.626f * std::pow(2.f, pitch1 + drift1A);
-            float freq1B = 261.626f * std::pow(2.f, pitch1 + fineTune1 + drift1B);
-            float freq2A = 261.626f * std::pow(2.f, pitch2 + drift2A);
-            float freq2B = 261.626f * std::pow(2.f, pitch2 + fineTune2 + drift2B);
+            // Get parameters for this voice
+            float pitch1 = params[FREQ1_PARAM].getValue() + voct1;
+            float pitch2 = params[FREQ2_PARAM].getValue() + voct2;
             
-            // Check sync switches
-            bool sync1 = params[SYNC1_PARAM].getValue() > 0.5f;
-            bool sync2 = params[SYNC2_PARAM].getValue() > 0.5f;
-            
-            // Update phases (with sync logic)
-            float deltaPhase1A = freq1A / oversampleRate; // Master oscillator increment
-            float deltaPhase1B = freq1B / oversampleRate; // Slave runs at its own frequency
-            float deltaPhase2A = freq2A / oversampleRate; // Master oscillator increment
-            float deltaPhase2B = freq2B / oversampleRate; // Slave runs at its own frequency
-            
-            // Add subtle phase noise for organic character
-            phase1A += deltaPhase1A + noise1A * 0.00001f;
-            phase1B += deltaPhase1B + noise1B * 0.00001f;
-            phase2A += deltaPhase2A + noise2A * 0.00001f;
-            phase2B += deltaPhase2B + noise2B * 0.00001f;
-            
-            if (phase1A >= 1.f) phase1A -= 1.f;
-            if (phase1B >= 1.f) phase1B -= 1.f;
-            if (phase2A >= 1.f) phase2A -= 1.f;
-            if (phase2B >= 1.f) phase2B -= 1.f;
-            
-            // Apply sync - reset B oscillator to match A when synced
-            if (sync1 && phase1A < deltaPhase1A) {
-                phase1B = phase1A;
-            }
-            if (sync2 && phase2A < deltaPhase2A) {
-                phase2B = phase2A;
+            float fineTune1 = params[FINE1_PARAM].getValue();
+            if (inputs[FINE1_CV_INPUT].isConnected()) {
+                float cvAmount = params[FINE1_ATTEN_PARAM].getValue();
+                fineTune1 = clamp(fineTune1 + inputs[FINE1_CV_INPUT].getPolyVoltage(ch) * cvAmount / 50.f, -0.2f, 0.2f);
             }
             
-            // Generate sigmoid-morphed oscillators with anti-aliasing
-            float osc1A = generateOrganicOsc(phase1A, shape1, freq1A, oversampleRate);
-            float osc1B = generateOrganicOsc(phase1B, shape1, freq1B, oversampleRate);
-            float osc2A = generateOrganicOsc(phase2A, shape2, freq2A, oversampleRate);
-            float osc2B = generateOrganicOsc(phase2B, shape2, freq2B, oversampleRate);
+            float fineTune2 = params[FINE2_PARAM].getValue();
+            if (inputs[FINE2_CV_INPUT].isConnected()) {
+                float cvAmount = params[FINE2_ATTEN_PARAM].getValue();
+                fineTune2 = clamp(fineTune2 + inputs[FINE2_CV_INPUT].getPolyVoltage(ch) * cvAmount / 50.f, -0.2f, 0.2f);
+            }
+
+            // Convert cents to octaves
+            fineTune1 /= 12.f;
+            fineTune2 /= 12.f;
+
+            // Get shape parameters with attenuverters
+            float shape1 = params[SHAPE1_PARAM].getValue();
+            if (inputs[SHAPE1_CV_INPUT].isConnected()) {
+                float cvAmount = params[SHAPE1_ATTEN_PARAM].getValue();
+                shape1 = clamp(shape1 + inputs[SHAPE1_CV_INPUT].getPolyVoltage(ch) * cvAmount / 10.f, 0.f, 1.f);
+            }
             
-            // Crossfade between pairs for each channel (A for Left, B for Right)
-            float leftOutput = osc1A * (1.f - xfade) + osc2A * xfade;
-            float rightOutput = osc1B * (1.f - xfade) + osc2B * xfade;
+            float shape2 = params[SHAPE2_PARAM].getValue();
+            if (inputs[SHAPE2_CV_INPUT].isConnected()) {
+                float cvAmount = params[SHAPE2_ATTEN_PARAM].getValue();
+                shape2 = clamp(shape2 + inputs[SHAPE2_CV_INPUT].getPolyVoltage(ch) * cvAmount / 10.f, 0.f, 1.f);
+            }
 
-            // Apply anti-aliasing filter to each channel separately for true stereo
-            float filteredLeft = antiAliasFilter.process(leftOutput, args.sampleRate * 0.45f, oversampleRate);
-            float filteredRight = antiAliasFilterRight.process(rightOutput, args.sampleRate * 0.45f, oversampleRate);
-
-            finalLeft += filteredLeft;
-            finalRight += filteredRight;
-        }
-        
-        // Average the oversampled result
-        float outL = std::tanh(finalLeft / oversample) * 5.f;
-        float outR = std::tanh(finalRight / oversample) * 5.f;
-
-        outputs[LEFT_OUTPUT].setVoltage(outL);
-        outputs[RIGHT_OUTPUT].setVoltage(outR);
-
-        // --- Oscilloscope Buffering Logic ---
-        // Downsample the audio rate to fill the buffer at a reasonable speed for the UI
-        oscilloscopeFrameCounter++;
-        if (oscilloscopeFrameCounter >= downsampleFactor) {
-            oscilloscopeFrameCounter = 0;
+            // Get crossfade parameter with attenuverter
+            float xfade = params[XFADE_PARAM].getValue();
+            if (inputs[XFADE_CV_INPUT].isConnected()) {
+                float cvAmount = params[XFADE_ATTEN_PARAM].getValue();
+                xfade = clamp(xfade + inputs[XFADE_CV_INPUT].getPolyVoltage(ch) * cvAmount / 10.f, 0.f, 1.f);
+            }
             
-            int currentIndex = oscilloscopeBufferIndex.load();
-            // Store the current output voltages in the circular buffer
-            oscilloscopeBuffer[currentIndex] = Vec(outL, outR);
-            oscilloscopeBufferIndex.store((currentIndex + 1) % OSCILLOSCOPE_BUFFER_SIZE);
+            for (int os = 0; os < oversample; os++) {
+                // Add organic frequency drift (very subtle) for this voice
+                updateOrganicDrift(ch, args.sampleTime * oversample);
+                
+                float freq1A = 261.626f * std::pow(2.f, pitch1 + drift1A[ch]);
+                float freq1B = 261.626f * std::pow(2.f, pitch1 + fineTune1 + drift1B[ch]);
+                float freq2A = 261.626f * std::pow(2.f, pitch2 + drift2A[ch]);
+                float freq2B = 261.626f * std::pow(2.f, pitch2 + fineTune2 + drift2B[ch]);
+                
+                // Check sync switches
+                bool sync1 = params[SYNC1_PARAM].getValue() > 0.5f;
+                bool sync2 = params[SYNC2_PARAM].getValue() > 0.5f;
+                
+                // Update phases (with sync logic) for this voice
+                float deltaPhase1A = freq1A / oversampleRate; // Master oscillator increment
+                float deltaPhase1B = freq1B / oversampleRate; // Slave runs at its own frequency
+                float deltaPhase2A = freq2A / oversampleRate; // Master oscillator increment
+                float deltaPhase2B = freq2B / oversampleRate; // Slave runs at its own frequency
+                
+                // Add subtle phase noise for organic character
+                phase1A[ch] += deltaPhase1A + noise1A[ch] * 0.00001f;
+                phase1B[ch] += deltaPhase1B + noise1B[ch] * 0.00001f;
+                phase2A[ch] += deltaPhase2A + noise2A[ch] * 0.00001f;
+                phase2B[ch] += deltaPhase2B + noise2B[ch] * 0.00001f;
+                
+                if (phase1A[ch] >= 1.f) phase1A[ch] -= 1.f;
+                if (phase1B[ch] >= 1.f) phase1B[ch] -= 1.f;
+                if (phase2A[ch] >= 1.f) phase2A[ch] -= 1.f;
+                if (phase2B[ch] >= 1.f) phase2B[ch] -= 1.f;
+                
+                // Apply sync - reset B oscillator to match A when synced
+                if (sync1 && phase1A[ch] < deltaPhase1A) {
+                    phase1B[ch] = phase1A[ch];
+                }
+                if (sync2 && phase2A[ch] < deltaPhase2A) {
+                    phase2B[ch] = phase2A[ch];
+                }
+                
+                // Generate sigmoid-morphed oscillators with anti-aliasing
+                float osc1A = generateOrganicOsc(phase1A[ch], shape1, freq1A, oversampleRate);
+                float osc1B = generateOrganicOsc(phase1B[ch], shape1, freq1B, oversampleRate);
+                float osc2A = generateOrganicOsc(phase2A[ch], shape2, freq2A, oversampleRate);
+                float osc2B = generateOrganicOsc(phase2B[ch], shape2, freq2B, oversampleRate);
+                
+                // Crossfade between pairs for each channel (A for Left, B for Right)
+                float leftOutput = osc1A * (1.f - xfade) + osc2A * xfade;
+                float rightOutput = osc1B * (1.f - xfade) + osc2B * xfade;
+
+                // Apply anti-aliasing filter to each channel separately for true stereo
+                float filteredLeft = antiAliasFilterLeft[ch].process(leftOutput, args.sampleRate * 0.45f, oversampleRate);
+                float filteredRight = antiAliasFilterRight[ch].process(rightOutput, args.sampleRate * 0.45f, oversampleRate);
+
+                finalLeft += filteredLeft;
+                finalRight += filteredRight;
+            }
+            
+            // Average the oversampled result for this voice
+            float outL = std::tanh(finalLeft / oversample) * 5.f;
+            float outR = std::tanh(finalRight / oversample) * 5.f;
+
+            outputs[LEFT_OUTPUT].setVoltage(outL, ch);
+            outputs[RIGHT_OUTPUT].setVoltage(outR, ch);
+            
+            // Use first voice for oscilloscope display
+            if (ch == 0) {
+                // --- Adaptive Oscilloscope Timescale ---
+                // Determine the dominant frequency based on the crossfader position
+                float baseFreq1 = 261.626f * std::pow(2.f, pitch1);
+                float baseFreq2 = 261.626f * std::pow(2.f, pitch2);
+                float dominantFreq = (xfade < 0.5f) ? baseFreq1 : baseFreq2;
+                dominantFreq = std::max(dominantFreq, 1.f); // Prevent division by zero or very small numbers
+
+                const float targetCyclesInDisplay = 2.f; // Aim to show this many waveform cycles
+                int downsampleFactor = (int)roundf((targetCyclesInDisplay * args.sampleRate) / (OSCILLOSCOPE_BUFFER_SIZE * dominantFreq));
+                downsampleFactor = clamp(downsampleFactor, 1, 256); // Clamp to a reasonable range
+                
+                // --- Oscilloscope Buffering Logic ---
+                // Downsample the audio rate to fill the buffer at a reasonable speed for the UI
+                oscilloscopeFrameCounter++;
+                if (oscilloscopeFrameCounter >= downsampleFactor) {
+                    oscilloscopeFrameCounter = 0;
+                    
+                    int currentIndex = oscilloscopeBufferIndex.load();
+                    // Store the current output voltages in the circular buffer
+                    oscilloscopeBuffer[currentIndex] = Vec(outL, outR);
+                    oscilloscopeBufferIndex.store((currentIndex + 1) % OSCILLOSCOPE_BUFFER_SIZE);
+                }
+            }
         }
     }
 
@@ -262,27 +322,27 @@ struct ClairaudientModule : Module, IOscilloscopeSource {
     int getOscilloscopeBufferSize() const override { return OSCILLOSCOPE_BUFFER_SIZE; }
 
 private:
-    // Update organic drift and noise for more natural sound
-    void updateOrganicDrift(float sampleTime) {
+    // Update organic drift and noise for more natural sound (per voice)
+    void updateOrganicDrift(int voice, float sampleTime) {
         // Very slow random walk for frequency drift (like analog oscillator aging)
         static float driftSpeed = 0.00002f;
         
-        drift1A += (rack::random::uniform() - 0.5f) * driftSpeed * sampleTime;
-        drift1B += (rack::random::uniform() - 0.5f) * driftSpeed * sampleTime;
-        drift2A += (rack::random::uniform() - 0.5f) * driftSpeed * sampleTime;
-        drift2B += (rack::random::uniform() - 0.5f) * driftSpeed * sampleTime;
+        drift1A[voice] += (rack::random::uniform() - 0.5f) * driftSpeed * sampleTime;
+        drift1B[voice] += (rack::random::uniform() - 0.5f) * driftSpeed * sampleTime;
+        drift2A[voice] += (rack::random::uniform() - 0.5f) * driftSpeed * sampleTime;
+        drift2B[voice] += (rack::random::uniform() - 0.5f) * driftSpeed * sampleTime;
         
         // Limit drift to very small amounts (±0.1 cents)
-        drift1A = clamp(drift1A, -0.001f, 0.001f);
-        drift1B = clamp(drift1B, -0.001f, 0.001f);
-        drift2A = clamp(drift2A, -0.001f, 0.001f);
-        drift2B = clamp(drift2B, -0.001f, 0.001f);
+        drift1A[voice] = clamp(drift1A[voice], -0.001f, 0.001f);
+        drift1B[voice] = clamp(drift1B[voice], -0.001f, 0.001f);
+        drift2A[voice] = clamp(drift2A[voice], -0.001f, 0.001f);
+        drift2B[voice] = clamp(drift2B[voice], -0.001f, 0.001f);
         
         // Generate subtle phase noise
-        noise1A = (rack::random::uniform() - 0.5f) * 2.f;
-        noise1B = (rack::random::uniform() - 0.5f) * 2.f;
-        noise2A = (rack::random::uniform() - 0.5f) * 2.f;
-        noise2B = (rack::random::uniform() - 0.5f) * 2.f;
+        noise1A[voice] = (rack::random::uniform() - 0.5f) * 2.f;
+        noise1B[voice] = (rack::random::uniform() - 0.5f) * 2.f;
+        noise2A[voice] = (rack::random::uniform() - 0.5f) * 2.f;
+        noise2B[voice] = (rack::random::uniform() - 0.5f) * 2.f;
     }
     
     // Generate organic-sounding sigmoid oscillator with subtle imperfections
@@ -333,58 +393,107 @@ struct ClairaudientWidget : ModuleWidget {
         addChild(createWidget<ScrewSilver>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
         addChild(createWidget<ScrewSilver>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
-        // Row 1: Frequency controls - oscilloscope style
-        addParam(createParamCentered<ShapetakerKnobOscilloscopeXLarge>(mm2px(Vec(15, 32)), module, ClairaudientModule::FREQ1_PARAM));
-        addParam(createParamCentered<ShapetakerKnobOscilloscopeXLarge>(mm2px(Vec(45, 32)), module, ClairaudientModule::FREQ2_PARAM));
+        // OSC X (left side) - Frequency controls
+        addParam(createParamCentered<ShapetakerKnobOscilloscopeLarge>(mm2px(Vec(10.075688, 31.045906)), module, ClairaudientModule::FREQ1_PARAM));
         
-        // Row 2: Fine tune and sync controls - oscilloscope style
-        addParam(createParamCentered<ShapetakerKnobOscilloscopeMedium>(mm2px(Vec(15, 45)), module, ClairaudientModule::FINE1_PARAM));
-        addParam(createParamCentered<ShapetakerOscilloscopeSwitch>(mm2px(Vec(25, 35)), module, ClairaudientModule::SYNC1_PARAM));
-        addParam(createParamCentered<ShapetakerOscilloscopeSwitch>(mm2px(Vec(35, 35)), module, ClairaudientModule::SYNC2_PARAM));
-        addParam(createParamCentered<ShapetakerKnobOscilloscopeMedium>(mm2px(Vec(45, 45)), module, ClairaudientModule::FINE2_PARAM));
+        // OSC Y (right side) - Frequency controls  
+        addParam(createParamCentered<ShapetakerKnobOscilloscopeLarge>(mm2px(Vec(50.588146, 31.045906)), module, ClairaudientModule::FREQ2_PARAM));
         
-        // Row 3: Fine tune attenuverters - oscilloscope style
-        addParam(createParamCentered<ShapetakerAttenuverterOscilloscope>(mm2px(Vec(15, 55)), module, ClairaudientModule::FINE1_ATTEN_PARAM));
-        addParam(createParamCentered<ShapetakerAttenuverterOscilloscope>(mm2px(Vec(45, 55)), module, ClairaudientModule::FINE2_ATTEN_PARAM));
+        // Sync switches
+        addParam(createParamCentered<ShapetakerOscilloscopeSwitch>(mm2px(Vec(26.167959, 47.738434)), module, ClairaudientModule::SYNC1_PARAM));
+        addParam(createParamCentered<ShapetakerOscilloscopeSwitch>(mm2px(Vec(35.155243, 47.738434)), module, ClairaudientModule::SYNC2_PARAM));
         
-        // Row 4: Shape controls - oscilloscope style
-        addParam(createParamCentered<ShapetakerKnobOscilloscopeLarge>(mm2px(Vec(15, 68)), module, ClairaudientModule::SHAPE1_PARAM));
-        addParam(createParamCentered<ShapetakerKnobOscilloscopeLarge>(mm2px(Vec(45, 68)), module, ClairaudientModule::SHAPE2_PARAM));
+        // Fine tune controls
+        addParam(createParamCentered<ShapetakerKnobOscilloscopeMedium>(mm2px(Vec(15.0233, 45.038658)), module, ClairaudientModule::FINE1_PARAM));
+        addParam(createParamCentered<ShapetakerKnobOscilloscopeMedium>(mm2px(Vec(45.0233, 45.038658)), module, ClairaudientModule::FINE2_PARAM));
         
-        // Row 5: Shape attenuverters - oscilloscope style
-        addParam(createParamCentered<ShapetakerAttenuverterOscilloscope>(mm2px(Vec(15, 78)), module, ClairaudientModule::SHAPE1_ATTEN_PARAM));
-        addParam(createParamCentered<ShapetakerAttenuverterOscilloscope>(mm2px(Vec(45, 78)), module, ClairaudientModule::SHAPE2_ATTEN_PARAM));
+        // Fine tune attenuverters
+        addParam(createParamCentered<ShapetakerAttenuverterOscilloscope>(mm2px(Vec(15.034473, 58.820183)), module, ClairaudientModule::FINE1_ATTEN_PARAM));
+        addParam(createParamCentered<ShapetakerAttenuverterOscilloscope>(mm2px(Vec(45.034473, 58.820183)), module, ClairaudientModule::FINE2_ATTEN_PARAM));
         
-        // Row 6: Crossfade control - oscilloscope style
-        addParam(createParamCentered<ShapetakerKnobOscilloscopeLarge>(mm2px(Vec(30.48, 54)), module, ClairaudientModule::XFADE_PARAM));
+        // Teal hexagon indicators for fine tune attenuverters
+        {
+            NVGcolor tealColor = nvgRGBA(64, 224, 208, 255); // Teal color
+            HexagonWidget* hex1 = new HexagonWidget();
+            hex1->box.pos = mm2px(Vec(15.034473 - 1.5, 58.820183 - 1.5));
+            hex1->box.size = mm2px(Vec(3, 3));
+            hex1->color = tealColor;
+            addChild(hex1);
+            
+            HexagonWidget* hex2 = new HexagonWidget();
+            hex2->box.pos = mm2px(Vec(45.034473 - 1.5, 58.820183 - 1.5));
+            hex2->box.size = mm2px(Vec(3, 3));
+            hex2->color = tealColor;
+            addChild(hex2);
+        }
         
-        // Row 7: Crossfade attenuverter - oscilloscope style
-        addParam(createParamCentered<ShapetakerAttenuverterOscilloscope>(mm2px(Vec(30.48, 65)), module, ClairaudientModule::XFADE_ATTEN_PARAM));
+        
+        // Crossfade control (center)
+        addParam(createParamCentered<ShapetakerKnobOscilloscopeLarge>(mm2px(Vec(30.48, 64.107727)), module, ClairaudientModule::XFADE_PARAM));
+        
+        // Crossfade attenuverter (center)
+        addParam(createParamCentered<ShapetakerAttenuverterOscilloscope>(mm2px(Vec(30.48, 83.021637)), module, ClairaudientModule::XFADE_ATTEN_PARAM));
+        
+        // Teal hexagon indicator for crossfade attenuverter
+        {
+            NVGcolor tealColor = nvgRGBA(64, 224, 208, 255); // Teal color
+            HexagonWidget* hex = new HexagonWidget();
+            hex->box.pos = mm2px(Vec(30.48 - 1.5, 83.021637 - 1.5));
+            hex->box.size = mm2px(Vec(3, 3));
+            hex->color = tealColor;
+            addChild(hex);
+        }
+        
+        
+        // Shape controls
+        addParam(createParamCentered<ShapetakerKnobOscilloscopeLarge>(mm2px(Vec(10.240995, 74.654305)), module, ClairaudientModule::SHAPE1_PARAM));
+        addParam(createParamCentered<ShapetakerKnobOscilloscopeLarge>(mm2px(Vec(50.719231, 74.654305)), module, ClairaudientModule::SHAPE2_PARAM));
+        
+        // Shape attenuverters
+        addParam(createParamCentered<ShapetakerAttenuverterOscilloscope>(mm2px(Vec(15.034473, 86.433929)), module, ClairaudientModule::SHAPE1_ATTEN_PARAM));
+        addParam(createParamCentered<ShapetakerAttenuverterOscilloscope>(mm2px(Vec(44.581718, 86.433929)), module, ClairaudientModule::SHAPE2_ATTEN_PARAM));
+        
+        // Teal hexagon indicators for shape attenuverters
+        {
+            NVGcolor tealColor = nvgRGBA(64, 224, 208, 255); // Teal color
+            HexagonWidget* hex1 = new HexagonWidget();
+            hex1->box.pos = mm2px(Vec(15.034473 - 1.5, 86.433929 - 1.5));
+            hex1->box.size = mm2px(Vec(3, 3));
+            hex1->color = tealColor;
+            addChild(hex1);
+            
+            HexagonWidget* hex2 = new HexagonWidget();
+            hex2->box.pos = mm2px(Vec(44.581718 - 1.5, 86.433929 - 1.5));
+            hex2->box.size = mm2px(Vec(3, 3));
+            hex2->color = tealColor;
+            addChild(hex2);
+        }
+        
 
         // Vintage oscilloscope display showing real-time waveform (circular)
         // The module itself is the source for the oscilloscope data
         if (module) {
             VintageOscilloscopeWidget* oscope = new VintageOscilloscopeWidget(module);
-            // Revert to original size and position
-            oscope->box.pos = mm2px(Vec(30.48 - 10, 15)); // Center horizontally between frequency knobs
-            oscope->box.size = mm2px(Vec(20, 20)); // Square aspect ratio for circular appearance
+            // Position based on the yellow circle in the SVG
+            oscope->box.pos = mm2px(Vec(30.563007 - 13, 28.92709 - 13)); // Center on oscilloscope screen position
+            oscope->box.size = mm2px(Vec(26, 26)); // Larger square aspect ratio for circular appearance
             addChild(oscope);
         }
 
-        // Input row 1: V/OCT and Fine CV - BNC connectors for vintage oscilloscope look
-        addInput(createInputCentered<ShapetakerBNCPort>(mm2px(Vec(10, 99.5)), module, ClairaudientModule::VOCT1_INPUT));
-        addInput(createInputCentered<ShapetakerBNCPort>(mm2px(Vec(22, 99.5)), module, ClairaudientModule::FINE1_CV_INPUT));
-        addInput(createInputCentered<ShapetakerBNCPort>(mm2px(Vec(38, 99.5)), module, ClairaudientModule::FINE2_CV_INPUT));
-        addInput(createInputCentered<ShapetakerBNCPort>(mm2px(Vec(50, 99.5)), module, ClairaudientModule::VOCT2_INPUT));
+        // Input row 1: V/OCT and CV inputs - BNC connectors based on SVG positions
+        addInput(createInputCentered<ShapetakerBNCPort>(mm2px(Vec(8.721756, 99.862808)), module, ClairaudientModule::VOCT1_INPUT));
+        addInput(createInputCentered<ShapetakerBNCPort>(mm2px(Vec(21.777, 99.862808)), module, ClairaudientModule::FINE1_CV_INPUT));
+        addInput(createInputCentered<ShapetakerBNCPort>(mm2px(Vec(34.832245, 99.862808)), module, ClairaudientModule::SHAPE1_CV_INPUT));
+        addInput(createInputCentered<ShapetakerBNCPort>(mm2px(Vec(47.887489, 99.862808)), module, ClairaudientModule::XFADE_CV_INPUT));
 
-        // Input row 2: Shape CV and Crossfade CV - BNC connectors
-        addInput(createInputCentered<ShapetakerBNCPort>(mm2px(Vec(10, 112)), module, ClairaudientModule::SHAPE1_CV_INPUT));
-        addInput(createInputCentered<ShapetakerBNCPort>(mm2px(Vec(22, 112)), module, ClairaudientModule::XFADE_CV_INPUT));
-        addInput(createInputCentered<ShapetakerBNCPort>(mm2px(Vec(38, 112)), module, ClairaudientModule::SHAPE2_CV_INPUT));
+        // Input row 2: Second oscillator and output - BNC connectors  
+        addInput(createInputCentered<ShapetakerBNCPort>(mm2px(Vec(8.721756, 113.38142)), module, ClairaudientModule::VOCT2_INPUT));
+        addInput(createInputCentered<ShapetakerBNCPort>(mm2px(Vec(21.112274, 113.38142)), module, ClairaudientModule::FINE2_CV_INPUT));
+        addInput(createInputCentered<ShapetakerBNCPort>(mm2px(Vec(33.502792, 113.38142)), module, ClairaudientModule::SHAPE2_CV_INPUT));
         
         // Outputs - BNC connectors for consistent vintage look
-        addOutput(createOutputCentered<ShapetakerBNCPort>(mm2px(Vec(50, 110)), module, ClairaudientModule::LEFT_OUTPUT));
-        addOutput(createOutputCentered<ShapetakerBNCPort>(mm2px(Vec(50, 119)), module, ClairaudientModule::RIGHT_OUTPUT));
+        addOutput(createOutputCentered<ShapetakerBNCPort>(mm2px(Vec(45.893311, 113.38142)), module, ClairaudientModule::LEFT_OUTPUT));
+        addOutput(createOutputCentered<ShapetakerBNCPort>(mm2px(Vec(53.724667, 113.38142)), module, ClairaudientModule::RIGHT_OUTPUT));
     }
 };
 
