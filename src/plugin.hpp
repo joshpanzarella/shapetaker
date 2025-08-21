@@ -161,8 +161,8 @@ struct ShapetakerKnobOscilloscopeHuge : app::SvgKnob {
 
 struct ShapetakerOscilloscopeSwitch : app::SvgSwitch {
     ShapetakerOscilloscopeSwitch() {
-        addFrame(Svg::load(asset::plugin(pluginInstance, "res/switches/st_switch_oscilloscope_0.svg")));
-        addFrame(Svg::load(asset::plugin(pluginInstance, "res/switches/st_switch_oscilloscope_1.svg")));
+        addFrame(Svg::load(asset::plugin(pluginInstance, "res/switches/safety_toggle_switch_OFF_medium.svg")));
+        addFrame(Svg::load(asset::plugin(pluginInstance, "res/switches/safety_toggle_switch_ON_medium.svg")));
         // Disable the shadow by setting it to transparent
         shadow->visible = false;
     }

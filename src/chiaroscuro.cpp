@@ -373,13 +373,13 @@ struct Chiaroscuro : Module {
             float vca_gain = base_vca_gain;
             
             if (inputs[VCA_CV_INPUT].isConnected()) {
-                float cv = inputs[VCA_CV_INPUT].getPolyVoltage(ch) * 0.1f;
+                float cv = inputs[VCA_CV_INPUT].getPolyVoltage(ch) * 0.1f; // 10V -> 1.0f
                 cv = clamp(cv, -1.0f, 1.0f);
-                float cv_mod = cv * params[VCA_ATT_PARAM].getValue() * 0.5f;
+                float cv_mod = cv * params[VCA_ATT_PARAM].getValue(); // Full range when attenuverter at 100%
                 vca_gain += cv_mod;
             }
             
-            vca_gain = clamp(vca_gain, 0.0f, 1.2f);
+            vca_gain = clamp(vca_gain, 0.0f, 2.0f);
             
             // Apply response curve
             if (exponential_response) {
@@ -399,6 +399,21 @@ struct Chiaroscuro : Module {
                                                        (DistortionEngine::Type)distortion_type);
             float distorted_r = distortion_r[ch].process(vca_r, distortion_amount, 
                                                        (DistortionEngine::Type)distortion_type);
+            
+            // Apply level compensation to match Wave Fold (type 1) as reference level
+            float level_compensation = 1.0f;
+            switch(distortion_type) {
+                case 0: level_compensation = 2.0f; break;   // Hard Clip - boost to match Wave Fold
+                case 1: level_compensation = 0.7f; break;   // Wave Fold - reduce more
+                case 2: level_compensation = 2.0f; break;   // Bit Crush - boost to match Wave Fold
+                case 3: level_compensation = 2.0f; break;   // Destroy - boost to match Wave Fold
+                case 4: level_compensation = 2.0f; break;   // Ring Mod - boost to match Wave Fold
+                case 5: level_compensation = 2.0f; break;   // Tube Sat - boost to match Wave Fold
+                default: level_compensation = 1.0f; break;
+            }
+            
+            distorted_l *= level_compensation;
+            distorted_r *= level_compensation;
             
             // Mix between clean and distorted signals
             float output_l = vca_l + mix * (distorted_l - vca_l);

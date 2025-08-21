@@ -39,6 +39,13 @@ struct HexagonWidget : Widget {
 
 
 struct ClairaudientModule : Module, IOscilloscopeSource {
+    
+    // Quantize voltage to exact 12-tone musical notes
+    float quantizeToNote(float voltage) {
+        // Round to nearest semitone
+        float semitone = std::round(voltage * 12.0f) / 12.0f;
+        return semitone;
+    }
     enum ParamId {
         FREQ1_PARAM,
         FREQ2_PARAM,
@@ -119,8 +126,11 @@ struct ClairaudientModule : Module, IOscilloscopeSource {
         config(PARAMS_LEN, INPUTS_LEN, OUTPUTS_LEN, LIGHTS_LEN);
         
         // Frequency controls
-        configParam(FREQ1_PARAM, -4.f, 4.f, 0.f, "Pair 1 Frequency", "Hz", 2.f, 261.626f);
-        configParam(FREQ2_PARAM, -4.f, 4.f, 0.f, "Pair 2 Frequency", "Hz", 2.f, 261.626f);
+        configParam(FREQ1_PARAM, -2.f, 2.f, 0.f, "Pair 1 Frequency", "Hz", 2.f, 261.626f);
+        configParam(FREQ2_PARAM, -2.f, 2.f, 0.f, "Pair 2 Frequency", "Hz", 2.f, 261.626f);
+        
+        // FREQ1: No quantization (smooth octave range)
+        // FREQ2: Uses custom musical note quantization in process() function
         
         // Fine tune controls (±20 cents, centered at 0 for no detune)
         configParam(FINE1_PARAM, -0.2f, 0.2f, 0.f, "Pair 1 Fine Tune", "cents", 0.f, 0.f, 100.f);
@@ -187,7 +197,10 @@ struct ClairaudientModule : Module, IOscilloscopeSource {
             
             // Get parameters for this voice
             float pitch1 = params[FREQ1_PARAM].getValue() + voct1;
-            float pitch2 = params[FREQ2_PARAM].getValue() + voct2;
+            
+            // Quantize FREQ2 to musical notes (semitones)
+            float rawPitch2 = params[FREQ2_PARAM].getValue() + voct2;
+            float pitch2 = quantizeToNote(rawPitch2);
             
             float fineTune1 = params[FINE1_PARAM].getValue();
             if (inputs[FINE1_CV_INPUT].isConnected()) {

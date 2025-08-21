@@ -1,0 +1,13 @@
+<svg width="50" height="50" viewBox="0 0 50 50" xmlns="http://www.w3.org/2000/svg">
+  <g transform="translate(25, 25)">
+    <!-- Dot indicators -->
+    <g fill="#9370DB">
+      <circle cx="0" cy="-20" r="1" transform="rotate(0)"/>
+      <circle cx="0" cy="-20" r="1" transform="rotate(60)"/>
+      <circle cx="0" cy="-20" r="1" transform="rotate(120)"/>
+      <circle cx="0" cy="-20" r="1" transform="rotate(180)"/>
+      <circle cx="0" cy="-20" r="1" transform="rotate(240)"/>
+      <circle cx="0" cy="-20" r="1" transform="rotate(300)"/>
+    </g>
+  </g>
+</svg>

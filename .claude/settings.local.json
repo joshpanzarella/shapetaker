@@ -4,7 +4,10 @@
       "WebFetch(domain:github.com)",
       "WebSearch",
       "WebFetch(domain:raw.githubusercontent.com)",
-      "Bash(rm:*)"
+      "Bash(rm:*)",
+      "Bash(make:*)",
+      "Bash(sed:*)",
+      "Bash(cp:*)"
     ],
     "deny": [],
     "ask": []

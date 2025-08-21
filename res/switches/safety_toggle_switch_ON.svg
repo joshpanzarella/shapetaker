@@ -1,0 +1,220 @@
+<svg width="60" height="120" viewBox="0 0 60 120" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <!-- Enhanced gradients for dimensionality -->
+    <linearGradient id="panelGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#2a2a2a;stop-opacity:1" />
+      <stop offset="30%" style="stop-color:#1a1a1a;stop-opacity:1" />
+      <stop offset="70%" style="stop-color:#0a0a0a;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#000000;stop-opacity:1" />
+    </linearGradient>
+    
+    <linearGradient id="coverGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#404040;stop-opacity:1" />
+      <stop offset="30%" style="stop-color:#2a2a2a;stop-opacity:1" />
+      <stop offset="70%" style="stop-color:#1a1a1a;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#0a0a0a;stop-opacity:1" />
+    </linearGradient>
+    
+    <radialGradient id="chromeGradient" cx="30%" cy="30%" r="70%">
+      <stop offset="0%" style="stop-color:#ffffff;stop-opacity:1" />
+      <stop offset="20%" style="stop-color:#f0f0f0;stop-opacity:1" />
+      <stop offset="60%" style="stop-color:#d0d0d0;stop-opacity:1" />
+      <stop offset="90%" style="stop-color:#b0b0b0;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#909090;stop-opacity:1" />
+    </radialGradient>
+    
+    <linearGradient id="toggleLeverGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#ffffff;stop-opacity:1" />
+      <stop offset="20%" style="stop-color:#f0f0f0;stop-opacity:1" />
+      <stop offset="40%" style="stop-color:#e0e0e0;stop-opacity:1" />
+      <stop offset="60%" style="stop-color:#d0d0d0;stop-opacity:1" />
+      <stop offset="80%" style="stop-color:#c0c0c0;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#a0a0a0;stop-opacity:1" />
+    </linearGradient>
+    
+    <radialGradient id="switchBodyGradient" cx="20%" cy="20%" r="80%">
+      <stop offset="0%" style="stop-color:#ffffff;stop-opacity:1" />
+      <stop offset="30%" style="stop-color:#f0f0f0;stop-opacity:1" />
+      <stop offset="60%" style="stop-color:#e0e0e0;stop-opacity:1" />
+      <stop offset="90%" style="stop-color:#c0c0c0;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#a0a0a0;stop-opacity:1" />
+    </radialGradient>
+    
+    <linearGradient id="threadedNutGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#f8f8f8;stop-opacity:1" />
+      <stop offset="15%" style="stop-color:#e8e8e8;stop-opacity:1" />
+      <stop offset="30%" style="stop-color:#f0f0f0;stop-opacity:1" />
+      <stop offset="45%" style="stop-color:#d8d8d8;stop-opacity:1" />
+      <stop offset="60%" style="stop-color:#e8e8e8;stop-opacity:1" />
+      <stop offset="75%" style="stop-color:#d0d0d0;stop-opacity:1" />
+      <stop offset="90%" style="stop-color:#c0c0c0;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#b0b0b0;stop-opacity:1" />
+    </linearGradient>
+    
+    <filter id="dropShadow" x="-50%" y="-50%" width="200%" height="200%">
+      <feDropShadow dx="1" dy="2" stdDeviation="2" flood-color="#000000" flood-opacity="0.4"/>
+    </filter>
+    
+    <filter id="ledGlow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="4" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    
+    <filter id="strongLedGlow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="6" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    
+    <filter id="insetShadow" x="-50%" y="-50%" width="200%" height="200%">
+      <feDropShadow dx="1" dy="1" stdDeviation="1" flood-color="#000000" flood-opacity="0.6"/>
+    </filter>
+  </defs>
+  
+  <!-- Base panel with gradient -->
+  <rect x="15" y="25" width="30" height="45" rx="2" ry="2" 
+        fill="url(#panelGradient)" stroke="#404040" stroke-width="1" 
+        filter="url(#dropShadow)"/>
+  
+  <!-- 3D edges -->
+  <path d="M 45 25 L 48 28 L 48 73 L 45 70 Z" fill="#0a0a0a" stroke="#202020" stroke-width="0.5"/>
+  <path d="M 15 70 L 45 70 L 48 73 L 18 73 Z" fill="#0a0a0a" stroke="#202020" stroke-width="0.5"/>
+  
+  <!-- Mounting screws with gradient -->
+  <circle cx="20" cy="30" r="1.2" fill="url(#threadedNutGradient)" stroke="#808080" stroke-width="0.5"/>
+  <circle cx="40" cy="30" r="1.2" fill="url(#threadedNutGradient)" stroke="#808080" stroke-width="0.5"/>
+  <circle cx="20" cy="65" r="1.2" fill="url(#threadedNutGradient)" stroke="#808080" stroke-width="0.5"/>
+  <circle cx="40" cy="65" r="1.2" fill="url(#threadedNutGradient)" stroke="#808080" stroke-width="0.5"/>
+  
+  <!-- Screw slots -->
+  <line x1="19.5" y1="30" x2="20.5" y2="30" stroke="#606060" stroke-width="0.5" stroke-linecap="round"/>
+  <line x1="39.5" y1="30" x2="40.5" y2="30" stroke="#606060" stroke-width="0.5" stroke-linecap="round"/>
+  <line x1="19.5" y1="65" x2="20.5" y2="65" stroke="#606060" stroke-width="0.5" stroke-linecap="round"/>
+  <line x1="39.5" y1="65" x2="40.5" y2="65" stroke="#606060" stroke-width="0.5" stroke-linecap="round"/>
+  
+  <!-- Switch housing recess with inset shadow -->
+  <rect x="26" y="42" width="8" height="10" rx="1" ry="1" 
+        fill="#101010" stroke="#303030" stroke-width="1" filter="url(#insetShadow)"/>
+  
+  <!-- Metal switch body with enhanced gradient and texture -->
+  <rect x="27.5" y="44" width="5" height="6" rx="0.5" ry="0.5" 
+        fill="url(#switchBodyGradient)" stroke="#a0a0a0" stroke-width="0.4"/>
+  
+  <!-- Switch body surface detail -->
+  <rect x="28" y="44.5" width="4" height="0.8" fill="#ffffff" opacity="0.4"/>
+  <rect x="28" y="45.5" width="4" height="0.3" fill="#d0d0d0" opacity="0.3"/>
+  <rect x="28" y="47" width="4" height="0.3" fill="#e0e0e0" opacity="0.2"/>
+  <rect x="28" y="48.2" width="4" height="0.8" fill="#909090" opacity="0.4"/>
+  
+  <!-- Switch mounting nut with threading texture -->
+  <circle cx="30" cy="44" r="2" fill="url(#threadedNutGradient)" stroke="#909090" stroke-width="0.5"/>
+  
+  <!-- Enhanced threading detail on nut -->
+  <circle cx="30" cy="44" r="1.9" fill="none" stroke="#c0c0c0" stroke-width="0.2" opacity="0.8"/>
+  <circle cx="30" cy="44" r="1.7" fill="none" stroke="#e0e0e0" stroke-width="0.2" opacity="0.6"/>
+  <circle cx="30" cy="44" r="1.5" fill="none" stroke="#c0c0c0" stroke-width="0.2" opacity="0.8"/>
+  <circle cx="30" cy="44" r="1.3" fill="none" stroke="#e0e0e0" stroke-width="0.2" opacity="0.6"/>
+  <circle cx="30" cy="44" r="1.1" fill="none" stroke="#c0c0c0" stroke-width="0.2" opacity="0.8"/>
+  
+  <!-- Hexagonal nut detail with enhanced gradient -->
+  <path d="M28.5,42.5 L31.5,42.5 L32,44 L31.5,45.5 L28.5,45.5 L28,44 Z" 
+        fill="url(#chromeGradient)" stroke="#808080" stroke-width="0.4"/>
+  
+  <!-- Hex nut surface texture -->
+  <path d="M28.7,42.7 L31.3,42.7 L31.8,44 L31.3,45.3 L28.7,45.3 L28.2,44 Z" 
+        fill="#ffffff" opacity="0.3"/>
+  
+  <!-- Toggle lever with cylindrical gradient and texture -->
+  <rect x="29.5" y="35" width="1" height="12" rx="0.5" ry="0.5" 
+        fill="url(#toggleLeverGradient)" stroke="#c0c0c0" stroke-width="0.4"/>
+  
+  <!-- Enhanced toggle lever surface highlights -->
+  <rect x="29.6" y="35" width="0.15" height="12" rx="0.08" ry="0.08" 
+        fill="#ffffff" opacity="0.9"/>
+  <rect x="29.8" y="35" width="0.1" height="12" rx="0.05" ry="0.05" 
+        fill="#d0d0d0" opacity="0.6"/>
+  <rect x="29.9" y="35" width="0.05" height="12" rx="0.025" ry="0.025" 
+        fill="#f0f0f0" opacity="0.4"/>
+  
+  <!-- Toggle actuator tip with enhanced chrome texture -->
+  <circle cx="30" cy="36" r="1.2" fill="url(#chromeGradient)" stroke="#b0b0b0" stroke-width="0.4"/>
+  
+  <!-- Enhanced actuator surface texture -->
+  <circle cx="30" cy="36" r="1.1" fill="#ffffff" opacity="0.5"/>
+  <circle cx="29.6" cy="35.6" r="0.7" fill="#ffffff" opacity="0.9"/>
+  <circle cx="29.4" cy="35.4" r="0.4" fill="#ffffff" opacity="0.95"/>
+  
+  <!-- Enhanced actuator grip texture -->
+  <circle cx="30" cy="36" r="1" fill="none" stroke="#e0e0e0" stroke-width="0.15" opacity="0.8"/>
+  <circle cx="30" cy="36" r="0.8" fill="none" stroke="#f0f0f0" stroke-width="0.15" opacity="0.6"/>
+  <circle cx="30" cy="36" r="0.6" fill="none" stroke="#e0e0e0" stroke-width="0.15" opacity="0.8"/>
+  <circle cx="30" cy="36" r="0.4" fill="none" stroke="#f0f0f0" stroke-width="0.15" opacity="0.6"/>
+  
+  <!-- Safety cover (FLIPPED UP) with gradient -->
+  <path d="M 19 32 L 41 32 L 40 21 L 36 18 L 24 18 L 20 21 Z" 
+        fill="url(#coverGradient)" stroke="#505050" stroke-width="1.2" 
+        filter="url(#dropShadow)"/>
+  
+  <!-- Cover 3D top surface -->
+  <path d="M 24 18 L 36 18 L 40 21 L 20 21 Z" 
+        fill="#1a1a1a" stroke="#303030" stroke-width="1"/>
+  
+  <!-- Cover side -->
+  <path d="M 40 21 L 43 24 L 43 35 L 40 32 Z" 
+        fill="#0f0f0f" stroke="#303030" stroke-width="1"/>
+  
+  <!-- Cover internal detail -->
+  <rect x="22" y="23" width="16" height="6" rx="1" ry="1" 
+        fill="#151515" stroke="#404040" stroke-width="0.8"/>
+  
+  <!-- Cover ribbing -->
+  <line x1="24" y1="25" x2="36" y2="25" stroke="#505050" stroke-width="0.5" opacity="0.6"/>
+  
+  <!-- Warning stripes -->
+  <rect x="24" y="24" width="1" height="4" fill="#ff4444"/>
+  <rect x="35" y="24" width="1" height="4" fill="#ff4444"/>
+  
+  <!-- Safety bar with gradient -->
+  <ellipse cx="27" cy="58" rx="10" ry="1" fill="url(#threadedNutGradient)" stroke="#808080" stroke-width="1"/>
+  
+  <!-- Bar mounting brackets with gradient -->
+  <rect x="16" y="57.2" width="2" height="2" rx="0.6" ry="0.6" 
+        fill="url(#threadedNutGradient)" stroke="#808080" stroke-width="1"/>
+  <rect x="36" y="57.2" width="2" height="2" rx="0.6" ry="0.6" 
+        fill="url(#threadedNutGradient)" stroke="#808080" stroke-width="1"/>
+  
+  <!-- Bar 3D bottom -->
+  <ellipse cx="27" cy="59" rx="10" ry="1" fill="#a0a0a0" stroke="#606060" stroke-width="0.8"/>
+  
+  <!-- Mounting bracket 3D bottoms -->
+  <path d="M 16 59.2 L 18 59.2 L 20 61.2 L 18 61.2 Z" 
+        fill="#a0a0a0" stroke="#606060" stroke-width="0.8"/>
+  <path d="M 36 59.2 L 38 59.2 L 40 61.2 L 38 61.2 Z" 
+        fill="#a0a0a0" stroke="#606060" stroke-width="0.8"/>
+  
+  <!-- Bar end caps -->
+  <circle cx="17" cy="58" r="0.6" fill="url(#chromeGradient)" stroke="#606060" stroke-width="0.5"/>
+  <circle cx="37" cy="58" r="0.6" fill="url(#chromeGradient)" stroke="#606060" stroke-width="0.5"/>
+  
+  <!-- LED indicators with enhanced glow -->
+  <!-- Purple LED (ON) -->
+  <circle cx="22" cy="52" r="1.5" fill="#2a2a2a" stroke="#505050" stroke-width="1"/>
+  <circle cx="22" cy="52" r="2.5" fill="#8a2be2" filter="url(#strongLedGlow)" opacity="0.8"/>
+  <circle cx="22" cy="52" r="1.8" fill="#8a2be2" filter="url(#ledGlow)" opacity="0.9"/>
+  <circle cx="22" cy="52" r="1.2" fill="#bb66ff"/>
+  <circle cx="22" cy="52" r="0.8" fill="#dd88ff"/>
+  <circle cx="21.7" cy="51.7" r="0.4" fill="#ffffff" opacity="0.95"/>
+  
+  <!-- Teal LED (OFF) -->
+  <circle cx="38" cy="52" r="1.5" fill="#2a2a2a" stroke="#505050" stroke-width="1"/>
+  <circle cx="38" cy="52" r="0.8" fill="#404040"/>
+  
+  <!-- Panel highlights -->
+  <line x1="15" y1="25" x2="45" y2="25" stroke="#606060" stroke-width="0.5" opacity="0.8"/>
+  <line x1="15" y1="25" x2="15" y2="70" stroke="#606060" stroke-width="0.5" opacity="0.8"/>
+</svg>
