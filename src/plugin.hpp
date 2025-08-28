@@ -11,6 +11,8 @@ extern Model* modelChiaroscuro;
 extern Model* modelFatebinder;
 extern Model* modelInvolution;
 extern Model* modelEvocation;
+extern Model* modelIncantation;
+extern Model* modelTransmutation;
 
 struct ShapetakerKnobLarge : app::SvgKnob {
     widget::SvgWidget* bg;
@@ -161,10 +163,22 @@ struct ShapetakerKnobOscilloscopeHuge : app::SvgKnob {
 
 struct ShapetakerOscilloscopeSwitch : app::SvgSwitch {
     ShapetakerOscilloscopeSwitch() {
-        addFrame(Svg::load(asset::plugin(pluginInstance, "res/switches/safety_toggle_switch_OFF_medium.svg")));
-        addFrame(Svg::load(asset::plugin(pluginInstance, "res/switches/safety_toggle_switch_ON_medium.svg")));
+        addFrame(Svg::load(asset::plugin(pluginInstance, "res/switches/shuttle-toggle-switch-off.svg")));
+        addFrame(Svg::load(asset::plugin(pluginInstance, "res/switches/shuttle-toggle-switch-on.svg")));
         // Disable the shadow by setting it to transparent
         shadow->visible = false;
+        // Scale down the switch by factor of 4
+        box.size = Vec(25, 25);
+    }
+    
+    void draw(const DrawArgs& args) override {
+        nvgSave(args.vg);
+        // Scale down by factor of 4 (0.25x) and center it
+        nvgScale(args.vg, 0.25f, 0.25f);
+        // Adjust position to center the scaled graphics
+        nvgTranslate(args.vg, -37.5f, -37.5f);
+        SvgSwitch::draw(args);
+        nvgRestore(args.vg);
     }
 };
 

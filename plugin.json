@@ -58,6 +58,25 @@
         "Controller",
         "Polyphonic"
       ]
+    },
+    {
+      "slug": "Incantation",
+      "name": "Incantation",
+      "description": "Incantation module",
+      "tags": [
+        "Utility"
+      ]
+    },
+    {
+      "slug": "Transmutation",
+      "name": "Transmutation",
+      "description": "Alchemical Chord Transmutation - Dual sequencer with 8x8 matrix, chord packs, and mystical symbols",
+      "tags": [
+        "Sequencer",
+        "Polyphonic",
+        "Chord",
+        "Controller"
+      ]
     }
   ]
 }

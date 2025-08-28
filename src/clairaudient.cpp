@@ -488,8 +488,8 @@ struct ClairaudientWidget : ModuleWidget {
         if (module) {
             VintageOscilloscopeWidget* oscope = new VintageOscilloscopeWidget(module);
             // Position based on the yellow circle in the SVG
-            oscope->box.pos = mm2px(Vec(30.563007 - 13, 28.92709 - 13)); // Center on oscilloscope screen position
-            oscope->box.size = mm2px(Vec(26, 26)); // Larger square aspect ratio for circular appearance
+            oscope->box.pos = mm2px(Vec(30.563007 - 10, 28.92709 - 15)); // Center on oscilloscope screen position, moved up
+            oscope->box.size = mm2px(Vec(20, 20)); // Smaller size for better fit
             addChild(oscope);
         }
 

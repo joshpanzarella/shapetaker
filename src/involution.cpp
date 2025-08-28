@@ -55,6 +55,63 @@ struct Involution : Module {
         LIGHTS_LEN
     };
 
+    // A simple chorus effect
+    struct Chorus {
+        float* delayBuffer = nullptr;
+        int bufferSize = 0;
+        int writeIndex = 0;
+        float lfoPhase = 0.f;
+
+        ~Chorus() {
+            delete[] delayBuffer;
+        }
+
+        void setSampleRate(float sampleRate) {
+            if (delayBuffer) {
+                delete[] delayBuffer;
+            }
+            bufferSize = (int)(sampleRate * 0.1f); // Max delay of 100ms
+            delayBuffer = new float[bufferSize]();
+        }
+
+        float process(float input, float rate, float depth, float mix, float sampleRate) {
+            if (!delayBuffer) {
+                return input;
+            }
+
+            lfoPhase += rate * 2.f * M_PI / sampleRate;
+            if (lfoPhase >= 2.f * M_PI) {
+                lfoPhase -= 2.f * M_PI;
+            }
+
+            float delay = (20.f + 10.f * std::sin(lfoPhase)) * depth;
+            float delayInSamples = delay * sampleRate / 1000.f;
+
+            int readIndex = writeIndex - (int)delayInSamples;
+            float frac = delayInSamples - (int)delayInSamples;
+
+            while (readIndex < 0) {
+                readIndex += bufferSize;
+            }
+            int readIndex2 = readIndex - 1;
+            while (readIndex2 < 0) {
+                readIndex2 += bufferSize;
+            }
+
+            float s1 = delayBuffer[readIndex % bufferSize];
+            float s2 = delayBuffer[readIndex2 % bufferSize];
+            float delayedSample = s1 * (1.f - frac) + s2 * frac;
+
+            delayBuffer[writeIndex] = input;
+            writeIndex++;
+            if (writeIndex >= bufferSize) {
+                writeIndex = 0;
+            }
+
+            return input * (1.f - mix) + delayedSample * mix;
+        }
+    };
+
     // Enhanced filter with morphing capabilities
     struct MorphingBiquadFilter {
         float x1 = 0.f, x2 = 0.f;

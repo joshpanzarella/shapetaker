@@ -1,0 +1,79 @@
+{
+  "name": "80s Pop D#",
+  "key": "D#",
+  "description": "Classic 80s chord progressions in D# major",
+  "chords": [
+    {
+      "name": "D#maj",
+      "intervals": [0, 4, 7],
+      "preferredVoices": 3,
+      "category": "major"
+    },
+    {
+      "name": "Fmin",
+      "intervals": [2, 5, 9],
+      "preferredVoices": 3,
+      "category": "minor"
+    },
+    {
+      "name": "Gmin",
+      "intervals": [4, 7, 11],
+      "preferredVoices": 3,
+      "category": "minor"
+    },
+    {
+      "name": "G#maj",
+      "intervals": [5, 9, 0],
+      "preferredVoices": 3,
+      "category": "major"
+    },
+    {
+      "name": "A#maj",
+      "intervals": [7, 11, 2],
+      "preferredVoices": 3,
+      "category": "major"
+    },
+    {
+      "name": "Cmin",
+      "intervals": [9, 0, 4],
+      "preferredVoices": 3,
+      "category": "minor"
+    },
+    {
+      "name": "D#maj7",
+      "intervals": [0, 4, 7, 11],
+      "preferredVoices": 4,
+      "category": "major7"
+    },
+    {
+      "name": "Fmin7",
+      "intervals": [2, 5, 9, 0],
+      "preferredVoices": 4,
+      "category": "minor7"
+    },
+    {
+      "name": "A#sus4",
+      "intervals": [7, 0, 2],
+      "preferredVoices": 3,
+      "category": "sus4"
+    },
+    {
+      "name": "G#maj9",
+      "intervals": [5, 9, 0, 4, 7],
+      "preferredVoices": 5,
+      "category": "major9"
+    },
+    {
+      "name": "Cmin9",
+      "intervals": [9, 0, 4, 7, 11],
+      "preferredVoices": 5,
+      "category": "minor9"
+    },
+    {
+      "name": "D#add9",
+      "intervals": [0, 4, 7, 2],
+      "preferredVoices": 4,
+      "category": "add9"
+    }
+  ]
+}

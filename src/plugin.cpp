@@ -10,4 +10,6 @@ void init(Plugin* p) {
     p->addModel(modelFatebinder);
     p->addModel(modelInvolution);
     p->addModel(modelEvocation);
+    p->addModel(modelIncantation);
+    p->addModel(modelTransmutation);
 }
