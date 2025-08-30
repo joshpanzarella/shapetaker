@@ -102,8 +102,10 @@ The Transmutation module is a sophisticated dual chord sequencer with advanced a
 - **JSON Chord Packs**: Extensible chord library system
 - **Voice Allocation**: Intelligent polyphonic voice distribution with octave cycling
 - **Clock System**: Internal clock with external override (separate for A & B)
+- **External Trigger Inputs**: Start/Stop/Reset triggers for both sequences with CV control
 - **CV Integration**: Full CV control integration throughout
 - **Visual Feedback**: Real-time LED matrix and symbol lighting updates
+- **Precise Panel Alignment**: All controls use exact SVG coordinates with named IDs
 
 #### Chord Pack Format
 ```json
@@ -128,6 +130,24 @@ The Transmutation module is a sophisticated dual chord sequencer with advanced a
 - **Right Side**: Sequence B controls (length, transport, tie, mode, I/O)
 - **Top**: Chord pack selector and edit mode buttons
 - **Bottom**: Internal clock control
+
+#### I/O Configuration
+**Sequence A (Left Side):**
+- Clock Input: External clock override
+- Start/Stop/Reset Trigger Inputs: CV trigger control for transport functions
+- CV Output: Polyphonic pitch output (up to 6 voices)
+- Gate Output: Polyphonic gate output (up to 6 voices)
+
+**Sequence B (Right Side):**
+- Clock Input: External clock override (independent from A)
+- Start/Stop/Reset Trigger Inputs: CV trigger control for transport functions
+- CV Output: Polyphonic pitch output (up to 6 voices) 
+- Gate Output: Polyphonic gate output (up to 6 voices)
+
+**Control Integration:**
+- All I/O ports positioned using exact SVG coordinates with named IDs
+- External triggers work alongside front panel transport buttons
+- Black screws for professional aesthetic matching panel design
 
 ## Code Architecture
 
