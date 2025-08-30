@@ -560,8 +560,8 @@ struct Transmutation : Module {
     
     // Chord pack system
     ChordPack currentChordPack;
-    std::array<int, 20> symbolToChordMapping; // Expanded from 12 to 20 symbols
-    std::array<int, 12> buttonToSymbolMapping; // Maps button positions 0-11 to symbol IDs 0-19
+    std::array<int, 40> symbolToChordMapping; // Expanded to support all 40 symbols
+    std::array<int, 12> buttonToSymbolMapping; // Maps button positions 0-11 to symbol IDs 0-39
     
     // Clock system
     float internalClock = 0.0f;
@@ -886,7 +886,7 @@ struct Transmutation : Module {
         const SequenceStep& currentStep = seq.steps[seq.currentStep];
         
         // Output CV and gates based on current step
-        if (currentStep.chordIndex >= 0 && currentStep.chordIndex < 20 && 
+        if (currentStep.chordIndex >= 0 && currentStep.chordIndex < 40 && 
             symbolToChordMapping[currentStep.chordIndex] >= 0) {
             outputChord(currentStep, cvOutputId, gateOutputId);
         } else {
@@ -948,7 +948,7 @@ struct Transmutation : Module {
         const SequenceStep& stepA = sequenceA.steps[sequenceA.currentStep];
         const SequenceStep& stepB = sequenceB.steps[sequenceB.currentStep];
         
-        if (stepA.chordIndex >= 0 && stepA.chordIndex < 20 && 
+        if (stepA.chordIndex >= 0 && stepA.chordIndex < 40 && 
             symbolToChordMapping[stepA.chordIndex] >= 0) {
             // Generate harmony based on sequence A's chord
             outputHarmony(stepA, stepB, CV_B_OUTPUT, GATE_B_OUTPUT);
@@ -985,7 +985,7 @@ struct Transmutation : Module {
         
         // Output sequence B's programmed progression using same chord pack as A
         const SequenceStep& currentStep = sequenceB.steps[sequenceB.currentStep];
-        if (currentStep.chordIndex >= 0 && currentStep.chordIndex < 20 && 
+        if (currentStep.chordIndex >= 0 && currentStep.chordIndex < 40 && 
             symbolToChordMapping[currentStep.chordIndex] >= 0) {
             outputChord(currentStep, CV_B_OUTPUT, GATE_B_OUTPUT);
         } else {
@@ -1084,9 +1084,15 @@ struct Transmutation : Module {
     void onSymbolPressed(int symbolIndex) {
         selectedSymbol = symbolIndex;
         
+        // Debug output
+        if (symbolIndex >= 0 && symbolIndex < 40) {
+            int chordIndex = symbolToChordMapping[symbolIndex];
+            INFO("Symbol pressed: %d -> Chord index: %d (of %d chords)", symbolIndex, chordIndex, (int)currentChordPack.chords.size());
+        }
+        
         // Display chord name on LED matrix
         // Trigger 8-bit symbol preview when selecting a symbol
-        if (symbolIndex >= 0 && symbolIndex < 20 && 
+        if (symbolIndex >= 0 && symbolIndex < 40 && 
             symbolToChordMapping[symbolIndex] >= 0 && symbolToChordMapping[symbolIndex] < (int)currentChordPack.chords.size()) {
             const ChordData& chord = currentChordPack.chords[symbolToChordMapping[symbolIndex]];
             displayChordName = chord.name;
@@ -1103,13 +1109,13 @@ struct Transmutation : Module {
         }
         
         // Audition the chord if we're in edit mode
-        if ((editModeA || editModeB) && symbolIndex >= 0 && symbolIndex < 20) {
+        if ((editModeA || editModeB) && symbolIndex >= 0 && symbolIndex < 40) {
             auditionChord(symbolIndex);
         }
     }
     
     void auditionChord(int symbolIndex) {
-        if (symbolIndex < 0 || symbolIndex >= 20 || 
+        if (symbolIndex < 0 || symbolIndex >= 40 || 
             symbolToChordMapping[symbolIndex] < 0 || symbolToChordMapping[symbolIndex] >= (int)currentChordPack.chords.size()) {
             return;
         }
@@ -1225,9 +1231,9 @@ struct Transmutation : Module {
         std::random_device rd;
         std::mt19937 gen(rd());
         
-        // Create a pool of all available symbol IDs (0-19)
+        // Create a pool of all available symbol IDs (0-39)
         std::vector<int> availableSymbolIds;
-        for (int i = 0; i < 20; i++) {
+        for (int i = 0; i < 40; i++) {
             availableSymbolIds.push_back(i);
         }
         
@@ -1242,13 +1248,38 @@ struct Transmutation : Module {
             buttonToSymbolMapping[buttonPos] = availableSymbolIds[buttonPos];
         }
         
-        // Assign random chord indices to all 12 button symbols
+        // Improved randomization: Assign chords to button symbols with more variation
         std::uniform_int_distribution<> dis(0, currentChordPack.chords.size() - 1);
+        
+        // First, assign unique chords to avoid duplicates if we have enough chords
+        std::vector<int> availableChordIndices;
+        for (int i = 0; i < (int)currentChordPack.chords.size(); i++) {
+            availableChordIndices.push_back(i);
+        }
+        std::shuffle(availableChordIndices.begin(), availableChordIndices.end(), gen);
         
         for (int buttonPos = 0; buttonPos < 12; buttonPos++) {
             int symbolId = buttonToSymbolMapping[buttonPos];
-            int randomChordIndex = dis(gen);
-            symbolToChordMapping[symbolId] = randomChordIndex;
+            
+            // If we have enough unique chords, use them first, otherwise randomize
+            int chordIndex;
+            if (buttonPos < (int)availableChordIndices.size()) {
+                chordIndex = availableChordIndices[buttonPos];
+            } else {
+                chordIndex = dis(gen);
+            }
+            
+            symbolToChordMapping[symbolId] = chordIndex;
+        }
+        
+        // Ensure ALL 12 button symbols have chord mappings
+        // This guarantees that any symbol shown on buttons can be placed on sequences
+        for (int buttonPos = 0; buttonPos < 12; buttonPos++) {
+            int symbolId = buttonToSymbolMapping[buttonPos];
+            // Double check this symbol has a chord mapping (should already be set above)
+            if (symbolToChordMapping[symbolId] < 0) {
+                symbolToChordMapping[symbolId] = dis(gen);
+            }
         }
     }
     
@@ -1328,14 +1359,14 @@ void HighResMatrixWidget::onMatrixRightClick(int x, int y) {
     // Right click cycles through voice counts (1-6)
     if (module->editModeA && stepIndex < module->sequenceA.length) {
         SequenceStep& step = module->sequenceA.steps[stepIndex];
-        if (step.chordIndex >= 0 && step.chordIndex < 20 && 
+        if (step.chordIndex >= 0 && step.chordIndex < 40 && 
             module->symbolToChordMapping[step.chordIndex] >= 0) {
             step.voiceCount = (step.voiceCount % 6) + 1;
         }
     }
     if (module->editModeB && stepIndex < module->sequenceB.length) {
         SequenceStep& step = module->sequenceB.steps[stepIndex];
-        if (step.chordIndex >= 0 && step.chordIndex < 20 && 
+        if (step.chordIndex >= 0 && step.chordIndex < 40 && 
             module->symbolToChordMapping[step.chordIndex] >= 0) {
             step.voiceCount = (step.voiceCount % 6) + 1;
         }
@@ -1347,7 +1378,10 @@ void HighResMatrixWidget::programStep(Sequence& seq, int stepIndex) {
     
     SequenceStep& step = seq.steps[stepIndex];
     
-    if (module->selectedSymbol >= 0 && module->selectedSymbol < 20 && 
+    // Debug output
+    INFO("Programming step %d with selected symbol %d", stepIndex, module->selectedSymbol);
+    
+    if (module->selectedSymbol >= 0 && module->selectedSymbol < 40 && 
         module->symbolToChordMapping[module->selectedSymbol] >= 0) {
         // Assign chord to step
         step.chordIndex = module->selectedSymbol;
@@ -1357,16 +1391,22 @@ void HighResMatrixWidget::programStep(Sequence& seq, int stepIndex) {
             const ChordData& chord = module->currentChordPack.chords[module->symbolToChordMapping[module->selectedSymbol]];
             step.voiceCount = std::min(chord.preferredVoices, 6);
         }
+        INFO("Step %d programmed with symbol %d (chord %d)", stepIndex, module->selectedSymbol, module->symbolToChordMapping[module->selectedSymbol]);
     } else if (module->selectedSymbol == -1) {
         // Rest
         step.chordIndex = -1;
         step.alchemySymbolId = -1;
         step.voiceCount = 1;
+        INFO("Step %d programmed as REST", stepIndex);
     } else if (module->selectedSymbol == -2) {
         // Tie
         step.chordIndex = -2;
         step.alchemySymbolId = -2;
         step.voiceCount = 1;
+        INFO("Step %d programmed as TIE", stepIndex);
+    } else {
+        INFO("Step %d programming FAILED - selected symbol %d has invalid chord mapping %d", stepIndex, module->selectedSymbol, 
+             module->selectedSymbol >= 0 && module->selectedSymbol < 40 ? module->symbolToChordMapping[module->selectedSymbol] : -999);
     }
 }
 
@@ -1673,7 +1713,7 @@ void HighResMatrixWidget::drawMatrix(const DrawArgs& args) {
             nvgFill(args.vg);
             
             // Draw alchemical symbol at high resolution
-            if (symbolId >= 0 && symbolId < 20) {
+            if (symbolId >= 0 && symbolId < 40) {
                 // Determine symbol color - black when LED is lit, white otherwise
                 NVGcolor symbolColor = nvgRGBA(255, 255, 255, 255); // Default white
                 if (playheadA || playheadB) {
@@ -1695,7 +1735,7 @@ void HighResMatrixWidget::drawMatrix(const DrawArgs& args) {
                     voiceCount = module->sequenceB.steps[stepIndex].voiceCount;
                 }
                 
-                if (symbolId >= 0 && symbolId < 20) {
+                if (symbolId >= 0 && symbolId < 40) {
                     NVGcolor dotColor = nvgRGBA(255, 255, 255, 255); // Default white
                     if (playheadA || playheadB) {
                         dotColor = nvgRGBA(0, 0, 0, 255); // Black for contrast
@@ -2170,6 +2210,165 @@ void HighResMatrixWidget::drawAlchemicalSymbol(const DrawArgs& args, Vec pos, in
             nvgArc(args.vg, size * 0.2f, 0, size * 0.8f, M_PI * 0.6f, M_PI * 1.4f, NVG_CW);
             nvgStroke(args.vg);
             break;
+            
+        case 30: // Zinc - Jupiter symbol with line through
+            nvgBeginPath(args.vg);
+            nvgMoveTo(args.vg, -size * 0.6f, 0);
+            nvgLineTo(args.vg, size * 0.6f, 0);
+            nvgStroke(args.vg);
+            nvgBeginPath(args.vg);
+            nvgMoveTo(args.vg, 0, -size * 0.6f);
+            nvgLineTo(args.vg, 0, size * 0.6f);
+            nvgStroke(args.vg);
+            nvgBeginPath(args.vg);
+            nvgMoveTo(args.vg, -size * 0.4f, -size * 0.4f);
+            nvgLineTo(args.vg, size * 0.4f, size * 0.4f);
+            nvgStroke(args.vg);
+            break;
+            
+        case 31: // Tin - Jupiter variant with double cross
+            nvgBeginPath(args.vg);
+            nvgMoveTo(args.vg, -size * 0.6f, -size * 0.2f);
+            nvgLineTo(args.vg, size * 0.6f, -size * 0.2f);
+            nvgStroke(args.vg);
+            nvgBeginPath(args.vg);
+            nvgMoveTo(args.vg, -size * 0.6f, size * 0.2f);
+            nvgLineTo(args.vg, size * 0.6f, size * 0.2f);
+            nvgStroke(args.vg);
+            nvgBeginPath(args.vg);
+            nvgMoveTo(args.vg, 0, -size * 0.8f);
+            nvgLineTo(args.vg, 0, size * 0.8f);
+            nvgStroke(args.vg);
+            break;
+            
+        case 32: // Bismuth - Stylized Bi with flourishes
+            nvgBeginPath(args.vg);
+            nvgCircle(args.vg, 0, -size * 0.3f, size * 0.3f);
+            nvgStroke(args.vg);
+            nvgBeginPath(args.vg);
+            nvgMoveTo(args.vg, 0, 0);
+            nvgLineTo(args.vg, 0, size * 0.8f);
+            nvgStroke(args.vg);
+            nvgBeginPath(args.vg);
+            nvgMoveTo(args.vg, -size * 0.4f, size * 0.5f);
+            nvgLineTo(args.vg, size * 0.4f, size * 0.5f);
+            nvgStroke(args.vg);
+            break;
+            
+        case 33: // Magnesium - Alchemical Mg symbol
+            nvgBeginPath(args.vg);
+            nvgMoveTo(args.vg, -size * 0.6f, -size * 0.8f);
+            nvgLineTo(args.vg, -size * 0.6f, size * 0.8f);
+            nvgLineTo(args.vg, size * 0.6f, size * 0.8f);
+            nvgLineTo(args.vg, size * 0.6f, -size * 0.8f);
+            nvgStroke(args.vg);
+            nvgBeginPath(args.vg);
+            nvgMoveTo(args.vg, -size * 0.6f, 0);
+            nvgLineTo(args.vg, size * 0.6f, 0);
+            nvgStroke(args.vg);
+            break;
+            
+        case 34: // Platinum - Crossed circle with dots
+            nvgBeginPath(args.vg);
+            nvgCircle(args.vg, 0, 0, size * 0.6f);
+            nvgStroke(args.vg);
+            nvgBeginPath(args.vg);
+            nvgMoveTo(args.vg, -size * 0.8f, -size * 0.8f);
+            nvgLineTo(args.vg, size * 0.8f, size * 0.8f);
+            nvgStroke(args.vg);
+            nvgBeginPath(args.vg);
+            nvgMoveTo(args.vg, size * 0.8f, -size * 0.8f);
+            nvgLineTo(args.vg, -size * 0.8f, size * 0.8f);
+            nvgStroke(args.vg);
+            nvgBeginPath(args.vg);
+            nvgCircle(args.vg, 0, 0, size * 0.2f);
+            nvgFill(args.vg);
+            break;
+            
+        case 35: // Aether - Upward pointing triangle with horizontal line above
+            nvgBeginPath(args.vg);
+            nvgMoveTo(args.vg, 0, -size * 0.8f);
+            nvgLineTo(args.vg, -size * 0.7f, size * 0.4f);
+            nvgLineTo(args.vg, size * 0.7f, size * 0.4f);
+            nvgClosePath(args.vg);
+            nvgStroke(args.vg);
+            nvgBeginPath(args.vg);
+            nvgMoveTo(args.vg, -size * 0.8f, -size * 0.9f);
+            nvgLineTo(args.vg, size * 0.8f, -size * 0.9f);
+            nvgStroke(args.vg);
+            break;
+            
+        case 36: // Void - Empty circle with cross through
+            nvgBeginPath(args.vg);
+            nvgCircle(args.vg, 0, 0, size * 0.7f);
+            nvgStroke(args.vg);
+            nvgBeginPath(args.vg);
+            nvgMoveTo(args.vg, -size, 0);
+            nvgLineTo(args.vg, size, 0);
+            nvgStroke(args.vg);
+            nvgBeginPath(args.vg);
+            nvgMoveTo(args.vg, 0, -size);
+            nvgLineTo(args.vg, 0, size);
+            nvgStroke(args.vg);
+            break;
+            
+        case 37: // Chaos Star - Eight-pointed star
+            nvgBeginPath(args.vg);
+            for (int i = 0; i < 8; i++) {
+                float angle = i * M_PI / 4.0f;
+                nvgMoveTo(args.vg, 0, 0);
+                nvgLineTo(args.vg, cosf(angle) * size, sinf(angle) * size);
+            }
+            nvgStroke(args.vg);
+            nvgBeginPath(args.vg);
+            nvgCircle(args.vg, 0, 0, size * 0.2f);
+            nvgFill(args.vg);
+            break;
+            
+        case 38: // Tree of Life - Stylized Kabbalah tree
+            nvgBeginPath(args.vg);
+            // Central pillar
+            nvgMoveTo(args.vg, 0, -size * 0.9f);
+            nvgLineTo(args.vg, 0, size * 0.9f);
+            nvgStroke(args.vg);
+            // Sephirot (circles)
+            for (int i = 0; i < 3; i++) {
+                float y = -size * 0.6f + i * size * 0.6f;
+                nvgBeginPath(args.vg);
+                nvgCircle(args.vg, 0, y, size * 0.15f);
+                nvgStroke(args.vg);
+            }
+            // Side connections
+            nvgBeginPath(args.vg);
+            nvgMoveTo(args.vg, -size * 0.6f, -size * 0.3f);
+            nvgLineTo(args.vg, size * 0.6f, -size * 0.3f);
+            nvgStroke(args.vg);
+            break;
+            
+        case 39: // Leviathan Cross - Cross of Satan with infinity
+            nvgBeginPath(args.vg);
+            nvgMoveTo(args.vg, 0, -size * 0.8f);
+            nvgLineTo(args.vg, 0, size * 0.4f);
+            nvgStroke(args.vg);
+            nvgBeginPath(args.vg);
+            nvgMoveTo(args.vg, -size * 0.6f, -size * 0.2f);
+            nvgLineTo(args.vg, size * 0.6f, -size * 0.2f);
+            nvgStroke(args.vg);
+            // Double cross
+            nvgBeginPath(args.vg);
+            nvgMoveTo(args.vg, -size * 0.4f, -size * 0.5f);
+            nvgLineTo(args.vg, size * 0.4f, -size * 0.5f);
+            nvgStroke(args.vg);
+            // Infinity at bottom
+            nvgBeginPath(args.vg);
+            for (float t = 0; t < 2 * M_PI; t += 0.1f) {
+                float x = size * 0.4f * sinf(t) / (1 + cosf(t) * cosf(t));
+                float y = size * 0.6f + size * 0.2f * sinf(t) * cosf(t) / (1 + cosf(t) * cosf(t));
+                if (t == 0) nvgMoveTo(args.vg, x, y);
+                else nvgLineTo(args.vg, x, y);
+            }
+            nvgStroke(args.vg);
+            break;
     }
     
     nvgRestore(args.vg);
@@ -2281,7 +2480,7 @@ void Matrix8x8Widget::programStep(Sequence& seq, int stepIndex) {
     
     SequenceStep& step = seq.steps[stepIndex];
     
-    if (module->selectedSymbol >= 0 && module->selectedSymbol < 20 && 
+    if (module->selectedSymbol >= 0 && module->selectedSymbol < 40 && 
         module->symbolToChordMapping[module->selectedSymbol] >= 0) {
         // Assign chord to step
         step.chordIndex = module->selectedSymbol;
@@ -2564,7 +2763,7 @@ void Matrix8x8Widget::drawMatrix(const DrawArgs& args) {
             nvgFill(args.vg);
             
             // Draw alchemical symbol if assigned (but not if it's the default "no symbol" value)
-            if (symbolId >= 0 && symbolId < 20) {
+            if (symbolId >= 0 && symbolId < 40) {
                 // Determine symbol color - black when LED is lit, white otherwise
                 NVGcolor symbolColor = nvgRGBA(255, 255, 255, 255); // Default white
                 if (playheadA || playheadB) {
@@ -2591,7 +2790,7 @@ void Matrix8x8Widget::drawMatrix(const DrawArgs& args) {
                 }
                 
                 // Only draw voice dots for actual chords (not REST/TIE)
-                if (symbolId >= 0 && symbolId < 20) {
+                if (symbolId >= 0 && symbolId < 40) {
                     // Use same color logic as symbols - black when LED is lit, white otherwise
                     NVGcolor dotColor = nvgRGBA(255, 255, 255, 255); // Default white
                     if (playheadA || playheadB) {
@@ -2985,7 +3184,7 @@ struct AlchemicalSymbolWidget : Widget {
             int currentChordB = module->getCurrentChordIndex(module->sequenceB);
             
             // Check if this symbol maps to a currently playing chord
-            for (int i = 0; i < 20; i++) {
+            for (int i = 0; i < 40; i++) {
                 if (module->symbolToChordMapping[i] == symbolId) {
                     if ((module->sequenceA.running && currentChordA == i) ||
                         (module->sequenceB.running && currentChordB == i)) {
@@ -3329,6 +3528,305 @@ struct AlchemicalSymbolWidget : Widget {
                 nvgFill(args.vg);
                 nvgBeginPath(args.vg);
                 nvgCircle(args.vg, 0, size * 0.5f, size * 0.15f);
+                nvgStroke(args.vg);
+                break;
+                
+            case 20: // Seal of Solomon - Hexagram with circle
+                nvgBeginPath(args.vg);
+                nvgCircle(args.vg, 0, 0, size);
+                nvgStroke(args.vg);
+                // Star of David inside
+                nvgBeginPath(args.vg);
+                nvgMoveTo(args.vg, 0, -size * 0.7f);
+                nvgLineTo(args.vg, -size * 0.6f, size * 0.35f);
+                nvgLineTo(args.vg, size * 0.6f, size * 0.35f);
+                nvgClosePath(args.vg);
+                nvgStroke(args.vg);
+                nvgBeginPath(args.vg);
+                nvgMoveTo(args.vg, 0, size * 0.7f);
+                nvgLineTo(args.vg, -size * 0.6f, -size * 0.35f);
+                nvgLineTo(args.vg, size * 0.6f, -size * 0.35f);
+                nvgClosePath(args.vg);
+                nvgStroke(args.vg);
+                break;
+                
+            case 21: // Sulfur - Triangle over cross
+                nvgBeginPath(args.vg);
+                // Triangle
+                nvgMoveTo(args.vg, 0, -size * 0.5f);
+                nvgLineTo(args.vg, -size * 0.6f, size * 0.1f);
+                nvgLineTo(args.vg, size * 0.6f, size * 0.1f);
+                nvgClosePath(args.vg);
+                nvgStroke(args.vg);
+                // Cross below
+                nvgBeginPath(args.vg);
+                nvgMoveTo(args.vg, 0, size * 0.1f);
+                nvgLineTo(args.vg, 0, size * 0.8f);
+                nvgStroke(args.vg);
+                nvgBeginPath(args.vg);
+                nvgMoveTo(args.vg, -size * 0.3f, size * 0.45f);
+                nvgLineTo(args.vg, size * 0.3f, size * 0.45f);
+                nvgStroke(args.vg);
+                break;
+                
+            case 22: // Salt - Circle with horizontal line
+                nvgBeginPath(args.vg);
+                nvgCircle(args.vg, 0, 0, size * 0.6f);
+                nvgStroke(args.vg);
+                nvgBeginPath(args.vg);
+                nvgMoveTo(args.vg, -size * 0.8f, 0);
+                nvgLineTo(args.vg, size * 0.8f, 0);
+                nvgStroke(args.vg);
+                break;
+                
+            case 23: // Antimony - Circle with cross below
+                nvgBeginPath(args.vg);
+                nvgCircle(args.vg, 0, -size * 0.3f, size * 0.4f);
+                nvgStroke(args.vg);
+                // Cross below
+                nvgBeginPath(args.vg);
+                nvgMoveTo(args.vg, 0, size * 0.1f);
+                nvgLineTo(args.vg, 0, size * 0.8f);
+                nvgStroke(args.vg);
+                nvgBeginPath(args.vg);
+                nvgMoveTo(args.vg, -size * 0.3f, size * 0.45f);
+                nvgLineTo(args.vg, size * 0.3f, size * 0.45f);
+                nvgStroke(args.vg);
+                break;
+                
+            case 24: // Philosopher's Stone - Square with inscribed circle and dot
+                nvgBeginPath(args.vg);
+                nvgRect(args.vg, -size * 0.7f, -size * 0.7f, size * 1.4f, size * 1.4f);
+                nvgStroke(args.vg);
+                nvgBeginPath(args.vg);
+                nvgCircle(args.vg, 0, 0, size * 0.5f);
+                nvgStroke(args.vg);
+                nvgBeginPath(args.vg);
+                nvgCircle(args.vg, 0, 0, size * 0.1f);
+                nvgFill(args.vg);
+                break;
+                
+            case 25: // Arsenic - Stylized As
+                nvgBeginPath(args.vg);
+                // Zigzag pattern
+                nvgMoveTo(args.vg, -size * 0.6f, -size * 0.8f);
+                nvgLineTo(args.vg, 0, size * 0.8f);
+                nvgLineTo(args.vg, size * 0.6f, -size * 0.8f);
+                nvgStroke(args.vg);
+                // Horizontal line through middle
+                nvgBeginPath(args.vg);
+                nvgMoveTo(args.vg, -size * 0.4f, 0);
+                nvgLineTo(args.vg, size * 0.4f, 0);
+                nvgStroke(args.vg);
+                break;
+                
+            case 26: // Copper - Venus symbol variant
+                nvgBeginPath(args.vg);
+                nvgCircle(args.vg, 0, -size * 0.2f, size * 0.4f);
+                nvgStroke(args.vg);
+                // Cross with curved arms
+                nvgBeginPath(args.vg);
+                nvgMoveTo(args.vg, 0, size * 0.2f);
+                nvgLineTo(args.vg, 0, size * 0.8f);
+                nvgStroke(args.vg);
+                nvgBeginPath(args.vg);
+                nvgArc(args.vg, -size * 0.2f, size * 0.5f, size * 0.2f, 0, M_PI, NVG_CW);
+                nvgArc(args.vg, size * 0.2f, size * 0.5f, size * 0.2f, M_PI, 2 * M_PI, NVG_CW);
+                nvgStroke(args.vg);
+                break;
+                
+            case 27: // Iron - Mars symbol variant with double arrow
+                nvgBeginPath(args.vg);
+                nvgCircle(args.vg, -size * 0.2f, size * 0.2f, size * 0.3f);
+                nvgStroke(args.vg);
+                // Double arrow
+                nvgBeginPath(args.vg);
+                nvgMoveTo(args.vg, size * 0.1f, -size * 0.1f);
+                nvgLineTo(args.vg, size * 0.8f, -size * 0.8f);
+                nvgStroke(args.vg);
+                nvgBeginPath(args.vg);
+                nvgMoveTo(args.vg, size * 0.6f, -size * 0.8f);
+                nvgLineTo(args.vg, size * 0.8f, -size * 0.8f);
+                nvgLineTo(args.vg, size * 0.8f, -size * 0.6f);
+                nvgStroke(args.vg);
+                break;
+                
+            case 28: // Lead - Saturn symbol with additional cross
+                nvgBeginPath(args.vg);
+                nvgMoveTo(args.vg, -size * 0.6f, -size * 0.3f);
+                nvgLineTo(args.vg, size * 0.6f, -size * 0.3f);
+                nvgStroke(args.vg);
+                nvgBeginPath(args.vg);
+                nvgMoveTo(args.vg, 0, -size * 0.8f);
+                nvgLineTo(args.vg, 0, size * 0.8f);
+                nvgStroke(args.vg);
+                nvgBeginPath(args.vg);
+                nvgArc(args.vg, 0, size * 0.2f, size * 0.3f, 0, M_PI, NVG_CW);
+                nvgStroke(args.vg);
+                break;
+                
+            case 29: // Silver - Crescent moon
+                nvgBeginPath(args.vg);
+                nvgArc(args.vg, size * 0.2f, 0, size * 0.8f, M_PI * 0.6f, M_PI * 1.4f, NVG_CW);
+                nvgStroke(args.vg);
+                break;
+                
+            case 30: // Zinc - Jupiter symbol with line through
+                nvgBeginPath(args.vg);
+                nvgMoveTo(args.vg, -size * 0.6f, 0);
+                nvgLineTo(args.vg, size * 0.6f, 0);
+                nvgStroke(args.vg);
+                nvgBeginPath(args.vg);
+                nvgMoveTo(args.vg, 0, -size * 0.6f);
+                nvgLineTo(args.vg, 0, size * 0.6f);
+                nvgStroke(args.vg);
+                nvgBeginPath(args.vg);
+                nvgMoveTo(args.vg, -size * 0.4f, -size * 0.4f);
+                nvgLineTo(args.vg, size * 0.4f, size * 0.4f);
+                nvgStroke(args.vg);
+                break;
+                
+            case 31: // Tin - Jupiter variant with double cross
+                nvgBeginPath(args.vg);
+                nvgMoveTo(args.vg, -size * 0.6f, -size * 0.2f);
+                nvgLineTo(args.vg, size * 0.6f, -size * 0.2f);
+                nvgStroke(args.vg);
+                nvgBeginPath(args.vg);
+                nvgMoveTo(args.vg, -size * 0.6f, size * 0.2f);
+                nvgLineTo(args.vg, size * 0.6f, size * 0.2f);
+                nvgStroke(args.vg);
+                nvgBeginPath(args.vg);
+                nvgMoveTo(args.vg, 0, -size * 0.8f);
+                nvgLineTo(args.vg, 0, size * 0.8f);
+                nvgStroke(args.vg);
+                break;
+                
+            case 32: // Bismuth - Stylized Bi with flourishes
+                nvgBeginPath(args.vg);
+                nvgCircle(args.vg, 0, -size * 0.3f, size * 0.3f);
+                nvgStroke(args.vg);
+                nvgBeginPath(args.vg);
+                nvgMoveTo(args.vg, 0, 0);
+                nvgLineTo(args.vg, 0, size * 0.8f);
+                nvgStroke(args.vg);
+                nvgBeginPath(args.vg);
+                nvgMoveTo(args.vg, -size * 0.4f, size * 0.5f);
+                nvgLineTo(args.vg, size * 0.4f, size * 0.5f);
+                nvgStroke(args.vg);
+                break;
+                
+            case 33: // Magnesium - Alchemical Mg symbol
+                nvgBeginPath(args.vg);
+                nvgMoveTo(args.vg, -size * 0.6f, -size * 0.8f);
+                nvgLineTo(args.vg, -size * 0.6f, size * 0.8f);
+                nvgLineTo(args.vg, size * 0.6f, size * 0.8f);
+                nvgLineTo(args.vg, size * 0.6f, -size * 0.8f);
+                nvgStroke(args.vg);
+                nvgBeginPath(args.vg);
+                nvgMoveTo(args.vg, -size * 0.6f, 0);
+                nvgLineTo(args.vg, size * 0.6f, 0);
+                nvgStroke(args.vg);
+                break;
+                
+            case 34: // Platinum - Crossed circle with dots
+                nvgBeginPath(args.vg);
+                nvgCircle(args.vg, 0, 0, size * 0.6f);
+                nvgStroke(args.vg);
+                nvgBeginPath(args.vg);
+                nvgMoveTo(args.vg, -size * 0.8f, -size * 0.8f);
+                nvgLineTo(args.vg, size * 0.8f, size * 0.8f);
+                nvgStroke(args.vg);
+                nvgBeginPath(args.vg);
+                nvgMoveTo(args.vg, size * 0.8f, -size * 0.8f);
+                nvgLineTo(args.vg, -size * 0.8f, size * 0.8f);
+                nvgStroke(args.vg);
+                nvgBeginPath(args.vg);
+                nvgCircle(args.vg, 0, 0, size * 0.2f);
+                nvgFill(args.vg);
+                break;
+                
+            case 35: // Aether - Upward pointing triangle with horizontal line above
+                nvgBeginPath(args.vg);
+                nvgMoveTo(args.vg, 0, -size * 0.8f);
+                nvgLineTo(args.vg, -size * 0.7f, size * 0.4f);
+                nvgLineTo(args.vg, size * 0.7f, size * 0.4f);
+                nvgClosePath(args.vg);
+                nvgStroke(args.vg);
+                nvgBeginPath(args.vg);
+                nvgMoveTo(args.vg, -size * 0.8f, -size * 0.9f);
+                nvgLineTo(args.vg, size * 0.8f, -size * 0.9f);
+                nvgStroke(args.vg);
+                break;
+                
+            case 36: // Void - Empty circle with cross through
+                nvgBeginPath(args.vg);
+                nvgCircle(args.vg, 0, 0, size * 0.7f);
+                nvgStroke(args.vg);
+                nvgBeginPath(args.vg);
+                nvgMoveTo(args.vg, -size, 0);
+                nvgLineTo(args.vg, size, 0);
+                nvgStroke(args.vg);
+                nvgBeginPath(args.vg);
+                nvgMoveTo(args.vg, 0, -size);
+                nvgLineTo(args.vg, 0, size);
+                nvgStroke(args.vg);
+                break;
+                
+            case 37: // Chaos Star - Eight-pointed star
+                nvgBeginPath(args.vg);
+                for (int i = 0; i < 8; i++) {
+                    float angle = i * M_PI / 4.0f;
+                    nvgMoveTo(args.vg, 0, 0);
+                    nvgLineTo(args.vg, cosf(angle) * size, sinf(angle) * size);
+                }
+                nvgStroke(args.vg);
+                nvgBeginPath(args.vg);
+                nvgCircle(args.vg, 0, 0, size * 0.2f);
+                nvgFill(args.vg);
+                break;
+                
+            case 38: // Tree of Life - Stylized Kabbalah tree
+                nvgBeginPath(args.vg);
+                // Central pillar
+                nvgMoveTo(args.vg, 0, -size * 0.9f);
+                nvgLineTo(args.vg, 0, size * 0.9f);
+                nvgStroke(args.vg);
+                // Sephirot (circles)
+                for (int i = 0; i < 3; i++) {
+                    float y = -size * 0.6f + i * size * 0.6f;
+                    nvgBeginPath(args.vg);
+                    nvgCircle(args.vg, 0, y, size * 0.15f);
+                    nvgStroke(args.vg);
+                }
+                // Side connections
+                nvgBeginPath(args.vg);
+                nvgMoveTo(args.vg, -size * 0.6f, -size * 0.3f);
+                nvgLineTo(args.vg, size * 0.6f, -size * 0.3f);
+                nvgStroke(args.vg);
+                break;
+                
+            case 39: // Leviathan Cross - Cross of Satan with infinity
+                nvgBeginPath(args.vg);
+                nvgMoveTo(args.vg, 0, -size * 0.8f);
+                nvgLineTo(args.vg, 0, size * 0.4f);
+                nvgStroke(args.vg);
+                nvgBeginPath(args.vg);
+                nvgMoveTo(args.vg, -size * 0.6f, -size * 0.2f);
+                nvgLineTo(args.vg, size * 0.6f, -size * 0.2f);
+                nvgStroke(args.vg);
+                // Double cross
+                nvgBeginPath(args.vg);
+                nvgMoveTo(args.vg, -size * 0.4f, -size * 0.5f);
+                nvgLineTo(args.vg, size * 0.4f, -size * 0.5f);
+                nvgStroke(args.vg);
+                // Infinity at bottom
+                nvgBeginPath(args.vg);
+                for (float t = 0; t < 2 * M_PI; t += 0.1f) {
+                    float x = size * 0.4f * sinf(t) / (1 + cosf(t) * cosf(t));
+                    float y = size * 0.6f + size * 0.2f * sinf(t) * cosf(t) / (1 + cosf(t) * cosf(t));
+                    if (t == 0) nvgMoveTo(args.vg, x, y);
+                    else nvgLineTo(args.vg, x, y);
+                }
                 nvgStroke(args.vg);
                 break;
         }
