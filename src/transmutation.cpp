@@ -3515,10 +3515,10 @@ struct TransmutationWidget : ModuleWidget {
         setPanel(createPanel(asset::plugin(pluginInstance, "res/panels/Transmutation.svg")));
         
         // Add screws
-        addChild(createWidget<ScrewSilver>(Vec(RACK_GRID_WIDTH, 0)));
-        addChild(createWidget<ScrewSilver>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, 0)));
-        addChild(createWidget<ScrewSilver>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
-        addChild(createWidget<ScrewSilver>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
+        addChild(createWidget<ScrewBlack>(Vec(RACK_GRID_WIDTH, 0)));
+        addChild(createWidget<ScrewBlack>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, 0)));
+        addChild(createWidget<ScrewBlack>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
+        addChild(createWidget<ScrewBlack>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
         
         // High-Resolution 8x8 Matrix (center of panel) - updated position from SVG
         matrix = new HighResMatrixWidget(module);
@@ -3567,16 +3567,16 @@ struct TransmutationWidget : ModuleWidget {
         addInput(createInputCentered<STPort>(mm2px(Vec(7.5470452, 83.509323)), module, Transmutation::RESET_A_INPUT));
         addInput(createInputCentered<STPort>(mm2px(Vec(7.5470452, 67.512939)), module, Transmutation::START_A_INPUT));
         addInput(createInputCentered<STPort>(mm2px(Vec(7.5470452, 75.511131)), module, Transmutation::STOP_A_INPUT));
-        addOutput(createOutputCentered<STPort>(mm2px(Vec(19.105484, 110.7701)), module, Transmutation::CV_A_OUTPUT));
-        addOutput(createOutputCentered<STPort>(mm2px(Vec(19.105484, 119.91291)), module, Transmutation::GATE_A_OUTPUT));
+        addOutput(createOutputCentered<STPort>(mm2px(Vec(19.495214, 105.7832)), module, Transmutation::CV_A_OUTPUT));
+        addOutput(createOutputCentered<STPort>(mm2px(Vec(19.105484, 115.73187)), module, Transmutation::GATE_A_OUTPUT));
         
         // Right side I/O - Sequence B (updated positions from SVG)
         addInput(createInputCentered<STPort>(mm2px(Vec(115.02555, 95.834518)), module, Transmutation::CLOCK_B_INPUT));
         addInput(createInputCentered<STPort>(mm2px(Vec(123.6797, 83.509323)), module, Transmutation::RESET_B_INPUT));
         addInput(createInputCentered<STPort>(mm2px(Vec(123.6797, 67.512939)), module, Transmutation::START_B_INPUT));
         addInput(createInputCentered<STPort>(mm2px(Vec(123.6797, 75.511131)), module, Transmutation::STOP_B_INPUT));
-        addOutput(createOutputCentered<STPort>(mm2px(Vec(115.02555, 110.7701)), module, Transmutation::CV_B_OUTPUT));
-        addOutput(createOutputCentered<STPort>(mm2px(Vec(115.02555, 119.91291)), module, Transmutation::GATE_B_OUTPUT));
+        addOutput(createOutputCentered<STPort>(mm2px(Vec(115.02555, 105.7832)), module, Transmutation::CV_B_OUTPUT));
+        addOutput(createOutputCentered<STPort>(mm2px(Vec(115.02555, 115.73187)), module, Transmutation::GATE_B_OUTPUT));
         
         // Alchemical Symbol Buttons - updated positions from SVG
         // Top row of symbols (above matrix) - updated positions from SVG
