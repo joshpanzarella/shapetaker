@@ -3526,16 +3526,16 @@ struct TransmutationWidget : ModuleWidget {
         addChild(matrix);
         
         // Edit mode buttons (above matrix) - updated positions from SVG
-        addParam(createParamCentered<Vintage1940sButton>(mm2px(Vec(56.692692, 30.109375)), module, Transmutation::EDIT_A_PARAM));
+        addParam(createParamCentered<Vintage1940sButton>(mm2px(Vec(56.263668, 30.236675)), module, Transmutation::EDIT_A_PARAM));
         addParam(createParamCentered<Vintage1940sButton>(mm2px(Vec(74.692688, 30.109375)), module, Transmutation::EDIT_B_PARAM));
         
         // Edit mode lights (updated positions from SVG)
-        addChild(createLightCentered<TealJewelLEDSmall>(mm2px(Vec(56.692692, 30.109375)), module, Transmutation::EDIT_A_LIGHT));
+        addChild(createLightCentered<TealJewelLEDSmall>(mm2px(Vec(56.263668, 30.236675)), module, Transmutation::EDIT_A_LIGHT));
         addChild(createLightCentered<PurpleJewelLEDSmall>(mm2px(Vec(74.692688, 30.109375)), module, Transmutation::EDIT_B_LIGHT));
         
         // Left side controls - Sequence A (updated positions from SVG)
         addParam(createParamCentered<STKnobMedium>(mm2px(Vec(15.950587, 37.849998)), module, Transmutation::LENGTH_A_PARAM));
-        addParam(createParamCentered<STKnobMedium>(mm2px(Vec(15.950587, 17.386507)), module, Transmutation::INTERNAL_CLOCK_PARAM));
+        addParam(createParamCentered<STKnobMedium>(mm2px(Vec(15.950588, 18.322521)), module, Transmutation::INTERNAL_CLOCK_PARAM));
         
         // BPM Multiplier knob (positioned near BPM knob)
         addParam(createParamCentered<STKnobSmall>(mm2px(Vec(30, 17.386507)), module, Transmutation::BPM_MULTIPLIER_PARAM));
@@ -3550,7 +3550,7 @@ struct TransmutationWidget : ModuleWidget {
         addParam(createParamCentered<Vintage1940sButton>(mm2px(Vec(115.02555, 82.725296)), module, Transmutation::RESET_B_PARAM));
         
         // Sequence B mode switch (right side) - updated position from SVG  
-        addParam(createParamCentered<STSelector>(mm2px(Vec(114.66154, 16.509369)), module, Transmutation::SEQ_B_MODE_PARAM));
+        addParam(createParamCentered<STSelector>(mm2px(Vec(110.08858, 19.271444)), module, Transmutation::SEQ_B_MODE_PARAM));
         
         // Custom Display Widget - temporarily commented out for debugging
         // TransmutationDisplayWidget* display = new TransmutationDisplayWidget(module);
@@ -3563,20 +3563,20 @@ struct TransmutationWidget : ModuleWidget {
         addChild(chordPackButton);
         
         // Left side I/O - Sequence A (updated positions from SVG)
-        addInput(createInputCentered<STPort>(mm2px(Vec(15.950587, 90.831467)), module, Transmutation::CLOCK_A_INPUT));
-        addInput(createInputCentered<STPort>(mm2px(Vec(15.950587, 99.437645)), module, Transmutation::RESET_A_INPUT));
-        addInput(createInputCentered<STPort>(mm2px(Vec(7.5, 67.512939)), module, Transmutation::START_A_INPUT));
-        addInput(createInputCentered<STPort>(mm2px(Vec(7.5, 75.119118)), module, Transmutation::STOP_A_INPUT));
-        addOutput(createOutputCentered<STPort>(mm2px(Vec(15.950587, 108.04382)), module, Transmutation::CV_A_OUTPUT));
-        addOutput(createOutputCentered<STPort>(mm2px(Vec(15.950587, 116.65)), module, Transmutation::GATE_A_OUTPUT));
+        addInput(createInputCentered<STPort>(mm2px(Vec(19.495214, 95.834518)), module, Transmutation::CLOCK_A_INPUT));
+        addInput(createInputCentered<STPort>(mm2px(Vec(19.495214, 103.91)), module, Transmutation::RESET_A_INPUT));
+        addInput(createInputCentered<STPort>(mm2px(Vec(7.5470452, 67.512939)), module, Transmutation::START_A_INPUT));
+        addInput(createInputCentered<STPort>(mm2px(Vec(7.5470452, 75.511131)), module, Transmutation::STOP_A_INPUT));
+        addOutput(createOutputCentered<STPort>(mm2px(Vec(19.105484, 110.7701)), module, Transmutation::CV_A_OUTPUT));
+        addOutput(createOutputCentered<STPort>(mm2px(Vec(19.105484, 119.91291)), module, Transmutation::GATE_A_OUTPUT));
         
         // Right side I/O - Sequence B (updated positions from SVG)
-        addInput(createInputCentered<STPort>(mm2px(Vec(115.02555, 90.831467)), module, Transmutation::CLOCK_B_INPUT));
-        addInput(createInputCentered<STPort>(mm2px(Vec(115.02555, 99.437645)), module, Transmutation::RESET_B_INPUT));
-        addInput(createInputCentered<STPort>(mm2px(Vec(123.5, 67.512939)), module, Transmutation::START_B_INPUT));
-        addInput(createInputCentered<STPort>(mm2px(Vec(123.5, 74.704277)), module, Transmutation::STOP_B_INPUT));
-        addOutput(createOutputCentered<STPort>(mm2px(Vec(115.02555, 108.04382)), module, Transmutation::CV_B_OUTPUT));
-        addOutput(createOutputCentered<STPort>(mm2px(Vec(115.02555, 116.65)), module, Transmutation::GATE_B_OUTPUT));
+        addInput(createInputCentered<STPort>(mm2px(Vec(115.02555, 95.834518)), module, Transmutation::CLOCK_B_INPUT));
+        addInput(createInputCentered<STPort>(mm2px(Vec(115.02555, 103.91)), module, Transmutation::RESET_B_INPUT));
+        addInput(createInputCentered<STPort>(mm2px(Vec(123.6797, 67.512939)), module, Transmutation::START_B_INPUT));
+        addInput(createInputCentered<STPort>(mm2px(Vec(123.6797, 75.511131)), module, Transmutation::STOP_B_INPUT));
+        addOutput(createOutputCentered<STPort>(mm2px(Vec(115.02555, 110.7701)), module, Transmutation::CV_B_OUTPUT));
+        addOutput(createOutputCentered<STPort>(mm2px(Vec(115.02555, 119.91291)), module, Transmutation::GATE_B_OUTPUT));
         
         // Alchemical Symbol Buttons - updated positions from SVG
         // Top row of symbols (above matrix) - updated positions from SVG
