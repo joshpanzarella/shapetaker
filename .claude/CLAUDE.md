@@ -20,6 +20,7 @@ shapetaker/
 │   └── sequencer.cpp      # Transmutation module (dual chord sequencer)
 ├── res/                   # Resources
 │   ├── panels/           # SVG panel designs
+│   ├── buttons/         # Button graphics (vintage 1940s style)
 │   ├── knobs/           # Custom knob graphics
 │   ├── switches/        # Switch graphics
 │   ├── leds/            # LED graphics
@@ -79,7 +80,7 @@ The Transmutation module is a sophisticated dual chord sequencer with advanced a
 #### Features
 - **8x8 LED Matrix**: Main step programming interface with large, visible LEDs (10mm size, 14mm spacing)
 - **Dual Independent Sequences**: A & B with separate clocks, controls, and outputs
-- **Alchemical Symbols**: 12 symbols representing different chords, with real-time RGB lighting
+- **Alchemical Symbols**: 40 unique symbols representing different chords, with real-time RGB lighting and 12 displayed on buttons at any time
 - **Chord Pack System**: JSON-based chord libraries (Jazz, Pop, etc.) with contextual assignments
 - **Three Sequence B Modes**:
   - **Independent**: Completely separate chord pack and progression
@@ -238,9 +239,11 @@ struct ChordPackButton : Widget {
   - **Edit Glow**: Animated border during edit mode
 
 ### Alchemical Symbol System
-- **12 Unique Symbols**: Hand-drawn geometric representations
+- **40 Unique Symbols**: Hand-drawn geometric representations including classical planetary symbols and extended occult/alchemical designs
+- **Dynamic Button Mapping**: 12 symbols displayed on buttons at any time, randomized from the full 40-symbol collection when loading chord packs
+- **Symbol Collection**: Includes Sun, Moon, Mercury, Venus, Mars, Jupiter, Saturn, Earth, Fire, Water, Air, Aether, Sulfur, Salt, Antimony, Arsenic, Bismuth, Copper, Gold, Iron, Lead, Magnesium, Platinum, Silver, Tin, Zinc, Void, Chaos Star, Tree of Life, Leviathan Cross, and more
 - **RGB Lighting**: Real-time feedback based on sequence playback
-- **Symbol-to-Chord Mapping**: Each symbol represents a chord from current pack
+- **Symbol-to-Chord Mapping**: Each symbol represents a chord from current pack with intelligent randomization
 - **Visual Programming**: Click symbol → click matrix step to program
 
 ## Development History
@@ -256,7 +259,8 @@ The Transmutation module underwent extensive development phases:
 7. **Sequence B Modes**: Independent/Harmony/Lock functionality
 8. **Visual Polish**: RGB symbol lighting and improved matrix display
 9. **Layout Refinement**: Compact 26HP design with proper spacing
-10. **Final Polish**: Color-coded lighting system and professional panel design
+10. **Symbol System Expansion**: Extended from 30 to 40 alchemical symbols with improved randomization
+11. **Final Polish**: Color-coded lighting system and professional panel design
 
 ## Common Development Tasks
 
@@ -280,9 +284,11 @@ The Transmutation module underwent extensive development phases:
 - **Size Changes**: Update `MATRIX_SIZE`, `LED_SIZE`, `LED_SPACING` constants
 
 ### Symbol System Modifications
-- **New Symbols**: Add to `drawAlchemicalSymbol()` method
+- **New Symbols**: Add to `drawAlchemicalSymbol()` method with cases 0-39
+- **Symbol Range Updates**: Ensure all drawing functions use `< 40` instead of older `< 20` limits
 - **Lighting Changes**: Update RGB lighting logic in `process()`
-- **Count Changes**: Modify symbol widget creation loops and enum values
+- **Randomization**: Modify `randomizeSymbolAssignment()` for new symbol distribution
+- **Button Mapping**: Update `buttonToSymbolMapping` array to include symbols 0-39
 
 ## Testing and Debugging
 
@@ -297,6 +303,8 @@ make clean && make -j4
 - **Audio dropouts**: Check sample rate handling in processing loops
 - **UI misalignment**: Verify mm2px() conversions in widget positioning
 - **JSON loading**: Ensure chord pack files are valid JSON format
+- **Symbol Display Issues**: Ensure all drawing functions use correct symbol range (0-39), not legacy ranges
+- **Symbol Assignment Problems**: Verify `symbolToChordMapping` array covers all 40 symbols and button mappings are valid
 
 ### Performance Considerations
 - **Matrix Updates**: Only redraw when state changes

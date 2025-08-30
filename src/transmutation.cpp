@@ -5,6 +5,7 @@
 #include <random>
 #include <algorithm>
 #include <fstream>
+#include <sstream>
 
 // Forward declarations
 struct Transmutation;
@@ -1417,6 +1418,52 @@ void HighResMatrixWidget::drawLayer(const DrawArgs& args, int layer) {
     Widget::drawLayer(args, layer);
 }
 
+std::vector<std::string> wrapText(const std::string& text, float maxWidth, NVGcontext* vg) {
+    std::vector<std::string> lines;
+    if (text.empty()) return lines;
+    
+    // Measure text width
+    float textWidth = nvgTextBounds(vg, 0, 0, text.c_str(), NULL, NULL);
+    
+    // If text fits in one line, return as-is
+    if (textWidth <= maxWidth) {
+        lines.push_back(text);
+        return lines;
+    }
+    
+    // Split text into words
+    std::vector<std::string> words;
+    std::stringstream ss(text);
+    std::string word;
+    while (std::getline(ss, word, ' ')) {
+        if (!word.empty()) {
+            words.push_back(word);
+        }
+    }
+    
+    if (words.empty()) return lines;
+    
+    // Build lines that fit within maxWidth
+    std::string currentLine = words[0];
+    for (size_t i = 1; i < words.size(); i++) {
+        std::string testLine = currentLine + " " + words[i];
+        float testWidth = nvgTextBounds(vg, 0, 0, testLine.c_str(), NULL, NULL);
+        
+        if (testWidth <= maxWidth) {
+            currentLine = testLine;
+        } else {
+            lines.push_back(currentLine);
+            currentLine = words[i];
+        }
+    }
+    
+    if (!currentLine.empty()) {
+        lines.push_back(currentLine);
+    }
+    
+    return lines;
+}
+
 void HighResMatrixWidget::drawMatrix(const DrawArgs& args) {
     // Spooky 80s horror movie TV preview mode
     if (module && !module->displayChordName.empty() && module->displaySymbolId != -999) {
@@ -1520,19 +1567,23 @@ void HighResMatrixWidget::drawMatrix(const DrawArgs& args) {
         nvgRestore(args.vg);
         
         // Set up horror movie text with much more pixelated chunky font
-        nvgFontSize(args.vg, 36.0f); // Even bigger text for more pixelated look
+        nvgFontSize(args.vg, 32.0f); // Slightly smaller to fit multiple lines
         nvgFontFaceId(args.vg, APP->window->uiFont->handle);
         nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
         
-        // Text position with slow, intense VHS warping movement, closer to symbol
-        float textX = box.size.x / 2 + sin(time * 1.1f) * 0.6f + tapeWarp * 2.5f + deepWarp * 2.0f;
-        float textY = box.size.y * 0.65f + cos(time * 0.9f) * 0.4f + waveB * 1.2f + waveA * 0.8f; // More warped movement
+        // Calculate maximum text width (80% of matrix width for padding)
+        float maxTextWidth = box.size.x * 0.8f;
         
-        // Multiple chunky shadows for extreme pixelated horror effect
-        nvgFillColor(args.vg, nvgRGBA(40, 40, 50, 220)); // Dark gray shadow
-        nvgText(args.vg, textX + 3, textY + 3, module->displayChordName.c_str(), NULL);
-        nvgText(args.vg, textX + 2, textY + 4, module->displayChordName.c_str(), NULL);
-        nvgText(args.vg, textX + 4, textY + 2, module->displayChordName.c_str(), NULL);
+        // Wrap text to fit within matrix bounds
+        std::vector<std::string> textLines = wrapText(module->displayChordName, maxTextWidth, args.vg);
+        
+        // Calculate starting position for multi-line text
+        float lineHeight = 36.0f; // Space between lines
+        float totalHeight = textLines.size() * lineHeight;
+        float startY = (box.size.y * 0.65f) - (totalHeight / 2.0f);
+        
+        // Text position with slow, intense VHS warping movement, closer to symbol
+        float baseTextX = box.size.x / 2 + sin(time * 1.1f) * 0.6f + tapeWarp * 2.5f + deepWarp * 2.0f;
         
         // Main text with ultra slowly cycling Shapetaker colors
         int textR, textG, textB;
@@ -1560,28 +1611,40 @@ void HighResMatrixWidget::drawMatrix(const DrawArgs& args) {
             textB = 240 + (int)(tapeWarp * 15);
         }
         
-        nvgFillColor(args.vg, nvgRGBA(textR, textG, textB, 255));
-        nvgText(args.vg, textX, textY, module->displayChordName.c_str(), NULL);
-        
-        // Intense multi-layer glow effects with blur
-        for (int glow = 0; glow < 8; glow++) {
-            float glowRadius = (glow + 1) * 1.5f;
-            float glowAlpha = 120 / (glow + 1); // Fade out each layer
+        // Render each line of text with all effects
+        for (size_t i = 0; i < textLines.size(); i++) {
+            float textY = startY + (i * lineHeight) + cos(time * 0.9f) * 0.4f + waveB * 1.2f + waveA * 0.8f;
             
-            // Blur effect by drawing at slightly offset positions
-            for (int blur = 0; blur < 3; blur++) {
-                float blurOffset = blur * 0.5f;
-                nvgFillColor(args.vg, nvgRGBA(textR * 0.8f, textG * 0.8f, textB * 0.8f, glowAlpha));
-                nvgText(args.vg, textX + blurOffset, textY + blurOffset, module->displayChordName.c_str(), NULL);
-                nvgText(args.vg, textX - blurOffset, textY + blurOffset, module->displayChordName.c_str(), NULL);
-                nvgText(args.vg, textX + blurOffset, textY - blurOffset, module->displayChordName.c_str(), NULL);
-                nvgText(args.vg, textX - blurOffset, textY - blurOffset, module->displayChordName.c_str(), NULL);
+            // Multiple chunky shadows for extreme pixelated horror effect
+            nvgFillColor(args.vg, nvgRGBA(40, 40, 50, 220)); // Dark gray shadow
+            nvgText(args.vg, baseTextX + 3, textY + 3, textLines[i].c_str(), NULL);
+            nvgText(args.vg, baseTextX + 2, textY + 4, textLines[i].c_str(), NULL);
+            nvgText(args.vg, baseTextX + 4, textY + 2, textLines[i].c_str(), NULL);
+            
+            // Main text
+            nvgFillColor(args.vg, nvgRGBA(textR, textG, textB, 255));
+            nvgText(args.vg, baseTextX, textY, textLines[i].c_str(), NULL);
+            
+            // Intense multi-layer glow effects with blur
+            for (int glow = 0; glow < 8; glow++) {
+                float glowRadius = (glow + 1) * 1.5f;
+                float glowAlpha = 120 / (glow + 1); // Fade out each layer
+                
+                // Blur effect by drawing at slightly offset positions
+                for (int blur = 0; blur < 3; blur++) {
+                    float blurOffset = blur * 0.5f;
+                    nvgFillColor(args.vg, nvgRGBA(textR * 0.8f, textG * 0.8f, textB * 0.8f, glowAlpha));
+                    nvgText(args.vg, baseTextX + blurOffset, textY + blurOffset, textLines[i].c_str(), NULL);
+                    nvgText(args.vg, baseTextX - blurOffset, textY + blurOffset, textLines[i].c_str(), NULL);
+                    nvgText(args.vg, baseTextX + blurOffset, textY - blurOffset, textLines[i].c_str(), NULL);
+                    nvgText(args.vg, baseTextX - blurOffset, textY - blurOffset, textLines[i].c_str(), NULL);
+                }
             }
+            
+            // Extra intense core glow with VHS warping
+            nvgFillColor(args.vg, nvgRGBA(255, 255, 255, 80 + (int)(waveA * 40)));
+            nvgText(args.vg, baseTextX, textY, textLines[i].c_str(), NULL);
         }
-        
-        // Extra intense core glow with VHS warping
-        nvgFillColor(args.vg, nvgRGBA(255, 255, 255, 80 + (int)(waveA * 40)));
-        nvgText(args.vg, textX, textY, module->displayChordName.c_str(), NULL);
         
         nvgRestore(args.vg);
         return;
@@ -3844,56 +3907,6 @@ struct AlchemicalSymbolWidget : Widget {
     }
 };
 
-struct ChordPackButton : Widget {
-    Transmutation* module;
-    
-    ChordPackButton(Transmutation* module) : module(module) {
-        box.size = Vec(30, 15);
-    }
-    
-    void draw(const DrawArgs& args) override {
-        // Draw button background
-        nvgBeginPath(args.vg);
-        nvgRoundedRect(args.vg, 0, 0, box.size.x, box.size.y, 3);
-        nvgFillColor(args.vg, nvgRGBA(60, 60, 80, 180));
-        nvgFill(args.vg);
-        nvgStrokeColor(args.vg, nvgRGBA(120, 120, 140, 255));
-        nvgStrokeWidth(args.vg, 1.0f);
-        nvgStroke(args.vg);
-        
-        // Draw text
-        nvgFontSize(args.vg, 8);
-        nvgFontFaceId(args.vg, APP->window->uiFont->handle);
-        nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-        nvgFillColor(args.vg, nvgRGBA(255, 255, 255, 255));
-        nvgText(args.vg, box.size.x/2, box.size.y/2, "LOAD", NULL);
-        
-        // Show chord pack name below button if loaded
-        if (module && !module->currentChordPack.name.empty()) {
-            nvgFontSize(args.vg, 6);
-            nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_TOP);
-            nvgFillColor(args.vg, nvgRGBA(200, 200, 255, 200));
-            nvgText(args.vg, box.size.x/2, box.size.y + 2, module->currentChordPack.name.c_str(), NULL);
-        }
-    }
-    
-    void onButton(const event::Button& e) override {
-        if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_LEFT && module) {
-            // For now, cycle through example chord packs
-            static int packIndex = 0;
-            std::vector<std::string> packFiles = {
-                asset::plugin(pluginInstance, "chord_packs/80s_pop_d_sharp.json"),
-                asset::plugin(pluginInstance, "chord_packs/jazz_standards_bb.json")
-            };
-            
-            if (module->loadChordPackFromFile(packFiles[packIndex])) {
-                packIndex = (packIndex + 1) % packFiles.size();
-            }
-            e.consume(this);
-        }
-        Widget::onButton(e);
-    }
-};
 
 // Custom Display Widget - shows BPM, sequence status, steps, and mode information
 struct TransmutationDisplayWidget : TransparentWidget {
@@ -4006,6 +4019,71 @@ struct TransmutationDisplayWidget : TransparentWidget {
 struct TransmutationWidget : ModuleWidget {
     HighResMatrixWidget* matrix;
     
+    void appendContextMenu(Menu* menu) override {
+        Transmutation* module = dynamic_cast<Transmutation*>(this->module);
+        if (!module) return;
+        
+        menu->addChild(new MenuSeparator);
+        menu->addChild(createMenuLabel("Chord Packs"));
+        
+        // Get list of available chord pack files
+        std::string chordPackDir = asset::plugin(pluginInstance, "chord_packs");
+        std::vector<std::string> chordPackFiles;
+        std::vector<std::string> chordPackNames;
+        
+        // Add the two known chord packs
+        chordPackFiles.push_back("80s_pop_d_sharp.json");
+        chordPackNames.push_back("80s Pop D#");
+        
+        chordPackFiles.push_back("jazz_standards_bb.json");
+        chordPackNames.push_back("Jazz Standards Bb");
+        
+        // Add default chord pack option
+        chordPackFiles.push_back("");  // Empty string for default
+        chordPackNames.push_back("Basic Major");
+        
+        for (size_t i = 0; i < chordPackFiles.size(); i++) {
+            std::string filename = chordPackFiles[i];
+            std::string packname = chordPackNames[i];
+            std::string rightText = (module->currentChordPack.name == packname) ? "✓" : "";
+            
+            INFO("Creating menu item: %s (current pack: %s)", packname.c_str(), module->currentChordPack.name.c_str());
+            
+            menu->addChild(createMenuItem(packname, rightText,
+                [module, filename, packname]() {
+                    if (!module) {
+                        WARN("Module is null in chord pack menu action");
+                        return;
+                    }
+                    
+                    INFO("Chord pack menu action triggered: %s", packname.c_str());
+                    
+                    if (filename.empty()) {
+                        // Load default chord pack
+                        module->loadDefaultChordPack();
+                        // Show notification on spooky screen for 500ms
+                        module->displayChordName = packname + " LOADED";
+                        module->displaySymbolId = -1; // Use REST symbol ID for notification
+                        module->symbolPreviewTimer = 0.5f; // 500ms display
+                        INFO("Loaded default chord pack and randomized symbols");
+                    } else {
+                        // Load chord pack from file
+                        std::string fullPath = asset::plugin(pluginInstance, "chord_packs/" + filename);
+                        if (module->loadChordPackFromFile(fullPath)) {
+                            // Success - chord pack loaded and symbols randomized
+                            // Show notification on spooky screen for 500ms
+                            module->displayChordName = packname + " LOADED";
+                            module->displaySymbolId = -1; // Use REST symbol ID for notification
+                            module->symbolPreviewTimer = 0.5f; // 500ms display
+                            INFO("Loaded chord pack: %s", packname.c_str());
+                        } else {
+                            WARN("Failed to load chord pack: %s", fullPath.c_str());
+                        }
+                    }
+                }));
+        }
+    }
+    
     TransmutationWidget(Transmutation* module) {
         setModule(module);
         
@@ -4054,11 +4132,6 @@ struct TransmutationWidget : ModuleWidget {
         // TransmutationDisplayWidget* display = new TransmutationDisplayWidget(module);
         // display->box.pos = mm2px(Vec(10, 115)); // Position in lower left area
         // addChild(display);
-        
-        // Chord pack loader button (custom widget) - centered on new panel
-        ChordPackButton* chordPackButton = new ChordPackButton(module);
-        chordPackButton->box.pos = mm2px(Vec(48.659, 12)); // Match SVG position
-        addChild(chordPackButton);
         
         // Left side I/O - Sequence A (updated positions from SVG)
         addInput(createInputCentered<STPort>(mm2px(Vec(19.495214, 95.834518)), module, Transmutation::CLOCK_A_INPUT));
