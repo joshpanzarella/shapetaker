@@ -3564,7 +3564,7 @@ struct TransmutationWidget : ModuleWidget {
         
         // Left side I/O - Sequence A (updated positions from SVG)
         addInput(createInputCentered<STPort>(mm2px(Vec(19.495214, 95.834518)), module, Transmutation::CLOCK_A_INPUT));
-        addInput(createInputCentered<STPort>(mm2px(Vec(19.495214, 103.91)), module, Transmutation::RESET_A_INPUT));
+        addInput(createInputCentered<STPort>(mm2px(Vec(7.5470452, 83.509323)), module, Transmutation::RESET_A_INPUT));
         addInput(createInputCentered<STPort>(mm2px(Vec(7.5470452, 67.512939)), module, Transmutation::START_A_INPUT));
         addInput(createInputCentered<STPort>(mm2px(Vec(7.5470452, 75.511131)), module, Transmutation::STOP_A_INPUT));
         addOutput(createOutputCentered<STPort>(mm2px(Vec(19.105484, 110.7701)), module, Transmutation::CV_A_OUTPUT));
@@ -3572,7 +3572,7 @@ struct TransmutationWidget : ModuleWidget {
         
         // Right side I/O - Sequence B (updated positions from SVG)
         addInput(createInputCentered<STPort>(mm2px(Vec(115.02555, 95.834518)), module, Transmutation::CLOCK_B_INPUT));
-        addInput(createInputCentered<STPort>(mm2px(Vec(115.02555, 103.91)), module, Transmutation::RESET_B_INPUT));
+        addInput(createInputCentered<STPort>(mm2px(Vec(123.6797, 83.509323)), module, Transmutation::RESET_B_INPUT));
         addInput(createInputCentered<STPort>(mm2px(Vec(123.6797, 67.512939)), module, Transmutation::START_B_INPUT));
         addInput(createInputCentered<STPort>(mm2px(Vec(123.6797, 75.511131)), module, Transmutation::STOP_B_INPUT));
         addOutput(createOutputCentered<STPort>(mm2px(Vec(115.02555, 110.7701)), module, Transmutation::CV_B_OUTPUT));

@@ -38,7 +38,7 @@
      fill="#1a1a1a"
      stroke="#333333"
      stroke-width="0.1"
-     id="rect1" />
+     id="main_panel" />
   <ellipse
      cx="98.721703"
      cy="26.886547"
@@ -46,7 +46,7 @@
      stroke="#444444"
      stroke-width="0.180723"
      opacity="0"
-     id="seq_a_length-9-3"
+     id="seq_b_play_led"
      style="display:inline;opacity:1"
      rx="2.4096384"
      ry="2.4096386" />
@@ -57,7 +57,7 @@
      stroke="#444444"
      stroke-width="0.180723"
      opacity="0"
-     id="seq_a_length-9"
+     id="seq_a_play_led"
      style="display:inline;opacity:1"
      rx="2.4096384"
      ry="2.4096386" />
@@ -273,7 +273,7 @@
      stroke="#444444"
      stroke-width="0.3"
      opacity="0"
-     id="circle20"
+     id="seq_a_stop_btn"
      style="display:inline;opacity:1" />
   <circle
      cx="15.950587"
@@ -283,7 +283,7 @@
      stroke="#444444"
      stroke-width="0.3"
      opacity="0"
-     id="circle21"
+     id="seq_a_reset_btn"
      style="display:inline;opacity:1" />
   <!-- I/O A -->
   <circle
@@ -294,7 +294,7 @@
      stroke="#444444"
      stroke-width="0.3"
      opacity="0"
-     id="circle23"
+     id="seq_a_clk_in"
      style="display:inline;opacity:1" />
   <circle
      cx="7.5470452"
@@ -304,7 +304,7 @@
      stroke="#444444"
      stroke-width="0.3"
      opacity="0"
-     id="circle24-2"
+     id="seq_a_play_in"
      style="display:inline;opacity:1" />
   <circle
      cx="7.5470452"
@@ -314,7 +314,7 @@
      stroke="#444444"
      stroke-width="0.3"
      opacity="0"
-     id="circle24-2-0"
+     id="seq_a_stop_in"
      style="display:inline;opacity:1" />
   <circle
      cx="123.6797"
@@ -324,7 +324,7 @@
      stroke="#444444"
      stroke-width="0.3"
      opacity="0"
-     id="circle24-2-0-7"
+     id="seq_b_stop_in"
      style="display:inline;opacity:1" />
   <circle
      cx="19.105484"
@@ -334,7 +334,7 @@
      stroke="#444444"
      stroke-width="0.3"
      opacity="0"
-     id="circle25"
+     id="seq_a_cv_out"
      style="display:inline;opacity:1" />
   <circle
      cx="19.105484"
@@ -344,7 +344,7 @@
      stroke="#444444"
      stroke-width="0.3"
      opacity="0"
-     id="circle26"
+     id="seq_a_gate_out"
      style="display:inline;opacity:1" />
   <!-- Right Side - Sequence B -->
   <!-- Length B knob -->
@@ -378,7 +378,7 @@
      stroke="#444444"
      stroke-width="0.3"
      opacity="0"
-     id="circle32"
+     id="seq_b_play_btn"
      style="display:inline;opacity:1" />
   <circle
      cx="115.02555"
@@ -388,7 +388,7 @@
      stroke="#444444"
      stroke-width="0.3"
      opacity="0"
-     id="circle33"
+     id="seq_b_stop_btn"
      style="display:inline;opacity:1" />
   <circle
      cx="115.02555"
@@ -398,7 +398,7 @@
      stroke="#444444"
      stroke-width="0.3"
      opacity="0"
-     id="circle34"
+     id="seq_b_reset_btn"
      style="display:inline;opacity:1" />
   <!-- Mode switch B -->
   <rect
@@ -421,7 +421,7 @@
      stroke="#444444"
      stroke-width="0.3"
      opacity="0"
-     id="circle37"
+     id="seq_b_clk_in"
      style="display:inline;opacity:1" />
   <circle
      cx="115.02555"
@@ -431,7 +431,7 @@
      stroke="#444444"
      stroke-width="0.3"
      opacity="0"
-     id="circle39"
+     id="seq_b_cv_out"
      style="display:inline;opacity:1" />
   <circle
      cx="115.02555"
@@ -441,7 +441,7 @@
      stroke="#444444"
      stroke-width="0.3"
      opacity="0"
-     id="circle40"
+     id="seq_b_gate_out"
      style="display:inline;opacity:1" />
   <!-- Clock control (center bottom) -->
   <circle
@@ -618,7 +618,7 @@
      stroke="#444444"
      stroke-width="0.3"
      opacity="0"
-     id="circle24-2-0-4"
+     id="seq_a_reset_in"
      style="display:inline;opacity:1" />
   <circle
      cx="123.6797"
@@ -628,7 +628,7 @@
      stroke="#444444"
      stroke-width="0.3"
      opacity="0"
-     id="circle24-2-9"
+     id="seq_b_play_in"
      style="display:inline;opacity:1;stroke:#848484;stroke-opacity:1" />
   <circle
      cx="123.6797"
@@ -638,7 +638,7 @@
      stroke="#444444"
      stroke-width="0.3"
      opacity="0"
-     id="circle24-2-0-7-9"
+     id="seq_b_reset_in"
      style="display:inline;opacity:1" />
   <path
      style="display:none;opacity:1;fill:#00ffb4;fill-opacity:1;fill-rule:evenodd;stroke:#00ffb4;stroke-width:0.325779;stroke-opacity:1"
