@@ -1,4 +1,4 @@
-#include "AlchemySymbols.hpp"
+#include "alchemySymbols.hpp"
 #include <cmath>
 
 namespace st {

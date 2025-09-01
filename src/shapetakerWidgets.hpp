@@ -1,6 +1,6 @@
 #pragma once
 #include "plugin.hpp"
-#include "ShapetakerUtils.hpp"
+#include "shapetakerUtils.hpp"
 
 namespace shapetaker {
 

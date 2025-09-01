@@ -1,6 +1,6 @@
 #include "plugin.hpp"
-#include "SidechainDetector.hpp"
-#include "DistortionEngine.hpp"
+#include "sidechainDetector.hpp"
+#include "distortionEngine.hpp"
 #include <dsp/digital.hpp>
 #include <dsp/filter.hpp>
 

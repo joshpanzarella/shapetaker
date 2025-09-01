@@ -1,5 +1,5 @@
 #include "plugin.hpp"
-#include "AlchemySymbols.hpp"
+#include "alchemySymbols.hpp"
 #include <vector>
 #include <array>
 #include <string>
@@ -1682,11 +1682,17 @@ void HighResMatrixWidget::drawMatrix(const DrawArgs& args) {
             // Soft single shadow
             nvgFillColor(args.vg, nvgRGBA(0, 0, 0, 140));
             nvgText(args.vg, baseTextX + 1.5f, textY + 1.5f, textLines[i].c_str(), NULL);
+            // Fuzzy halo (low-alpha offsets) for a softer, vintage CRT look
+            NVGcolor inkFuzz = nvgRGBA(232, 224, 200, 110);
+            const float fx[8] = {  0.9f, -0.9f,  0.9f, -0.9f,  0.6f, -0.6f,  0.0f,  0.0f };
+            const float fy[8] = {  0.9f,  0.9f, -0.9f, -0.9f,  0.0f,  0.0f,  0.6f, -0.6f };
+            for (int k = 0; k < 8; ++k) {
+                nvgFillColor(args.vg, inkFuzz);
+                nvgText(args.vg, baseTextX + fx[k], textY + fy[k], textLines[i].c_str(), NULL);
+            }
             // Warm ink main fill
             nvgFillColor(args.vg, nvgRGBA(232, 224, 200, 240));
             nvgText(args.vg, baseTextX, textY, textLines[i].c_str(), NULL);
-            
-            // No neon glow; keep vintage ink look
         }
         
         nvgRestore(args.vg);
@@ -3095,25 +3101,16 @@ void Matrix8x8Widget::drawMatrix(const DrawArgs& args) {
             textB = 240 + (int)(tapeWarp * 15);
         }
         
-        nvgFillColor(args.vg, nvgRGBA(textR, textG, textB, 255));
+        // Fuzzy halo (low-alpha offsets) for a softer, vintage CRT look
+        NVGcolor inkFuzz = nvgRGBA(232, 224, 200, 110);
+        const float fx2[8] = {  0.9f, -0.9f,  0.9f, -0.9f,  0.6f, -0.6f,  0.0f,  0.0f };
+        const float fy2[8] = {  0.9f,  0.9f, -0.9f, -0.9f,  0.0f,  0.0f,  0.6f, -0.6f };
+        for (int k = 0; k < 8; ++k) {
+            nvgFillColor(args.vg, inkFuzz);
+            nvgText(args.vg, textX + fx2[k], textY + fy2[k], module->displayChordName.c_str(), NULL);
+        }
         // Warm ink
         nvgFillColor(args.vg, nvgRGBA(232, 224, 200, 240));
-        nvgText(args.vg, textX, textY, module->displayChordName.c_str(), NULL);
-        
-        // Intense multi-layer glow effects with blur
-        for (int glow = 0; glow < 8; glow++) {
-            float glowAlpha = 120 / (glow + 1); // Fade out each layer
-            
-            // Blur effect by drawing at slightly offset positions
-            for (int blur = 0; blur < 3; blur++) {
-                float blurOffset = blur * 0.5f;
-                nvgFillColor(args.vg, nvgRGBA(textR * 0.8f, textG * 0.8f, textB * 0.8f, glowAlpha));
-                // Suppress neon glow copies for vintage look
-            }
-        }
-        
-        // Extra intense core glow with VHS warping
-        nvgFillColor(args.vg, nvgRGBA(255, 255, 255, 80 + (int)(waveA * 40)));
         nvgText(args.vg, textX, textY, module->displayChordName.c_str(), NULL);
         
         nvgRestore(args.vg);

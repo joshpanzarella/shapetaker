@@ -7,8 +7,8 @@ using namespace rack;
 extern Plugin* pluginInstance;
 
 // Include utility headers for common functionality
-#include "ShapetakerUtils.hpp"
-#include "ShapetakerWidgets.hpp"
+#include "shapetakerUtils.hpp"
+#include "shapetakerWidgets.hpp"
 
 extern Model* modelClairaudient;
 extern Model* modelChiaroscuro;
