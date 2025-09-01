@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <!-- Chrome bezel outer -->
+    <radialGradient id="rotaryBezel" cx="0.25" cy="0.25" r="0.9" gradientUnits="objectBoundingBox">
+      <stop offset="0%" stop-color="#F0F0F4"/>
+      <stop offset="15%" stop-color="#E8E8F0"/>
+      <stop offset="35%" stop-color="#C8C8D0"/>
+      <stop offset="60%" stop-color="#A0A0A8"/>
+      <stop offset="80%" stop-color="#808088"/>
+      <stop offset="100%" stop-color="#606068"/>
+    </radialGradient>
+    
+    <!-- Knurled knob -->
+    <radialGradient id="rotaryKnob" cx="0.3" cy="0.3" r="0.8" gradientUnits="objectBoundingBox">
+      <stop offset="0%" stop-color="#4A4A4E"/>
+      <stop offset="30%" stop-color="#3A3A3E"/>
+      <stop offset="70%" stop-color="#2A2A2E"/>
+      <stop offset="100%" stop-color="#1A1A1E"/>
+    </radialGradient>
+    
+    <!-- Knob highlight -->
+    <radialGradient id="knobHighlight" cx="0.2" cy="0.2" r="0.6" gradientUnits="objectBoundingBox">
+      <stop offset="0%" stop-color="rgba(255,255,255,0.4)"/>
+      <stop offset="50%" stop-color="rgba(255,255,255,0.2)"/>
+      <stop offset="100%" stop-color="rgba(255,255,255,0)"/>
+    </radialGradient>
+    
+    <!-- Indicator dot -->
+    <radialGradient id="indicatorDot" cx="0.3" cy="0.3" r="0.8" gradientUnits="objectBoundingBox">
+      <stop offset="0%" stop-color="#F4F4F8"/>
+      <stop offset="50%" stop-color="#E0E0E8"/>
+      <stop offset="100%" stop-color="#C0C0C8"/>
+    </radialGradient>
+    
+    <!-- Drop shadow -->
+    <filter id="dropShadow" x="-50%" y="-50%" width="200%" height="200%">
+      <feDropShadow dx="1.5" dy="1.5" stdDeviation="2" flood-color="#000000" flood-opacity="0.4"/>
+    </filter>
+    
+    <!-- Knurling pattern -->
+    <pattern id="knurling" patternUnits="userSpaceOnUse" width="3" height="3">
+      <rect width="3" height="3" fill="rgba(255,255,255,0.08)"/>
+      <circle cx="1.5" cy="1.5" r="0.3" fill="rgba(0,0,0,0.15)"/>
+    </pattern>
+  </defs>
+  
+  <!-- Outer drop shadow -->
+  <circle cx="12" cy="12" r="11.5" fill="rgba(0,0,0,0.3)" filter="url(#dropShadow)"/>
+  
+  <!-- Chrome bezel -->
+  <circle cx="12" cy="12" r="11" fill="url(#rotaryBezel)" stroke="#4A4A52" stroke-width="0.8"/>
+  
+  <!-- Inner chrome ring -->
+  <circle cx="12" cy="12" r="9.5" fill="#B0B0B8" stroke="#8A8A92" stroke-width="0.5"/>
+  
+  <!-- Knurled knob body -->
+  <circle cx="12" cy="12" r="8.5" fill="url(#rotaryKnob)"/>
+  
+  <!-- Knurling texture -->
+  <circle cx="12" cy="12" r="8.5" fill="url(#knurling)"/>
+  
+  <!-- Knob highlight -->
+  <circle cx="10" cy="10" r="5" fill="url(#knobHighlight)"/>
+  
+  <!-- Knurled edge detail -->
+  <g stroke="rgba(255,255,255,0.1)" stroke-width="0.3" fill="none">
+    <circle cx="12" cy="12" r="8.5"/>
+    <circle cx="12" cy="12" r="7.8"/>
+  </g>
+  
+  <!-- Position marks around edge -->
+  <g stroke="#D0D0D8" stroke-width="0.8" fill="none">
+    <line x1="12" y1="1.5" x2="12" y2="3.5"/>
+    <line x1="18.36" y1="3.64" x2="17.54" y2="4.46"/>
+    <line x1="22.5" y1="12" x2="20.5" y2="12"/>
+    <line x1="18.36" y1="20.36" x2="17.54" y2="19.54"/>
+    <line x1="12" y1="22.5" x2="12" y2="20.5"/>
+    <line x1="5.64" y1="20.36" x2="6.46" y2="19.54"/>
+    <line x1="1.5" y1="12" x2="3.5" y2="12"/>
+    <line x1="5.64" y1="3.64" x2="6.46" y2="4.46"/>
+  </g>
+  
+  <!-- Center hub -->
+  <circle cx="12" cy="12" r="2.5" fill="#6A6A72" stroke="#4A4A52" stroke-width="0.4"/>
+  
+  <!-- Indicator pointer/dot (pointing up) -->
+  <circle cx="12" cy="6" r="1.2" fill="url(#indicatorDot)" stroke="#A0A0A8" stroke-width="0.3"/>
+  
+  <!-- Center screw detail -->
+  <circle cx="12" cy="12" r="1.2" fill="#4A4A52"/>
+  <line x1="10.5" y1="12" x2="13.5" y2="12" stroke="rgba(255,255,255,0.3)" stroke-width="0.2"/>
+  <line x1="12" y1="10.5" x2="12" y2="13.5" stroke="rgba(255,255,255,0.3)" stroke-width="0.2"/>
+</svg>

@@ -4006,108 +4006,149 @@ struct TransmutationDisplayWidget : TransparentWidget {
 
 struct TransmutationWidget : ModuleWidget {
     HighResMatrixWidget* matrix;
+    // Draw background image behind panel and widgets without holding persistent window resources
+    void draw(const DrawArgs& args) override {
+        // Draw panel background texture first
+        std::shared_ptr<Image> bg = APP->window->loadImage(asset::plugin(pluginInstance, "res/panels/vcv-panel-background.png"));
+        if (bg) {
+            NVGpaint paint = nvgImagePattern(args.vg, 0.f, 0.f, box.size.x, box.size.y, 0.f, bg->handle, 1.0f);
+            nvgBeginPath(args.vg);
+            nvgRect(args.vg, 0.f, 0.f, box.size.x, box.size.y);
+            nvgFillPaint(args.vg, paint);
+            nvgFill(args.vg);
+        }
+        // Then draw the panel SVG and all child widgets/params/ports
+        ModuleWidget::draw(args);
+    }
     
     void appendContextMenu(Menu* menu) override {
         Transmutation* module = dynamic_cast<Transmutation*>(this->module);
         if (!module) return;
-        
+
+        // Chord packs submenu
         menu->addChild(new MenuSeparator);
-        menu->addChild(createMenuLabel("Chord Packs"));
-        
-        // Scan chord_packs directory for key folders
-        std::string chordPackDir = asset::plugin(pluginInstance, "chord_packs");
-        std::vector<std::string> keyFolders;
-        
-        // Get all subdirectories (keys)
-        if (system::isDirectory(chordPackDir)) {
-            std::vector<std::string> entries = system::getEntries(chordPackDir);
-            for (const std::string& entry : entries) {
-                std::string fullPath = system::join(chordPackDir, entry);
-                if (system::isDirectory(fullPath)) {
-                    keyFolders.push_back(entry);
-                }
-            }
-            std::sort(keyFolders.begin(), keyFolders.end());
-        }
-        
-        // Add default chord pack first
-        std::string rightText = (module->currentChordPack.name == "Basic Major") ? "✓" : "";
-        menu->addChild(createMenuItem("Basic Major", rightText, [module]() {
-            if (module) {
+        menu->addChild(createSubmenuItem("Chord Packs", "", [module](Menu* chordMenu) {
+            // Helper to get a friendly display name from a JSON pack, falling back to filename stem
+            auto packDisplayName = [](const std::string& packPath, const std::string& fallbackStem) {
+                std::string display = fallbackStem;
+                try {
+                    std::string content;
+                    if (system::exists(packPath)) {
+                        std::string data;
+                        std::ifstream f(packPath);
+                        if (f) {
+                            std::stringstream ss; ss << f.rdbuf();
+                            content = ss.str();
+                        }
+                    }
+                    if (!content.empty()) {
+                        json_error_t error;
+                        json_t* rootJ = json_loads(content.c_str(), 0, &error);
+                        if (rootJ) {
+                            json_t* nameJ = json_object_get(rootJ, "name");
+                            if (nameJ && json_is_string(nameJ)) {
+                                display = json_string_value(nameJ);
+                            }
+                            json_decref(rootJ);
+                        }
+                    }
+                } catch (...) {}
+                return display;
+            };
+
+            // Root chord pack directory inside plugin assets
+            std::string chordPackDir = asset::plugin(pluginInstance, "chord_packs");
+
+            // Default pack at top
+            std::string rightText = (module->currentChordPack.name == "Basic Major") ? "✓" : "";
+            chordMenu->addChild(createMenuItem("Basic Major", rightText, [module]() {
                 module->loadDefaultChordPack();
                 module->randomizeSymbolAssignment();
-                // Show notification
                 module->displayChordName = "Basic Major LOADED";
                 module->displaySymbolId = -1;
                 module->symbolPreviewTimer = 0.5f;
+            }));
+
+            if (!system::isDirectory(chordPackDir)) {
+                chordMenu->addChild(createMenuLabel("No chord_packs directory found"));
+                return;
             }
-        }));
-        
-        if (!keyFolders.empty()) {
-            menu->addChild(new MenuSeparator);
-        }
-        
-        // Create submenus for each key
-        for (const std::string& keyFolder : keyFolders) {
-            std::string keyPath = system::join(chordPackDir, keyFolder);
-            std::vector<std::string> packFiles;
-            
-            // Get JSON files in this key folder
-            if (system::isDirectory(keyPath)) {
-                std::vector<std::string> files = system::getEntries(keyPath);
-                for (const std::string& file : files) {
-                    if (system::getExtension(file) == ".json") {
-                        packFiles.push_back(file);
-                    }
+
+            // Helpers for clean labels
+            auto basename = [](const std::string& path) {
+                size_t pos = path.find_last_of("/\\");
+                return (pos == std::string::npos) ? path : path.substr(pos + 1);
+            };
+            auto stem = [](const std::string& filename) {
+                size_t slash = filename.find_last_of("/\\");
+                std::string name = (slash == std::string::npos) ? filename : filename.substr(slash + 1);
+                size_t dot = name.find_last_of('.');
+                return (dot == std::string::npos) ? name : name.substr(0, dot);
+            };
+
+            // Collect key directories as absolute paths, sort by base name
+            std::vector<std::string> keyDirs;
+            for (const std::string& entry : system::getEntries(chordPackDir)) {
+                std::string fullPath = entry;
+                if (system::isDirectory(fullPath)) keyDirs.push_back(fullPath);
+            }
+            std::sort(keyDirs.begin(), keyDirs.end(), [&](const std::string& a, const std::string& b) {
+                return basename(a) < basename(b);
+            });
+
+            if (!keyDirs.empty()) chordMenu->addChild(new MenuSeparator);
+
+            // Build submenus per key with friendly names, no absolute paths
+            for (const std::string& keyPath : keyDirs) {
+                if (!system::isDirectory(keyPath)) continue;
+                std::string keyLabel = basename(keyPath);
+
+                // Gather pack files
+                std::vector<std::string> packFiles;
+                for (const std::string& fileEntry : system::getEntries(keyPath)) {
+                    if (system::getExtension(fileEntry) == ".json") packFiles.push_back(fileEntry);
                 }
-                std::sort(packFiles.begin(), packFiles.end());
-            }
-            
-            if (!packFiles.empty()) {
-                // Create submenu for this key
-                menu->addChild(createSubmenuItem(keyFolder + " ►", "", [module, keyPath, keyFolder, packFiles](Menu* keySubmenu) {
-                    keySubmenu->addChild(createMenuLabel("Key: " + keyFolder));
+                std::sort(packFiles.begin(), packFiles.end(), [&](const std::string& a, const std::string& b){
+                    return stem(a) < stem(b);
+                });
+                if (packFiles.empty()) continue;
+
+                chordMenu->addChild(createSubmenuItem(keyLabel, "", [module, keyPath, keyLabel, packFiles, packDisplayName, stem](Menu* keySubmenu) {
+                    keySubmenu->addChild(createMenuLabel("Key: " + keyLabel));
                     keySubmenu->addChild(new MenuSeparator);
-                    
+
                     for (const std::string& packFile : packFiles) {
-                        std::string packPath = system::join(keyPath, packFile);
-                        std::string packName = system::getStem(packFile); // Remove .json extension
-                        
-                        // Create display name
-                        std::string displayName = packName;
-                        
-                        // Check if this pack is currently selected
-                        std::string rightText = "";
+                        std::string packPath = packFile; // absolute path
+                        std::string packStem = stem(packFile);
+                        std::string displayName = packDisplayName(packPath, packStem);
+
+                        std::string check = "";
                         if (module) {
-                            // Simple name match check
-                            if (module->currentChordPack.name.find(packName) != std::string::npos ||
-                                module->currentChordPack.name.find(keyFolder) != std::string::npos) {
-                                rightText = "✓";
+                            if (module->currentChordPack.name == displayName ||
+                                module->currentChordPack.name.find(packStem) != std::string::npos) {
+                                check = "✓";
                             }
                         }
-                        
-                        keySubmenu->addChild(createMenuItem(displayName, rightText, [module, packPath, displayName, keyFolder]() {
-                            if (module) {
-                                if (module->loadChordPackFromFile(packPath)) {
-                                    module->randomizeSymbolAssignment();
-                                    // Show notification
-                                    module->displayChordName = keyFolder + ": " + displayName + " LOADED";
-                                    module->displaySymbolId = -1;
-                                    module->symbolPreviewTimer = 0.5f;
-                                    INFO("Loaded chord pack: %s", displayName.c_str());
-                                } else {
-                                    // Error loading chord pack
-                                    module->displayChordName = "LOAD ERROR";
-                                    module->displaySymbolId = -1;
-                                    module->symbolPreviewTimer = 0.5f;
-                                    WARN("Failed to load chord pack: %s", packPath.c_str());
-                                }
+
+                        keySubmenu->addChild(createMenuItem(displayName, check, [module, packPath, displayName]() {
+                            if (!module) return;
+                            if (module->loadChordPackFromFile(packPath)) {
+                                module->randomizeSymbolAssignment();
+                                module->displayChordName = displayName + " LOADED";
+                                module->displaySymbolId = -1;
+                                module->symbolPreviewTimer = 0.5f;
+                                INFO("Loaded chord pack: %s", displayName.c_str());
+                            } else {
+                                module->displayChordName = "LOAD ERROR";
+                                module->displaySymbolId = -1;
+                                module->symbolPreviewTimer = 0.5f;
+                                WARN("Failed to load chord pack: %s", packPath.c_str());
                             }
                         }));
                     }
                 }));
             }
-        }
+        }));
     }
     
     TransmutationWidget(Transmutation* module) {
@@ -4122,14 +4163,16 @@ struct TransmutationWidget : ModuleWidget {
         addChild(createWidget<ScrewBlack>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
         addChild(createWidget<ScrewBlack>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
         
+        // Background drawn in draw()
+
         // High-Resolution 8x8 Matrix (center of panel) - updated position from SVG
         matrix = new HighResMatrixWidget(module);
         matrix->box.pos = Vec(mm2px(27.143473), mm2px(38.432907)); // Updated position from SVG main_screen
         addChild(matrix);
         
         // Edit mode buttons (above matrix) - updated positions from SVG
-        addParam(createParamCentered<Vintage1940sButton>(mm2px(Vec(55.973103, 16.805513)), module, Transmutation::EDIT_A_PARAM));
-        addParam(createParamCentered<Vintage1940sButton>(mm2px(Vec(74.402115, 16.678213)), module, Transmutation::EDIT_B_PARAM));
+        addParam(createParamCentered<ShapetakerVintageMomentary>(mm2px(Vec(55.973103, 16.805513)), module, Transmutation::EDIT_A_PARAM));
+        addParam(createParamCentered<ShapetakerVintageMomentary>(mm2px(Vec(74.402115, 16.678213)), module, Transmutation::EDIT_B_PARAM));
         
         // Edit mode lights removed
         
@@ -4139,15 +4182,15 @@ struct TransmutationWidget : ModuleWidget {
         
         // BPM Multiplier knob (positioned near BPM knob)
         addParam(createParamCentered<STKnobSmall>(mm2px(Vec(34.340317, 18.322521)), module, Transmutation::BPM_MULTIPLIER_PARAM));
-        addParam(createParamCentered<Vintage1940sButton>(mm2px(Vec(22.586929, 67.512939)), module, Transmutation::START_A_PARAM));
-        addParam(createParamCentered<Vintage1940sButton>(mm2px(Vec(22.784245, 75.573959)), module, Transmutation::STOP_A_PARAM));
-        addParam(createParamCentered<Vintage1940sButton>(mm2px(Vec(22.784245, 83.509323)), module, Transmutation::RESET_A_PARAM));
+        addParam(createParamCentered<ShapetakerVintageMomentary>(mm2px(Vec(22.586929, 67.512939)), module, Transmutation::START_A_PARAM));
+        addParam(createParamCentered<ShapetakerVintageMomentary>(mm2px(Vec(22.784245, 75.573959)), module, Transmutation::STOP_A_PARAM));
+        addParam(createParamCentered<ShapetakerVintageMomentary>(mm2px(Vec(22.784245, 83.509323)), module, Transmutation::RESET_A_PARAM));
         
         // Right side controls - Sequence B (updated positions from SVG)
         addParam(createParamCentered<STKnobMedium>(mm2px(Vec(115.02555, 37.849998)), module, Transmutation::LENGTH_B_PARAM));
-        addParam(createParamCentered<Vintage1940sButton>(mm2px(Vec(108.43727, 67.450111)), module, Transmutation::START_B_PARAM));
-        addParam(createParamCentered<Vintage1940sButton>(mm2px(Vec(108.43727, 75.511131)), module, Transmutation::STOP_B_PARAM));
-        addParam(createParamCentered<Vintage1940sButton>(mm2px(Vec(108.43728, 83.446495)), module, Transmutation::RESET_B_PARAM));
+        addParam(createParamCentered<ShapetakerVintageMomentary>(mm2px(Vec(108.43727, 67.450111)), module, Transmutation::START_B_PARAM));
+        addParam(createParamCentered<ShapetakerVintageMomentary>(mm2px(Vec(108.43727, 75.511131)), module, Transmutation::STOP_B_PARAM));
+        addParam(createParamCentered<ShapetakerVintageMomentary>(mm2px(Vec(108.43728, 83.446495)), module, Transmutation::RESET_B_PARAM));
         
         // Sequence B mode switch (right side) - updated position from SVG  
         addParam(createParamCentered<STSelector>(mm2px(Vec(110.08858, 19.271444)), module, Transmutation::SEQ_B_MODE_PARAM));
@@ -4191,8 +4234,8 @@ struct TransmutationWidget : ModuleWidget {
         }
         
         // Rest and Tie buttons - updated positions (if they exist in SVG, otherwise keep for functionality)
-        addParam(createParamCentered<Vintage1940sButton>(mm2px(Vec(15.950587, 53.27956)), module, Transmutation::REST_PARAM));
-        addParam(createParamCentered<Vintage1940sButton>(mm2px(Vec(115.02555, 53.27956)), module, Transmutation::TIE_PARAM));
+        addParam(createParamCentered<ShapetakerVintageMomentary>(mm2px(Vec(15.950587, 53.27956)), module, Transmutation::REST_PARAM));
+        addParam(createParamCentered<ShapetakerVintageMomentary>(mm2px(Vec(115.02555, 53.27956)), module, Transmutation::TIE_PARAM));
         
         // Running lights - positioned with sequence controls  
         addChild(createLightCentered<TealJewelLEDMedium>(mm2px(Vec(29.029953, 33.132351)), module, Transmutation::RUNNING_A_LIGHT));

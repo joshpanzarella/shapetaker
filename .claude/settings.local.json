@@ -27,7 +27,12 @@
       "Bash(git commit:*)",
       "Read(//**)",
       "Read(//**)",
-      "Read(//**)"
+      "Read(//**)",
+      "Bash(git checkout:*)",
+      "Bash(python3:*)",
+      "Bash(find:*)",
+      "WebFetch(domain:gist.github.com)",
+      "WebFetch(domain:www.freepik.com)"
     ],
     "deny": [],
     "ask": []

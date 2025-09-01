@@ -1,0 +1,145 @@
+<svg id="vuMeter" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+        <!-- Define the shape of the meter's window. -->
+        <clipPath id="meterWindow">
+            <path d="M30,115 
+                     A72,72 0 1 1 170,115 
+                     C 150 145, 122 128, 100 138 
+                     C 78 128, 50 145, 30 115 Z"></path>
+        </clipPath>
+
+        <!-- Filter for drop shadow on the main casing -->
+        <filter id="dropShadow" x="-20%" y="-20%" width="140%" height="140%">
+            <feGaussianBlur in="SourceAlpha" stdDeviation="2"></feGaussianBlur>
+            <feOffset dx="2" dy="3" result="offsetblur"></feOffset>
+            <feMerge>
+                <feMergeNode></feMergeNode>
+                <feMergeNode in="SourceGraphic"></feMergeNode>
+            </feMerge>
+        </filter>
+        
+        <!-- Filter for the inner shadow effect -->
+        <filter id="innerBlur">
+            <feGaussianBlur stdDeviation="1.5"></feGaussianBlur>
+        </filter>
+
+        <!-- Gradient for the casing to give it a slight sheen -->
+        <linearGradient id="casingGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+            <stop offset="0%" style="stop-color:#4a4a4a;stop-opacity:1"></stop>
+            <stop offset="100%" style="stop-color:#1a1a1a;stop-opacity:1"></stop>
+        </linearGradient>
+
+         <!-- Gradient for the pivot point -->
+        <radialGradient id="pivotGradient">
+            <stop offset="0%" stop-color="#555"></stop>
+            <stop offset="100%" stop-color="#1a1a1a"></stop>
+        </radialGradient>
+        
+        <!-- FINAL UPDATE: Most compatible gradient using absolute units -->
+        <radialGradient id="backlightGradient" gradientUnits="userSpaceOnUse" cx="100" cy="190" r="150">
+            <stop offset="0.2" stop-color="#FFFDE7"></stop>
+            <stop offset="0.7" stop-color="#FBC02D"></stop>
+            <stop offset="1" stop-color="#F57F17"></stop>
+        </radialGradient>
+
+    </defs>
+
+    <!-- Main Casing -->
+    <g id="casing" filter="url(#dropShadow)">
+        <!-- Outer black square -->
+        <rect x="10" y="10" width="180" height="180" rx="15" fill="url(#casingGradient)"></rect>
+        
+        <!-- Inner shape to create the window -->
+        <rect x="25" y="25" width="150" height="150" rx="10" fill="#2c2c2c"></rect>
+        
+        <!-- The "glass" area, now with the prominent backlight gradient -->
+        <rect x="0" y="0" width="200" height="200" fill="url(#backlightGradient)" clip-path="url(#meterWindow)"></rect>
+        
+        <!-- Inner shadow effect -->
+        <rect x="25" y="27" width="150" height="150" fill="rgba(0,0,0,0.2)" clip-path="url(#meterWindow)" filter="url(#innerBlur)"></rect>
+
+        <!-- Screw holes in the corners -->
+        <circle cx="30" cy="30" r="6" fill="#111"></circle>
+        <circle cx="170" cy="30" r="6" fill="#111"></circle>
+        <circle cx="30" cy="170" r="6" fill="#111"></circle>
+        <circle cx="170" cy="170" r="6" fill="#111"></circle>
+
+        <!-- Adjustment screw at the bottom -->
+        <circle cx="100" cy="155" r="5" fill="#111"></circle>
+        <path d="M98 155 L102 155" stroke="#333" stroke-width="1"></path>
+    </g>
+
+    <!-- Scale and Markings -->
+    <g id="scale" font-family="Arial, sans-serif" font-size="8" text-anchor="middle" fill="#333">
+        
+        <!-- Red arc for the +dB section -->
+        <path d="M132,62 A55,55 0 0 1 152,85" fill="none" stroke="#e53e3e" stroke-width="2.5"></path>
+
+        <!-- Top Scale Numbers -->
+        <text x="48" y="75">-20</text>
+        <text x="62" y="60">-10</text>
+        <text x="73" y="53">-7</text>
+        <text x="83" y="49">-5</text>
+        <text x="94" y="47">-3</text>
+        <text x="101" y="47">-2</text>
+        <text x="109" y="48">-1</text>
+        <text x="122" y="53">0</text>
+        <text x="132" y="60">+1</text>
+        <text x="142" y="69">+2</text>
+        <text x="150" y="81">+3</text>
+
+        <!-- Bottom Scale Numbers -->
+        <text x="52" y="93">0</text>
+        <text x="66" y="101">20</text>
+        <text x="81" y="107">40</text>
+        <text x="100" y="109">60</text>
+        <text x="119" y="107">80</text>
+        <text x="136" y="100">100</text>
+        
+        <!-- Tick Marks -->
+        <g id="tickMarks" stroke="#333" transform="translate(100, 138) rotate(-90)">
+            <g stroke-width="1.5">
+                <line x1="75" y1="0" x2="80" y2="0" transform="rotate(-55)"></line> <!-- -20 -->
+                <line x1="75" y1="0" x2="80" y2="0" transform="rotate(-40)"></line> <!-- -10 -->
+                <line x1="75" y1="0" x2="80" y2="0" transform="rotate(-32)"></line> <!-- -7 -->
+                <line x1="75" y1="0" x2="80" y2="0" transform="rotate(-25)"></line> <!-- -5 -->
+                <line x1="75" y1="0" x2="80" y2="0" transform="rotate(-15)"></line> <!-- -3 -->
+                <line x1="75" y1="0" x2="80" y2="0" transform="rotate(-10)"></line> <!-- -2 -->
+                <line x1="75" y1="0" x2="80" y2="0" transform="rotate(-5)"></line> <!-- -1 -->
+                <line x1="75" y1="0" x2="80" y2="0" transform="rotate(5)"></line> <!-- 0 -->
+                <line x1="75" y1="0" x2="80" y2="0" transform="rotate(12)"></line> <!-- +1 -->
+                <line x1="75" y1="0" x2="80" y2="0" transform="rotate(20)"></line> <!-- +2 -->
+                <line x1="75" y1="0" x2="80" y2="0" transform="rotate(30)"></line> <!-- +3 -->
+            </g>
+            <g stroke-width="0.8">
+                <line x1="78" y1="0" x2="80" y2="0" transform="rotate(-47.5)"></line>
+                <line x1="78" y1="0" x2="80" y2="0" transform="rotate(0)"></line>
+                <line x1="78" y1="0" x2="80" y2="0" transform="rotate(8.5)"></line>
+                <line x1="78" y1="0" x2="80" y2="0" transform="rotate(16)"></line>
+                <line x1="78" y1="0" x2="80" y2="0" transform="rotate(25)"></line>
+            </g>
+             <!-- Bottom Scale Ticks -->
+            <g stroke-width="0.8">
+                <line x1="65" y1="0" x2="70" y2="0" transform="rotate(-50)"></line> <!-- 0 -->
+                <line x1="65" y1="0" x2="70" y2="0" transform="rotate(-35)"></line> <!-- 20 -->
+                <line x1="65" y1="0" x2="70" y2="0" transform="rotate(-18)"></line> <!-- 40 -->
+                <line x1="65" y1="0" x2="70" y2="0" transform="rotate(0)"></line> <!-- 60 -->
+                <line x1="65" y1="0" x2="70" y2="0" transform="rotate(18)"></line> <!-- 80 -->
+                <line x1="65" y1="0" x2="70" y2="0" transform="rotate(35)"></line> <!-- 100 -->
+            </g>
+        </g>
+
+        <!-- VU Label and +/- signs -->
+        <text x="100" y="85" font-size="16" font-weight="bold">VU</text>
+        <text x="45" y="118" font-size="14">-</text>
+        <text x="155" y="118" font-size="14">+</text>
+    </g>
+
+    <!-- Needle -->
+    <g id="needle-group" style="filter: drop-shadow(1px 1px 1px rgba(0,0,0,0.3));">
+        <!-- The needle itself -->
+        <line id="needle" x1="100" y1="138" x2="100" y2="55" stroke="#2d3748" stroke-width="1.5" style="transform-origin: 100px 138px; transform: rotate(-55deg);"></line>
+        <!-- Pivot point circle -->
+        <circle cx="100" cy="138" r="3" fill="url(#pivotGradient)"></circle>
+    </g>
+</svg>

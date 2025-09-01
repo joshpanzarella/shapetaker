@@ -1,0 +1,52 @@
+<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" aria-labelledby="buttonTitle">
+    <title id="buttonTitle">Vintage Chrome Momentary Button</title>
+    
+    <defs>
+        <!-- Bezel Gradient: Dark, slightly metallic black -->
+        <radialGradient id="bezelGradient" cx="50%" cy="50%" r="50%" fx="50%" fy="50%">
+            <stop offset="0%" style="stop-color:#111111" />
+            <stop offset="85%" style="stop-color:#0A0A0A" />
+            <stop offset="95%" style="stop-color:#282828" />
+            <stop offset="100%" style="stop-color:#1a1a1a" />
+        </radialGradient>
+
+        <!-- Button Gradient: Main chrome/silver effect -->
+        <radialGradient id="buttonGradient" cx="50%" cy="40%" r="60%" fx="50%" fy="40%">
+            <stop offset="0%" style="stop-color:#FFFFFF" />
+            <stop offset="40%" style="stop-color:#E0E0E0" />
+            <stop offset="80%" style="stop-color:#999999" />
+            <stop offset="100%" style="stop-color:#777777" />
+        </radialGradient>
+
+        <!-- Highlight Gradient: Sharp reflection on the top of the button -->
+        <linearGradient id="highlightGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+            <stop offset="0%" style="stop-color:#FFFFFF; stop-opacity:0.8" />
+            <stop offset="100%" style="stop-color:#FFFFFF; stop-opacity:0" />
+        </linearGradient>
+
+        <!-- Filter for a subtle drop shadow -->
+        <filter id="soft-shadow" x="-50%" y="-50%" width="200%" height="200%">
+            <feDropShadow dx="0" dy="2" stdDeviation="2" flood-color="#000000" flood-opacity="0.5"/>
+        </filter>
+    </defs>
+
+    <!-- Base / Bezel -->
+    <circle cx="50" cy="50" r="48" fill="url(#bezelGradient)" />
+    <circle cx="50" cy="50" r="48" fill="none" stroke="#000" stroke-width="1.5" />
+
+    <!-- Inner shadow for depth from the bezel -->
+    <circle cx="50" cy="51" r="36" fill="#000000" opacity="0.4" filter="url(#soft-shadow)" />
+
+    <!-- Main pushable button group -->
+    <g class="push-button">
+        <!-- Chrome button body -->
+        <circle cx="50" cy="50" r="35" fill="url(#buttonGradient)" />
+        <circle cx="50" cy="50" r="35" fill="none" stroke="#666" stroke-width="0.5" />
+
+        <!-- Inner shadow to give the button a concave feel -->
+        <circle class="button-inner-shadow" cx="50" cy="50" r="35" fill="none" stroke="#000" stroke-width="2" stroke-opacity="0.15" />
+
+        <!-- Top highlight reflection -->
+        <path class="button-highlight" d="M 25 45 A 30 30 0 0 1 75 45 A 35 35 0 0 0 25 45 Z" fill="url(#highlightGradient)" opacity="0.9" />
+    </g>
+</svg>

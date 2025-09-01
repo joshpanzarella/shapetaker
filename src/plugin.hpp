@@ -198,6 +198,44 @@ struct ShapetakerAttenuverterOscilloscope : app::SvgKnob {
     }
 };
 
+// Shapetaker vintage momentary button using a single SVG with a pressed overlay
+struct ShapetakerVintageMomentary : app::SvgSwitch {
+    ShapetakerVintageMomentary() {
+        momentary = true;
+        // Use the same SVG for both frames; we add a pressed overlay in draw()
+        auto svgUp = Svg::load(asset::plugin(pluginInstance, "res/buttons/vintage_momentary_button.svg"));
+        addFrame(svgUp);
+        addFrame(svgUp);
+        if (shadow) shadow->visible = false;
+        // Target size ~18x18 to match previous layout
+        box.size = Vec(18.f, 18.f);
+    }
+    void draw(const DrawArgs& args) override {
+        nvgSave(args.vg);
+        // Incoming SVG viewBox is 100x100; scale to our box
+        const float s = box.size.x / 100.f;
+        nvgScale(args.vg, s, s);
+        app::SvgSwitch::draw(args);
+        nvgRestore(args.vg);
+
+        // Pressed visual: subtle dark overlay to indicate depression
+        bool pressed = false;
+        if (getParamQuantity()) pressed = getParamQuantity()->getValue() > 0.5f;
+        if (pressed) {
+            nvgSave(args.vg);
+            // Draw overlay in panel coordinates
+            nvgBeginPath(args.vg);
+            float cx = box.size.x * 0.5f;
+            float cy = box.size.y * 0.5f;
+            float r = std::min(box.size.x, box.size.y) * 0.48f;
+            nvgCircle(args.vg, cx, cy, r);
+            nvgFillColor(args.vg, nvgRGBA(0, 0, 0, 60));
+            nvgFill(args.vg);
+            nvgRestore(args.vg);
+        }
+    }
+};
+
 struct ShapetakerChickenHeadSelector : app::SvgSwitch {
     ShapetakerChickenHeadSelector() {
         addFrame(Svg::load(asset::plugin(pluginInstance, "res/switches/st_chicken_head_selector_0.svg")));

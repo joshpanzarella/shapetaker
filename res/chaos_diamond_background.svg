@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="120" height="100" viewBox="0 0 120 100" xmlns="http://www.w3.org/2000/svg">
+  <!-- Solid diamond shape matching chaos visualizer dimensions -->
+  <!-- Outer diamond bezel (same color as chaos visualizer outer) -->
+  <path d="M 60 5 L 114 50 L 60 95 L 6 50 Z" fill="#282829"/>
+  
+  <!-- Inner diamond (same color as chaos visualizer inner) -->
+  <path d="M 60 9.5 L 105.5 50 L 60 90.5 L 14.5 50 Z" fill="#191920"/>
+</svg>
