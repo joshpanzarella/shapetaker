@@ -498,8 +498,6 @@ struct Transmutation : Module {
     };
     
     enum LightId {
-        EDIT_A_LIGHT,
-        EDIT_B_LIGHT,
         RUNNING_A_LIGHT,
         RUNNING_B_LIGHT,
         
@@ -812,8 +810,6 @@ struct Transmutation : Module {
         }
         
         // Update lights
-        lights[EDIT_A_LIGHT].setBrightness(editModeA ? 1.0f : 0.0f);
-        lights[EDIT_B_LIGHT].setBrightness(editModeB ? 1.0f : 0.0f);
         lights[RUNNING_A_LIGHT].setBrightness(sequenceA.running ? 1.0f : 0.0f);
         lights[RUNNING_B_LIGHT].setBrightness(sequenceB.running ? 1.0f : 0.0f);
         
@@ -1314,7 +1310,7 @@ struct Transmutation : Module {
 HighResMatrixWidget::HighResMatrixWidget(Transmutation* module) : module(module) {
     // Set widget size slightly larger to give symbols and dots more breathing room
     // Just a bit bigger than the original matrix for better spacing and visibility
-    box.size = Vec(210.0f, 210.0f); // Slightly larger size for better spacing (26.25px per cell)
+    box.size = Vec(231.0f, 231.0f); // 10% larger than 210px for improved visibility (28.875px per cell)
 }
 
 void HighResMatrixWidget::onButton(const event::Button& e) {
@@ -4098,32 +4094,30 @@ struct TransmutationWidget : ModuleWidget {
         
         // High-Resolution 8x8 Matrix (center of panel) - updated position from SVG
         matrix = new HighResMatrixWidget(module);
-        matrix->box.pos = Vec(mm2px(29.89035), mm2px(44.700367)); // Updated position from SVG matrix area
+        matrix->box.pos = Vec(mm2px(27.143473), mm2px(38.432907)); // Updated position from SVG main_screen
         addChild(matrix);
         
         // Edit mode buttons (above matrix) - updated positions from SVG
-        addParam(createParamCentered<Vintage1940sButton>(mm2px(Vec(56.263668, 30.236675)), module, Transmutation::EDIT_A_PARAM));
-        addParam(createParamCentered<Vintage1940sButton>(mm2px(Vec(74.692688, 30.109375)), module, Transmutation::EDIT_B_PARAM));
+        addParam(createParamCentered<Vintage1940sButton>(mm2px(Vec(55.973103, 16.805513)), module, Transmutation::EDIT_A_PARAM));
+        addParam(createParamCentered<Vintage1940sButton>(mm2px(Vec(74.402115, 16.678213)), module, Transmutation::EDIT_B_PARAM));
         
-        // Edit mode lights (updated positions from SVG)
-        addChild(createLightCentered<TealJewelLEDSmall>(mm2px(Vec(56.263668, 30.236675)), module, Transmutation::EDIT_A_LIGHT));
-        addChild(createLightCentered<PurpleJewelLEDSmall>(mm2px(Vec(74.692688, 30.109375)), module, Transmutation::EDIT_B_LIGHT));
+        // Edit mode lights removed
         
         // Left side controls - Sequence A (updated positions from SVG)
         addParam(createParamCentered<STKnobMedium>(mm2px(Vec(15.950587, 37.849998)), module, Transmutation::LENGTH_A_PARAM));
         addParam(createParamCentered<STKnobMedium>(mm2px(Vec(15.950588, 18.322521)), module, Transmutation::INTERNAL_CLOCK_PARAM));
         
         // BPM Multiplier knob (positioned near BPM knob)
-        addParam(createParamCentered<STKnobSmall>(mm2px(Vec(30, 17.386507)), module, Transmutation::BPM_MULTIPLIER_PARAM));
-        addParam(createParamCentered<Vintage1940sButton>(mm2px(Vec(15.950587, 67.512939)), module, Transmutation::START_A_PARAM));
-        addParam(createParamCentered<Vintage1940sButton>(mm2px(Vec(15.950587, 75.119118)), module, Transmutation::STOP_A_PARAM));
-        addParam(createParamCentered<Vintage1940sButton>(mm2px(Vec(15.950587, 82.725296)), module, Transmutation::RESET_A_PARAM));
+        addParam(createParamCentered<STKnobSmall>(mm2px(Vec(34.340317, 18.322521)), module, Transmutation::BPM_MULTIPLIER_PARAM));
+        addParam(createParamCentered<Vintage1940sButton>(mm2px(Vec(22.586929, 67.512939)), module, Transmutation::START_A_PARAM));
+        addParam(createParamCentered<Vintage1940sButton>(mm2px(Vec(22.784245, 75.573959)), module, Transmutation::STOP_A_PARAM));
+        addParam(createParamCentered<Vintage1940sButton>(mm2px(Vec(22.784245, 83.509323)), module, Transmutation::RESET_A_PARAM));
         
         // Right side controls - Sequence B (updated positions from SVG)
         addParam(createParamCentered<STKnobMedium>(mm2px(Vec(115.02555, 37.849998)), module, Transmutation::LENGTH_B_PARAM));
-        addParam(createParamCentered<Vintage1940sButton>(mm2px(Vec(115.02555, 67.512939)), module, Transmutation::START_B_PARAM));
-        addParam(createParamCentered<Vintage1940sButton>(mm2px(Vec(115.02555, 74.704277)), module, Transmutation::STOP_B_PARAM));
-        addParam(createParamCentered<Vintage1940sButton>(mm2px(Vec(115.02555, 82.725296)), module, Transmutation::RESET_B_PARAM));
+        addParam(createParamCentered<Vintage1940sButton>(mm2px(Vec(108.43727, 67.450111)), module, Transmutation::START_B_PARAM));
+        addParam(createParamCentered<Vintage1940sButton>(mm2px(Vec(108.43727, 75.511131)), module, Transmutation::STOP_B_PARAM));
+        addParam(createParamCentered<Vintage1940sButton>(mm2px(Vec(108.43728, 83.446495)), module, Transmutation::RESET_B_PARAM));
         
         // Sequence B mode switch (right side) - updated position from SVG  
         addParam(createParamCentered<STSelector>(mm2px(Vec(110.08858, 19.271444)), module, Transmutation::SEQ_B_MODE_PARAM));
@@ -4151,15 +4145,15 @@ struct TransmutationWidget : ModuleWidget {
         
         // Alchemical Symbol Buttons - updated positions from SVG
         // Top row of symbols (above matrix) - updated positions from SVG
-        float topSymbolPositions[] = {36.510941, 46.963669, 57.416397, 67.869125, 78.321854, 88.774582}; // Updated from SVG
+        float topSymbolPositions[] = {36.031109, 46.682266, 57.333424, 67.984581, 78.635735, 89.286888}; // Updated from SVG top-left
         for (int i = 0; i < 6; i++) {
             AlchemicalSymbolWidget* symbolWidget = new AlchemicalSymbolWidget(module, i); // i is button position
-            symbolWidget->box.pos = mm2px(Vec(topSymbolPositions[i], 35.67366)); // Updated position from SVG
+            symbolWidget->box.pos = mm2px(Vec(topSymbolPositions[i], 30.551298)); // Updated position from SVG
             addChild(symbolWidget);
         }
         
         // Bottom row of symbols (below matrix) - updated positions from SVG  
-        float bottomSymbolPositions[] = {36.510941, 46.963669, 57.416397, 67.869125, 78.321854, 88.774582}; // Same X positions as top row
+        float bottomSymbolPositions[] = {36.031109, 46.682266, 57.33342, 67.984573, 78.635735, 89.286888}; // Updated from SVG top-left
         for (int i = 6; i < 12; i++) {
             AlchemicalSymbolWidget* symbolWidget = new AlchemicalSymbolWidget(module, i); // i is button position
             symbolWidget->box.pos = mm2px(Vec(bottomSymbolPositions[i - 6], 117.56416)); // Updated position from SVG
@@ -4171,8 +4165,8 @@ struct TransmutationWidget : ModuleWidget {
         addParam(createParamCentered<Vintage1940sButton>(mm2px(Vec(115.02555, 53.27956)), module, Transmutation::TIE_PARAM));
         
         // Running lights - positioned with sequence controls  
-        addChild(createLightCentered<TealJewelLEDMedium>(mm2px(Vec(32.739845, 28.08626)), module, Transmutation::RUNNING_A_LIGHT));
-        addChild(createLightCentered<PurpleJewelLEDMedium>(mm2px(Vec(98.721703, 26.886547)), module, Transmutation::RUNNING_B_LIGHT));
+        addChild(createLightCentered<TealJewelLEDMedium>(mm2px(Vec(29.029953, 33.132351)), module, Transmutation::RUNNING_A_LIGHT));
+        addChild(createLightCentered<PurpleJewelLEDMedium>(mm2px(Vec(102.28805, 33.5513)), module, Transmutation::RUNNING_B_LIGHT));
     }
 };
 
