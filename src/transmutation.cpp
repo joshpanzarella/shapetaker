@@ -1,4 +1,5 @@
 #include "plugin.hpp"
+#include "AlchemySymbols.hpp"
 #include <vector>
 #include <array>
 #include <string>
@@ -390,9 +391,9 @@ struct Sequence {
 // High-Resolution Matrix Widget - 512x512 pixel canvas with 8x8 logical grid
 struct HighResMatrixWidget : Widget {
     Transmutation* module;
-    static constexpr int MATRIX_SIZE = 8;
+    static constexpr int MATRIX_COLS = 8;
     static constexpr float CANVAS_SIZE = 512.0f;  // High resolution canvas
-    static constexpr float CELL_SIZE = CANVAS_SIZE / MATRIX_SIZE;  // 64x64 pixels per cell
+    static constexpr float CELL_SIZE = CANVAS_SIZE / MATRIX_COLS;  // 64x64 pixels per cell
     
     HighResMatrixWidget(Transmutation* module);
     void onButton(const event::Button& e) override;
@@ -401,6 +402,7 @@ struct HighResMatrixWidget : Widget {
     void programStep(Sequence& seq, int stepIndex);
     void drawLayer(const DrawArgs& args, int layer) override;
     void drawMatrix(const DrawArgs& args);
+    // Legacy helpers retained for linkage; primary drawing uses st:: utility
     void drawAlchemicalSymbol(const DrawArgs& args, Vec pos, int symbolId, NVGcolor color = nvgRGBA(255, 255, 255, 255));
     void drawRestSymbol(const DrawArgs& args, Vec pos);
     void drawTieSymbol(const DrawArgs& args, Vec pos);
@@ -421,6 +423,7 @@ struct Matrix8x8Widget : Widget {
     void programStep(Sequence& seq, int stepIndex);
     void drawLayer(const DrawArgs& args, int layer) override;
     void drawMatrix(const DrawArgs& args);
+    // Legacy helpers retained for linkage; primary drawing uses st:: utility
     void drawAlchemicalSymbol(const DrawArgs& args, Vec pos, int symbolId, NVGcolor color = nvgRGBA(255, 255, 255, 255));
     void drawRestSymbol(const DrawArgs& args, Vec pos);
     void drawTieSymbol(const DrawArgs& args, Vec pos);
@@ -471,7 +474,8 @@ struct Transmutation : Module {
         
         PARAMS_LEN
     };
-    
+    // Grid steps (visual density): 32 or 64
+    int gridSteps = 32;
     enum InputId {
         CLOCK_A_INPUT,
         CLOCK_B_INPUT,
@@ -560,6 +564,7 @@ struct Transmutation : Module {
     ChordPack currentChordPack;
     std::array<int, 40> symbolToChordMapping; // Expanded to support all 40 symbols
     std::array<int, 12> buttonToSymbolMapping; // Maps button positions 0-11 to symbol IDs 0-39
+    std::array<float, 12> buttonPressAnim;     // 1.0 on press, decays to 0 for animation
     
     // Clock system
     float internalClock = 0.0f;
@@ -652,9 +657,19 @@ struct Transmutation : Module {
         
         // Load default chord pack
         loadDefaultChordPack();
+        // Default grid to 32 for legibility
+        gridSteps = 32;
+        // Init button press animations
+        for (int i = 0; i < 12; ++i) buttonPressAnim[i] = 0.f;
     }
     
     void process(const ProcessArgs& args) override {
+        // Decay symbol button press animations
+        for (int i = 0; i < 12; ++i) {
+            if (buttonPressAnim[i] > 0.f) {
+                buttonPressAnim[i] = std::max(0.f, buttonPressAnim[i] - (float)(args.sampleTime * 6.0));
+            }
+        }
         // Handle edit mode toggles - ensure one mode is always active
         if (editATrigger.process(params[EDIT_A_PARAM].getValue())) {
             if (!editModeA) {
@@ -691,6 +706,9 @@ struct Transmutation : Module {
         
         // Handle sequence controls
         if (startATrigger.process(params[START_A_PARAM].getValue())) {
+            // Always start from first step
+            sequenceA.currentStep = 0;
+            sequenceA.clockPhase = 0.0f;
             sequenceA.running = true;
         }
         if (stopATrigger.process(params[STOP_A_PARAM].getValue())) {
@@ -702,6 +720,9 @@ struct Transmutation : Module {
         }
         
         if (startBTrigger.process(params[START_B_PARAM].getValue())) {
+            // Always start from first step
+            sequenceB.currentStep = 0;
+            sequenceB.clockPhase = 0.0f;
             sequenceB.running = true;
         }
         if (stopBTrigger.process(params[STOP_B_PARAM].getValue())) {
@@ -730,6 +751,9 @@ struct Transmutation : Module {
         // Handle external start/stop trigger inputs
         if (inputs[START_A_INPUT].isConnected()) {
             if (startAInputTrigger.process(inputs[START_A_INPUT].getVoltage())) {
+                // Always start from first step
+                sequenceA.currentStep = 0;
+                sequenceA.clockPhase = 0.0f;
                 sequenceA.running = true;
             }
         }
@@ -742,6 +766,9 @@ struct Transmutation : Module {
         
         if (inputs[START_B_INPUT].isConnected()) {
             if (startBInputTrigger.process(inputs[START_B_INPUT].getVoltage())) {
+                // Always start from first step
+                sequenceB.currentStep = 0;
+                sequenceB.clockPhase = 0.0f;
                 sequenceB.running = true;
             }
         }
@@ -802,8 +829,9 @@ struct Transmutation : Module {
         }
         
         // Update lights
-        lights[RUNNING_A_LIGHT].setBrightness(sequenceA.running ? 1.0f : 0.0f);
-        lights[RUNNING_B_LIGHT].setBrightness(sequenceB.running ? 1.0f : 0.0f);
+        // Dimmer run lights for a subtler always-on indicator
+        lights[RUNNING_A_LIGHT].setBrightness(sequenceA.running ? 0.35f : 0.0f);
+        lights[RUNNING_B_LIGHT].setBrightness(sequenceB.running ? 0.35f : 0.0f);
         
         // Update symbol lights with color coding for sequences
         for (int i = 0; i < 12; i++) {
@@ -1101,6 +1129,16 @@ struct Transmutation : Module {
         if ((editModeA || editModeB) && symbolIndex >= 0 && symbolIndex < 40) {
             auditionChord(symbolIndex);
         }
+
+        // Trigger press animation on the corresponding button slot
+        if (symbolIndex >= 0 && symbolIndex < 40) {
+            for (int i = 0; i < 12; ++i) {
+                if (buttonToSymbolMapping[i] == symbolIndex) {
+                    buttonPressAnim[i] = 1.0f;
+                    break;
+                }
+            }
+        }
     }
     
     void auditionChord(int symbolIndex) {
@@ -1295,6 +1333,21 @@ struct Transmutation : Module {
         
         randomizeSymbolAssignment();
     }
+    
+    // Persist settings
+    json_t* dataToJson() override {
+        json_t* rootJ = json_object();
+        json_object_set_new(rootJ, "gridSteps", json_integer(gridSteps));
+        return rootJ;
+    }
+    
+    void dataFromJson(json_t* rootJ) override {
+        json_t* gJ = json_object_get(rootJ, "gridSteps");
+        if (gJ && json_is_integer(gJ)) {
+            int v = (int)json_integer_value(gJ);
+            if (v == 32 || v == 64) gridSteps = v;
+        }
+    }
 };
 
 // Matrix8x8Widget Implementation
@@ -1309,14 +1362,15 @@ void HighResMatrixWidget::onButton(const event::Button& e) {
     if (e.action == GLFW_PRESS) {
         Vec pos = e.pos;
         
-        // Convert click position to 8x8 grid coordinates
-        // Scale from widget size to logical grid
-        int x = (int)(pos.x / box.size.x * MATRIX_SIZE);
-        int y = (int)(pos.y / box.size.y * MATRIX_SIZE);
+        // Convert click position to grid coordinates based on current grid rows/cols
+        int cols = (module && module->gridSteps == 32) ? 6 : MATRIX_COLS;
+        int rows = (module && module->gridSteps == 32) ? 6 : 8;
+        int x = (int)(pos.x / box.size.x * cols);
+        int y = (int)(pos.y / box.size.y * rows);
         
         // Clamp to valid range
-        x = clamp(x, 0, MATRIX_SIZE - 1);
-        y = clamp(y, 0, MATRIX_SIZE - 1);
+        x = clamp(x, 0, cols - 1);
+        y = clamp(y, 0, rows - 1);
         
         if (e.button == GLFW_MOUSE_BUTTON_LEFT) {
             onMatrixClick(x, y);
@@ -1329,31 +1383,49 @@ void HighResMatrixWidget::onButton(const event::Button& e) {
 
 void HighResMatrixWidget::onMatrixClick(int x, int y) {
     if (!module) return;
-    
-    int stepIndex = y * MATRIX_SIZE + x;
-    
-    if (module->editModeA && stepIndex < 64) {
-        programStep(module->sequenceA, stepIndex);
+    // Map grid coords to step index; center last row in 32‑step 6x6 layout
+    int stepIndex = -1;
+    if (module->gridSteps == 32) {
+        if (y < 5) stepIndex = y * 6 + x;
+        else if (y == 5 && x >= 2 && x <= 3) stepIndex = 30 + (x - 2);
+    } else {
+        stepIndex = y * MATRIX_COLS + x;
     }
-    if (module->editModeB && stepIndex < 64) {
-        programStep(module->sequenceB, stepIndex);
+    
+    if (stepIndex >= 0) {
+        if (module->editModeA && stepIndex < module->sequenceA.length) {
+            module->sequenceA.currentStep = stepIndex; // move edit cursor
+            programStep(module->sequenceA, stepIndex);
+        }
+        if (module->editModeB && stepIndex < module->sequenceB.length) {
+            module->sequenceB.currentStep = stepIndex; // move edit cursor
+            programStep(module->sequenceB, stepIndex);
+        }
     }
 }
 
 void HighResMatrixWidget::onMatrixRightClick(int x, int y) {
     if (!module) return;
-    
-    int stepIndex = y * MATRIX_SIZE + x;
+    // Map grid coords to step index; center last row in 32‑step 6x6 layout
+    int stepIndex = -1;
+    if (module->gridSteps == 32) {
+        if (y < 5) stepIndex = y * 6 + x;
+        else if (y == 5 && x >= 2 && x <= 3) stepIndex = 30 + (x - 2);
+    } else {
+        stepIndex = y * MATRIX_COLS + x;
+    }
     
     // Right click cycles through voice counts (1-6)
-    if (module->editModeA && stepIndex < module->sequenceA.length) {
+    if (stepIndex >= 0 && module->editModeA && stepIndex < module->sequenceA.length) {
+        module->sequenceA.currentStep = stepIndex; // move edit cursor
         SequenceStep& step = module->sequenceA.steps[stepIndex];
         if (step.chordIndex >= 0 && step.chordIndex < 40 && 
             module->symbolToChordMapping[step.chordIndex] >= 0) {
             step.voiceCount = (step.voiceCount % 6) + 1;
         }
     }
-    if (module->editModeB && stepIndex < module->sequenceB.length) {
+    if (stepIndex >= 0 && module->editModeB && stepIndex < module->sequenceB.length) {
+        module->sequenceB.currentStep = stepIndex; // move edit cursor
         SequenceStep& step = module->sequenceB.steps[stepIndex];
         if (step.chordIndex >= 0 && step.chordIndex < 40 && 
             module->symbolToChordMapping[step.chordIndex] >= 0) {
@@ -1363,7 +1435,8 @@ void HighResMatrixWidget::onMatrixRightClick(int x, int y) {
 }
 
 void HighResMatrixWidget::programStep(Sequence& seq, int stepIndex) {
-    if (stepIndex >= 64) return;
+    if (!module) return;
+    if (stepIndex >= module->gridSteps) return;
     
     SequenceStep& step = seq.steps[stepIndex];
     
@@ -1475,25 +1548,25 @@ void HighResMatrixWidget::drawMatrix(const DrawArgs& args) {
         nvgSave(args.vg);
         nvgIntersectScissor(args.vg, 0, 0, box.size.x, box.size.y);
         
-        // Add intense VHS tape warping scanlines with multiple distortion layers (clipped)
-        for (int i = 0; i < box.size.y; i += 2) {
-            float warpOffset = sin((i * 0.015f) + time * 1.2f) * 6.0f; // More intense warping
-            warpOffset += cos((i * 0.008f) + time * 0.8f) * 4.0f; // Additional warp layer
-            warpOffset += deepWarp * sin(i * 0.03f) * 3.0f; // Deep distortion based on position
+        // Reduce scanlines for a subtler vintage feel (thinner, fewer, lower alpha)
+        for (int i = 0; i < box.size.y; i += 3) {
+            float warpOffset = sin((i * 0.012f) + time * 1.0f) * 3.0f; // Softer warping
+            warpOffset += cos((i * 0.006f) + time * 0.6f) * 2.0f;
+            warpOffset += deepWarp * sin(i * 0.02f) * 1.5f;
             nvgBeginPath(args.vg);
             nvgRect(args.vg, warpOffset, i, box.size.x, 1);
-            nvgFillColor(args.vg, nvgRGBA(0, 0, 0, 25 + (int)(waveB * 30)));
+            nvgFillColor(args.vg, nvgRGBA(0, 0, 0, 10 + (int)(waveB * 15)));
             nvgFill(args.vg);
         }
         
-        // Add ultra slow moving VHS tape distortion bands with warping (clipped)
-        for (int i = 0; i < 3; i++) {
-            float distortionY = fmod(time * 8 + i * 160, box.size.y); // Ultra slow movement
-            float warpWidth = sin(time * 0.7f + i) * 4.0f + deepWarp * 6.0f; // More intense warping
-            float bandHeight = 2 + sin(time * 0.5f + i) * 1.0f; // Variable height
+        // Softer distortion bands
+        for (int i = 0; i < 2; i++) {
+            float distortionY = fmod(time * 6 + i * 160, box.size.y);
+            float warpWidth = sin(time * 0.6f + i) * 2.0f + deepWarp * 3.0f;
+            float bandHeight = 1 + sin(time * 0.4f + i) * 0.5f;
             nvgBeginPath(args.vg);
             nvgRect(args.vg, warpWidth, distortionY, box.size.x, bandHeight);
-            nvgFillColor(args.vg, nvgRGBA(80 + (int)(waveA * 40), 100 + (int)(waveB * 40), 120, 40 + (int)(tapeWarp * 200)));
+            nvgFillColor(args.vg, nvgRGBA(70 + (int)(waveA * 30), 90 + (int)(waveB * 30), 110, 24 + (int)(tapeWarp * 100)));
             nvgFill(args.vg);
         }
         
@@ -1540,22 +1613,22 @@ void HighResMatrixWidget::drawMatrix(const DrawArgs& args) {
             // Create blur effect with multiple offset draws
             for (int blur = 0; blur < 2; blur++) {
                 float blurOffset = blur * 0.3f;
-                drawAlchemicalSymbol(args, Vec(glowOffset + blurOffset, glowOffset + blurOffset), module->displaySymbolId, nvgRGBA(symbolR * 0.9f, symbolG * 0.9f, symbolB * 0.9f, glowAlpha));
-                drawAlchemicalSymbol(args, Vec(-glowOffset + blurOffset, glowOffset - blurOffset), module->displaySymbolId, nvgRGBA(symbolR * 0.9f, symbolG * 0.9f, symbolB * 0.9f, glowAlpha));
-                drawAlchemicalSymbol(args, Vec(glowOffset - blurOffset, -glowOffset + blurOffset), module->displaySymbolId, nvgRGBA(symbolR * 0.9f, symbolG * 0.9f, symbolB * 0.9f, glowAlpha));
-                drawAlchemicalSymbol(args, Vec(-glowOffset - blurOffset, -glowOffset - blurOffset), module->displaySymbolId, nvgRGBA(symbolR * 0.9f, symbolG * 0.9f, symbolB * 0.9f, glowAlpha));
+                st::drawAlchemicalSymbol(args, Vec(glowOffset + blurOffset, glowOffset + blurOffset), module->displaySymbolId, nvgRGBA(symbolR * 0.9f, symbolG * 0.9f, symbolB * 0.9f, glowAlpha));
+                st::drawAlchemicalSymbol(args, Vec(-glowOffset + blurOffset, glowOffset - blurOffset), module->displaySymbolId, nvgRGBA(symbolR * 0.9f, symbolG * 0.9f, symbolB * 0.9f, glowAlpha));
+                st::drawAlchemicalSymbol(args, Vec(glowOffset - blurOffset, -glowOffset + blurOffset), module->displaySymbolId, nvgRGBA(symbolR * 0.9f, symbolG * 0.9f, symbolB * 0.9f, glowAlpha));
+                st::drawAlchemicalSymbol(args, Vec(-glowOffset - blurOffset, -glowOffset - blurOffset), module->displaySymbolId, nvgRGBA(symbolR * 0.9f, symbolG * 0.9f, symbolB * 0.9f, glowAlpha));
             }
         }
         
         // Main symbol with bright core (positioned to align with glow effects at center)
-        drawAlchemicalSymbol(args, Vec(0, 0), module->displaySymbolId, nvgRGBA(symbolR, symbolG, symbolB, 255));
+        st::drawAlchemicalSymbol(args, Vec(0, 0), module->displaySymbolId, nvgRGBA(symbolR, symbolG, symbolB, 255));
         
         // Extra bright white core for VHS warping intensity
-        drawAlchemicalSymbol(args, Vec(0, 0), module->displaySymbolId, nvgRGBA(255, 255, 255, 50 + (int)(waveA * 30)));
+        st::drawAlchemicalSymbol(args, Vec(0, 0), module->displaySymbolId, nvgRGBA(255, 255, 255, 50 + (int)(waveA * 30)));
         nvgRestore(args.vg);
         
-        // Set up horror movie text with much more pixelated chunky font
-        nvgFontSize(args.vg, 32.0f); // Slightly smaller to fit multiple lines
+        // Set up vintage text for chord name (warm ink + soft shadow)
+        nvgFontSize(args.vg, 32.0f);
         nvgFontFaceId(args.vg, APP->window->uiFont->handle);
         nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
         
@@ -1603,35 +1676,14 @@ void HighResMatrixWidget::drawMatrix(const DrawArgs& args) {
         for (size_t i = 0; i < textLines.size(); i++) {
             float textY = startY + (i * lineHeight) + cos(time * 0.9f) * 0.4f + waveB * 1.2f + waveA * 0.8f;
             
-            // Multiple chunky shadows for extreme pixelated horror effect
-            nvgFillColor(args.vg, nvgRGBA(40, 40, 50, 220)); // Dark gray shadow
-            nvgText(args.vg, baseTextX + 3, textY + 3, textLines[i].c_str(), NULL);
-            nvgText(args.vg, baseTextX + 2, textY + 4, textLines[i].c_str(), NULL);
-            nvgText(args.vg, baseTextX + 4, textY + 2, textLines[i].c_str(), NULL);
-            
-            // Main text
-            nvgFillColor(args.vg, nvgRGBA(textR, textG, textB, 255));
+            // Soft single shadow
+            nvgFillColor(args.vg, nvgRGBA(0, 0, 0, 140));
+            nvgText(args.vg, baseTextX + 1.5f, textY + 1.5f, textLines[i].c_str(), NULL);
+            // Warm ink main fill
+            nvgFillColor(args.vg, nvgRGBA(232, 224, 200, 240));
             nvgText(args.vg, baseTextX, textY, textLines[i].c_str(), NULL);
             
-            // Intense multi-layer glow effects with blur
-            for (int glow = 0; glow < 8; glow++) {
-                float glowRadius = (glow + 1) * 1.5f;
-                float glowAlpha = 120 / (glow + 1); // Fade out each layer
-                
-                // Blur effect by drawing at slightly offset positions
-                for (int blur = 0; blur < 3; blur++) {
-                    float blurOffset = blur * 0.5f;
-                    nvgFillColor(args.vg, nvgRGBA(textR * 0.8f, textG * 0.8f, textB * 0.8f, glowAlpha));
-                    nvgText(args.vg, baseTextX + blurOffset, textY + blurOffset, textLines[i].c_str(), NULL);
-                    nvgText(args.vg, baseTextX - blurOffset, textY + blurOffset, textLines[i].c_str(), NULL);
-                    nvgText(args.vg, baseTextX + blurOffset, textY - blurOffset, textLines[i].c_str(), NULL);
-                    nvgText(args.vg, baseTextX - blurOffset, textY - blurOffset, textLines[i].c_str(), NULL);
-                }
-            }
-            
-            // Extra intense core glow with VHS warping
-            nvgFillColor(args.vg, nvgRGBA(255, 255, 255, 80 + (int)(waveA * 40)));
-            nvgText(args.vg, baseTextX, textY, textLines[i].c_str(), NULL);
+            // No neon glow; keep vintage ink look
         }
         
         nvgRestore(args.vg);
@@ -1650,55 +1702,161 @@ void HighResMatrixWidget::drawMatrix(const DrawArgs& args) {
     NVGpaint bg = nvgLinearGradient(args.vg, 0, 0, 0, box.size.y, nvgRGBA(15, 15, 20, 255), nvgRGBA(5, 5, 10, 255));
     nvgFillPaint(args.vg, bg);
     nvgFill(args.vg);
+
+    // Bezel: subtle inner shadow and outer stroke to give depth
+    {
+        float rOuter = 8.0f;
+        float inset = 2.0f;
+        float rInner = std::max(0.0f, rOuter - 2.0f);
+
+        // Outer border
+        nvgBeginPath(args.vg);
+        nvgRoundedRect(args.vg, 0.5f, 0.5f, box.size.x - 1.0f, box.size.y - 1.0f, rOuter);
+        nvgStrokeColor(args.vg, nvgRGBA(10, 10, 14, 220));
+        nvgStrokeWidth(args.vg, 1.0f);
+        nvgStroke(args.vg);
+
+        // Inner shadow ring using box gradient
+        NVGpaint innerShadow = nvgBoxGradient(
+            args.vg,
+            inset, inset,
+            box.size.x - inset * 2.0f,
+            box.size.y - inset * 2.0f,
+            rInner, 6.0f,
+            nvgRGBA(0, 0, 0, 60),
+            nvgRGBA(0, 0, 0, 0)
+        );
+        nvgBeginPath(args.vg);
+        // Outer path of ring
+        nvgRoundedRect(args.vg, inset - 1.0f, inset - 1.0f, box.size.x - (inset - 1.0f) * 2.0f, box.size.y - (inset - 1.0f) * 2.0f, rInner + 1.0f);
+        // Inner hole
+        nvgRoundedRect(args.vg, inset + 1.0f, inset + 1.0f, box.size.x - (inset + 1.0f) * 2.0f, box.size.y - (inset + 1.0f) * 2.0f, std::max(0.0f, rInner - 1.0f));
+        nvgPathWinding(args.vg, NVG_HOLE);
+        nvgFillPaint(args.vg, innerShadow);
+        nvgFill(args.vg);
+
+        // Top highlight fade
+        nvgSave(args.vg);
+        nvgScissor(args.vg, 0, 0, box.size.x, std::min(10.0f, box.size.y));
+        NVGpaint topHi = nvgLinearGradient(args.vg, 0, 0, 0, 10.0f, nvgRGBA(255, 255, 255, 24), nvgRGBA(255, 255, 255, 0));
+        nvgBeginPath(args.vg);
+        nvgRoundedRect(args.vg, inset + 0.5f, inset + 0.5f, box.size.x - (inset + 1.0f), 8.0f, rInner);
+        nvgFillPaint(args.vg, topHi);
+        nvgFill(args.vg);
+        nvgRestore(args.vg);
+
+        // Bottom shadow fade for symmetry
+        nvgSave(args.vg);
+        nvgScissor(args.vg, 0, box.size.y - std::min(10.0f, box.size.y), box.size.x, std::min(10.0f, box.size.y));
+        NVGpaint bottomShadow = nvgLinearGradient(args.vg, 0, box.size.y, 0, box.size.y - 10.0f, nvgRGBA(0, 0, 0, 40), nvgRGBA(0, 0, 0, 0));
+        nvgBeginPath(args.vg);
+        nvgRoundedRect(args.vg, inset + 0.5f, box.size.y - 8.5f, box.size.x - (inset + 1.0f), 8.0f, rInner);
+        nvgFillPaint(args.vg, bottomShadow);
+        nvgFill(args.vg);
+        nvgRestore(args.vg);
+
+        // Inner lip stroke to simulate metallic edge
+        nvgBeginPath(args.vg);
+        nvgRoundedRect(args.vg, inset + 1.0f, inset + 1.0f, box.size.x - (inset + 1.0f) * 2.0f, box.size.y - (inset + 1.0f) * 2.0f, std::max(0.0f, rInner - 1.0f));
+        nvgStrokeColor(args.vg, nvgRGBA(255, 255, 255, 30));
+        nvgStrokeWidth(args.vg, 0.8f);
+        nvgStroke(args.vg);
+
+        // Side speculars: subtle left and right inner highlights for a metallic feel
+        // Left edge inner highlight
+        nvgBeginPath(args.vg);
+        nvgRoundedRect(args.vg, inset - 1.0f, inset - 1.0f, box.size.x - (inset - 1.0f) * 2.0f, box.size.y - (inset - 1.0f) * 2.0f, rInner + 1.0f);
+        nvgRoundedRect(args.vg, inset + 1.0f, inset + 1.0f, box.size.x - (inset + 1.0f) * 2.0f, box.size.y - (inset + 1.0f) * 2.0f, std::max(0.0f, rInner - 1.0f));
+        nvgPathWinding(args.vg, NVG_HOLE);
+        NVGpaint leftHi = nvgLinearGradient(args.vg, inset - 1.0f, 0, inset + 8.0f, 0, nvgRGBA(255, 255, 255, 22), nvgRGBA(255, 255, 255, 0));
+        nvgFillPaint(args.vg, leftHi);
+        nvgFill(args.vg);
+        // Right edge inner highlight
+        nvgBeginPath(args.vg);
+        nvgRoundedRect(args.vg, inset - 1.0f, inset - 1.0f, box.size.x - (inset - 1.0f) * 2.0f, box.size.y - (inset - 1.0f) * 2.0f, rInner + 1.0f);
+        nvgRoundedRect(args.vg, inset + 1.0f, inset + 1.0f, box.size.x - (inset + 1.0f) * 2.0f, box.size.y - (inset + 1.0f) * 2.0f, std::max(0.0f, rInner - 1.0f));
+        nvgPathWinding(args.vg, NVG_HOLE);
+        NVGpaint rightHi = nvgLinearGradient(args.vg, box.size.x - (inset - 1.0f), 0, box.size.x - (inset + 8.0f), 0, nvgRGBA(255, 255, 255, 14), nvgRGBA(255, 255, 255, 0));
+        nvgFillPaint(args.vg, rightHi);
+        nvgFill(args.vg);
+    }
     
-    // Calculate cell size in widget coordinates
-    float cellWidth = box.size.x / MATRIX_SIZE;
-    float cellHeight = box.size.y / MATRIX_SIZE;
+    // Determine grid based on module setting
+    int cols = (module && module->gridSteps == 32) ? 6 : MATRIX_COLS;
+    int rows = (module && module->gridSteps == 32) ? 6 : 8;
+
+    // Add a slight inner padding so edge circles aren't crowded by the bezel
+    float pad = std::max(2.0f, std::min(box.size.x, box.size.y) * 0.02f);
+    float innerW = box.size.x - pad * 2.0f;
+    float innerH = box.size.y - pad * 2.0f;
+    
+    // Calculate cell size in widget coordinates within the padded area
+    float cellWidth = innerW / cols;
+    float cellHeight = innerH / rows;
     
     // Draw each matrix cell at high resolution
-    for (int y = 0; y < MATRIX_SIZE; y++) {
-        for (int x = 0; x < MATRIX_SIZE; x++) {
-            int stepIndex = y * MATRIX_SIZE + x;
+    for (int y = 0; y < rows; y++) {
+        for (int x = 0; x < cols; x++) {
+            // Map grid cell to step index; for 32‑step 6x6, center the last 2 steps
+            int stepIndex = -1;
+            if (module && module->gridSteps == 32) {
+                if (y < 5) stepIndex = y * 6 + x;
+                else if (y == 5 && x >= 2 && x <= 3) stepIndex = 30 + (x - 2);
+            } else {
+                stepIndex = y * cols + x;
+            }
             
             // Calculate cell position and center
-            Vec cellPos = Vec(x * cellWidth, y * cellHeight);
+            Vec cellPos = Vec(pad + x * cellWidth, pad + y * cellHeight);
             Vec cellCenter = Vec(cellPos.x + cellWidth/2, cellPos.y + cellHeight/2);
             
-            // Get step data from both sequences
+            // Get step data from both sequences (content presence)
             bool hasA = false, hasB = false;
             bool playheadA = false, playheadB = false;
-            int symbolId = -999; // Default to "no symbol"
+            int aSymbolId = -999;
+            int bSymbolId = -999;
+            int aVoices = 0;
+            int bVoices = 0;
+            bool inA = false, inB = false; // within sequence length regardless of content
             
-            if (module && stepIndex < 64) {
-                // Check if this step is within sequence lengths
-                if (stepIndex < module->sequenceA.length) {
+            if (module && stepIndex >= 0) {
+                int totalSteps = module->gridSteps;
+                if (stepIndex < totalSteps) {
+                inA = (stepIndex < module->sequenceA.length);
+                inB = (stepIndex < module->sequenceB.length);
+
+                // Sequence A content
+                if (inA && module->sequenceA.steps[stepIndex].chordIndex >= -2) {
                     hasA = true;
-                    if (module->sequenceA.steps[stepIndex].chordIndex >= -2) {
-                        symbolId = module->sequenceA.steps[stepIndex].alchemySymbolId;
-                    }
+                    aSymbolId = module->sequenceA.steps[stepIndex].alchemySymbolId;
+                    aVoices = module->sequenceA.steps[stepIndex].voiceCount;
                 }
-                
-                if (stepIndex < module->sequenceB.length) {
+                // Sequence B content
+                if (inB && module->sequenceB.steps[stepIndex].chordIndex >= -2) {
                     hasB = true;
-                    if (symbolId == -999 && module->sequenceB.steps[stepIndex].chordIndex >= -2) {
-                        symbolId = module->sequenceB.steps[stepIndex].alchemySymbolId;
-                    }
+                    bSymbolId = module->sequenceB.steps[stepIndex].alchemySymbolId;
+                    bVoices = module->sequenceB.steps[stepIndex].voiceCount;
                 }
                 
-                // Check for playhead position
-                playheadA = (module->sequenceA.running && module->sequenceA.currentStep == stepIndex);
-                playheadB = (module->sequenceB.running && module->sequenceB.currentStep == stepIndex);
+                // Check for playhead or edit-cursor position
+                bool editCursorA = (module->editModeA && inA && module->sequenceA.currentStep == stepIndex);
+                bool editCursorB = (module->editModeB && inB && module->sequenceB.currentStep == stepIndex);
+                playheadA = ((module->sequenceA.running && module->sequenceA.currentStep == stepIndex) || editCursorA);
+                playheadB = ((module->sequenceB.running && module->sequenceB.currentStep == stepIndex) || editCursorB);
+                // Do not gate playheads by edit mode; running playheads always light
+                }
             }
             
             // Draw high-resolution cell background
             nvgBeginPath(args.vg);
             
-            // Use larger, smoother circles with bigger matrix size
-            float cellRadius = std::min(cellWidth, cellHeight) * 0.42f; // Slightly larger radius
+            // Use larger, smoother circles; set 32‑step size to match 64‑step visual spacing
+            // For equal on-screen gap: gap64 = 0.16*(W/8) = 0.02*W; with 6 cols, radius factor ≈ 0.44
+            float radiusFactor = (module && module->gridSteps == 32) ? 0.44f : 0.42f;
+            float cellRadius = std::min(cellWidth, cellHeight) * radiusFactor;
             nvgCircle(args.vg, cellCenter.x, cellCenter.y, cellRadius);
             
             // LED color logic with smooth gradients
-            NVGcolor ledColor = nvgRGBA(25, 25, 30, 255); // Default off
             
             // Check for edit mode highlighting
             bool editModeHighlight = false;
@@ -1732,17 +1890,17 @@ void HighResMatrixWidget::drawMatrix(const DrawArgs& args) {
                                                       nvgRGBA(120, 0, 150, 200), nvgRGBA(60, 0, 80, 200));
                     nvgFillPaint(args.vg, paint);
                 }
-            } else if (hasA && hasB) {
+            } else if (inA && inB) {
                 // Both sequences - subtle mix
                 NVGpaint paint = nvgRadialGradient(args.vg, cellCenter.x, cellCenter.y, 0, cellRadius,
                                                   nvgRGBA(60, 80, 120, 255), nvgRGBA(30, 40, 60, 255));
                 nvgFillPaint(args.vg, paint);
-            } else if (hasA) {
+            } else if (inA) {
                 // Sequence A only
                 NVGpaint paint = nvgRadialGradient(args.vg, cellCenter.x, cellCenter.y, 0, cellRadius,
                                                   nvgRGBA(0, 100, 70, 255), nvgRGBA(0, 50, 35, 255));
                 nvgFillPaint(args.vg, paint);
-            } else if (hasB) {
+            } else if (inB) {
                 // Sequence B only
                 NVGpaint paint = nvgRadialGradient(args.vg, cellCenter.x, cellCenter.y, 0, cellRadius,
                                                   nvgRGBA(70, 0, 100, 255), nvgRGBA(35, 0, 50, 255));
@@ -1754,48 +1912,173 @@ void HighResMatrixWidget::drawMatrix(const DrawArgs& args) {
                 nvgFillPaint(args.vg, paint);
             }
             
-            // Add edit mode glow for empty steps
-            if (module && (module->editModeA || module->editModeB) && !hasA && !hasB) {
-                NVGpaint paint = nvgRadialGradient(args.vg, cellCenter.x, cellCenter.y, 0, cellRadius,
-                                                  nvgRGBA(40, 40, 60, 100), nvgRGBA(20, 20, 30, 50));
-                nvgFillPaint(args.vg, paint);
+            // Add edit mode glow for unused steps, but never override a playhead highlight
+            if (module && (module->editModeA || module->editModeB)) {
+                // A edit: within A length, no A content at this step, and not the active playhead
+                if (module->editModeA && inA && !hasA && !playheadA) {
+                    NVGpaint paint = nvgRadialGradient(args.vg, cellCenter.x, cellCenter.y, 0, cellRadius,
+                                                      nvgRGBA(0, 180, 140, 120), nvgRGBA(0, 80, 60, 60));
+                    nvgFillPaint(args.vg, paint);
+                }
+                // B edit: within B length, no B content at this step, and not the active playhead
+                if (module->editModeB && inB && !hasB && !playheadB) {
+                    NVGpaint paint = nvgRadialGradient(args.vg, cellCenter.x, cellCenter.y, 0, cellRadius,
+                                                      nvgRGBA(140, 0, 180, 120), nvgRGBA(60, 0, 80, 60));
+                    nvgFillPaint(args.vg, paint);
+                }
             }
             
             nvgFill(args.vg);
             
-            // Draw alchemical symbol at high resolution
-            if (symbolId >= 0 && symbolId < 40) {
-                // Determine symbol color - black when LED is lit, white otherwise
-                NVGcolor symbolColor = nvgRGBA(255, 255, 255, 255); // Default white
-                if (playheadA || playheadB) {
-                    symbolColor = nvgRGBA(0, 0, 0, 255); // Black for contrast
-                }
-                drawAlchemicalSymbol(args, cellCenter, symbolId, symbolColor);
-            } else if (symbolId == -1) {
-                drawRestSymbol(args, cellCenter);
-            } else if (symbolId == -2) {
-                drawTieSymbol(args, cellCenter);
-            }
-            
-            // Draw voice count indicators at high resolution
-            if (module && stepIndex < 64 && (hasA || hasB)) {
-                int voiceCount = 1;
-                if (hasA && stepIndex < module->sequenceA.length) {
-                    voiceCount = module->sequenceA.steps[stepIndex].voiceCount;
-                } else if (hasB && stepIndex < module->sequenceB.length) {
-                    voiceCount = module->sequenceB.steps[stepIndex].voiceCount;
-                }
-                
+            // Draw alchemical symbols for both sequences when present
+            if (hasA && hasB) {
+                // Emphasis based on edit mode
+                float aAlpha = 0.9f, bAlpha = 0.9f;
+                if (module->editModeA && !module->editModeB) { aAlpha = 1.0f; bAlpha = 0.7f; }
+                if (module->editModeB && !module->editModeA) { bAlpha = 1.0f; aAlpha = 0.7f; }
+                NVGcolor ink = nvgRGBA(232, 224, 200, 255);
+                // Nudge minis toward center to avoid hugging the circle edge
+                float off = std::min(cellWidth, cellHeight) * 0.14f;
+                float scale = 0.85f; // make dual-occupancy symbols larger
+                // A (upper-left)
+                nvgSave(args.vg);
+                nvgTranslate(args.vg, cellCenter.x - off, cellCenter.y - off);
+                nvgScale(args.vg, scale, scale);
+                if (aSymbolId >= 0 && aSymbolId < 40) st::drawAlchemicalSymbol(args, Vec(0, 0), aSymbolId, ink, 6.5f, 1.0f);
+                else if (aSymbolId == -1) st::drawRestSymbol(args, Vec(0, 0));
+                else if (aSymbolId == -2) st::drawTieSymbol(args, Vec(0, 0));
+                nvgRestore(args.vg);
+                // B (lower-right)
+                nvgSave(args.vg);
+                nvgTranslate(args.vg, cellCenter.x + off, cellCenter.y + off);
+                nvgScale(args.vg, scale, scale);
+                if (bSymbolId >= 0 && bSymbolId < 40) st::drawAlchemicalSymbol(args, Vec(0, 0), bSymbolId, ink, 6.5f, 1.0f);
+                else if (bSymbolId == -1) st::drawRestSymbol(args, Vec(0, 0));
+                else if (bSymbolId == -2) st::drawTieSymbol(args, Vec(0, 0));
+                nvgRestore(args.vg);
+                // Dual-color ring accent (keep within cell bounds)
+                float r = std::max(cellRadius - 1.2f, cellRadius * 0.9f);
+                nvgBeginPath(args.vg);
+                nvgArc(args.vg, cellCenter.x, cellCenter.y, r, -M_PI/2, M_PI/2, NVG_CW);
+                nvgStrokeColor(args.vg, nvgRGBA(0, 255, 180, 180));
+                nvgStrokeWidth(args.vg, 1.2f);
+                nvgStroke(args.vg);
+                nvgBeginPath(args.vg);
+                nvgArc(args.vg, cellCenter.x, cellCenter.y, r, M_PI/2, M_PI/2 + M_PI, NVG_CW);
+                nvgStrokeColor(args.vg, nvgRGBA(180, 0, 255, 180));
+                nvgStrokeWidth(args.vg, 1.2f);
+                nvgStroke(args.vg);
+            } else {
+                // Single occupancy fallback (centered)
+                int symbolId = hasA ? aSymbolId : (hasB ? bSymbolId : -999);
                 if (symbolId >= 0 && symbolId < 40) {
-                    NVGcolor dotColor = nvgRGBA(255, 255, 255, 255); // Default white
-                    if (playheadA || playheadB) {
-                        dotColor = nvgRGBA(0, 0, 0, 255); // Black for contrast
-                    }
-                    drawVoiceCount(args, cellCenter, voiceCount, dotColor);
+                    NVGcolor ink = nvgRGBA(232, 224, 200, 255);
+                    // Larger single-occupancy symbol for clarity
+                    st::drawAlchemicalSymbol(args, cellCenter, symbolId, ink, 8.2f, 1.0f);
+                } else if (symbolId == -1) {
+                    st::drawRestSymbol(args, cellCenter);
+                } else if (symbolId == -2) {
+                    st::drawTieSymbol(args, cellCenter);
                 }
             }
             
-            // Draw subtle cell border for definition
+            // Draw voice count indicators near the edge of the circle
+            if (module && (hasA || hasB) && stepIndex < module->gridSteps) {
+                if (hasA && hasB) {
+                    // Dual occupancy: show voice dots in a 2x3 grid placed to the side of each symbol (no overlap)
+                    auto drawDotsGrid = [&](Vec center, int count) {
+                        int dots = std::min(count, 6);
+                        if (dots <= 0) return;
+                        float pitch = std::min(cellWidth, cellHeight) * 0.09f; // spacing between dots
+                        for (int i = 0; i < dots; i++) {
+                            int row = i / 3;      // 0..1
+                            int col = i % 3;      // 0..2
+                            float dx = (col - 1) * pitch;       // -pitch, 0, +pitch
+                            float dy = (row - 0.5f) * pitch;    // -0.5p, +0.5p
+                            nvgBeginPath(args.vg);
+                            nvgFillColor(args.vg, nvgRGBA(255, 255, 255, 230));
+                            nvgCircle(args.vg, center.x + dx, center.y + dy, 1.3f);
+                            nvgFill(args.vg);
+                        }
+                    };
+                    // Compute symbol centers (same offsets used when drawing minis)
+                    float off = std::min(cellWidth, cellHeight) * 0.18f;
+                    Vec symA = Vec(cellCenter.x - off, cellCenter.y - off); // top symbol
+                    Vec symB = Vec(cellCenter.x + off, cellCenter.y + off); // bottom symbol
+                    // Place dot grids to the side of each symbol (right of top, left of bottom), near circle edge
+                    float pitch = std::min(cellWidth, cellHeight) * 0.09f;
+                    float gridHalfW = pitch;       // half width of 3 columns
+                    float ringR = std::max(0.0f, cellRadius - 3.0f);
+                    float sideDist = std::max(0.0f, ringR - gridHalfW - 1.4f);
+                    // Initial desired centers: right of top symbol, left of bottom symbol
+                    Vec gridCenterA = Vec(cellCenter.x + sideDist, symA.y);
+                    Vec gridCenterB = Vec(cellCenter.x - sideDist, symB.y);
+                    // Clamp horizontally so dots stay inside the circle at their row extremes
+                    auto clampGridXInsideCircle = [&](Vec center) -> float {
+                        float margin = 4.0f; // keep dots well inside border
+                        float yTop = center.y - 0.5f * pitch;
+                        float yBot = center.y + 0.5f * pitch;
+                        float dyAbs = std::max(fabsf(yTop - cellCenter.y), fabsf(yBot - cellCenter.y));
+                        float xMax = sqrtf(std::max(0.0f, cellRadius * cellRadius - dyAbs * dyAbs)) - margin;
+                        return xMax;
+                    };
+                    float xMaxA = clampGridXInsideCircle(gridCenterA);
+                    float xMaxB = clampGridXInsideCircle(gridCenterB);
+                    // Right side clamp for A (ensure rightmost column inside)
+                    gridCenterA.x = std::min(gridCenterA.x, cellCenter.x + (xMaxA - gridHalfW - 1.0f));
+                    // Left side clamp for B (ensure leftmost column inside)
+                    gridCenterB.x = std::max(gridCenterB.x, cellCenter.x - (xMaxB - gridHalfW - 1.0f));
+                    drawDotsGrid(gridCenterA, aVoices);
+                    drawDotsGrid(gridCenterB, bVoices);
+                } else {
+                    // Single occupancy: use a full ring near the circle edge
+                    int voiceCount = hasA ? aVoices : bVoices;
+                    NVGcolor dotColor = (playheadA || playheadB) ? nvgRGBA(0, 0, 0, 255) : nvgRGBA(255, 255, 255, 255);
+                    float ringR = std::max(0.0f, cellRadius - 1.4f);
+                    int dots = std::min(voiceCount, 6);
+                    for (int i = 0; i < dots; i++) {
+                        float angle = (float)i / 6.0f * 2.0f * M_PI - M_PI/2;
+                        float dotX = cellCenter.x + cosf(angle) * ringR;
+                        float dotY = cellCenter.y + sinf(angle) * ringR;
+                        nvgBeginPath(args.vg);
+                        nvgFillColor(args.vg, dotColor);
+                        nvgCircle(args.vg, dotX, dotY, 1.2f);
+                        nvgFill(args.vg);
+                    }
+                }
+            }
+            
+            // Draw playhead ring overlay to guarantee visibility even if fills change
+            if (playheadA || playheadB) {
+                float ringR = cellRadius + 1.0f;
+                if (playheadA && playheadB) {
+                    // Split ring: top half teal, bottom half purple
+                    nvgBeginPath(args.vg);
+                    nvgArc(args.vg, cellCenter.x, cellCenter.y, ringR, -M_PI, 0, NVG_CW);
+                    nvgStrokeColor(args.vg, nvgRGBA(0, 255, 180, 220));
+                    nvgStrokeWidth(args.vg, 2.0f);
+                    nvgStroke(args.vg);
+                    nvgBeginPath(args.vg);
+                    nvgArc(args.vg, cellCenter.x, cellCenter.y, ringR, 0, M_PI, NVG_CW);
+                    nvgStrokeColor(args.vg, nvgRGBA(180, 0, 255, 220));
+                    nvgStrokeWidth(args.vg, 2.0f);
+                    nvgStroke(args.vg);
+                } else if (playheadA) {
+                    nvgBeginPath(args.vg);
+                    nvgCircle(args.vg, cellCenter.x, cellCenter.y, ringR);
+                    nvgStrokeColor(args.vg, nvgRGBA(0, 255, 180, 220));
+                    nvgStrokeWidth(args.vg, 2.0f);
+                    nvgStroke(args.vg);
+                } else if (playheadB) {
+                    nvgBeginPath(args.vg);
+                    nvgCircle(args.vg, cellCenter.x, cellCenter.y, ringR);
+                    nvgStrokeColor(args.vg, nvgRGBA(180, 0, 255, 220));
+                    nvgStrokeWidth(args.vg, 2.0f);
+                    nvgStroke(args.vg);
+                }
+            }
+
+            // Draw subtle cell border for definition beneath overlay
             nvgStrokeColor(args.vg, nvgRGBA(60, 60, 70, 100));
             nvgStrokeWidth(args.vg, 1.0f);
             nvgStroke(args.vg);
@@ -1827,7 +2110,49 @@ void HighResMatrixWidget::drawMatrix(const DrawArgs& args) {
         
         nvgRestore(args.vg);
     }
-    
+
+    // Vintage screen overlay: vignette + patina + faint micro-scratches (subtle, on top of bezel)
+    {
+        // Clip to screen bounds
+        nvgSave(args.vg);
+        nvgBeginPath(args.vg);
+        nvgRoundedRect(args.vg, 0, 0, box.size.x, box.size.y, 8.0f);
+        nvgPathWinding(args.vg, NVG_CW);
+        // Vignette
+        NVGpaint vignette = nvgRadialGradient(
+            args.vg,
+            box.size.x * 0.5f, box.size.y * 0.5f,
+            std::min(box.size.x, box.size.y) * 0.35f,
+            std::min(box.size.x, box.size.y) * 0.8f,
+            nvgRGBA(0, 0, 0, 0), nvgRGBA(0, 0, 0, 26)
+        );
+        nvgFillPaint(args.vg, vignette);
+        nvgFill(args.vg);
+        // Patina (diagonal tint)
+        NVGpaint patina = nvgLinearGradient(args.vg, 0, 0, box.size.x, box.size.y, nvgRGBA(24, 30, 20, 10), nvgRGBA(50, 40, 22, 12));
+        nvgBeginPath(args.vg);
+        nvgRoundedRect(args.vg, 1.0f, 1.0f, box.size.x - 2.0f, box.size.y - 2.0f, 7.0f);
+        nvgFillPaint(args.vg, patina);
+        nvgFill(args.vg);
+        // Micro scratches (shorter, fewer)
+        unsigned seed = 73321u;
+        auto rnd = [&]() {
+            seed ^= seed << 13; seed ^= seed >> 17; seed ^= seed << 5; return (seed & 0xFFFF) / 65535.f; };
+        nvgStrokeColor(args.vg, nvgRGBA(255, 255, 255, 8));
+        nvgStrokeWidth(args.vg, 0.5f);
+        for (int i = 0; i < 3; ++i) {
+            float x1 = rnd() * (box.size.x * 0.8f) + box.size.x * 0.1f;
+            float y1 = rnd() * (box.size.y * 0.8f) + box.size.y * 0.1f;
+            float dx = (rnd() - 0.5f) * (box.size.x * 0.08f);
+            float dy = (rnd() - 0.5f) * (box.size.y * 0.08f);
+            nvgBeginPath(args.vg);
+            nvgMoveTo(args.vg, x1, y1);
+            nvgLineTo(args.vg, x1 + dx, y1 + dy);
+            nvgStroke(args.vg);
+        }
+        nvgRestore(args.vg);
+    }
+
     nvgRestore(args.vg);
 }
 
@@ -2425,46 +2750,27 @@ void HighResMatrixWidget::drawAlchemicalSymbol(const DrawArgs& args, Vec pos, in
     nvgRestore(args.vg);
 }
 
-void HighResMatrixWidget::drawRestSymbol(const DrawArgs& args, Vec pos) {
-    nvgStrokeColor(args.vg, nvgRGBA(180, 180, 180, 255));
-    nvgStrokeWidth(args.vg, 1.0f); // Match symbol stroke width
-    
-    // Draw rest symbol (horizontal line)
-    nvgBeginPath(args.vg);
-    nvgMoveTo(args.vg, pos.x - 6, pos.y);
-    nvgLineTo(args.vg, pos.x + 6, pos.y);
-    nvgStroke(args.vg);
-}
-
-void HighResMatrixWidget::drawTieSymbol(const DrawArgs& args, Vec pos) {
-    nvgStrokeColor(args.vg, nvgRGBA(255, 220, 120, 255));
-    nvgStrokeWidth(args.vg, 1.0f); // Match symbol stroke width
-    
-    // Draw tie symbol (curved line)
-    nvgBeginPath(args.vg);
-    nvgMoveTo(args.vg, pos.x - 6, pos.y);
-    nvgBezierTo(args.vg, pos.x - 2, pos.y - 6, pos.x + 2, pos.y - 6, pos.x + 6, pos.y);
-    nvgStroke(args.vg);
-}
-
 void HighResMatrixWidget::drawVoiceCount(const DrawArgs& args, Vec pos, int voiceCount, NVGcolor dotColor) {
     nvgSave(args.vg);
-    
-    // Now with larger matrix size, we can position dots further from symbol center
-    float radius = 9.0f; // Better spacing around symbols with larger matrix size
-    
+    // Compute cell/circle radius to place dots near the edge
+    int cols = (module && module->gridSteps == 32) ? 6 : MATRIX_COLS;
+    int rows = (module && module->gridSteps == 32) ? 6 : 8;
+    float cellWidth = box.size.x / cols;
+    float cellHeight = box.size.y / rows;
+    // Match 64‑step absolute gap by using ≈0.44 for 32‑step
+    float radiusFactor = (module && module->gridSteps == 32) ? 0.44f : 0.42f;
+    float circleR = std::min(cellWidth, cellHeight) * radiusFactor;
+    float ringR = std::max(0.0f, circleR - 1.4f);
+
     for (int i = 0; i < std::min(voiceCount, 6); i++) {
         float angle = (float)i / 6.0f * 2.0f * M_PI - M_PI/2; // Start from top
-        float dotX = pos.x + cos(angle) * radius;
-        float dotY = pos.y + sin(angle) * radius;
-        
+        float dotX = pos.x + cosf(angle) * ringR;
+        float dotY = pos.y + sinf(angle) * ringR;
         nvgBeginPath(args.vg);
         nvgFillColor(args.vg, dotColor);
-        nvgStrokeWidth(args.vg, 0.0f);
-        nvgCircle(args.vg, dotX, dotY, 1.2f); // Slightly smaller dots for better proportion
+        nvgCircle(args.vg, dotX, dotY, 1.2f);
         nvgFill(args.vg);
     }
-    
     nvgRestore(args.vg);
 }
 
@@ -2581,30 +2887,107 @@ void Matrix8x8Widget::drawMatrix(const DrawArgs& args) {
         int bgBrightness = 8 + (int)(waveA * 8); // Slower brightness variation
         nvgFillColor(args.vg, nvgRGBA(bgBrightness, bgBrightness * 0.8f, bgBrightness * 1.3f, 255));
         nvgFill(args.vg);
+
+        // Bezel for 8x8 view
+        {
+            float rOuter = 8.0f;
+            float inset = 2.0f;
+            float rInner = std::max(0.0f, rOuter - 2.0f);
+
+            // Outer border
+            nvgBeginPath(args.vg);
+            nvgRoundedRect(args.vg, 0.5f, 0.5f, matrixSize - 1.0f, matrixSize - 1.0f, rOuter);
+            nvgStrokeColor(args.vg, nvgRGBA(10, 10, 14, 220));
+            nvgStrokeWidth(args.vg, 1.0f);
+            nvgStroke(args.vg);
+
+            // Inner shadow ring using box gradient
+            NVGpaint innerShadow = nvgBoxGradient(
+                args.vg,
+                inset, inset,
+                matrixSize - inset * 2.0f,
+                matrixSize - inset * 2.0f,
+                rInner, 6.0f,
+                nvgRGBA(0, 0, 0, 60),
+                nvgRGBA(0, 0, 0, 0)
+            );
+            nvgBeginPath(args.vg);
+            // Outer path of ring
+            nvgRoundedRect(args.vg, inset - 1.0f, inset - 1.0f, matrixSize - (inset - 1.0f) * 2.0f, matrixSize - (inset - 1.0f) * 2.0f, rInner + 1.0f);
+            // Inner hole
+            nvgRoundedRect(args.vg, inset + 1.0f, inset + 1.0f, matrixSize - (inset + 1.0f) * 2.0f, matrixSize - (inset + 1.0f) * 2.0f, std::max(0.0f, rInner - 1.0f));
+            nvgPathWinding(args.vg, NVG_HOLE);
+            nvgFillPaint(args.vg, innerShadow);
+            nvgFill(args.vg);
+
+            // Top highlight fade
+            nvgSave(args.vg);
+            nvgScissor(args.vg, 0, 0, matrixSize, std::min(10.0f, matrixSize));
+            NVGpaint topHi = nvgLinearGradient(args.vg, 0, 0, 0, 10.0f, nvgRGBA(255, 255, 255, 24), nvgRGBA(255, 255, 255, 0));
+            nvgBeginPath(args.vg);
+            nvgRoundedRect(args.vg, inset + 0.5f, inset + 0.5f, matrixSize - (inset + 1.0f), 8.0f, rInner);
+            nvgFillPaint(args.vg, topHi);
+            nvgFill(args.vg);
+            nvgRestore(args.vg);
+
+            // Bottom shadow fade
+            nvgSave(args.vg);
+            nvgScissor(args.vg, 0, matrixSize - std::min(10.0f, matrixSize), matrixSize, std::min(10.0f, matrixSize));
+            NVGpaint bottomShadow = nvgLinearGradient(args.vg, 0, matrixSize, 0, matrixSize - 10.0f, nvgRGBA(0, 0, 0, 40), nvgRGBA(0, 0, 0, 0));
+            nvgBeginPath(args.vg);
+            nvgRoundedRect(args.vg, inset + 0.5f, matrixSize - 8.5f, matrixSize - (inset + 1.0f), 8.0f, rInner);
+            nvgFillPaint(args.vg, bottomShadow);
+            nvgFill(args.vg);
+            nvgRestore(args.vg);
+
+            // Inner lip stroke
+            nvgBeginPath(args.vg);
+            nvgRoundedRect(args.vg, inset + 1.0f, inset + 1.0f, matrixSize - (inset + 1.0f) * 2.0f, matrixSize - (inset + 1.0f) * 2.0f, std::max(0.0f, rInner - 1.0f));
+            nvgStrokeColor(args.vg, nvgRGBA(255, 255, 255, 30));
+            nvgStrokeWidth(args.vg, 0.8f);
+            nvgStroke(args.vg);
+
+            // Left edge inner highlight (8x8)
+            nvgBeginPath(args.vg);
+            nvgRoundedRect(args.vg, inset - 1.0f, inset - 1.0f, matrixSize - (inset - 1.0f) * 2.0f, matrixSize - (inset - 1.0f) * 2.0f, rInner + 1.0f);
+            nvgRoundedRect(args.vg, inset + 1.0f, inset + 1.0f, matrixSize - (inset + 1.0f) * 2.0f, matrixSize - (inset + 1.0f) * 2.0f, std::max(0.0f, rInner - 1.0f));
+            nvgPathWinding(args.vg, NVG_HOLE);
+            NVGpaint leftHi8 = nvgLinearGradient(args.vg, inset - 1.0f, 0, inset + 8.0f, 0, nvgRGBA(255, 255, 255, 22), nvgRGBA(255, 255, 255, 0));
+            nvgFillPaint(args.vg, leftHi8);
+            nvgFill(args.vg);
+            // Right edge inner highlight (8x8)
+            nvgBeginPath(args.vg);
+            nvgRoundedRect(args.vg, inset - 1.0f, inset - 1.0f, matrixSize - (inset - 1.0f) * 2.0f, matrixSize - (inset - 1.0f) * 2.0f, rInner + 1.0f);
+            nvgRoundedRect(args.vg, inset + 1.0f, inset + 1.0f, matrixSize - (inset + 1.0f) * 2.0f, matrixSize - (inset + 1.0f) * 2.0f, std::max(0.0f, rInner - 1.0f));
+            nvgPathWinding(args.vg, NVG_HOLE);
+            NVGpaint rightHi8 = nvgLinearGradient(args.vg, matrixSize - (inset - 1.0f), 0, matrixSize - (inset + 8.0f), 0, nvgRGBA(255, 255, 255, 14), nvgRGBA(255, 255, 255, 0));
+            nvgFillPaint(args.vg, rightHi8);
+            nvgFill(args.vg);
+        }
         
         // Set up clipping to keep all effects within the rounded rectangle (8x8 version)
         nvgSave(args.vg);
         nvgIntersectScissor(args.vg, 0, 0, matrixSize, matrixSize);
         
-        // Add intense VHS tape warping scanlines (8x8 version, clipped) 
-        for (int i = 0; i < matrixSize; i += 2) {
-            float warpOffset = sin((i * 0.025f) + time * 1.2f) * 3.0f; // More intense warping for 8x8
-            warpOffset += cos((i * 0.012f) + time * 0.8f) * 2.0f; // Additional warp layer
-            warpOffset += deepWarp * sin(i * 0.05f) * 2.0f; // Deep distortion
+        // Softer scanlines (8x8)
+        for (int i = 0; i < matrixSize; i += 3) {
+            float warpOffset = sin((i * 0.02f) + time * 1.0f) * 1.8f;
+            warpOffset += cos((i * 0.01f) + time * 0.6f) * 1.2f;
+            warpOffset += deepWarp * sin(i * 0.04f) * 1.2f;
             nvgBeginPath(args.vg);
             nvgRect(args.vg, warpOffset, i, matrixSize, 1);
-            nvgFillColor(args.vg, nvgRGBA(0, 0, 0, 25 + (int)(waveB * 25)));
+            nvgFillColor(args.vg, nvgRGBA(0, 0, 0, 10 + (int)(waveB * 12)));
             nvgFill(args.vg);
         }
         
-        // Add ultra slow moving VHS tape distortion bands (8x8 version, clipped)
+        // Softer distortion bands (8x8)
         for (int i = 0; i < 2; i++) {
-            float distortionY = fmod(time * 6 + i * 100, matrixSize); // Ultra slow movement
-            float warpWidth = sin(time * 0.6f + i) * 2.5f + deepWarp * 3.0f; // More intense warping
-            float bandHeight = 1 + sin(time * 0.4f + i) * 0.5f; // Variable height
+            float distortionY = fmod(time * 5 + i * 100, matrixSize);
+            float warpWidth = sin(time * 0.5f + i) * 1.6f + deepWarp * 2.0f;
+            float bandHeight = 1 + sin(time * 0.35f + i) * 0.4f;
             nvgBeginPath(args.vg);
             nvgRect(args.vg, warpWidth, distortionY, matrixSize, bandHeight);
-            nvgFillColor(args.vg, nvgRGBA(70 + (int)(waveA * 30), 90 + (int)(waveB * 30), 110, 30 + (int)(tapeWarp * 150)));
+            nvgFillColor(args.vg, nvgRGBA(70 + (int)(waveA * 25), 90 + (int)(waveB * 25), 110, 20 + (int)(tapeWarp * 90)));
             nvgFill(args.vg);
         }
         
@@ -2651,22 +3034,22 @@ void Matrix8x8Widget::drawMatrix(const DrawArgs& args) {
             // Create blur effect with multiple offset draws
             for (int blur = 0; blur < 2; blur++) {
                 float blurOffset = blur * 0.3f;
-                drawAlchemicalSymbol(args, Vec(glowOffset + blurOffset, glowOffset + blurOffset), module->displaySymbolId, nvgRGBA(symbolR * 0.9f, symbolG * 0.9f, symbolB * 0.9f, glowAlpha));
-                drawAlchemicalSymbol(args, Vec(-glowOffset + blurOffset, glowOffset - blurOffset), module->displaySymbolId, nvgRGBA(symbolR * 0.9f, symbolG * 0.9f, symbolB * 0.9f, glowAlpha));
-                drawAlchemicalSymbol(args, Vec(glowOffset - blurOffset, -glowOffset + blurOffset), module->displaySymbolId, nvgRGBA(symbolR * 0.9f, symbolG * 0.9f, symbolB * 0.9f, glowAlpha));
-                drawAlchemicalSymbol(args, Vec(-glowOffset - blurOffset, -glowOffset - blurOffset), module->displaySymbolId, nvgRGBA(symbolR * 0.9f, symbolG * 0.9f, symbolB * 0.9f, glowAlpha));
+                st::drawAlchemicalSymbol(args, Vec(glowOffset + blurOffset, glowOffset + blurOffset), module->displaySymbolId, nvgRGBA(symbolR * 0.9f, symbolG * 0.9f, symbolB * 0.9f, glowAlpha));
+                st::drawAlchemicalSymbol(args, Vec(-glowOffset + blurOffset, glowOffset - blurOffset), module->displaySymbolId, nvgRGBA(symbolR * 0.9f, symbolG * 0.9f, symbolB * 0.9f, glowAlpha));
+                st::drawAlchemicalSymbol(args, Vec(glowOffset - blurOffset, -glowOffset + blurOffset), module->displaySymbolId, nvgRGBA(symbolR * 0.9f, symbolG * 0.9f, symbolB * 0.9f, glowAlpha));
+                st::drawAlchemicalSymbol(args, Vec(-glowOffset - blurOffset, -glowOffset - blurOffset), module->displaySymbolId, nvgRGBA(symbolR * 0.9f, symbolG * 0.9f, symbolB * 0.9f, glowAlpha));
             }
         }
         
         // Main symbol with bright core (positioned to align with glow effects at center)
-        drawAlchemicalSymbol(args, Vec(0, 0), module->displaySymbolId, nvgRGBA(symbolR, symbolG, symbolB, 255));
+        st::drawAlchemicalSymbol(args, Vec(0, 0), module->displaySymbolId, nvgRGBA(symbolR, symbolG, symbolB, 255));
         
         // Extra bright white core for VHS warping intensity
-        drawAlchemicalSymbol(args, Vec(0, 0), module->displaySymbolId, nvgRGBA(255, 255, 255, 50 + (int)(waveA * 30)));
+        st::drawAlchemicalSymbol(args, Vec(0, 0), module->displaySymbolId, nvgRGBA(255, 255, 255, 50 + (int)(waveA * 30)));
         nvgRestore(args.vg);
         
-        // Set up horror movie text with much more pixelated chunky font
-        nvgFontSize(args.vg, 20.0f); // Much bigger text for 8x8 matrix
+        // Set up vintage text for chord name (8x8)
+        nvgFontSize(args.vg, 20.0f);
         nvgFontFaceId(args.vg, APP->window->uiFont->handle);
         nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
         
@@ -2676,9 +3059,9 @@ void Matrix8x8Widget::drawMatrix(const DrawArgs& args) {
         
         // Multiple chunky shadows for extreme pixelated horror effect
         nvgFillColor(args.vg, nvgRGBA(40, 40, 50, 220)); // Dark gray shadow
-        nvgText(args.vg, textX + 2, textY + 2, module->displayChordName.c_str(), NULL);
-        nvgText(args.vg, textX + 1, textY + 3, module->displayChordName.c_str(), NULL);
-        nvgText(args.vg, textX + 3, textY + 1, module->displayChordName.c_str(), NULL);
+        // Soft single shadow
+        nvgFillColor(args.vg, nvgRGBA(0, 0, 0, 140));
+        nvgText(args.vg, textX + 1.5f, textY + 1.5f, module->displayChordName.c_str(), NULL);
         
         // Main text with ultra slowly cycling Shapetaker colors
         int textR, textG, textB;
@@ -2707,21 +3090,19 @@ void Matrix8x8Widget::drawMatrix(const DrawArgs& args) {
         }
         
         nvgFillColor(args.vg, nvgRGBA(textR, textG, textB, 255));
+        // Warm ink
+        nvgFillColor(args.vg, nvgRGBA(232, 224, 200, 240));
         nvgText(args.vg, textX, textY, module->displayChordName.c_str(), NULL);
         
         // Intense multi-layer glow effects with blur
         for (int glow = 0; glow < 8; glow++) {
-            float glowRadius = (glow + 1) * 1.5f;
             float glowAlpha = 120 / (glow + 1); // Fade out each layer
             
             // Blur effect by drawing at slightly offset positions
             for (int blur = 0; blur < 3; blur++) {
                 float blurOffset = blur * 0.5f;
                 nvgFillColor(args.vg, nvgRGBA(textR * 0.8f, textG * 0.8f, textB * 0.8f, glowAlpha));
-                nvgText(args.vg, textX + blurOffset, textY + blurOffset, module->displayChordName.c_str(), NULL);
-                nvgText(args.vg, textX - blurOffset, textY + blurOffset, module->displayChordName.c_str(), NULL);
-                nvgText(args.vg, textX + blurOffset, textY - blurOffset, module->displayChordName.c_str(), NULL);
-                nvgText(args.vg, textX - blurOffset, textY - blurOffset, module->displayChordName.c_str(), NULL);
+                // Suppress neon glow copies for vintage look
             }
         }
         
@@ -2761,9 +3142,12 @@ void Matrix8x8Widget::drawMatrix(const DrawArgs& args) {
                     }
                 }
                 
-                // Check for playhead position
-                playheadA = (module->sequenceA.running && module->sequenceA.currentStep == stepIndex);
-                playheadB = (module->sequenceB.running && module->sequenceB.currentStep == stepIndex);
+                // Check for playhead or edit-cursor position
+                bool editCursorA = (module->editModeA && module->sequenceA.currentStep == stepIndex);
+                bool editCursorB = (module->editModeB && module->sequenceB.currentStep == stepIndex);
+                playheadA = ((module->sequenceA.running && module->sequenceA.currentStep == stepIndex) || editCursorA);
+                playheadB = ((module->sequenceB.running && module->sequenceB.currentStep == stepIndex) || editCursorB);
+                // Do not gate playheads by edit mode; running playheads always light
             }
             
             // Draw LED background
@@ -2802,10 +3186,10 @@ void Matrix8x8Widget::drawMatrix(const DrawArgs& args) {
                 ledColor = nvgRGBA(90, 0, 127, 255); // Dim purple
             }
             
-            // Add edit mode matrix border glow for empty steps
+            // Add edit mode matrix border glow for empty steps, but do not override playhead highlight
             if (module && (module->editModeA || module->editModeB)) {
                 // Subtle edit mode indication on empty steps
-                if (!hasA && !hasB) {
+                if (!hasA && !hasB && !(playheadA || playheadB)) {
                     ledColor = nvgRGBA(40, 40, 60, 100); // Subtle highlight for programmable steps
                 }
             }
@@ -2815,19 +3199,15 @@ void Matrix8x8Widget::drawMatrix(const DrawArgs& args) {
             
             // Draw alchemical symbol if assigned (but not if it's the default "no symbol" value)
             if (symbolId >= 0 && symbolId < 40) {
-                // Determine symbol color - black when LED is lit, white otherwise
-                NVGcolor symbolColor = nvgRGBA(255, 255, 255, 255); // Default white
-                if (playheadA || playheadB) {
-                    // LED is lit - make symbol black for contrast
-                    symbolColor = nvgRGBA(0, 0, 0, 255); // Black
-                }
-                drawAlchemicalSymbol(args, ledPos, symbolId, symbolColor);
+                // Vintage ink color for symbols on LEDs
+                NVGcolor ink = nvgRGBA(232, 224, 200, 255);
+                st::drawAlchemicalSymbol(args, ledPos, symbolId, ink);
             } else if (symbolId == -1) {
                 // Draw rest symbol (only when explicitly programmed)
-                drawRestSymbol(args, ledPos);
+                st::drawRestSymbol(args, ledPos);
             } else if (symbolId == -2) {
                 // Draw tie symbol
-                drawTieSymbol(args, ledPos);
+                st::drawTieSymbol(args, ledPos);
             }
             // symbolId == -999 means empty step - draw nothing
             
@@ -2852,6 +3232,35 @@ void Matrix8x8Widget::drawMatrix(const DrawArgs& args) {
                 }
             }
             
+            // Playhead ring overlay for visibility
+            if (playheadA || playheadB) {
+                float ringR = LED_SIZE * 0.5f + 1.0f;
+                if (playheadA && playheadB) {
+                    nvgBeginPath(args.vg);
+                    nvgArc(args.vg, ledPos.x, ledPos.y, ringR, -M_PI, 0, NVG_CW);
+                    nvgStrokeColor(args.vg, nvgRGBA(0, 255, 180, 220));
+                    nvgStrokeWidth(args.vg, 1.5f);
+                    nvgStroke(args.vg);
+                    nvgBeginPath(args.vg);
+                    nvgArc(args.vg, ledPos.x, ledPos.y, ringR, 0, M_PI, NVG_CW);
+                    nvgStrokeColor(args.vg, nvgRGBA(180, 0, 255, 220));
+                    nvgStrokeWidth(args.vg, 1.5f);
+                    nvgStroke(args.vg);
+                } else if (playheadA) {
+                    nvgBeginPath(args.vg);
+                    nvgCircle(args.vg, ledPos.x, ledPos.y, ringR);
+                    nvgStrokeColor(args.vg, nvgRGBA(0, 255, 180, 220));
+                    nvgStrokeWidth(args.vg, 1.5f);
+                    nvgStroke(args.vg);
+                } else if (playheadB) {
+                    nvgBeginPath(args.vg);
+                    nvgCircle(args.vg, ledPos.x, ledPos.y, ringR);
+                    nvgStrokeColor(args.vg, nvgRGBA(180, 0, 255, 220));
+                    nvgStrokeWidth(args.vg, 1.5f);
+                    nvgStroke(args.vg);
+                }
+            }
+
             // LED border
             nvgStrokeColor(args.vg, nvgRGBA(80, 80, 80, 255));
             nvgStrokeWidth(args.vg, 1.0f);
@@ -2886,8 +3295,41 @@ void Matrix8x8Widget::drawMatrix(const DrawArgs& args) {
         nvgStrokeWidth(args.vg, 1.5f);
         nvgStroke(args.vg);
         
-        nvgRestore(args.vg);
-    }
+            nvgRestore(args.vg);
+        }
+
+        // Vintage overlay for 8x8
+        {
+            float matrixSize = MATRIX_SIZE * LED_SPACING;
+            nvgSave(args.vg);
+            nvgBeginPath(args.vg);
+            nvgRoundedRect(args.vg, 0, 0, matrixSize, matrixSize, 8);
+            nvgPathWinding(args.vg, NVG_CW);
+            NVGpaint vignette = nvgRadialGradient(args.vg, matrixSize * 0.5f, matrixSize * 0.5f, matrixSize * 0.35f, matrixSize * 0.8f, nvgRGBA(0, 0, 0, 0), nvgRGBA(0, 0, 0, 24));
+            nvgFillPaint(args.vg, vignette);
+            nvgFill(args.vg);
+            NVGpaint patina = nvgLinearGradient(args.vg, 0, 0, matrixSize, matrixSize, nvgRGBA(24, 30, 20, 10), nvgRGBA(50, 40, 22, 12));
+            nvgBeginPath(args.vg);
+            nvgRoundedRect(args.vg, 1.0f, 1.0f, matrixSize - 2.0f, matrixSize - 2.0f, 7.0f);
+            nvgFillPaint(args.vg, patina);
+            nvgFill(args.vg);
+            // Scratches (shorter, fewer)
+            unsigned seed2 = 55831u;
+            auto rnd2 = [&]() { seed2 ^= seed2 << 13; seed2 ^= seed2 >> 17; seed2 ^= seed2 << 5; return (seed2 & 0xFFFF) / 65535.f; };
+            nvgStrokeColor(args.vg, nvgRGBA(255, 255, 255, 8));
+            nvgStrokeWidth(args.vg, 0.5f);
+            for (int i = 0; i < 2; ++i) {
+                float x1 = rnd2() * (matrixSize * 0.8f) + matrixSize * 0.1f;
+                float y1 = rnd2() * (matrixSize * 0.8f) + matrixSize * 0.1f;
+                float dx = (rnd2() - 0.5f) * (matrixSize * 0.08f);
+                float dy = (rnd2() - 0.5f) * (matrixSize * 0.08f);
+                nvgBeginPath(args.vg);
+                nvgMoveTo(args.vg, x1, y1);
+                nvgLineTo(args.vg, x1 + dx, y1 + dy);
+                nvgStroke(args.vg);
+            }
+            nvgRestore(args.vg);
+        }
 }
 
 void Matrix8x8Widget::drawAlchemicalSymbol(const DrawArgs& args, Vec pos, int symbolId, NVGcolor color) {
@@ -3227,24 +3669,8 @@ struct AlchemicalSymbolWidget : Widget {
         int symbolId = getSymbolId();
         bool isSelected = module && module->selectedSymbol == symbolId;
         bool inEditMode = module && (module->editModeA || module->editModeB);
-        bool isCurrentlyPlaying = false;
-        
-        // Check if this symbol's chord is currently playing
-        if (module) {
-            int currentChordA = module->getCurrentChordIndex(module->sequenceA);
-            int currentChordB = module->getCurrentChordIndex(module->sequenceB);
-            
-            // Check if this symbol maps to a currently playing chord
-            for (int i = 0; i < 40; i++) {
-                if (module->symbolToChordMapping[i] == symbolId) {
-                    if ((module->sequenceA.running && currentChordA == i) ||
-                        (module->sequenceB.running && currentChordB == i)) {
-                        isCurrentlyPlaying = true;
-                        break;
-                    }
-                }
-            }
-        }
+        float press = module ? module->buttonPressAnim[buttonPosition] : 0.0f;
+        // Background and border depend on playhead and selection state
         
         // Draw button background with enhanced states
         nvgBeginPath(args.vg);
@@ -3308,22 +3734,130 @@ struct AlchemicalSymbolWidget : Widget {
             nvgStroke(args.vg);
         }
         
-        // Draw the alchemical symbol (always white)
+        // Bezel/depth for button to feel integrated with panel
+        {
+            float inset = 1.0f;
+            float rOuter = 3.0f;
+            float rInner = std::max(0.0f, rOuter - 1.0f);
+            // Inner shadow ring
+            NVGpaint innerShadow = nvgBoxGradient(
+                args.vg,
+                inset, inset,
+                box.size.x - inset * 2.0f,
+                box.size.y - inset * 2.0f,
+                rInner, 3.5f,
+                nvgRGBA(0, 0, 0, 50),
+                nvgRGBA(0, 0, 0, 0)
+            );
+            nvgBeginPath(args.vg);
+            nvgRoundedRect(args.vg, inset - 0.5f, inset - 0.5f, box.size.x - (inset - 0.5f) * 2.0f, box.size.y - (inset - 0.5f) * 2.0f, rInner + 0.5f);
+            nvgRoundedRect(args.vg, inset + 0.8f, inset + 0.8f, box.size.x - (inset + 0.8f) * 2.0f, box.size.y - (inset + 0.8f) * 2.0f, std::max(0.0f, rInner - 0.8f));
+            nvgPathWinding(args.vg, NVG_HOLE);
+            nvgFillPaint(args.vg, innerShadow);
+            nvgFill(args.vg);
+            
+            // Top highlight
+            nvgSave(args.vg);
+            nvgScissor(args.vg, 0, 0, box.size.x, std::min(6.0f, box.size.y));
+            NVGpaint topHi = nvgLinearGradient(args.vg, 0, 0, 0, 6.0f, nvgRGBA(255, 255, 255, 28), nvgRGBA(255, 255, 255, 0));
+            nvgBeginPath(args.vg);
+            nvgRoundedRect(args.vg, inset + 0.5f, inset + 0.5f, box.size.x - (inset + 1.0f), 5.0f, rInner);
+            nvgFillPaint(args.vg, topHi);
+            nvgFill(args.vg);
+            nvgRestore(args.vg);
+            
+            // Left and right inner highlights (very subtle)
+            nvgBeginPath(args.vg);
+            nvgRoundedRect(args.vg, inset - 0.5f, inset - 0.5f, box.size.x - (inset - 0.5f) * 2.0f, box.size.y - (inset - 0.5f) * 2.0f, rInner + 0.5f);
+            nvgRoundedRect(args.vg, inset + 0.8f, inset + 0.8f, box.size.x - (inset + 0.8f) * 2.0f, box.size.y - (inset + 0.8f) * 2.0f, std::max(0.0f, rInner - 0.8f));
+            nvgPathWinding(args.vg, NVG_HOLE);
+            NVGpaint leftHi = nvgLinearGradient(args.vg, inset - 0.5f, 0, inset + 4.5f, 0, nvgRGBA(255, 255, 255, 18), nvgRGBA(255, 255, 255, 0));
+            nvgFillPaint(args.vg, leftHi);
+            nvgFill(args.vg);
+            nvgBeginPath(args.vg);
+            nvgRoundedRect(args.vg, inset - 0.5f, inset - 0.5f, box.size.x - (inset - 0.5f) * 2.0f, box.size.y - (inset - 0.5f) * 2.0f, rInner + 0.5f);
+            nvgRoundedRect(args.vg, inset + 0.8f, inset + 0.8f, box.size.x - (inset + 0.8f) * 2.0f, box.size.y - (inset + 0.8f) * 2.0f, std::max(0.0f, rInner - 0.8f));
+            nvgPathWinding(args.vg, NVG_HOLE);
+            NVGpaint rightHi = nvgLinearGradient(args.vg, box.size.x - (inset - 0.5f), 0, box.size.x - (inset + 4.5f), 0, nvgRGBA(255, 255, 255, 12), nvgRGBA(255, 255, 255, 0));
+            nvgFillPaint(args.vg, rightHi);
+            nvgFill(args.vg);
+        }
+
+        // Vintage face treatment: vignette + patina + micro-scratches
+        {
+            float r = 3.0f;
+            // Subtle vignette to darken edges
+            NVGpaint vignette = nvgRadialGradient(
+                args.vg,
+                box.size.x * 0.5f, box.size.y * 0.5f,
+                std::min(box.size.x, box.size.y) * 0.2f,
+                std::min(box.size.x, box.size.y) * 0.6f,
+                nvgRGBA(0, 0, 0, 0), nvgRGBA(0, 0, 0, 28)
+            );
+            nvgBeginPath(args.vg);
+            nvgRoundedRect(args.vg, 0.5f, 0.5f, box.size.x - 1.0f, box.size.y - 1.0f, r);
+            nvgFillPaint(args.vg, vignette);
+            nvgFill(args.vg);
+
+            // Patina tint (very subtle greenish/sepia film)
+            NVGpaint patina = nvgLinearGradient(
+                args.vg,
+                0, 0, box.size.x, box.size.y,
+                nvgRGBA(20, 30, 18, 12), nvgRGBA(50, 40, 20, 10)
+            );
+            nvgBeginPath(args.vg);
+            nvgRoundedRect(args.vg, 1.0f, 1.0f, box.size.x - 2.0f, box.size.y - 2.0f, r - 1.0f);
+            nvgFillPaint(args.vg, patina);
+            nvgFill(args.vg);
+
+            // Micro-scratches (static, low alpha)
+            unsigned seed = 14621u + (unsigned)buttonPosition * 9283u;
+            auto rnd = [&]() {
+                seed ^= seed << 13; seed ^= seed >> 17; seed ^= seed << 5; return (seed & 0xFFFF) / 65535.f; };
+            nvgStrokeColor(args.vg, nvgRGBA(255, 255, 255, 14));
+            nvgStrokeWidth(args.vg, 0.6f);
+            for (int i = 0; i < 3; ++i) {
+                float x1 = rnd() * (box.size.x * 0.7f) + box.size.x * 0.15f;
+                float y1 = rnd() * (box.size.y * 0.7f) + box.size.y * 0.15f;
+                float dx = (rnd() - 0.5f) * (box.size.x * 0.25f);
+                float dy = (rnd() - 0.5f) * (box.size.y * 0.25f);
+                nvgBeginPath(args.vg);
+                nvgMoveTo(args.vg, x1, y1);
+                nvgLineTo(args.vg, x1 + dx, y1 + dy);
+                nvgStroke(args.vg);
+            }
+        }
+        
+        // Draw the alchemical symbol with a more vintage look
+        // Slight "depress" on press animation
+        nvgSave(args.vg);
+        nvgTranslate(args.vg, 0, press * 1.0f);
         drawAlchemicalSymbol(args, Vec(box.size.x/2, box.size.y/2), symbolId);
+        nvgRestore(args.vg);
     }
     
     void drawAlchemicalSymbol(const DrawArgs& args, Vec pos, int symbolId) {
         nvgSave(args.vg);
         nvgTranslate(args.vg, pos.x, pos.y);
         
-        // Set drawing properties for button symbols (larger)
-        nvgStrokeColor(args.vg, nvgRGBA(255, 255, 255, 255));
-        nvgFillColor(args.vg, nvgRGBA(255, 255, 255, 200));
-        nvgStrokeWidth(args.vg, 1.2f);
+        // Set drawing properties for button symbols (vintage ink look)
+        double t = system::getTime();
+        // Warm off-white ink tones
+        NVGcolor ink = nvgRGBA(232, 224, 200, 255);
+        NVGcolor inkFill = nvgRGBA(232, 224, 200, 190);
+        // Slight stroke width wobble for hand-drawn feel
+        float wobble = 1.2f * (1.0f + 0.08f * std::sin(t * 7.0 + buttonPosition * 1.37f));
+        // Tiny rotation jitter to simulate imperfect stamp
+        float jitter = 0.010f * std::sin(t * 2.5 + buttonPosition * 0.77f);
+        nvgRotate(args.vg, jitter);
+        nvgStrokeColor(args.vg, ink);
+        nvgFillColor(args.vg, inkFill);
+        nvgStrokeWidth(args.vg, wobble);
         nvgLineCap(args.vg, NVG_ROUND);
         nvgLineJoin(args.vg, NVG_ROUND);
         
-        float size = 6.0f; // Larger symbols for buttons
+        // Scale symbol to button size while keeping margins
+        float size = std::min(box.size.x, box.size.y) * 0.36f;
         
         switch (symbolId) {
             case 0: // Sol (Sun)
@@ -3928,47 +4462,59 @@ struct TransmutationDisplayWidget : TransparentWidget {
         nvgStrokeWidth(args.vg, 1.0f);
         nvgStroke(args.vg);
         
-        // Set up text properties
+        // Set up text properties (vintage ink look)
         nvgFontSize(args.vg, 10);
         if (font && font->handle >= 0) {
             nvgFontFaceId(args.vg, font->handle);
         }
         nvgTextAlign(args.vg, NVG_ALIGN_LEFT | NVG_ALIGN_TOP);
+        auto drawVintageText = [&](float x, float y, NVGcolor color, const std::string& s) {
+            // Soft shadow
+            nvgFillColor(args.vg, nvgRGBA(0, 0, 0, 120));
+            nvgText(args.vg, x + 1, y + 1, s.c_str(), NULL);
+            // Warm ink
+            nvgFillColor(args.vg, color);
+            nvgText(args.vg, x, y, s.c_str(), NULL);
+        };
         
         float y = 5;
         
         // BPM Display
-        nvgFillColor(args.vg, nvgRGBA(255, 255, 255, 200));
+        NVGcolor ink = nvgRGBA(232, 224, 200, 230);
+        NVGcolor tealInk = nvgRGBA(150, 230, 210, 230);
+        NVGcolor purpleInk = nvgRGBA(210, 160, 250, 230);
+        NVGcolor yellowInk = nvgRGBA(240, 230, 140, 230);
+        
         float baseBPM = module->params[Transmutation::INTERNAL_CLOCK_PARAM].getValue();
         int multiplierIndex = (int)module->params[Transmutation::BPM_MULTIPLIER_PARAM].getValue();
         float multipliers[] = {1.0f, 2.0f, 4.0f, 8.0f};
         const char* multiplierLabels[] = {"1x", "2x", "4x", "8x"};
         float effectiveBPM = baseBPM * multipliers[multiplierIndex];
         std::string bpmText = "BPM: " + std::to_string((int)baseBPM) + " (" + multiplierLabels[multiplierIndex] + " = " + std::to_string((int)effectiveBPM) + ")"; 
-        nvgText(args.vg, 5, y, bpmText.c_str(), NULL);
+        drawVintageText(5, y, ink, bpmText);
         y += 12;
         
         // Sequence A Status
-        nvgFillColor(args.vg, nvgRGBA(0, 255, 200, 255)); // Teal for A
+        // Teal for A
         std::string statusA = std::string("A: ") + (module->sequenceA.running ? "RUN" : "STOP") + 
                               " [" + std::to_string(module->sequenceA.currentStep + 1) + 
                               "/" + std::to_string(module->sequenceA.length) + "]";
-        nvgText(args.vg, 5, y, statusA.c_str(), NULL);
+        drawVintageText(5, y, tealInk, statusA);
         y += 12;
         
         // Sequence B Status with Mode
-        nvgFillColor(args.vg, nvgRGBA(200, 100, 255, 255)); // Purple for B
+        // Purple for B
         int bMode = (int)module->params[Transmutation::SEQ_B_MODE_PARAM].getValue();
         std::string modeNames[] = {"IND", "HAR", "LOK"}; // Independent, Harmony, Lock
         std::string statusB = std::string("B: ") + (module->sequenceB.running ? "RUN" : "STOP") + 
                               " [" + std::to_string(module->sequenceB.currentStep + 1) + 
                               "/" + std::to_string(module->sequenceB.length) + "] " + 
                               modeNames[bMode];
-        nvgText(args.vg, 5, y, statusB.c_str(), NULL);
+        drawVintageText(5, y, purpleInk, statusB);
         y += 12;
         
         // Edit Mode Status
-        nvgFillColor(args.vg, nvgRGBA(255, 255, 100, 255)); // Yellow for edit mode
+        // Yellow for edit mode
         std::string editStatus = "EDIT: ";
         if (module->editModeA) {
             editStatus += "A";
@@ -3977,20 +4523,29 @@ struct TransmutationDisplayWidget : TransparentWidget {
         } else {
             editStatus += "OFF";
         }
-        nvgText(args.vg, 5, y, editStatus.c_str(), NULL);
+        drawVintageText(5, y, yellowInk, editStatus);
         
         // Clock source indicators (small icons on the right)
         float rightX = box.size.x - 25;
-        nvgFillColor(args.vg, nvgRGBA(150, 150, 150, 200));
+        // Small caps in warm grey
+        NVGcolor smallInk = nvgRGBA(210, 210, 210, 200);
+        nvgFillColor(args.vg, smallInk);
         nvgFontSize(args.vg, 8);
         nvgTextAlign(args.vg, NVG_ALIGN_RIGHT | NVG_ALIGN_TOP);
         
         // Clock A source
         std::string clockAText = module->inputs[Transmutation::CLOCK_A_INPUT].isConnected() ? "EXT" : "INT";
+        // Shadow for right-aligned text
+        nvgFillColor(args.vg, nvgRGBA(0, 0, 0, 120));
+        nvgText(args.vg, rightX + 1, 18, clockAText.c_str(), NULL);
+        nvgFillColor(args.vg, smallInk);
         nvgText(args.vg, rightX, 17, clockAText.c_str(), NULL);
         
         // Clock B source  
         std::string clockBText = module->inputs[Transmutation::CLOCK_B_INPUT].isConnected() ? "EXT" : "INT";
+        nvgFillColor(args.vg, nvgRGBA(0, 0, 0, 120));
+        nvgText(args.vg, rightX + 1, 30, clockBText.c_str(), NULL);
+        nvgFillColor(args.vg, smallInk);
         nvgText(args.vg, rightX, 29, clockBText.c_str(), NULL);
         
         nvgRestore(args.vg);
@@ -4006,6 +4561,42 @@ struct TransmutationDisplayWidget : TransparentWidget {
 
 struct TransmutationWidget : ModuleWidget {
     HighResMatrixWidget* matrix;
+    struct PanelPatinaOverlay : TransparentWidget {
+        void draw(const DrawArgs& args) override {
+            // Full-module subtle vignette and patina for cohesive vintage look
+            float w = box.size.x;
+            float h = box.size.y;
+            // Vignette
+            NVGpaint vignette = nvgRadialGradient(args.vg, w * 0.5f, h * 0.5f, std::min(w, h) * 0.6f, std::min(w, h) * 0.95f,
+                                                  nvgRGBA(0, 0, 0, 0), nvgRGBA(0, 0, 0, 20));
+            nvgBeginPath(args.vg);
+            nvgRect(args.vg, 0, 0, w, h);
+            nvgFillPaint(args.vg, vignette);
+            nvgFill(args.vg);
+            // Gentle patina wash
+            NVGpaint wash = nvgLinearGradient(args.vg, 0, 0, w, h, nvgRGBA(22, 28, 18, 8), nvgRGBA(50, 40, 22, 6));
+            nvgBeginPath(args.vg);
+            nvgRect(args.vg, 0, 0, w, h);
+            nvgFillPaint(args.vg, wash);
+            nvgFill(args.vg);
+            // Sparse micro-scratches
+            unsigned seed = 99173u;
+            auto rnd = [&]() {
+                seed ^= seed << 13; seed ^= seed >> 17; seed ^= seed << 5; return (seed & 0xFFFF) / 65535.f; };
+            nvgStrokeColor(args.vg, nvgRGBA(255, 255, 255, 8));
+            nvgStrokeWidth(args.vg, 0.7f);
+            for (int i = 0; i < 8; ++i) {
+                float x1 = rnd() * w;
+                float y1 = rnd() * h;
+                float dx = (rnd() - 0.5f) * (w * 0.15f);
+                float dy = (rnd() - 0.5f) * (h * 0.15f);
+                nvgBeginPath(args.vg);
+                nvgMoveTo(args.vg, x1, y1);
+                nvgLineTo(args.vg, x1 + dx, y1 + dy);
+                nvgStroke(args.vg);
+            }
+        }
+    };
     // Draw background image behind panel and widgets without holding persistent window resources
     void draw(const DrawArgs& args) override {
         // Draw panel background texture first
@@ -4024,6 +4615,17 @@ struct TransmutationWidget : ModuleWidget {
     void appendContextMenu(Menu* menu) override {
         Transmutation* module = dynamic_cast<Transmutation*>(this->module);
         if (!module) return;
+
+        // Steps grid density
+        menu->addChild(new MenuSeparator);
+        menu->addChild(createMenuLabel("Steps Grid"));
+        auto check = [](bool on){ return on ? "✓" : ""; };
+        menu->addChild(createMenuItem("32 steps", check(module->gridSteps == 32), [module]() {
+            module->gridSteps = 32;
+        }));
+        menu->addChild(createMenuItem("64 steps", check(module->gridSteps == 64), [module]() {
+            module->gridSteps = 64;
+        }));
 
         // Chord packs submenu
         menu->addChild(new MenuSeparator);
@@ -4165,81 +4767,177 @@ struct TransmutationWidget : ModuleWidget {
         
         // Background drawn in draw()
 
-        // High-Resolution 8x8 Matrix (center of panel) - updated position from SVG
+        // Read positions from SVG by id (simple attribute parser)
+        auto svgPath = asset::plugin(pluginInstance, "res/panels/Transmutation.svg");
+        std::string svg;
+        {
+            std::ifstream f(svgPath);
+            if (f) {
+                std::stringstream ss; ss << f.rdbuf();
+                svg = ss.str();
+            }
+        }
+        auto findTagForId = [&](const std::string& id) -> std::string {
+            if (svg.empty()) return "";
+            std::string needle = "id=\"" + id + "\"";
+            size_t pos = svg.find(needle);
+            if (pos == std::string::npos) return "";
+            // Find start of tag
+            size_t start = svg.rfind('<', pos);
+            size_t end = svg.find('>', pos);
+            if (start == std::string::npos || end == std::string::npos || end <= start) return "";
+            return svg.substr(start, end - start + 1);
+        };
+        auto getAttr = [&](const std::string& tag, const std::string& key, float defVal) -> float {
+            if (tag.empty()) return defVal;
+            std::string k = key + "=\"";
+            size_t p = tag.find(k);
+            if (p == std::string::npos) return defVal;
+            p += k.size();
+            size_t q = tag.find('"', p);
+            if (q == std::string::npos) return defVal;
+            try {
+                return std::stof(tag.substr(p, q - p));
+            } catch (...) { return defVal; }
+        };
+
+        // High-Resolution 8x8 Matrix positioned from <rect id="main_screen" x y width height>
         matrix = new HighResMatrixWidget(module);
-        matrix->box.pos = Vec(mm2px(27.143473), mm2px(38.432907)); // Updated position from SVG main_screen
+        {
+            std::string tag = findTagForId("main_screen");
+            float mx = getAttr(tag, "x", 27.143473f);
+            float my = getAttr(tag, "y", 34.0f);
+            float mw = getAttr(tag, "width", 77.0f);
+            float mh = getAttr(tag, "height", 77.0f);
+            matrix->box.pos = Vec(mm2px(mx), mm2px(my));
+            matrix->box.size = Vec(mm2px(mw), mm2px(mh));
+        }
         addChild(matrix);
         
-        // Edit mode buttons (above matrix) - updated positions from SVG
-        addParam(createParamCentered<ShapetakerVintageMomentary>(mm2px(Vec(55.973103, 16.805513)), module, Transmutation::EDIT_A_PARAM));
-        addParam(createParamCentered<ShapetakerVintageMomentary>(mm2px(Vec(74.402115, 16.678213)), module, Transmutation::EDIT_B_PARAM));
+        // Edit mode buttons (above matrix) - from SVG circles edit_a_btn/edit_b_btn (cx, cy)
+        {
+            std::string tA = findTagForId("edit_a_btn");
+            std::string tB = findTagForId("edit_b_btn");
+            float ax = getAttr(tA, "cx", 55.973103f);
+            float ay = getAttr(tA, "cy", 16.805513f);
+            float bx = getAttr(tB, "cx", 74.402115f);
+            float by = getAttr(tB, "cy", 16.678213f);
+            addParam(createParamCentered<ShapetakerVintageMomentary>(mm2px(Vec(ax, ay)), module, Transmutation::EDIT_A_PARAM));
+            addParam(createParamCentered<ShapetakerVintageMomentary>(mm2px(Vec(bx, by)), module, Transmutation::EDIT_B_PARAM));
+        }
         
         // Edit mode lights removed
         
-        // Left side controls - Sequence A (updated positions from SVG)
-        addParam(createParamCentered<STKnobMedium>(mm2px(Vec(15.950587, 37.849998)), module, Transmutation::LENGTH_A_PARAM));
-        addParam(createParamCentered<STKnobMedium>(mm2px(Vec(15.950588, 18.322521)), module, Transmutation::INTERNAL_CLOCK_PARAM));
-        
-        // BPM Multiplier knob (positioned near BPM knob)
-        addParam(createParamCentered<STKnobSmall>(mm2px(Vec(34.340317, 18.322521)), module, Transmutation::BPM_MULTIPLIER_PARAM));
-        addParam(createParamCentered<ShapetakerVintageMomentary>(mm2px(Vec(22.586929, 67.512939)), module, Transmutation::START_A_PARAM));
-        addParam(createParamCentered<ShapetakerVintageMomentary>(mm2px(Vec(22.784245, 75.573959)), module, Transmutation::STOP_A_PARAM));
-        addParam(createParamCentered<ShapetakerVintageMomentary>(mm2px(Vec(22.784245, 83.509323)), module, Transmutation::RESET_A_PARAM));
-        
-        // Right side controls - Sequence B (updated positions from SVG)
-        addParam(createParamCentered<STKnobMedium>(mm2px(Vec(115.02555, 37.849998)), module, Transmutation::LENGTH_B_PARAM));
-        addParam(createParamCentered<ShapetakerVintageMomentary>(mm2px(Vec(108.43727, 67.450111)), module, Transmutation::START_B_PARAM));
-        addParam(createParamCentered<ShapetakerVintageMomentary>(mm2px(Vec(108.43727, 75.511131)), module, Transmutation::STOP_B_PARAM));
-        addParam(createParamCentered<ShapetakerVintageMomentary>(mm2px(Vec(108.43728, 83.446495)), module, Transmutation::RESET_B_PARAM));
-        
-        // Sequence B mode switch (right side) - updated position from SVG  
-        addParam(createParamCentered<STSelector>(mm2px(Vec(110.08858, 19.271444)), module, Transmutation::SEQ_B_MODE_PARAM));
+        // Left/Right controls - read from panel IDs to stay in sync with SVG
+        {
+            auto pos = [&](const std::string& id, float defx, float defy) {
+                std::string tag = findTagForId(id);
+                float cx = getAttr(tag, "cx", defx);
+                float cy = getAttr(tag, "cy", defy);
+                if (tag.find("<rect") != std::string::npos) {
+                    float rx = getAttr(tag, "x", defx);
+                    float ry = getAttr(tag, "y", defy);
+                    float rw = getAttr(tag, "width", 0.0f);
+                    float rh = getAttr(tag, "height", 0.0f);
+                    cx = rx + rw * 0.5f;
+                    cy = ry + rh * 0.5f;
+                }
+                return mm2px(Vec(cx, cy));
+            };
+            // Sequence A
+            addParam(createParamCentered<STKnobMedium>(pos("seq_a_length", 15.950587f, 37.849998f), module, Transmutation::LENGTH_A_PARAM));
+            addParam(createParamCentered<STKnobMedium>(pos("main_bpm", 15.950588f, 18.322521f), module, Transmutation::INTERNAL_CLOCK_PARAM));
+            addParam(createParamCentered<STKnobSmall>(pos("clk_mult_select", 34.340317f, 18.322521f), module, Transmutation::BPM_MULTIPLIER_PARAM));
+            addParam(createParamCentered<ShapetakerVintageMomentary>(pos("a_play_btn", 22.586929f, 67.512939f), module, Transmutation::START_A_PARAM));
+            addParam(createParamCentered<ShapetakerVintageMomentary>(pos("a_stop_btn", 22.784245f, 75.573959f), module, Transmutation::STOP_A_PARAM));
+            addParam(createParamCentered<ShapetakerVintageMomentary>(pos("a_reset_btn", 22.784245f, 83.509323f), module, Transmutation::RESET_A_PARAM));
+            // Sequence B
+            addParam(createParamCentered<STKnobMedium>(pos("seq_b_length", 115.02555f, 37.849998f), module, Transmutation::LENGTH_B_PARAM));
+            addParam(createParamCentered<ShapetakerVintageMomentary>(pos("b_play_btn", 108.43727f, 67.450111f), module, Transmutation::START_B_PARAM));
+            addParam(createParamCentered<ShapetakerVintageMomentary>(pos("b_stop_btn", 108.43727f, 75.511131f), module, Transmutation::STOP_B_PARAM));
+            addParam(createParamCentered<ShapetakerVintageMomentary>(pos("b_reset_btn", 108.43728f, 83.446495f), module, Transmutation::RESET_B_PARAM));
+            addParam(createParamCentered<STSelector>(pos("mode_switch", 110.08858f, 19.271444f), module, Transmutation::SEQ_B_MODE_PARAM));
+        }
         
         // Custom Display Widget - temporarily commented out for debugging
         // TransmutationDisplayWidget* display = new TransmutationDisplayWidget(module);
         // display->box.pos = mm2px(Vec(10, 115)); // Position in lower left area
         // addChild(display);
         
-        // Left side I/O - Sequence A (updated positions from SVG)
-        addInput(createInputCentered<STPort>(mm2px(Vec(19.495214, 95.834518)), module, Transmutation::CLOCK_A_INPUT));
-        addInput(createInputCentered<STPort>(mm2px(Vec(7.5470452, 83.509323)), module, Transmutation::RESET_A_INPUT));
-        addInput(createInputCentered<STPort>(mm2px(Vec(7.5470452, 67.512939)), module, Transmutation::START_A_INPUT));
-        addInput(createInputCentered<STPort>(mm2px(Vec(7.5470452, 75.511131)), module, Transmutation::STOP_A_INPUT));
-        addOutput(createOutputCentered<STPort>(mm2px(Vec(19.495214, 105.7832)), module, Transmutation::CV_A_OUTPUT));
-        addOutput(createOutputCentered<STPort>(mm2px(Vec(19.105484, 115.73187)), module, Transmutation::GATE_A_OUTPUT));
+        // I/O - read from panel IDs to stay in sync
+        {
+            auto cpos = [&](const std::string& id, float defx, float defy) {
+                std::string tag = findTagForId(id);
+                float cx = getAttr(tag, "cx", defx);
+                float cy = getAttr(tag, "cy", defy);
+                return mm2px(Vec(cx, cy));
+            };
+            // A side
+            addInput(createInputCentered<STPort>(cpos("a_clk_cv", 15.950586f, 95.834518f), module, Transmutation::CLOCK_A_INPUT));
+            addInput(createInputCentered<STPort>(cpos("a_reset_cv", 7.5470452f, 83.509323f), module, Transmutation::RESET_A_INPUT));
+            addInput(createInputCentered<STPort>(cpos("a_play_cv", 7.5470452f, 67.512939f), module, Transmutation::START_A_INPUT));
+            addInput(createInputCentered<STPort>(cpos("a_stop_cv", 7.5470452f, 75.511131f), module, Transmutation::STOP_A_INPUT));
+            addOutput(createOutputCentered<STPort>(cpos("a_cv_out", 15.950586f, 105.7832f), module, Transmutation::CV_A_OUTPUT));
+            addOutput(createOutputCentered<STPort>(cpos("a_gate_out", 15.950586f, 115.73187f), module, Transmutation::GATE_A_OUTPUT));
+            // B side
+            addInput(createInputCentered<STPort>(cpos("b_clk_cv", 115.02555f, 95.834518f), module, Transmutation::CLOCK_B_INPUT));
+            addInput(createInputCentered<STPort>(cpos("b_reset_cv", 123.6797f, 83.509323f), module, Transmutation::RESET_B_INPUT));
+            addInput(createInputCentered<STPort>(cpos("b_play_cv", 123.6797f, 67.512939f), module, Transmutation::START_B_INPUT));
+            addInput(createInputCentered<STPort>(cpos("b_stop_cv", 123.6797f, 75.511131f), module, Transmutation::STOP_B_INPUT));
+            addOutput(createOutputCentered<STPort>(cpos("b_cv_out", 115.02555f, 105.7832f), module, Transmutation::CV_B_OUTPUT));
+            addOutput(createOutputCentered<STPort>(cpos("b_gate_out", 115.02555f, 115.73187f), module, Transmutation::GATE_B_OUTPUT));
+        }
         
-        // Right side I/O - Sequence B (updated positions from SVG)
-        addInput(createInputCentered<STPort>(mm2px(Vec(115.02555, 95.834518)), module, Transmutation::CLOCK_B_INPUT));
-        addInput(createInputCentered<STPort>(mm2px(Vec(123.6797, 83.509323)), module, Transmutation::RESET_B_INPUT));
-        addInput(createInputCentered<STPort>(mm2px(Vec(123.6797, 67.512939)), module, Transmutation::START_B_INPUT));
-        addInput(createInputCentered<STPort>(mm2px(Vec(123.6797, 75.511131)), module, Transmutation::STOP_B_INPUT));
-        addOutput(createOutputCentered<STPort>(mm2px(Vec(115.02555, 105.7832)), module, Transmutation::CV_B_OUTPUT));
-        addOutput(createOutputCentered<STPort>(mm2px(Vec(115.02555, 115.73187)), module, Transmutation::GATE_B_OUTPUT));
-        
-        // Alchemical Symbol Buttons - updated positions from SVG
-        // Top row of symbols (above matrix) - updated positions from SVG
-        float topSymbolPositions[] = {36.031109, 46.682266, 57.333424, 67.984581, 78.635735, 89.286888}; // Updated from SVG top-left
-        for (int i = 0; i < 6; i++) {
-            AlchemicalSymbolWidget* symbolWidget = new AlchemicalSymbolWidget(module, i); // i is button position
-            symbolWidget->box.pos = mm2px(Vec(topSymbolPositions[i], 30.551298)); // Updated position from SVG
+        // Alchemical Symbol Buttons from SVG rects alchem_1..alchem_12 (x,y are top-left)
+        for (int i = 0; i < 12; i++) {
+            std::string id = std::string("alchem_") + std::to_string(i + 1);
+            std::string tag = findTagForId(id);
+            float x = getAttr(tag, "x", (i < 6 ? (36.0f + 10.65f * i) : (36.0f + 10.65f * (i - 6))));
+            float y = getAttr(tag, "y", (i < 6 ? 30.55f : 117.56f));
+            float wRect = getAttr(tag, "width", 6.0f);
+            float hRect = getAttr(tag, "height", 6.0f);
+            // Enlarge buttons but keep center aligned in their reserved rect
+            float scale = 1.22f; // ~22% larger while keeping separation
+            float w = wRect * scale;
+            float h = hRect * scale;
+            float cx = x + wRect * 0.5f;
+            float cy = y + hRect * 0.5f;
+            float xPos = cx - w * 0.5f;
+            float yPos = cy - h * 0.5f;
+            AlchemicalSymbolWidget* symbolWidget = new AlchemicalSymbolWidget(module, i);
+            symbolWidget->box.pos = mm2px(Vec(xPos, yPos));
+            symbolWidget->box.size = mm2px(Vec(w, h));
             addChild(symbolWidget);
         }
         
-        // Bottom row of symbols (below matrix) - updated positions from SVG  
-        float bottomSymbolPositions[] = {36.031109, 46.682266, 57.33342, 67.984573, 78.635735, 89.286888}; // Updated from SVG top-left
-        for (int i = 6; i < 12; i++) {
-            AlchemicalSymbolWidget* symbolWidget = new AlchemicalSymbolWidget(module, i); // i is button position
-            symbolWidget->box.pos = mm2px(Vec(bottomSymbolPositions[i - 6], 117.56416)); // Updated position from SVG
-            addChild(symbolWidget);
+        // Rest and Tie buttons from SVG ids rest_btn/tie_btn (cx, cy)
+        {
+            std::string tr = findTagForId("rest_btn");
+            std::string tt = findTagForId("tie_btn");
+            float rx = getAttr(tr, "cx", 15.950587f);
+            float ry = getAttr(tr, "cy", 53.27956f);
+            float tx = getAttr(tt, "cx", 115.02555f);
+            float ty = getAttr(tt, "cy", 53.27956f);
+            addParam(createParamCentered<ShapetakerVintageMomentary>(mm2px(Vec(rx, ry)), module, Transmutation::REST_PARAM));
+            addParam(createParamCentered<ShapetakerVintageMomentary>(mm2px(Vec(tx, ty)), module, Transmutation::TIE_PARAM));
         }
         
-        // Rest and Tie buttons - updated positions (if they exist in SVG, otherwise keep for functionality)
-        addParam(createParamCentered<ShapetakerVintageMomentary>(mm2px(Vec(15.950587, 53.27956)), module, Transmutation::REST_PARAM));
-        addParam(createParamCentered<ShapetakerVintageMomentary>(mm2px(Vec(115.02555, 53.27956)), module, Transmutation::TIE_PARAM));
-        
-        // Running lights - positioned with sequence controls  
-        addChild(createLightCentered<TealJewelLEDMedium>(mm2px(Vec(29.029953, 33.132351)), module, Transmutation::RUNNING_A_LIGHT));
-        addChild(createLightCentered<PurpleJewelLEDMedium>(mm2px(Vec(102.28805, 33.5513)), module, Transmutation::RUNNING_B_LIGHT));
+        // Running lights from SVG ids seq_a_led/seq_b_led (cx, cy)
+        {
+            std::string la = findTagForId("seq_a_led");
+            std::string lb = findTagForId("seq_b_led");
+            float ax = getAttr(la, "cx", 29.029953f);
+            float ay = getAttr(la, "cy", 33.132351f);
+            float bx = getAttr(lb, "cx", 102.28805f);
+            float by = getAttr(lb, "cy", 33.5513f);
+            addChild(createLightCentered<TealJewelLEDMedium>(mm2px(Vec(ax, ay)), module, Transmutation::RUNNING_A_LIGHT));
+            addChild(createLightCentered<PurpleJewelLEDMedium>(mm2px(Vec(bx, by)), module, Transmutation::RUNNING_B_LIGHT));
+        }
+
+        // Panel-wide patina overlay for cohesive vintage appearance (added last so it sits on top subtly)
+        auto overlay = new PanelPatinaOverlay();
+        overlay->box = Rect(Vec(0, 0), box.size);
+        addChild(overlay);
     }
 };
 
