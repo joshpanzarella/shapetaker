@@ -558,7 +558,7 @@ struct Transmutation : Module {
     std::string displayChordName = "";
     int displaySymbolId = -999; // -999 means no symbol display
     float symbolPreviewTimer = 0.0f;
-    static constexpr float SYMBOL_PREVIEW_DURATION = 0.40f; // Show for 400ms
+    static constexpr float SYMBOL_PREVIEW_DURATION = 0.50f; // Show for 500ms
     
     // Chord pack system
     ChordPack currentChordPack;
@@ -830,8 +830,8 @@ struct Transmutation : Module {
         
         // Update lights
         // Dimmer run lights for a subtler always-on indicator
-        lights[RUNNING_A_LIGHT].setBrightness(sequenceA.running ? 0.35f : 0.0f);
-        lights[RUNNING_B_LIGHT].setBrightness(sequenceB.running ? 0.35f : 0.0f);
+        lights[RUNNING_A_LIGHT].setBrightness(sequenceA.running ? 0.15f : 0.0f);
+        lights[RUNNING_B_LIGHT].setBrightness(sequenceB.running ? 0.15f : 0.0f);
         
         // Update symbol lights with color coding for sequences
         for (int i = 0; i < 12; i++) {
@@ -1530,12 +1530,12 @@ void HighResMatrixWidget::drawMatrix(const DrawArgs& args) {
     if (module && !module->displayChordName.empty() && module->displaySymbolId != -999) {
         nvgSave(args.vg);
         
-        // Calculate VHS tape warping effects based on time - ultra slow and warped
-        float time = APP->engine->getFrame() * 0.003f; // Slightly slower for more languid tape drag
-        float waveA = sin(time * 0.6f) * 0.12f + sin(time * 0.9f) * 0.08f; // Even slower, more intense waves
-        float waveB = cos(time * 0.4f) * 0.10f + cos(time * 0.7f) * 0.06f; // Deeper secondary waves
-        float tapeWarp = sin(time * 0.25f) * 0.05f + cos(time * 0.35f) * 0.03f; // Slower, more intense warping
-        float deepWarp = sin(time * 0.15f) * 0.08f; // Even slower deep warping layer
+        // Calculate VHS tape warping effects based on time - even slower, more wobbly (more languid)
+        float time = APP->engine->getFrame() * 0.0009f; // Slower base clock for spooky preview
+        float waveA = sinf(time * 0.30f) * 0.10f + sinf(time * 0.50f) * 0.06f;
+        float waveB = cosf(time * 0.25f) * 0.08f + cosf(time * 0.45f) * 0.05f;
+        float tapeWarp = sinf(time * 0.15f) * 0.04f + cosf(time * 0.22f) * 0.025f;
+        float deepWarp = sinf(time * 0.09f) * 0.06f;
         
         // Dark VHS horror movie background with slight blue tint and warping - rounded corners
         nvgBeginPath(args.vg);
@@ -1548,25 +1548,28 @@ void HighResMatrixWidget::drawMatrix(const DrawArgs& args) {
         nvgSave(args.vg);
         nvgIntersectScissor(args.vg, 0, 0, box.size.x, box.size.y);
         
-        // Reduce scanlines for a subtler vintage feel (thinner, fewer, lower alpha)
+        // Slow, wobbly scanlines for spooky preview (thinner, fewer, with vertical wobble)
         for (int i = 0; i < box.size.y; i += 3) {
-            float warpOffset = sin((i * 0.012f) + time * 1.0f) * 3.0f; // Softer warping
-            warpOffset += cos((i * 0.006f) + time * 0.6f) * 2.0f;
-            warpOffset += deepWarp * sin(i * 0.02f) * 1.5f;
+            float wobbleY = sinf(time * 0.35f + i * 0.02f) * 0.9f; // gentler, slower vertical wobble
+            float yPos = i + wobbleY;
+            float warpOffset = sinf((i * 0.009f) + time * 0.45f) * 2.0f;
+            warpOffset += cosf((i * 0.005f) + time * 0.30f) * 1.2f;
+            warpOffset += deepWarp * sinf(i * 0.015f) * 1.0f;
             nvgBeginPath(args.vg);
-            nvgRect(args.vg, warpOffset, i, box.size.x, 1);
-            nvgFillColor(args.vg, nvgRGBA(0, 0, 0, 10 + (int)(waveB * 15)));
+            nvgRect(args.vg, warpOffset, yPos, box.size.x, 0.8f);
+            nvgFillColor(args.vg, nvgRGBA(0, 0, 0, 10 + (int)(waveB * 12)));
             nvgFill(args.vg);
         }
         
         // Softer distortion bands
         for (int i = 0; i < 2; i++) {
-            float distortionY = fmod(time * 6 + i * 160, box.size.y);
-            float warpWidth = sin(time * 0.6f + i) * 2.0f + deepWarp * 3.0f;
-            float bandHeight = 1 + sin(time * 0.4f + i) * 0.5f;
+            float distortionY = fmodf(time * 1.8f + i * 160, box.size.y); // slower travel
+            float wobble = sinf(time * 0.5f + i) * 0.5f;
+            float warpWidth = sinf(time * 0.3f + i) * 1.4f + deepWarp * 2.0f + wobble;
+            float bandHeight = 1 + sinf(time * 0.28f + i) * 0.35f;
             nvgBeginPath(args.vg);
             nvgRect(args.vg, warpWidth, distortionY, box.size.x, bandHeight);
-            nvgFillColor(args.vg, nvgRGBA(70 + (int)(waveA * 30), 90 + (int)(waveB * 30), 110, 24 + (int)(tapeWarp * 100)));
+            nvgFillColor(args.vg, nvgRGBA(70 + (int)(waveA * 24), 90 + (int)(waveB * 24), 110, 20 + (int)(tapeWarp * 80)));
             nvgFill(args.vg);
         }
         
@@ -1574,8 +1577,8 @@ void HighResMatrixWidget::drawMatrix(const DrawArgs& args) {
         
         // Draw the symbol with Shapetaker colors and VHS warping
         nvgSave(args.vg);
-        float shakeX = sin(time * 1.8f) * 0.8f + tapeWarp * 3.0f + deepWarp * 2.5f; // Much slower, intense warping
-        float shakeY = cos(time * 1.4f) * 0.6f + waveA * 2.0f + waveB * 1.5f; // Slower, more layered warping
+        float shakeX = sinf(time * 0.55f) * 0.5f + tapeWarp * 1.8f + deepWarp * 1.4f; // even slower, smoother wobble
+        float shakeY = cosf(time * 0.40f) * 0.4f + waveA * 1.2f + waveB * 0.8f; // slower, layered
         nvgTranslate(args.vg, box.size.x / 2 + shakeX, box.size.y * 0.40f + shakeY); // More centered vertically
         nvgScale(args.vg, 5.0f, 5.0f); // Much bigger and more pixelated
         
@@ -2873,11 +2876,11 @@ void Matrix8x8Widget::drawMatrix(const DrawArgs& args) {
         nvgSave(args.vg);
         
         // Calculate VHS tape warping effects based on time - ultra slow and warped
-        float time = APP->engine->getFrame() * 0.003f; // Slightly slower for more languid tape drag
-        float waveA = sin(time * 0.6f) * 0.12f + sin(time * 0.9f) * 0.08f; // Even slower, more intense waves
-        float waveB = cos(time * 0.4f) * 0.10f + cos(time * 0.7f) * 0.06f; // Deeper secondary waves
-        float tapeWarp = sin(time * 0.25f) * 0.05f + cos(time * 0.35f) * 0.03f; // Slower, more intense warping
-        float deepWarp = sin(time * 0.15f) * 0.08f; // Even slower deep warping layer
+        float time = APP->engine->getFrame() * 0.0009f; // slower spooky timing (8x8)
+        float waveA = sinf(time * 0.30f) * 0.10f + sinf(time * 0.50f) * 0.06f;
+        float waveB = cosf(time * 0.25f) * 0.08f + cosf(time * 0.45f) * 0.05f;
+        float tapeWarp = sinf(time * 0.15f) * 0.04f + cosf(time * 0.22f) * 0.025f;
+        float deepWarp = sinf(time * 0.09f) * 0.06f;
         
         float matrixSize = MATRIX_SIZE * LED_SPACING;
         
@@ -2969,25 +2972,28 @@ void Matrix8x8Widget::drawMatrix(const DrawArgs& args) {
         nvgSave(args.vg);
         nvgIntersectScissor(args.vg, 0, 0, matrixSize, matrixSize);
         
-        // Softer scanlines (8x8)
+        // Softer, wobbly scanlines (8x8)
         for (int i = 0; i < matrixSize; i += 3) {
-            float warpOffset = sin((i * 0.02f) + time * 1.0f) * 1.8f;
-            warpOffset += cos((i * 0.01f) + time * 0.6f) * 1.2f;
-            warpOffset += deepWarp * sin(i * 0.04f) * 1.2f;
+            float wobbleY = sinf(time * 0.35f + i * 0.025f) * 0.7f;
+            float yPos = i + wobbleY;
+            float warpOffset = sinf((i * 0.015f) + time * 0.45f) * 1.4f;
+            warpOffset += cosf((i * 0.009f) + time * 0.30f) * 0.9f;
+            warpOffset += deepWarp * sinf(i * 0.03f) * 0.9f;
             nvgBeginPath(args.vg);
-            nvgRect(args.vg, warpOffset, i, matrixSize, 1);
-            nvgFillColor(args.vg, nvgRGBA(0, 0, 0, 10 + (int)(waveB * 12)));
+            nvgRect(args.vg, warpOffset, yPos, matrixSize, 0.8f);
+            nvgFillColor(args.vg, nvgRGBA(0, 0, 0, 10 + (int)(waveB * 10)));
             nvgFill(args.vg);
         }
         
         // Softer distortion bands (8x8)
         for (int i = 0; i < 2; i++) {
-            float distortionY = fmod(time * 5 + i * 100, matrixSize);
-            float warpWidth = sin(time * 0.5f + i) * 1.6f + deepWarp * 2.0f;
-            float bandHeight = 1 + sin(time * 0.35f + i) * 0.4f;
+            float distortionY = fmodf(time * 1.4f + i * 100, matrixSize);
+            float wobble = sinf(time * 0.5f + i) * 0.45f;
+            float warpWidth = sinf(time * 0.35f + i) * 1.2f + deepWarp * 1.6f + wobble;
+            float bandHeight = 1 + sinf(time * 0.28f + i) * 0.32f;
             nvgBeginPath(args.vg);
             nvgRect(args.vg, warpWidth, distortionY, matrixSize, bandHeight);
-            nvgFillColor(args.vg, nvgRGBA(70 + (int)(waveA * 25), 90 + (int)(waveB * 25), 110, 20 + (int)(tapeWarp * 90)));
+            nvgFillColor(args.vg, nvgRGBA(70 + (int)(waveA * 22), 90 + (int)(waveB * 22), 110, 18 + (int)(tapeWarp * 70)));
             nvgFill(args.vg);
         }
         
@@ -2995,8 +3001,8 @@ void Matrix8x8Widget::drawMatrix(const DrawArgs& args) {
         
         // Draw the symbol with Shapetaker colors and VHS warping (8x8 version)
         nvgSave(args.vg);
-        float shakeX = sin(time * 1.6f) * 0.6f + tapeWarp * 2.5f + deepWarp * 2.0f; // Much slower, intense warping for 8x8
-        float shakeY = cos(time * 1.2f) * 0.4f + waveA * 1.5f + waveB * 1.0f; // Slower, more layered warping
+        float shakeX = sinf(time * 0.50f) * 0.45f + tapeWarp * 1.6f + deepWarp * 1.2f; // slower wobble
+        float shakeY = cosf(time * 0.38f) * 0.32f + waveA * 1.0f + waveB * 0.7f;
         nvgTranslate(args.vg, matrixSize / 2 + shakeX, matrixSize * 0.40f + shakeY); // More centered vertically
         nvgScale(args.vg, 3.0f, 3.0f); // Much bigger and more pixelated for 8x8
         
