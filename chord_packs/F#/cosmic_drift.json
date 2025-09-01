@@ -1,0 +1,79 @@
+{
+  "name": "Cosmic Drift",
+  "key": "F#",
+  "description": "Ethereal pad synthesis with interstellar chord voicings and spatial reverb",
+  "chords": [
+    {
+      "name": "F#maj9sus2",
+      "intervals": [6, 8, 1, 5, 9],
+      "preferredVoices": 5,
+      "category": "major9sus2"
+    },
+    {
+      "name": "G#m7add11",
+      "intervals": [8, 11, 3, 6, 1],
+      "preferredVoices": 5,
+      "category": "minor7add11"
+    },
+    {
+      "name": "Amaj7#5",
+      "intervals": [9, 1, 6, 8],
+      "preferredVoices": 4,
+      "category": "major7#5"
+    },
+    {
+      "name": "Bmaj13sus4",
+      "intervals": [11, 4, 6, 9, 1, 8],
+      "preferredVoices": 6,
+      "category": "major13sus4"
+    },
+    {
+      "name": "C#m11b5",
+      "intervals": [1, 4, 7, 11, 2, 6],
+      "preferredVoices": 6,
+      "category": "minor11b5"
+    },
+    {
+      "name": "Dmaj7#11",
+      "intervals": [2, 6, 9, 1, 8],
+      "preferredVoices": 5,
+      "category": "major7#11"
+    },
+    {
+      "name": "E6sus2add9",
+      "intervals": [4, 6, 11, 1, 9],
+      "preferredVoices": 5,
+      "category": "major6sus2add9"
+    },
+    {
+      "name": "F#m(maj9)",
+      "intervals": [6, 9, 1, 5, 8],
+      "preferredVoices": 5,
+      "category": "minorMaj9"
+    },
+    {
+      "name": "A#m7b5",
+      "intervals": [10, 1, 4, 8],
+      "preferredVoices": 4,
+      "category": "halfDim7"
+    },
+    {
+      "name": "C#7alt",
+      "intervals": [1, 5, 7, 11],
+      "preferredVoices": 4,
+      "category": "altered7"
+    },
+    {
+      "name": "Bmaj7sus2",
+      "intervals": [11, 1, 6, 10],
+      "preferredVoices": 4,
+      "category": "major7sus2"
+    },
+    {
+      "name": "F#(add2add#11)",
+      "intervals": [6, 9, 1, 8, 0],
+      "preferredVoices": 5,
+      "category": "majoradd2add#11"
+    }
+  ]
+}

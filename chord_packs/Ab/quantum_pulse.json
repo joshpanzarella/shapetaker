@@ -1,0 +1,85 @@
+{
+  "name": "Quantum Pulse",
+  "key": "Ab",
+  "description": "Pulsing quantum harmonics with phase-shifted chord morphing",
+  "chords": [
+    {
+      "name": "Abmaj7",
+      "intervals": [8, 0, 3, 7],
+      "preferredVoices": 4,
+      "category": "major7"
+    },
+    {
+      "name": "Bbm7",
+      "intervals": [10, 1, 5, 8],
+      "preferredVoices": 4,
+      "category": "minor7"
+    },
+    {
+      "name": "Cm7",
+      "intervals": [0, 3, 7, 10],
+      "preferredVoices": 4,
+      "category": "minor7"
+    },
+    {
+      "name": "Dbmaj7",
+      "intervals": [1, 5, 8, 0],
+      "preferredVoices": 4,
+      "category": "major7"
+    },
+    {
+      "name": "Eb7",
+      "intervals": [3, 7, 10, 1],
+      "preferredVoices": 4,
+      "category": "dominant7"
+    },
+    {
+      "name": "Fm7",
+      "intervals": [5, 8, 0, 3],
+      "preferredVoices": 4,
+      "category": "minor7"
+    },
+    {
+      "name": "Gm7b5",
+      "intervals": [7, 10, 1, 5],
+      "preferredVoices": 4,
+      "category": "halfDim7"
+    },
+    {
+      "name": "C7alt",
+      "intervals": [0, 4, 6, 10],
+      "preferredVoices": 4,
+      "category": "altered7"
+    },
+    {
+      "name": "Abmaj7#5",
+      "intervals": [8, 0, 4, 7],
+      "preferredVoices": 4,
+      "category": "major7#5"
+    },
+    {
+      "name": "Bb7sus4",
+      "intervals": [10, 3, 5, 8],
+      "preferredVoices": 4,
+      "category": "dominant7sus4"
+    },
+    {
+      "name": "Fm(maj7)",
+      "intervals": [5, 8, 0, 4],
+      "preferredVoices": 4,
+      "category": "minorMaj7"
+    },
+    {
+      "name": "Eb7b9",
+      "intervals": [3, 7, 10, 1, 4],
+      "preferredVoices": 5,
+      "category": "dominant7b9"
+    },
+    {
+      "name": "Dbmaj9#11",
+      "intervals": [1, 5, 8, 0, 3, 7],
+      "preferredVoices": 6,
+      "category": "major9#11"
+    }
+  ]
+}

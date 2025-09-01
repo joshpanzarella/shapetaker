@@ -1,0 +1,79 @@
+{
+  "name": "Voltage Flux",
+  "key": "G",
+  "description": "Dynamic CV-driven chord progressions with analog warmth",
+  "chords": [
+    {
+      "name": "Gmaj7sus2",
+      "intervals": [7, 9, 2, 6],
+      "preferredVoices": 4,
+      "category": "major7sus2"
+    },
+    {
+      "name": "Am7add11",
+      "intervals": [9, 0, 4, 7, 2],
+      "preferredVoices": 5,
+      "category": "minor7add11"
+    },
+    {
+      "name": "Cmaj9#11",
+      "intervals": [0, 4, 7, 11, 2, 6],
+      "preferredVoices": 6,
+      "category": "major9#11"
+    },
+    {
+      "name": "D7sus4b9",
+      "intervals": [2, 7, 9, 0, 3],
+      "preferredVoices": 5,
+      "category": "dominant7sus4b9"
+    },
+    {
+      "name": "Em11",
+      "intervals": [4, 7, 11, 2, 5, 9],
+      "preferredVoices": 6,
+      "category": "minor11"
+    },
+    {
+      "name": "Fmaj7#5",
+      "intervals": [5, 9, 1, 4],
+      "preferredVoices": 4,
+      "category": "major7#5"
+    },
+    {
+      "name": "Bm(maj7)",
+      "intervals": [11, 2, 6, 10],
+      "preferredVoices": 4,
+      "category": "minorMaj7"
+    },
+    {
+      "name": "G6add9sus4",
+      "intervals": [7, 0, 2, 4, 9],
+      "preferredVoices": 5,
+      "category": "major6add9sus4"
+    },
+    {
+      "name": "A13b9",
+      "intervals": [9, 1, 4, 7, 10, 6],
+      "preferredVoices": 6,
+      "category": "dominant13b9"
+    },
+    {
+      "name": "Dm9b5",
+      "intervals": [2, 5, 8, 0, 4],
+      "preferredVoices": 5,
+      "category": "minor9b5"
+    },
+    {
+      "name": "Csus2maj7",
+      "intervals": [0, 2, 7, 11],
+      "preferredVoices": 4,
+      "category": "sus2maj7"
+    },
+    {
+      "name": "G(add#11)",
+      "intervals": [7, 11, 2, 1],
+      "preferredVoices": 4,
+      "category": "majoradd#11"
+    }
+  ]
+}

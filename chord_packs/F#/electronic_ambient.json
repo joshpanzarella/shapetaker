@@ -1,0 +1,91 @@
+{
+  "name": "Electronic Ambient F#",
+  "key": "F#",
+  "description": "Atmospheric electronic and ambient chord voicings",
+  "chords": [
+    {
+      "name": "F#m",
+      "intervals": [6, 9, 1],
+      "preferredVoices": 3,
+      "category": "minor"
+    },
+    {
+      "name": "G#m",
+      "intervals": [8, 11, 3],
+      "preferredVoices": 3,
+      "category": "minor"
+    },
+    {
+      "name": "A",
+      "intervals": [9, 1, 4],
+      "preferredVoices": 3,
+      "category": "major"
+    },
+    {
+      "name": "B",
+      "intervals": [11, 3, 6],
+      "preferredVoices": 3,
+      "category": "major"
+    },
+    {
+      "name": "C#m",
+      "intervals": [1, 4, 8],
+      "preferredVoices": 3,
+      "category": "minor"
+    },
+    {
+      "name": "D",
+      "intervals": [2, 6, 9],
+      "preferredVoices": 3,
+      "category": "major"
+    },
+    {
+      "name": "E",
+      "intervals": [4, 8, 11],
+      "preferredVoices": 3,
+      "category": "major"
+    },
+    {
+      "name": "F#madd9",
+      "intervals": [6, 9, 1, 8],
+      "preferredVoices": 4,
+      "category": "add9"
+    },
+    {
+      "name": "Amaj7",
+      "intervals": [9, 1, 4, 8],
+      "preferredVoices": 4,
+      "category": "major7"
+    },
+    {
+      "name": "Bmaj7",
+      "intervals": [11, 3, 6, 10],
+      "preferredVoices": 4,
+      "category": "major7"
+    },
+    {
+      "name": "C#m7",
+      "intervals": [1, 4, 8, 11],
+      "preferredVoices": 4,
+      "category": "minor7"
+    },
+    {
+      "name": "F#sus4",
+      "intervals": [6, 11, 1],
+      "preferredVoices": 3,
+      "category": "suspended"
+    },
+    {
+      "name": "Dmaj7#11",
+      "intervals": [2, 6, 9, 1, 8],
+      "preferredVoices": 5,
+      "category": "major7#11"
+    },
+    {
+      "name": "Esus2",
+      "intervals": [4, 6, 11],
+      "preferredVoices": 3,
+      "category": "suspended"
+    }
+  ]
+}

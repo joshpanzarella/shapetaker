@@ -100,6 +100,7 @@ struct STSelector : app::SvgSwitch {
     }
 };
 
+
 struct STPort : app::SvgPort {
     STPort() {
         setSvg(Svg::load(asset::plugin(pluginInstance, "res/ports/st_bnc_connector.svg")));
@@ -449,8 +450,6 @@ struct Transmutation : Module {
         // Sequence B mode
         SEQ_B_MODE_PARAM,
         
-        // Chord pack selection
-        CHORD_PACK_PARAM,
         
         // Alchemical symbol buttons (12)
         SYMBOL_1_PARAM,
@@ -617,8 +616,6 @@ struct Transmutation : Module {
         // Transmutation B mode (0=Independent, 1=Harmony, 2=Lock)
         configSwitch(SEQ_B_MODE_PARAM, 0.f, 2.f, 0.f, "Transmutation B Mode", {"Independent", "Harmony", "Lock"});
         
-        // Chord pack selection
-        configParam(CHORD_PACK_PARAM, 0.f, 1.f, 0.f, "Load Chord Pack");
         
         // Alchemical symbol buttons
         for (int i = 0; i < 12; i++) {
@@ -755,11 +752,6 @@ struct Transmutation : Module {
             }
         }
         
-        // Handle chord pack loading
-        if (params[CHORD_PACK_PARAM].getValue() > 0.5f) {
-            params[CHORD_PACK_PARAM].setValue(0.0f); // Reset button
-            // File browser will be handled by widget
-        }
         
         // Handle symbol button presses
         for (int i = 0; i < 12; i++) {
@@ -1555,7 +1547,7 @@ void HighResMatrixWidget::drawMatrix(const DrawArgs& args) {
             }
         }
         
-        // Main symbol with bright core
+        // Main symbol with bright core (positioned to align with glow effects at center)
         drawAlchemicalSymbol(args, Vec(0, 0), module->displaySymbolId, nvgRGBA(symbolR, symbolG, symbolB, 255));
         
         // Extra bright white core for VHS warping intensity
@@ -1576,7 +1568,7 @@ void HighResMatrixWidget::drawMatrix(const DrawArgs& args) {
         // Calculate starting position for multi-line text
         float lineHeight = 36.0f; // Space between lines
         float totalHeight = textLines.size() * lineHeight;
-        float startY = (box.size.y * 0.65f) - (totalHeight / 2.0f);
+        float startY = (box.size.y * 0.75f) - (totalHeight / 2.0f);
         
         // Text position with slow, intense VHS warping movement, closer to symbol
         float baseTextX = box.size.x / 2 + sin(time * 1.1f) * 0.6f + tapeWarp * 2.5f + deepWarp * 2.0f;
@@ -1826,11 +1818,11 @@ void HighResMatrixWidget::drawMatrix(const DrawArgs& args) {
             glowColor = nvgRGBA(180, 0, 255, pulse * 150);
         }
         
-        // Larger, smoother glow
+        // Closer, thinner glow
         nvgBeginPath(args.vg);
-        nvgRoundedRect(args.vg, -6, -6, box.size.x + 12, box.size.y + 12, 12);
+        nvgRoundedRect(args.vg, -3, -3, box.size.x + 6, box.size.y + 6, 8);
         nvgStrokeColor(args.vg, glowColor);
-        nvgStrokeWidth(args.vg, 4.0f);
+        nvgStrokeWidth(args.vg, 2.0f);
         nvgStroke(args.vg);
         
         nvgRestore(args.vg);
@@ -2666,7 +2658,7 @@ void Matrix8x8Widget::drawMatrix(const DrawArgs& args) {
             }
         }
         
-        // Main symbol with bright core
+        // Main symbol with bright core (positioned to align with glow effects at center)
         drawAlchemicalSymbol(args, Vec(0, 0), module->displaySymbolId, nvgRGBA(symbolR, symbolG, symbolB, 255));
         
         // Extra bright white core for VHS warping intensity
@@ -2678,9 +2670,9 @@ void Matrix8x8Widget::drawMatrix(const DrawArgs& args) {
         nvgFontFaceId(args.vg, APP->window->uiFont->handle);
         nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
         
-        // Text position with slow, intense VHS warping movement, closer to symbol (8x8 version)
+        // Text position with slow, intense VHS warping movement, positioned lower for better separation (8x8 version)
         float textX = matrixSize / 2 + sin(time * 1.0f) * 0.5f + tapeWarp * 2.0f + deepWarp * 1.5f;
-        float textY = matrixSize * 0.65f + cos(time * 0.8f) * 0.3f + waveB * 1.0f + waveA * 0.6f; // More warped movement
+        float textY = matrixSize * 0.75f + cos(time * 0.8f) * 0.3f + waveB * 1.0f + waveA * 0.6f; // More warped movement
         
         // Multiple chunky shadows for extreme pixelated horror effect
         nvgFillColor(args.vg, nvgRGBA(40, 40, 50, 220)); // Dark gray shadow
@@ -2885,13 +2877,13 @@ void Matrix8x8Widget::drawMatrix(const DrawArgs& args) {
             glowColor = nvgRGBA(180, 0, 255, pulse * 100);
         }
         
-        // Draw outer glow border
+        // Draw closer, thinner glow border
         nvgBeginPath(args.vg);
-        nvgRoundedRect(args.vg, -4, -4, 
-                      MATRIX_SIZE * LED_SPACING + 8, 
-                      MATRIX_SIZE * LED_SPACING + 8, 6);
+        nvgRoundedRect(args.vg, -2, -2, 
+                      MATRIX_SIZE * LED_SPACING + 4, 
+                      MATRIX_SIZE * LED_SPACING + 4, 4);
         nvgStrokeColor(args.vg, glowColor);
-        nvgStrokeWidth(args.vg, 3.0f);
+        nvgStrokeWidth(args.vg, 1.5f);
         nvgStroke(args.vg);
         
         nvgRestore(args.vg);
@@ -4022,61 +4014,99 @@ struct TransmutationWidget : ModuleWidget {
         menu->addChild(new MenuSeparator);
         menu->addChild(createMenuLabel("Chord Packs"));
         
-        // Get list of available chord pack files
+        // Scan chord_packs directory for key folders
         std::string chordPackDir = asset::plugin(pluginInstance, "chord_packs");
-        std::vector<std::string> chordPackFiles;
-        std::vector<std::string> chordPackNames;
+        std::vector<std::string> keyFolders;
         
-        // Add the two known chord packs
-        chordPackFiles.push_back("80s_pop_d_sharp.json");
-        chordPackNames.push_back("80s Pop D#");
+        // Get all subdirectories (keys)
+        if (system::isDirectory(chordPackDir)) {
+            std::vector<std::string> entries = system::getEntries(chordPackDir);
+            for (const std::string& entry : entries) {
+                std::string fullPath = system::join(chordPackDir, entry);
+                if (system::isDirectory(fullPath)) {
+                    keyFolders.push_back(entry);
+                }
+            }
+            std::sort(keyFolders.begin(), keyFolders.end());
+        }
         
-        chordPackFiles.push_back("jazz_standards_bb.json");
-        chordPackNames.push_back("Jazz Standards Bb");
+        // Add default chord pack first
+        std::string rightText = (module->currentChordPack.name == "Basic Major") ? "✓" : "";
+        menu->addChild(createMenuItem("Basic Major", rightText, [module]() {
+            if (module) {
+                module->loadDefaultChordPack();
+                module->randomizeSymbolAssignment();
+                // Show notification
+                module->displayChordName = "Basic Major LOADED";
+                module->displaySymbolId = -1;
+                module->symbolPreviewTimer = 0.5f;
+            }
+        }));
         
-        // Add default chord pack option
-        chordPackFiles.push_back("");  // Empty string for default
-        chordPackNames.push_back("Basic Major");
+        if (!keyFolders.empty()) {
+            menu->addChild(new MenuSeparator);
+        }
         
-        for (size_t i = 0; i < chordPackFiles.size(); i++) {
-            std::string filename = chordPackFiles[i];
-            std::string packname = chordPackNames[i];
-            std::string rightText = (module->currentChordPack.name == packname) ? "✓" : "";
+        // Create submenus for each key
+        for (const std::string& keyFolder : keyFolders) {
+            std::string keyPath = system::join(chordPackDir, keyFolder);
+            std::vector<std::string> packFiles;
             
-            INFO("Creating menu item: %s (current pack: %s)", packname.c_str(), module->currentChordPack.name.c_str());
-            
-            menu->addChild(createMenuItem(packname, rightText,
-                [module, filename, packname]() {
-                    if (!module) {
-                        WARN("Module is null in chord pack menu action");
-                        return;
+            // Get JSON files in this key folder
+            if (system::isDirectory(keyPath)) {
+                std::vector<std::string> files = system::getEntries(keyPath);
+                for (const std::string& file : files) {
+                    if (system::getExtension(file) == ".json") {
+                        packFiles.push_back(file);
                     }
+                }
+                std::sort(packFiles.begin(), packFiles.end());
+            }
+            
+            if (!packFiles.empty()) {
+                // Create submenu for this key
+                menu->addChild(createSubmenuItem(keyFolder + " ►", "", [module, keyPath, keyFolder, packFiles](Menu* keySubmenu) {
+                    keySubmenu->addChild(createMenuLabel("Key: " + keyFolder));
+                    keySubmenu->addChild(new MenuSeparator);
                     
-                    INFO("Chord pack menu action triggered: %s", packname.c_str());
-                    
-                    if (filename.empty()) {
-                        // Load default chord pack
-                        module->loadDefaultChordPack();
-                        // Show notification on spooky screen for 500ms
-                        module->displayChordName = packname + " LOADED";
-                        module->displaySymbolId = -1; // Use REST symbol ID for notification
-                        module->symbolPreviewTimer = 0.5f; // 500ms display
-                        INFO("Loaded default chord pack and randomized symbols");
-                    } else {
-                        // Load chord pack from file
-                        std::string fullPath = asset::plugin(pluginInstance, "chord_packs/" + filename);
-                        if (module->loadChordPackFromFile(fullPath)) {
-                            // Success - chord pack loaded and symbols randomized
-                            // Show notification on spooky screen for 500ms
-                            module->displayChordName = packname + " LOADED";
-                            module->displaySymbolId = -1; // Use REST symbol ID for notification
-                            module->symbolPreviewTimer = 0.5f; // 500ms display
-                            INFO("Loaded chord pack: %s", packname.c_str());
-                        } else {
-                            WARN("Failed to load chord pack: %s", fullPath.c_str());
+                    for (const std::string& packFile : packFiles) {
+                        std::string packPath = system::join(keyPath, packFile);
+                        std::string packName = system::getStem(packFile); // Remove .json extension
+                        
+                        // Create display name
+                        std::string displayName = packName;
+                        
+                        // Check if this pack is currently selected
+                        std::string rightText = "";
+                        if (module) {
+                            // Simple name match check
+                            if (module->currentChordPack.name.find(packName) != std::string::npos ||
+                                module->currentChordPack.name.find(keyFolder) != std::string::npos) {
+                                rightText = "✓";
+                            }
                         }
+                        
+                        keySubmenu->addChild(createMenuItem(displayName, rightText, [module, packPath, displayName, keyFolder]() {
+                            if (module) {
+                                if (module->loadChordPackFromFile(packPath)) {
+                                    module->randomizeSymbolAssignment();
+                                    // Show notification
+                                    module->displayChordName = keyFolder + ": " + displayName + " LOADED";
+                                    module->displaySymbolId = -1;
+                                    module->symbolPreviewTimer = 0.5f;
+                                    INFO("Loaded chord pack: %s", displayName.c_str());
+                                } else {
+                                    // Error loading chord pack
+                                    module->displayChordName = "LOAD ERROR";
+                                    module->displaySymbolId = -1;
+                                    module->symbolPreviewTimer = 0.5f;
+                                    WARN("Failed to load chord pack: %s", packPath.c_str());
+                                }
+                            }
+                        }));
                     }
                 }));
+            }
         }
     }
     

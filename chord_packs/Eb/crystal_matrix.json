@@ -1,0 +1,79 @@
+{
+  "name": "Crystal Matrix",
+  "key": "Eb",
+  "description": "Crystalline FM synthesis chords with complex harmonic structures",
+  "chords": [
+    {
+      "name": "Ebmaj7",
+      "intervals": [3, 7, 10, 2],
+      "preferredVoices": 4,
+      "category": "major7"
+    },
+    {
+      "name": "Fm7",
+      "intervals": [5, 8, 0, 3],
+      "preferredVoices": 4,
+      "category": "minor7"
+    },
+    {
+      "name": "Gm7",
+      "intervals": [7, 10, 2, 5],
+      "preferredVoices": 4,
+      "category": "minor7"
+    },
+    {
+      "name": "Abmaj7",
+      "intervals": [8, 0, 3, 7],
+      "preferredVoices": 4,
+      "category": "major7"
+    },
+    {
+      "name": "Bb7",
+      "intervals": [10, 2, 5, 8],
+      "preferredVoices": 4,
+      "category": "dominant7"
+    },
+    {
+      "name": "Cm7",
+      "intervals": [0, 3, 7, 10],
+      "preferredVoices": 4,
+      "category": "minor7"
+    },
+    {
+      "name": "Dm7b5",
+      "intervals": [2, 5, 8, 0],
+      "preferredVoices": 4,
+      "category": "halfDim7"
+    },
+    {
+      "name": "Ebmaj9",
+      "intervals": [3, 7, 10, 2, 5],
+      "preferredVoices": 5,
+      "category": "major9"
+    },
+    {
+      "name": "Fm9",
+      "intervals": [5, 8, 0, 3, 7],
+      "preferredVoices": 5,
+      "category": "minor9"
+    },
+    {
+      "name": "Bb13",
+      "intervals": [10, 2, 5, 8, 0, 7],
+      "preferredVoices": 6,
+      "category": "dominant13"
+    },
+    {
+      "name": "Abmaj7#11",
+      "intervals": [8, 0, 3, 7, 2],
+      "preferredVoices": 5,
+      "category": "major7#11"
+    },
+    {
+      "name": "Gm11",
+      "intervals": [7, 10, 2, 5, 8, 0],
+      "preferredVoices": 6,
+      "category": "minor11"
+    }
+  ]
+}

@@ -1,0 +1,79 @@
+{
+  "name": "Resonance Lab",
+  "key": "B",
+  "description": "Experimental resonant filter banks with self-oscillating harmonics",
+  "chords": [
+    {
+      "name": "Bmaj7#11",
+      "intervals": [11, 3, 6, 10, 6],
+      "preferredVoices": 5,
+      "category": "major7#11"
+    },
+    {
+      "name": "C#m9",
+      "intervals": [1, 4, 8, 11, 3],
+      "preferredVoices": 5,
+      "category": "minor9"
+    },
+    {
+      "name": "D#m7b5",
+      "intervals": [3, 6, 9, 1],
+      "preferredVoices": 4,
+      "category": "halfDim7"
+    },
+    {
+      "name": "Emaj7",
+      "intervals": [4, 8, 11, 3],
+      "preferredVoices": 4,
+      "category": "major7"
+    },
+    {
+      "name": "F#7sus4",
+      "intervals": [6, 11, 1, 4],
+      "preferredVoices": 4,
+      "category": "dominant7sus4"
+    },
+    {
+      "name": "G#m11",
+      "intervals": [8, 11, 3, 6, 9, 1],
+      "preferredVoices": 6,
+      "category": "minor11"
+    },
+    {
+      "name": "A#m7b5",
+      "intervals": [10, 1, 4, 8],
+      "preferredVoices": 4,
+      "category": "halfDim7"
+    },
+    {
+      "name": "B6sus2",
+      "intervals": [11, 1, 6, 8],
+      "preferredVoices": 4,
+      "category": "major6sus2"
+    },
+    {
+      "name": "Emaj9#11",
+      "intervals": [4, 8, 11, 3, 6, 11],
+      "preferredVoices": 6,
+      "category": "major9#11"
+    },
+    {
+      "name": "F#7alt",
+      "intervals": [6, 10, 0, 4],
+      "preferredVoices": 4,
+      "category": "altered7"
+    },
+    {
+      "name": "C#m(maj7)",
+      "intervals": [1, 4, 8, 0],
+      "preferredVoices": 4,
+      "category": "minorMaj7"
+    },
+    {
+      "name": "Bmaj13",
+      "intervals": [11, 3, 6, 10, 1, 8],
+      "preferredVoices": 6,
+      "category": "major13"
+    }
+  ]
+}

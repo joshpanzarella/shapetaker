@@ -1,0 +1,79 @@
+{
+  "name": "Lunar Bass",
+  "key": "F",
+  "description": "Deep sub bass synthesis with low-frequency harmonic exploration",
+  "chords": [
+    {
+      "name": "Fmaj7sus2",
+      "intervals": [5, 7, 0, 4],
+      "preferredVoices": 4,
+      "category": "major7sus2"
+    },
+    {
+      "name": "Gm11",
+      "intervals": [7, 10, 2, 5, 8, 0],
+      "preferredVoices": 6,
+      "category": "minor11"
+    },
+    {
+      "name": "Bb13sus4",
+      "intervals": [10, 3, 5, 8, 0, 7],
+      "preferredVoices": 6,
+      "category": "dominant13sus4"
+    },
+    {
+      "name": "Dm9b5",
+      "intervals": [2, 5, 8, 0, 4],
+      "preferredVoices": 5,
+      "category": "minor9b5"
+    },
+    {
+      "name": "Am7b5",
+      "intervals": [9, 0, 3, 7],
+      "preferredVoices": 4,
+      "category": "halfDim7"
+    },
+    {
+      "name": "Cmaj7#5",
+      "intervals": [0, 4, 8, 11],
+      "preferredVoices": 4,
+      "category": "major7#5"
+    },
+    {
+      "name": "F6sus2add9",
+      "intervals": [5, 7, 0, 2, 10],
+      "preferredVoices": 5,
+      "category": "major6sus2add9"
+    },
+    {
+      "name": "Eb(maj7#11)",
+      "intervals": [3, 7, 10, 2, 10],
+      "preferredVoices": 5,
+      "category": "major7#11"
+    },
+    {
+      "name": "Gm(maj9)",
+      "intervals": [7, 10, 2, 6, 9],
+      "preferredVoices": 5,
+      "category": "minorMaj9"
+    },
+    {
+      "name": "C7alt",
+      "intervals": [0, 4, 6, 10],
+      "preferredVoices": 4,
+      "category": "altered7"
+    },
+    {
+      "name": "Bbm6add9",
+      "intervals": [10, 1, 5, 7, 0],
+      "preferredVoices": 5,
+      "category": "minor6add9"
+    },
+    {
+      "name": "F(add#11)",
+      "intervals": [5, 9, 0, 11],
+      "preferredVoices": 4,
+      "category": "majoradd#11"
+    }
+  ]
+}
