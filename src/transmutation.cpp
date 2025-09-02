@@ -559,6 +559,7 @@ struct Transmutation : Module {
     int displaySymbolId = -999; // -999 means no symbol display
     float symbolPreviewTimer = 0.0f;
     static constexpr float SYMBOL_PREVIEW_DURATION = 0.50f; // Show for 500ms
+    bool spookyTvMode = true; // Toggle for spooky TV effect vs clean display
     
     // Chord pack system
     ChordPack currentChordPack;
@@ -1526,8 +1527,10 @@ std::vector<std::string> wrapText(const std::string& text, float maxWidth, NVGco
 }
 
 void HighResMatrixWidget::drawMatrix(const DrawArgs& args) {
-    // Spooky 80s horror movie TV preview mode
+    // Chord name preview display
     if (module && !module->displayChordName.empty() && module->displaySymbolId != -999) {
+        if (module->spookyTvMode) {
+            // Spooky 80s horror movie TV preview mode
         nvgSave(args.vg);
         
         // Calculate VHS tape warping effects based on time - even slower, more wobbly (more languid)
@@ -1697,6 +1700,46 @@ void HighResMatrixWidget::drawMatrix(const DrawArgs& args) {
         
         nvgRestore(args.vg);
         return;
+        } else {
+            // Clean chord name display mode
+            nvgSave(args.vg);
+            
+            // Clean, simple background
+            nvgBeginPath(args.vg);
+            nvgRoundedRect(args.vg, 0, 0, box.size.x, box.size.y, 8.0f);
+            nvgFillColor(args.vg, nvgRGBA(20, 20, 25, 240)); // Dark subtle background
+            nvgFill(args.vg);
+            
+            // Simple symbol display centered
+            nvgSave(args.vg);
+            nvgTranslate(args.vg, box.size.x / 2, box.size.y * 0.35f);
+            nvgScale(args.vg, 4.0f, 4.0f); // Larger but clean
+            st::drawAlchemicalSymbol(args, Vec(0, 0), module->displaySymbolId, nvgRGB(0, 255, 180), 6.5f, 1.5f); // Teal color
+            nvgRestore(args.vg);
+            
+            // Clean text display
+            nvgFontSize(args.vg, 24.0f);
+            nvgFontFaceId(args.vg, APP->window->uiFont->handle);
+            nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+            
+            // Calculate maximum text width
+            float maxTextWidth = box.size.x * 0.9f;
+            std::vector<std::string> textLines = wrapText(module->displayChordName, maxTextWidth, args.vg);
+            
+            // Position text below symbol
+            float lineHeight = 26.0f;
+            float startY = box.size.y * 0.70f - ((textLines.size() - 1) * lineHeight / 2.0f);
+            
+            // Simple white text
+            nvgFillColor(args.vg, nvgRGB(240, 240, 240));
+            for (size_t i = 0; i < textLines.size(); i++) {
+                float textY = startY + (i * lineHeight);
+                nvgText(args.vg, box.size.x / 2, textY, textLines[i].c_str(), NULL);
+            }
+            
+            nvgRestore(args.vg);
+            return;
+        }
     }
 
     // High-resolution matrix rendering
@@ -4628,6 +4671,13 @@ struct TransmutationWidget : ModuleWidget {
         }));
         menu->addChild(createMenuItem("64 steps", check(module->gridSteps == 64), [module]() {
             module->gridSteps = 64;
+        }));
+
+        // Display mode options
+        menu->addChild(new MenuSeparator);
+        menu->addChild(createMenuLabel("Display Mode"));
+        menu->addChild(createMenuItem("Spooky TV Effect", check(module->spookyTvMode), [module]() {
+            module->spookyTvMode = !module->spookyTvMode;
         }));
 
         // Chord packs submenu
