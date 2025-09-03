@@ -78,6 +78,13 @@ Widget utility library containing:
 - Utilities are available to all modules without additional includes
 - Backward compatibility maintained - existing modules continue to work unchanged
 
+### Header Hygiene
+- Removed circular include between `plugin.hpp` and shared headers
+  - `shapetakerUtils.hpp` now includes only `rack.hpp`
+  - `shapetakerWidgets.hpp` now includes `rack.hpp` and declares `extern Plugin* pluginInstance`
+- Consolidated single-color jewel LEDs into `shapetakerWidgets.hpp` and re-used in modules
+- Removed duplicate VU meter and legacy jewel LED variants from `plugin.hpp` (moved to utilities)
+
 ### Build System Integration
 - Utilities are header-only for simplicity
 - Inline functions avoid duplicate symbol issues

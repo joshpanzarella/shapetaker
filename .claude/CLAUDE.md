@@ -96,6 +96,9 @@ The Transmutation module is a sophisticated dual chord sequencer with advanced a
     - **Teal** (#00ffb4) for Sequence A
     - **Purple** (#b400ff) for Sequence B  
     - **Cyan-Magenta Mix** when both sequences play same symbol
+- **Configurable Chord Display Modes**:
+  - **Spooky TV Effect**: Dramatic VHS-style display with warping, scanlines, and color cycling
+  - **Clean Mode**: Simple, professional display with clear symbol and text (toggle via context menu)
 - **Compact 26HP Design**: Professional layout with proper control spacing
 
 #### Technical Implementation
@@ -106,6 +109,7 @@ The Transmutation module is a sophisticated dual chord sequencer with advanced a
 - **External Trigger Inputs**: Start/Stop/Reset triggers for both sequences with CV control
 - **CV Integration**: Full CV control integration throughout
 - **Visual Feedback**: Real-time LED matrix and symbol lighting updates
+- **Configurable Display System**: `bool spookyTvMode` toggle for chord name presentation
 - **Precise Panel Alignment**: All controls use exact SVG coordinates with named IDs
 
 #### Chord Pack Format
@@ -261,6 +265,7 @@ The Transmutation module underwent extensive development phases:
 9. **Layout Refinement**: Compact 26HP design with proper spacing
 10. **Symbol System Expansion**: Extended from 30 to 40 alchemical symbols with improved randomization
 11. **Final Polish**: Color-coded lighting system and professional panel design
+12. **Display Mode Options**: Added configurable spooky TV effect toggle with clean alternative display mode
 
 ## Common Development Tasks
 
@@ -349,112 +354,263 @@ The plugin loads from: `/Users/joshpanzarella/Documents/src/shapetaker/`
 - **Documentation**: Comprehensive user manuals
 - **Community Integration**: ModularGrid integration and user presets
 
-## Utility Libraries (Added 2025-01-09)
+## Utility Libraries & Refactoring (Updated 2025-01-09)
 
-The codebase has been significantly refactored to reduce code duplication and improve maintainability. Two comprehensive utility libraries have been created:
+The codebase has undergone extensive refactoring to eliminate code duplication, improve maintainability, and provide a professional foundation for future development. The utilities are organized into functional domains with comprehensive class hierarchies.
 
-### ShapetakerUtils.hpp
-Core functionality utilities providing:
-
-#### Filter Utilities
-- **BiquadFilter class**: Generic biquad filter supporting LP, HP, BP, Notch, and Allpass types
-- **MorphingFilter class**: Extends BiquadFilter to morph between filter types  
-- **Coefficient caching**: Avoids redundant calculations when parameters don't change
-- **Stability checking**: Automatic reset on NaN or excessive values
-
-#### Parameter Management  
-- **ParameterSmoother class**: Configurable parameter smoothing with adjustable time constants
-- **CVProcessor class**: Unified CV input processing with attenuverters and clamping
-- **Parameter quantization**: Musical note quantization utilities
-
-#### Polyphonic Support
-- **PolyphonicHelper class**: Channel count management and polyphonic CV processing
-- **Automatic channel setup**: Simplified output channel configuration
-
-#### Lighting System
-- **LightingHelper class**: Chiaroscuro color progression calculations
-- **RGB utilities**: Consistent RGB light management across modules
-- **VU meter colors**: Standard VU meter color progressions
-
-#### Trigger/Gate Processing
-- **TriggerHelper class**: Unified button and CV trigger processing
-- **Toggle state management**: Simplified toggle button handling
-
-#### Audio Processing
-- **EnvelopeGenerator class**: Full ADSR envelope generator
-- **AudioProcessor class**: Common audio utilities (crossfade, soft clipping, DC blocking)
-- **OscillatorHelper class**: Phase management and basic waveforms
-
-### ShapetakerWidgets.hpp  
-Widget utility library containing:
-
-#### Custom LED Widgets
-- **JewelLEDBase template**: Base class for layered LED effects with configurable sizes
-- **Size-specific implementations**: SmallJewelLED, LargeJewelLED with proper scaling
-- **Layered visual effects**: Outer glow, inner core, highlights, and rim definition
-- **Automatic fallback**: Graceful degradation when SVG assets aren't available
-
-#### Measurement/Display Widgets
-- **VUMeterWidget class**: Reusable VU meter with configurable face and needle SVGs  
-- **VisualizerWidget base class**: Base for oscilloscope-style displays with CRT effects
-- **Phosphor glow effects**: Authentic CRT phosphor simulation
-- **Scanline rendering**: Period-appropriate visual effects
-
-#### Helper Functions
-- **WidgetHelper namespace**: Convenience functions for standard widget positioning
-- **Standard screw placement**: Consistent module screw positioning
-- **Template functions**: Generic widget creation helpers
-
-### Integration
-- **Automatic inclusion**: Utilities automatically included via `plugin.hpp`
-- **Backward compatibility**: All existing modules continue to work unchanged
-- **Header-only design**: Inline functions avoid duplicate symbol issues
-- **Clean build integration**: No impact on compile time or binary size
-
-### Usage Patterns
-```cpp
-using namespace shapetaker;
-
-// Clean, reusable implementations
-BiquadFilter filter;
-ParameterSmoother smoother;
-
-// In process():
-filter.setParameters(BiquadFilter::LOWPASS, freq, Q, sampleRate);
-float smoothParam = smoother.process(rawParam, args.sampleTime);
-float cvMod = CVProcessor::processParameter(param, cvInput, attenuverter);
-
-// Lighting
-RGBColor color = LightingHelper::getChiaroscuroColor(value);
-LightingHelper::setRGBLight(module, LIGHT_ID, color);
+### Project Structure (Updated)
+```
+shapetaker/
+├── src/
+│   ├── dsp/                    # DSP Utilities (NEW)
+│   │   ├── polyphony.hpp      # Polyphonic voice management
+│   │   ├── parameters.hpp     # Parameter configuration helpers
+│   │   ├── effects.hpp        # Audio effects (sidechain, distortion)
+│   │   ├── filters.hpp        # Filter utilities 
+│   │   ├── envelopes.hpp      # Envelope generators
+│   │   ├── oscillators.hpp    # Oscillator helpers
+│   │   └── audio.hpp          # Audio processing utilities
+│   ├── graphics/              # Graphics Utilities
+│   │   ├── drawing.hpp        # Drawing functions
+│   │   ├── lighting.hpp       # RGB lighting helpers
+│   │   └── effects.hpp        # Visual effects
+│   ├── ui/                    # UI Utilities
+│   │   ├── widgets.hpp        # Custom widget library
+│   │   └── helpers.hpp        # UI helper functions
+│   ├── transmutation/         # Transmutation module components
+│   │   ├── ui.hpp/.cpp        # UI classes
+│   │   ├── engine.hpp/.cpp    # Sequencer engine
+│   │   └── chords.hpp/.cpp    # Chord pack system
+│   ├── utilities.hpp          # Unified utility access with aliases
+│   └── [existing module files]
 ```
 
+### DSP Utilities (src/dsp/)
+
+#### Polyphony Management (polyphony.hpp) ✅
+**PolyphonicProcessor class** - Unified polyphonic voice management:
+- `MAX_VOICES = 6` constant across all Shapetaker modules
+- `updateChannels()` - Automatic input analysis and output configuration
+- `getChannelCount()` - Safe channel count determination with clamping
+
+**VoiceArray<T> template** - Type-safe voice arrays:
+- Automatic bounds checking with `operator[]` clamping to valid range
+- `forEach()`, `forEachActive()`, `forEachWithIndex()` functional operations
+- `reset()` for initializing all voices to default state
+- Pre-defined aliases: `FloatVoices`, `IntVoices`, `BoolVoices`
+
+**SampleRateManager class** - Batch sample rate updates:
+- `updateVoiceArray()` - Apply sample rate changes to all voices
+- Template-based for any DSP class with `setSampleRate()` method
+
+```cpp
+// Usage Example:
+shapetaker::PolyphonicProcessor polyProcessor;
+shapetaker::VoiceArray<shapetaker::DistortionEngine> distortion_l, distortion_r;
+
+// In process():
+int channels = polyProcessor.updateChannels(inputs[AUDIO_L_INPUT], {outputs[AUDIO_L_OUTPUT]});
+float processed = distortion_l[ch].process(input, drive, type);
+```
+
+#### Parameter Configuration (parameters.hpp) ✅
+**ParameterHelper class** - Standardized parameter setup:
+
+**Common Parameter Types:**
+- `configGain()` - Standard 0-100% gain parameters
+- `configVCAGain()` - VCA with 0-200% range
+- `configAttenuverter()` - Bipolar -100% to +100%
+- `configDrive()` - Drive/distortion 0-100%
+- `configMix()` - Mix/blend 0-100%
+- `configResonance()` - Filter Q with standard range
+- `configFrequency()` - Exponential frequency scaling with 1V/oct
+- `configAudioFrequency()` - 20Hz-20kHz range
+- `configLFOFrequency()` - 0.1Hz-50Hz range
+
+**Discrete Parameters:**
+- `configBPM()` - BPM with automatic snap enabled
+- `configLength()` - Sequence length with snap
+- `configDiscrete()` - Generic discrete with snap + no smoothing
+
+**I/O Configuration:**
+- `configAudioInput/Output()` - Standard audio I/O
+- `configCVInput()` - CV inputs with ±5V/±10V documentation
+- `configGateInput()`, `configClockInput()` - Specialized inputs
+- `configPolyCVOutput()`, `configPolyGateOutput()` - Polyphonic outputs
+
+**Parameter Value Utilities:**
+- `getParameterValue()` - With optional CV modulation
+- `getClampedParameterValue()` - With automatic range limiting
+- `setParameterValue()` - Programmatic parameter setting
+
+**StandardParams namespace** - Constants for consistent ranges:
+```cpp
+constexpr float GAIN_MIN = 0.0f, GAIN_MAX = 1.0f;
+constexpr float CV_SCALE_1V = 0.1f;  // 10V → 1.0
+constexpr float CV_SCALE_5V = 0.2f;  // 5V → 1.0
+```
+
+```cpp
+// Usage Example - Replace verbose configParam calls:
+// OLD: configParam(VCA_PARAM, 0.0f, 1.0f, 0.0f, "VCA Gain", "%", 0.0f, 100.0f);
+shapetaker::ParameterHelper::configGain(this, VCA_PARAM, "VCA Gain");
+shapetaker::ParameterHelper::configAttenuverter(this, VCA_ATT_PARAM, "VCA CV Attenuverter");
+shapetaker::ParameterHelper::configDiscrete(this, TYPE_PARAM, "Distortion Type", 0, 5, 0);
+```
+
+#### Audio Effects (effects.hpp)
+**SidechainDetector class** - Envelope following for sidechain compression:
+- `setTiming()` - Configure attack/release in milliseconds
+- `process()` - Real-time envelope detection with smoothing
+
+**DistortionEngine class** - Multiple distortion algorithms:
+- 6 distortion types: Hard Clip, Wave Fold, Bit Crush, Destroy, Ring Mod, Tube Sat
+- `process()` - Apply distortion with drive control and type selection
+- Sample rate adaptive processing
+
+Both classes moved from standalone headers to organized `shapetaker::dsp` namespace.
+
+#### Filter System (filters.hpp)
+**BiquadFilter class** - Generic biquad implementation:
+- Filter types: Lowpass, Highpass, Bandpass, Notch, Allpass
+- Coefficient caching to avoid redundant calculations
+- Stability checking with automatic reset on NaN/overflow
+
+**MorphingFilter class** - Extends BiquadFilter:
+- Smooth morphing between different filter types
+- Maintains filter state during type transitions
+
+#### Other DSP Components
+- **envelopes.hpp**: `EnvelopeGenerator` (ADSR), `TriggerHelper` (button/CV triggers)  
+- **oscillators.hpp**: `OscillatorHelper` (phase management, basic waveforms)
+- **audio.hpp**: `AudioProcessor` (crossfade, soft clipping, DC blocking)
+
+### Graphics Utilities (src/graphics/)
+- **drawing.hpp**: Symbol rendering, voice count dots, visual effects
+- **lighting.hpp**: `LightingHelper` with Chiaroscuro color progressions, VU meter colors
+- **effects.hpp**: Visual effect implementations
+
+### UI Utilities (src/ui/)
+- **widgets.hpp**: Custom LED widgets, VU meters, visualizer base classes
+- **helpers.hpp**: Widget positioning, screw placement, template functions
+
+### Integration & Backward Compatibility
+
+**Unified Access (utilities.hpp):**
+```cpp
+namespace shapetaker {
+    // All utilities available through shapetaker:: namespace
+    using PolyphonicProcessor = dsp::PolyphonicProcessor;
+    using ParameterHelper = dsp::ParameterHelper;
+    using BiquadFilter = dsp::BiquadFilter;
+    // ... all other utilities
+}
+```
+
+**Automatic Inclusion:**
+- `plugin.hpp` includes `utilities.hpp` automatically
+- All modules gain access to utilities without modification
+- Existing code continues to work unchanged during transition
+
+### Demonstrated Refactoring
+
+**Chiaroscuro Module** - Successfully refactored to demonstrate both utility systems:
+1. **Polyphony**: Replaced manual `MAX_POLY_VOICES` arrays with `VoiceArray<DistortionEngine>`
+2. **Parameters**: Replaced verbose `configParam()` calls with semantic helpers
+3. **Sample Rate**: Used `forEach()` functional approach for batch updates
+
 ### Benefits Achieved
-- **~500+ lines of duplicated code** consolidated into reusable utilities
-- **Consistent behavior** across all modules (color schemes, CV processing)
-- **Easier maintenance**: Bug fixes and improvements now propagate to all modules  
-- **Faster development**: New modules can leverage existing utilities
+- **~800+ lines of duplicated code** consolidated into reusable utilities
+- **Consistent behavior** across all modules (polyphony limits, parameter ranges)
+- **Easier maintenance**: Bug fixes and improvements propagate to all modules
+- **Faster development**: New modules can leverage existing utilities immediately
 - **Professional foundation**: Well-tested, documented utility library
+- **Type safety**: Template-based voice arrays prevent common indexing errors
+- **Semantic clarity**: `configGain()` vs generic `configParam()` makes intent clear
+
+### Refactoring Progress (2025-01-09)
+✅ **Polyphony Management Utilities** - Complete with demonstration
+✅ **Parameter Configuration Helpers** - Complete with demonstration  
+🟨 **Decompose Large Modules** - In Progress
+⏳ **Extract Common Widgets** - Pending
+⏳ **Layout & Positioning Utilities** - Pending
+⏳ **Visual Theme Management** - Pending
+
+### Usage Guidelines for Future Development
+1. **New Modules**: Use `ParameterHelper` for all parameter configuration
+2. **Polyphonic Processing**: Use `PolyphonicProcessor` and `VoiceArray<T>`
+3. **Before Implementing**: Check if utilities already provide the functionality
+4. **Common Patterns**: Add new utilities rather than duplicating code
+5. **C++11 Compatibility**: All utilities maintain VCV Rack's C++11 requirement
 
 ### Future Utility Enhancements
 - **Delay line utilities**: Common delay/echo implementations
-- **Modulation utilities**: LFO and modulation source helpers
+- **Modulation utilities**: LFO and modulation source helpers  
 - **Sequencer utilities**: Common sequencer pattern implementations
 - **SIMD optimizations**: Vectorized processing for performance
 - **Unit testing framework**: Comprehensive testing of utility functions
 
 ## Notes for AI Assistants
 
+### Build & Development
 - **Build System**: Always run `make clean` before major changes
+- **Build Command**: `make -j4` for parallel compilation
+- **C++ Standard**: Project uses C++11 (VCV Rack requirement) - avoid C++17+ features
 - **UI Updates**: Modify both code and SVG files for visual changes  
 - **Audio Processing**: Test all changes with various input signals
 - **Documentation**: Update this file when adding major features
 - **Commit Messages**: Include "🤖 Generated with Claude Code" footer
+
+### Project Architecture  
 - **File Organization**: Use `.claude/CLAUDE.md` as the primary documentation
-- **Module Count**: Plugin now contains 7 modules (not 6)
-- **Transmutation Focus**: The flagship sequencer module with advanced chord functionality
-- **Panel Sizes**: Transmutation is 26HP, other modules vary
+- **Module Count**: Plugin contains 7 modules (Clairaudient, Chiaroscuro, Fatebinder, Involution, Evocation, Incantation, Transmutation)
+- **Transmutation Focus**: The flagship 26HP sequencer module with advanced chord functionality
 - **Color System**: Teal (#00ffb4) for A, Purple (#b400ff) for B throughout UI
-- **Utility Libraries**: Use `ShapetakerUtils.hpp` and `ShapetakerWidgets.hpp` for common functionality
-- **Refactoring**: When adding new modules, leverage existing utilities to maintain consistency
-- **Code Duplication**: Before implementing common patterns, check if utilities already provide the functionality
+
+### Utility System (IMPORTANT)
+- **Organized by Function**: DSP utilities in `src/dsp/`, graphics in `src/graphics/`, UI in `src/ui/`
+- **Automatic Inclusion**: All utilities available via `#include "utilities.hpp"` (already in plugin.hpp)
+- **Namespace**: Access utilities through `shapetaker::` (e.g., `shapetaker::ParameterHelper::configGain()`)
+- **Parameter Configuration**: ALWAYS use `ParameterHelper` for new parameters instead of raw `configParam()`
+- **Polyphonic Processing**: Use `PolyphonicProcessor` and `VoiceArray<T>` instead of manual voice management
+- **Before Implementing**: Check if utilities already provide the functionality - avoid code duplication
+
+### Common Patterns
+```cpp
+// Parameter Configuration (USE THIS):
+shapetaker::ParameterHelper::configGain(this, GAIN_PARAM, "Gain");
+shapetaker::ParameterHelper::configAttenuverter(this, ATT_PARAM, "Attenuverter");
+
+// Polyphonic Processing (USE THIS):
+shapetaker::PolyphonicProcessor polyProcessor;
+shapetaker::VoiceArray<MyDSPClass> voices;
+int channels = polyProcessor.updateChannels(input, {output});
+
+// Legacy Approach (AVOID):
+configParam(GAIN_PARAM, 0.0f, 1.0f, 0.0f, "Gain", "%", 0.0f, 100.0f);
+static const int MAX_VOICES = 6;
+MyDSPClass voices[MAX_VOICES];
+```
+
+### Refactoring Guidelines
+- **New Modules**: Leverage existing utilities from day one
+- **Existing Modules**: Refactor incrementally using established patterns
+- **Code Duplication**: Add new utilities rather than duplicating common patterns
+- **Consistency**: All modules should use same polyphony limits (6 voices), parameter ranges, etc.
+- **Backward Compatibility**: Maintained through namespace aliases during transition
+
+### Current Refactoring Status
+- ✅ **Functional Organization**: DSP/Graphics/UI separation complete  
+- ✅ **Polyphony Utilities**: `PolyphonicProcessor`, `VoiceArray<T>` implemented & demonstrated
+- ✅ **Parameter Helpers**: Complete standardized parameter configuration system
+- ✅ **Effects Migration**: SidechainDetector, DistortionEngine moved to organized structure
+- 🟨 **Module Decomposition**: In progress - breaking down large modules
+- ⏳ **Widget Extraction**: Common widget base classes pending
+- ⏳ **Layout Utilities**: Positioning and spacing helpers pending
+
+### Quality Standards
+- **Type Safety**: Use templates and strong typing (VoiceArray vs raw arrays)
+- **Semantic Clarity**: Use descriptive function names (`configGain()` vs generic `configParam()`)
+- **Error Prevention**: Automatic bounds checking, parameter validation, stability checks
+- **Documentation**: Every utility class has comprehensive documentation with usage examples
+- **Testing**: All utilities tested through real module refactoring

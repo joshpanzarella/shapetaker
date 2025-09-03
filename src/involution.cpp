@@ -55,299 +55,25 @@ struct Involution : Module {
         LIGHTS_LEN
     };
 
-    // A simple chorus effect
-    struct Chorus {
-        float* delayBuffer = nullptr;
-        int bufferSize = 0;
-        int writeIndex = 0;
-        float lfoPhase = 0.f;
+    // Using extracted utility classes
+    shapetaker::ChorusEffect chorus;
 
-        ~Chorus() {
-            delete[] delayBuffer;
-        }
+    // Using enhanced morphing filter from utilities
+    shapetaker::MorphingFilter filterA, filterB, highpassFilter;
 
-        void setSampleRate(float sampleRate) {
-            if (delayBuffer) {
-                delete[] delayBuffer;
-            }
-            bufferSize = (int)(sampleRate * 0.1f); // Max delay of 100ms
-            delayBuffer = new float[bufferSize]();
-        }
+    // Using phaser effect from utilities
+    shapetaker::PhaserEffect phaser;
 
-        float process(float input, float rate, float depth, float mix, float sampleRate) {
-            if (!delayBuffer) {
-                return input;
-            }
+    // Using delay and envelope follower from utilities
+    shapetaker::VoiceArray<shapetaker::ShimmerDelay> shimmerA, shimmerB;
+    shapetaker::VoiceArray<shapetaker::EnvelopeFollower> envelopeA, envelopeB;
 
-            lfoPhase += rate * 2.f * M_PI / sampleRate;
-            if (lfoPhase >= 2.f * M_PI) {
-                lfoPhase -= 2.f * M_PI;
-            }
-
-            float delay = (20.f + 10.f * std::sin(lfoPhase)) * depth;
-            float delayInSamples = delay * sampleRate / 1000.f;
-
-            int readIndex = writeIndex - (int)delayInSamples;
-            float frac = delayInSamples - (int)delayInSamples;
-
-            while (readIndex < 0) {
-                readIndex += bufferSize;
-            }
-            int readIndex2 = readIndex - 1;
-            while (readIndex2 < 0) {
-                readIndex2 += bufferSize;
-            }
-
-            float s1 = delayBuffer[readIndex % bufferSize];
-            float s2 = delayBuffer[readIndex2 % bufferSize];
-            float delayedSample = s1 * (1.f - frac) + s2 * frac;
-
-            delayBuffer[writeIndex] = input;
-            writeIndex++;
-            if (writeIndex >= bufferSize) {
-                writeIndex = 0;
-            }
-
-            return input * (1.f - mix) + delayedSample * mix;
-        }
-    };
-
-    // Enhanced filter with morphing capabilities
-    struct MorphingBiquadFilter {
-        float x1 = 0.f, x2 = 0.f;
-        float y1 = 0.f, y2 = 0.f;
-        float a0 = 1.f, a1 = 0.f, a2 = 0.f;
-        float b1 = 0.f, b2 = 0.f;
-        
-        // Cache previous coefficients for immediate updating
-        float lastFreq = -1.f, lastResonance = -1.f, lastMorph = -1.f;
-        
-        float process(float input) {
-            float output = a0 * input + a1 * x1 + a2 * x2 - b1 * y1 - b2 * y2;
-            
-            // Check for NaN or truly excessive values and reset if needed
-            if (!std::isfinite(output) || std::abs(output) > 10000.f) {
-                reset();
-                output = input; // Pass through when unstable
-            }
-            
-            x2 = x1;
-            x1 = input;
-            y2 = y1;
-            y1 = output;
-            
-            return output;
-        }
-        
-        void reset() {
-            x1 = x2 = y1 = y2 = 0.f;
-        }
-        
-        void setMorphingFilter(float freq, float resonance, float morph, float sampleRate) {
-            // Only recalculate if parameters have changed significantly
-            const float epsilon = 1e-6f;
-            if (std::abs(freq - lastFreq) < epsilon && 
-                std::abs(resonance - lastResonance) < epsilon && 
-                std::abs(morph - lastMorph) < epsilon) {
-                return; // No change, skip recalculation
-            }
-            
-            // Cache current values
-            lastFreq = freq;
-            lastResonance = resonance;
-            lastMorph = morph;
-            
-            float omega = 2.f * M_PI * freq / sampleRate;
-            float sin_omega = std::sin(omega);
-            float cos_omega = std::cos(omega);
-            float alpha = sin_omega / (2.f * resonance);
-            
-            float norm = 1.f / (1.f + alpha);
-            
-            // Lowpass coefficients
-            float lp_a0 = ((1.f - cos_omega) / 2.f) * norm;
-            float lp_a1 = (1.f - cos_omega) * norm;
-            float lp_a2 = lp_a0;
-            
-            // Bandpass coefficients
-            float bp_a0 = alpha * norm;
-            float bp_a1 = 0.f;
-            float bp_a2 = -bp_a0;
-            
-            // Highpass coefficients
-            float hp_a0 = ((1.f + cos_omega) / 2.f) * norm;
-            float hp_a1 = -(1.f + cos_omega) * norm;
-            float hp_a2 = hp_a0;
-            
-            // Morph between filter types
-            if (morph < 0.5f) {
-                // Morph between lowpass and bandpass
-                float blend = morph * 2.f;
-                a0 = lp_a0 * (1.f - blend) + bp_a0 * blend;
-                a1 = lp_a1 * (1.f - blend) + bp_a1 * blend;
-                a2 = lp_a2 * (1.f - blend) + bp_a2 * blend;
-            } else {
-                // Morph between bandpass and highpass
-                float blend = (morph - 0.5f) * 2.f;
-                a0 = bp_a0 * (1.f - blend) + hp_a0 * blend;
-                a1 = bp_a1 * (1.f - blend) + hp_a1 * blend;
-                a2 = bp_a2 * (1.f - blend) + hp_a2 * blend;
-            }
-            
-            b1 = (-2.f * cos_omega) * norm;
-            b2 = (1.f - alpha) * norm;
-        }
-        
-        void setStableHighpass(float freq, float sampleRate) {
-            // Stable highpass filter with fixed Q=0.707 (Butterworth response)
-            // This avoids the resonance issues of the morphing filter
-            
-            freq = clamp(freq, 1.f, sampleRate * 0.45f); // Clamp frequency to safe range
-            
-            float omega = 2.f * M_PI * freq / sampleRate;
-            float sin_omega = std::sin(omega);
-            float cos_omega = std::cos(omega);
-            
-            // Use a low, stable Q value to prevent resonance buildup
-            float Q = 0.5f; // Lower than 0.707 for extra stability
-            float alpha = sin_omega / (2.f * Q);
-            
-            float norm = 1.f / (1.f + alpha);
-            
-            // Standard highpass biquad coefficients
-            a0 = ((1.f + cos_omega) / 2.f) * norm;
-            a1 = -(1.f + cos_omega) * norm;
-            a2 = a0;
-            b1 = (-2.f * cos_omega) * norm;
-            b2 = (1.f - alpha) * norm;
-            
-            // Reset the cache to force coefficient update
-            lastFreq = -1.f;
-            lastResonance = -1.f;
-            lastMorph = -1.f;
-        }
-        
-        void setAllpass(float freq, float sampleRate) {
-            float omega = 2.f * M_PI * freq / sampleRate;
-            float tan_half_omega = std::tan(omega / 2.f);
-            float norm = 1.f / (1.f + tan_half_omega);
-            
-            a0 = (1.f - tan_half_omega) * norm;
-            a1 = -2.f * norm;
-            a2 = (1.f + tan_half_omega) * norm;
-            b1 = a1;
-            b2 = a0;
-        }
-    };
-
-    // 6-stage phaser using cascaded all-pass filters with stability improvements
-    struct Phaser {
-        static const int NUM_STAGES = 6;
-        MorphingBiquadFilter stages[NUM_STAGES];
-        MorphingBiquadFilter feedbackFilter; // High-pass filter for feedback path
-        float feedbackMemory = 0.f;
-        float dcBlocker = 0.f; // DC blocking filter
-        
-        void reset() {
-            for (int i = 0; i < NUM_STAGES; i++) {
-                stages[i].reset();
-            }
-            feedbackFilter.reset();
-            feedbackMemory = 0.f;
-            dcBlocker = 0.f;
-        }
-        
-        float process(float input, float centerFreq, float feedback, float mix, float sampleRate) {
-            // Clamp parameters to safe ranges
-            centerFreq = clamp(centerFreq, 100.f, sampleRate * 0.35f); // Higher minimum, lower maximum
-            feedback = clamp(feedback, 0.f, 0.7f); // Much more conservative feedback limit
-            mix = clamp(mix, 0.f, 1.f);
-            
-            // High-pass filter the feedback to prevent low-frequency buildup
-            feedbackFilter.setStableHighpass(80.f, sampleRate); // Remove frequencies below 80Hz from feedback
-            float filteredFeedback = feedbackFilter.process(feedbackMemory);
-            
-            // Apply soft limiting to feedback to prevent resonance spikes
-            filteredFeedback = std::tanh(filteredFeedback * 0.5f) * 2.f;
-            
-            // Add controlled feedback
-            float signal = input + filteredFeedback * feedback * 0.3f; // Reduce feedback gain
-            
-            // DC blocking filter to prevent DC buildup
-            float dcBlocked = signal - dcBlocker;
-            dcBlocker += dcBlocked * 0.001f; // Very slow DC tracking
-            signal = dcBlocked;
-            
-            // Process through all 6 all-pass stages with tighter frequency spread
-            for (int i = 0; i < NUM_STAGES; i++) {
-                // Reduce frequency spread for more stable operation
-                float stageFreq = centerFreq * powf(2.f, (i - 2.5f) * 0.15f); // Reduced from 0.3f to 0.15f
-                stageFreq = clamp(stageFreq, 100.f, sampleRate * 0.35f);
-                
-                stages[i].setAllpass(stageFreq, sampleRate);
-                signal = stages[i].process(signal);
-                
-                // Soft limiting after each stage to prevent buildup
-                signal = std::tanh(signal * 0.8f) * 1.25f;
-            }
-            
-            // Store output for feedback with additional limiting
-            feedbackMemory = clamp(signal, -5.f, 5.f); // Hard limit feedback memory
-            
-            // Mix dry and wet signals
-            return input * (1.f - mix) + signal * mix;
-        }
-    };
-
-    // Shimmer delay line
-    struct ShimmerDelay {
-        static const int MAX_DELAY = 4800; // 100ms at 48kHz
-        float buffer[MAX_DELAY] = {};
-        int writePos = 0;
-        
-        float process(float input, float delayTime, float feedback, float shimmer) {
-            int delaySamples = (int)(delayTime * 48000.f);
-            delaySamples = clamp(delaySamples, 1, MAX_DELAY - 1);
-            
-            int readPos = (writePos - delaySamples + MAX_DELAY) % MAX_DELAY;
-            float delayed = buffer[readPos];
-            
-            // Add harmonic content for shimmer
-            if (shimmer > 0.f) {
-                delayed += std::sin(delayed * 3.14159f * 2.f) * shimmer * 0.3f;
-            }
-            
-            buffer[writePos] = input + delayed * feedback;
-            writePos = (writePos + 1) % MAX_DELAY;
-            
-            return delayed;
-        }
-    };
-
-    // Envelope follower
-    struct EnvelopeFollower {
-        float envelope = 0.f;
-        
-        float process(float input, float attack = 0.001f, float release = 0.1f) {
-            float rectified = std::abs(input);
-            if (rectified > envelope) {
-                envelope += (rectified - envelope) * attack;
-            } else {
-                envelope += (rectified - envelope) * release;
-            }
-            return envelope;
-        }
-    };
-
-    // Filter chains
-    MorphingBiquadFilter lowpassA[6][3]; // 6 voices, 3 biquads for 6th order
-    MorphingBiquadFilter lowpassB[6][3];
-    MorphingBiquadFilter highpassA[6][2]; // 6 voices, 2 biquads for 4th order
-    MorphingBiquadFilter highpassB[6][2];
+    // Filter chains using utilities - 3 cascaded filters per voice for 6th order
+    shapetaker::VoiceArray<std::array<shapetaker::MorphingFilter, 3>> lowpassA, lowpassB;
+    shapetaker::VoiceArray<std::array<shapetaker::MorphingFilter, 2>> highpassA, highpassB;
     
-    // Magical components (per voice)
-    ShimmerDelay shimmerA[6], shimmerB[6];
-    Phaser phaserA[6], phaserB[6]; // 6-stage phasers for each voice and channel
+    // Magical components using utilities
+    shapetaker::VoiceArray<shapetaker::PhaserEffect> phaserA, phaserB;
     
     // Cross-feedback delay lines (per voice)
     float crossFeedbackA[6] = {}, crossFeedbackB[6] = {};
@@ -363,30 +89,12 @@ struct Involution : Module {
     
     // Schmitt trigger for phase invert button
     
-    // Fast parameter smoothing for immediate response
-    struct FastSmoother {
-        float value = 0.f;
-        bool initialized = false;
-        
-        float process(float target, float sampleTime) {
-            if (!initialized) {
-                value = target;
-                initialized = true;
-                return value;
-            }
-            
-            // Very fast smoothing: 1ms time constant for immediate response
-            float timeConstant = 0.001f;
-            float alpha = sampleTime / (timeConstant + sampleTime);
-            value += alpha * (target - value);
-            return value;
-        }
-    };
+    // Using fast smoother from utilities
     
-    FastSmoother cutoffASmooth, cutoffBSmooth, resonanceASmooth, resonanceBSmooth;
-    FastSmoother chaosSmooth, chaosRateSmooth, shimmerSmooth, shimmerRateSmooth;
-    FastSmoother morphSmooth, crossFeedbackSmooth;
-    FastSmoother phaserFreqSmooth, phaserFeedbackSmooth, phaserMixSmooth;
+    shapetaker::FastSmoother cutoffASmooth, cutoffBSmooth, resonanceASmooth, resonanceBSmooth;
+    shapetaker::FastSmoother chaosSmooth, chaosRateSmooth, shimmerSmooth, shimmerRateSmooth;
+    shapetaker::FastSmoother morphSmooth, crossFeedbackSmooth;
+    shapetaker::FastSmoother phaserFreqSmooth, phaserFeedbackSmooth, phaserMixSmooth;
     
     // Parameter change tracking for bidirectional linking
     float lastCutoffA = -1.f, lastCutoffB = -1.f;
@@ -1186,26 +894,8 @@ private:
     }
 };
 
-// Custom small jewel LED with RGB color mixing
-struct SmallJewelLED : ModuleLightWidget {
-    SmallJewelLED() {
-        box.size = Vec(15, 15);
-        
-        // Load the small jewel SVG
-        widget::SvgWidget* sw = new widget::SvgWidget;
-        std::shared_ptr<Svg> svg = APP->window->loadSvg(asset::plugin(pluginInstance, "res/leds/jewel_led_small.svg"));
-        
-        if (svg) {
-            sw->setSvg(svg);
-            addChild(sw);
-        }
-        
-        // Set up proper RGB color mixing
-        addBaseColor(nvgRGB(0xff, 0x00, 0x00)); // Red channel
-        addBaseColor(nvgRGB(0x00, 0xff, 0x00)); // Green channel  
-        addBaseColor(nvgRGB(0x00, 0x00, 0xff)); // Blue channel
-    }
-};
+// Use shared small jewel LED
+using SmallJewelLED = shapetaker::SmallJewelLED;
 
 struct InvolutionWidget : ModuleWidget {
     InvolutionWidget(Involution* module) {

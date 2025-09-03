@@ -32,7 +32,9 @@
       "Bash(python3:*)",
       "Bash(find:*)",
       "WebFetch(domain:gist.github.com)",
-      "WebFetch(domain:www.freepik.com)"
+      "WebFetch(domain:www.freepik.com)",
+      "Bash(git restore:*)",
+      "Bash(git switch:*)"
     ],
     "deny": [],
     "ask": []

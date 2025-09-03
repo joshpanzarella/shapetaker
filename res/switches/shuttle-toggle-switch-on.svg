@@ -1,13 +1,35 @@
 <?xml version="1.0" encoding="UTF-8" standalone="no"?>
 <svg
-   width="200"
-   height="200"
-   viewBox="0 0 200 200"
+   width="276.66666"
+   height="293.33334"
+   viewBox="0 0 276.66666 293.33334"
    version="1.1"
    id="svg106"
+   sodipodi:docname="shuttle-toggle-switch-on.svg"
+   inkscape:version="1.4.2 (ebf0e940, 2025-05-08)"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
    xmlns:xlink="http://www.w3.org/1999/xlink"
    xmlns="http://www.w3.org/2000/svg"
    xmlns:svg="http://www.w3.org/2000/svg">
+  <sodipodi:namedview
+     id="namedview1"
+     pagecolor="#505050"
+     bordercolor="#eeeeee"
+     borderopacity="1"
+     inkscape:showpageshadow="0"
+     inkscape:pageopacity="0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#505050"
+     inkscape:zoom="2.7479469"
+     inkscape:cx="119.36184"
+     inkscape:cy="160.48345"
+     inkscape:window-width="1800"
+     inkscape:window-height="1097"
+     inkscape:window-x="0"
+     inkscape:window-y="44"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="svg106" />
   <!-- Define gradients and effects -->
   <defs
      id="defs48">
@@ -29,10 +51,12 @@
     <!-- Dark metal plate gradient with more depth -->
     <linearGradient
        id="plateGradient"
-       x1="0%"
-       y1="0%"
-       x2="100%"
-       y2="100%">
+       x1="-30.890403"
+       y1="-29.135265"
+       x2="253.98774"
+       y2="255.74288"
+       gradientTransform="matrix(0.97117547,0,0,1.02968,30.000001,30.000001)"
+       gradientUnits="userSpaceOnUse">
       <stop
          offset="0%"
          style="stop-color:#4a4e56;stop-opacity:1"
@@ -53,10 +77,12 @@
     <!-- Plate bevel highlight -->
     <linearGradient
        id="bevelHighlight"
-       x1="0%"
-       y1="0%"
-       x2="0%"
-       y2="100%">
+       x1="51.6"
+       y1="51.6"
+       x2="51.6"
+       y2="148.4"
+       gradientUnits="userSpaceOnUse"
+       gradientTransform="translate(30.000001,30.000001)">
       <stop
          offset="0%"
          style="stop-color:#6a6e76;stop-opacity:1"
@@ -73,10 +99,12 @@
     <!-- Plate bevel shadow -->
     <linearGradient
        id="bevelShadow"
-       x1="0%"
-       y1="100%"
-       x2="0%"
-       y2="0%">
+       x1="52.6"
+       y1="147.4"
+       x2="52.6"
+       y2="52.6"
+       gradientUnits="userSpaceOnUse"
+       gradientTransform="translate(30.000001,30.000001)">
       <stop
          offset="0%"
          style="stop-color:#0a0c0e;stop-opacity:1"
@@ -129,12 +157,12 @@
     <!-- Purple button gradient -->
     <radialGradient
        id="purpleButton"
-       cx="-5.9721443"
+       cx="-5.9721441"
        cy="-3.6904659"
-       gradientTransform="matrix(0.97117547,0,0,1.02968,100,108)"
-       fx="-5.9721443"
+       gradientTransform="matrix(0.97117547,0,0,1.02968,130,138)"
+       fx="-5.9721441"
        fy="-3.6904659"
-       r="42.731722"
+       r="42.731724"
        gradientUnits="userSpaceOnUse">
       <stop
          offset="0%"
@@ -157,9 +185,9 @@
     <linearGradient
        id="flatMetalGradient"
        x1="-17.95899"
-       y1="9.8446516"
+       y1="9.8446512"
        x2="-17.95899"
-       y2="48.065065"
+       y2="48.065063"
        gradientTransform="matrix(1.4477429,0,0,0.69073037,100,108)"
        gradientUnits="userSpaceOnUse">
       <stop
@@ -186,10 +214,10 @@
     <!-- Guard rail gradient with chrome shine (cleaner) -->
     <linearGradient
        id="guardGradient"
-       x1="0%"
-       y1="0%"
-       x2="100%"
-       y2="0%">
+       x1="0"
+       y1="0"
+       x2="1"
+       y2="0">
       <stop
          offset="0%"
          style="stop-color:#5a5e66;stop-opacity:1"
@@ -284,12 +312,12 @@
     <!-- Center recess with more depth -->
     <radialGradient
        id="recessGradient"
-       cx="-9.151095e-07"
+       cx="-9.1510952e-07"
        cy="-15.24133"
-       gradientTransform="matrix(0.9770084,0,0,1.0235327,100,108)"
-       fx="-9.151095e-07"
+       gradientTransform="matrix(0.9770084,0,0,1.0235327,130,138)"
+       fx="-9.1510952e-07"
        fy="-15.24133"
-       r="42.988371"
+       r="42.988373"
        gradientUnits="userSpaceOnUse">
       <stop
          offset="0%"
@@ -434,7 +462,7 @@
     <linearGradient
        xlink:href="#guardGradient"
        id="linearGradient106"
-       x1="-27.53061"
+       x1="-27.530609"
        y1="-25.96637"
        x2="31.060175"
        y2="-25.96637"
@@ -443,9 +471,9 @@
     <radialGradient
        id="screwGradient-8"
        gradientTransform="scale(0.97224248,1.02855)"
-       cx="0.77141176"
+       cx="0.77141178"
        cy="1.4583635"
-       fx="0.77141176"
+       fx="0.77141178"
        fy="1.4583635"
        r="13.319722"
        gradientUnits="userSpaceOnUse">
@@ -712,7 +740,7 @@
        id="linearGradient110"
        gradientUnits="userSpaceOnUse"
        gradientTransform="matrix(0.4249815,0,0,2.3530436,75,108)"
-       x1="-27.53061"
+       x1="-27.530609"
        y1="-25.96637"
        x2="31.060175"
        y2="-25.96637" />
@@ -720,8 +748,8 @@
   <!-- Smaller main panel -->
   <!-- Outer bevel shadow -->
   <rect
-     x="49"
-     y="49"
+     x="79"
+     y="79"
      width="102"
      height="102"
      rx="3"
@@ -731,19 +759,20 @@
      id="rect48" />
   <!-- Main plate -->
   <rect
-     x="50"
-     y="50"
+     x="80"
+     y="80"
      width="100"
      height="100"
      rx="3"
      ry="3"
      fill="url(#plateGradient)"
      filter="url(#multiShadow)"
-     id="rect49" />
+     id="rect49"
+     style="fill:url(#plateGradient)" />
   <!-- Inner bevel highlight -->
   <rect
-     x="52"
-     y="52"
+     x="82"
+     y="82"
      width="96"
      height="96"
      rx="2"
@@ -752,11 +781,12 @@
      stroke="url(#bevelHighlight)"
      stroke-width="0.8"
      opacity="0.5"
-     id="rect50" />
+     id="rect50"
+     style="stroke:url(#bevelHighlight)" />
   <!-- Bottom bevel shadow -->
   <rect
-     x="53"
-     y="53"
+     x="83"
+     y="83"
      width="94"
      height="94"
      rx="2"
@@ -765,11 +795,12 @@
      stroke="url(#bevelShadow)"
      stroke-width="0.8"
      opacity="0.5"
-     id="rect51" />
+     id="rect51"
+     style="stroke:url(#bevelShadow)" />
   <!-- Corner screws -->
   <!-- Top left -->
   <g
-     transform="translate(59.716667,59.366666)"
+     transform="translate(89.716668,89.366667)"
      id="g55">
     <circle
        r="6"
@@ -831,7 +862,7 @@
        style="display:inline;stroke:#4f555f;stroke-opacity:1" />
   </g>
   <g
-     transform="translate(60.416671,138.9)"
+     transform="translate(90.416672,168.9)"
      id="g55-6">
     <circle
        r="6"
@@ -890,7 +921,7 @@
        cy="0" />
   </g>
   <g
-     transform="translate(139.68681,138.9)"
+     transform="translate(169.68681,168.9)"
      id="g55-6-8">
     <circle
        r="6"
@@ -949,7 +980,7 @@
   </g>
   <!-- Top right -->
   <g
-     transform="translate(139.60348,59.366666)"
+     transform="translate(169.60348,89.366667)"
      id="g60"
      style="display:inline">
     <circle
@@ -1013,10 +1044,10 @@
   <!-- Bottom right -->
   <!-- Text labels -->
   <text
-     x="100"
-     y="84"
+     x="130"
+     y="114"
      font-family="Arial, sans-serif"
-     font-size="7"
+     font-size="7px"
      font-weight="400"
      letter-spacing="0.3"
      text-anchor="middle"
@@ -1024,7 +1055,7 @@
      id="text71">FIELD 1</text>
   <!-- LEFT LED indicator (ON when switch is OFF - purple glow) - at edge -->
   <g
-     transform="translate(60.05,99.899999)"
+     transform="translate(90.050001,129.9)"
      id="g75">
     <circle
        r="5"
@@ -1072,7 +1103,7 @@
   </g>
   <!-- RIGHT LED indicator (OFF when switch is OFF) - at edge -->
   <g
-     transform="translate(139.68681,99.7)"
+     transform="translate(169.68681,129.7)"
      id="g80"
      style="display:inline">
     <circle
@@ -1121,8 +1152,8 @@
   </g>
   <!-- Larger center switch assembly -->
   <rect
-     x="70"
-     y="78"
+     x="100"
+     y="108"
      width="60"
      height="60"
      rx="4"
@@ -1135,8 +1166,8 @@
      r="26"
      fill="#1a1c20"
      id="circle81"
-     cx="100"
-     cy="108"
+     cx="130"
+     cy="138"
      style="display:inline" />
   <circle
      r="24"
@@ -1144,8 +1175,8 @@
      stroke="#1a1c20"
      stroke-width="0.5"
      id="circle82"
-     cx="100"
-     cy="108"
+     cx="130"
+     cy="138"
      style="display:inline" />
   <circle
      r="22"
@@ -1153,8 +1184,8 @@
      stroke="#2a2d32"
      stroke-width="0.5"
      id="circle83"
-     cx="100"
-     cy="108"
+     cx="130"
+     cy="138"
      style="display:inline" />
   <circle
      r="20"
@@ -1164,8 +1195,8 @@
      stroke-dasharray="1.5, 0.5"
      opacity="0.7"
      id="circle84"
-     cx="100"
-     cy="108"
+     cx="130"
+     cy="138"
      style="display:inline" />
   <circle
      r="18"
@@ -1175,16 +1206,16 @@
      stroke-dasharray="1.5, 0.5"
      opacity="0.5"
      id="circle85"
-     cx="100"
-     cy="108"
+     cx="130"
+     cy="138"
      style="display:inline" />
   <circle
      r="16"
      fill="#2a2d32"
      opacity="0.5"
      id="circle86"
-     cx="101"
-     cy="109"
+     cx="131"
+     cy="139"
      style="display:inline" />
   <circle
      r="15"
@@ -1192,8 +1223,8 @@
      filter="url(#multiShadow)"
      id="circle87"
      style="display:inline;fill:url(#purpleButton)"
-     cx="100"
-     cy="108" />
+     cx="130"
+     cy="138" />
   <circle
      r="14.5"
      fill="none"
@@ -1201,8 +1232,16 @@
      stroke-width="0.3"
      opacity="0.4"
      id="circle88"
-     cx="100"
-     cy="108" />
+     cx="130"
+     cy="138" />
+  <ellipse
+     fill="#050607"
+     id="circle93-5"
+     cx="130"
+     cy="137.99989"
+     style="display:inline;fill:#9e91d2;fill-opacity:1;stroke-width:1.06096"
+     rx="3.4912536"
+     ry="2.9017529" />
   <circle
      r="13"
      fill="none"
@@ -1210,8 +1249,8 @@
      stroke-width="0.5"
      opacity="0.5"
      id="circle89"
-     cx="100"
-     cy="108"
+     cx="130"
+     cy="138"
      style="display:inline" />
   <circle
      r="11"
@@ -1220,44 +1259,36 @@
      stroke-width="0.5"
      opacity="0.6"
      id="circle90"
-     cx="100"
-     cy="108"
+     cx="130"
+     cy="138"
      style="display:inline" />
   <ellipse
      fill="#1a1c20"
      id="circle91"
-     cx="99.999939"
-     cy="107.73955"
+     cx="129.99994"
+     cy="137.73955"
      style="display:inline;opacity:0.264192;fill:#7a72cd;fill-opacity:1;stroke-width:1.30233"
      rx="5.4674439"
      ry="4.9634066" />
   <ellipse
      fill="#0a0c0e"
      id="circle92"
-     cx="99.999939"
-     cy="107.93583"
+     cx="129.99994"
+     cy="137.93584"
      style="display:inline;fill:#9b88ff;fill-opacity:1;stroke-width:1.2366"
      rx="4.611094"
      ry="4.0624542" />
   <ellipse
      fill="#050607"
      id="circle93"
-     cx="100"
-     cy="108.26925"
+     cx="130"
+     cy="138.26926"
      style="display:inline;fill:#aa9bec;fill-opacity:1;stroke-width:1.2366"
      rx="3.9523661"
      ry="3.4821036" />
   <ellipse
-     fill="#050607"
-     id="circle93-5"
-     cx="100"
-     cy="109.21684"
-     style="display:inline;fill:#ada0e7;fill-opacity:1;stroke-width:1.06096"
-     rx="3.4912536"
-     ry="2.9017529" />
-  <ellipse
-     cx="76"
-     cy="109"
+     cx="106"
+     cy="139"
      rx="5"
      ry="24"
      fill="#0a0c0e"
@@ -1270,38 +1301,38 @@
      filter="url(#multiShadow)"
      id="path93"
      style="display:inline;fill:url(#linearGradient106)"
-     transform="matrix(1,0,0,1.2588235,-0.11666661,-28.01765)" />
+     transform="matrix(1,0,0,1.2588235,29.883335,1.9823512)" />
   <rect
-     x="73.883331"
-     y="82.75882"
+     x="103.88333"
+     y="112.75882"
      width="2"
      height="50.35294"
      fill="#3a3d44"
      opacity="0.4"
      id="rect93"
-     style="stroke-width:1.12197;fill:#6c727d;fill-opacity:1" />
+     style="fill:#6c727d;fill-opacity:1;stroke-width:1.12197" />
   <line
-     x1="72.883331"
-     y1="84.017647"
-     x2="72.883331"
-     y2="131.85294"
+     x1="102.88333"
+     y1="114.01765"
+     x2="102.88333"
+     y2="161.85294"
      stroke="#dadde4"
      stroke-width="0.448789"
      opacity="0.6"
      id="line93" />
   <line
-     x1="76.883331"
-     y1="84.017647"
-     x2="76.883331"
-     y2="131.85294"
+     x1="106.88333"
+     y1="114.01765"
+     x2="106.88333"
+     y2="161.85294"
      stroke="#5a5e66"
      stroke-width="0.448789"
      opacity="0.5"
      id="line94"
      style="stroke:#878d98;stroke-opacity:1" />
   <ellipse
-     cx="73.383331"
-     cy="97.864708"
+     cx="103.38333"
+     cy="127.86471"
      rx="1"
      ry="5.0352941"
      fill="#ffffff"
@@ -1314,38 +1345,38 @@
      filter="url(#multiShadow)"
      id="path93-4"
      style="display:inline;fill:url(#linearGradient110);filter:url(#multiShadow-5)"
-     transform="matrix(1,0,0,1.2588235,49.827878,-28.107028)" />
+     transform="matrix(1,0,0,1.2588235,79.827879,1.8929732)" />
   <rect
-     x="123.82787"
-     y="82.669441"
+     x="153.82788"
+     y="112.66944"
      width="2"
      height="50.35294"
      fill="#3a3d44"
      opacity="0.4"
      id="rect93-3"
-     style="stroke-width:1.12197;fill:#6c727d;fill-opacity:1" />
+     style="fill:#6c727d;fill-opacity:1;stroke-width:1.12197" />
   <line
-     x1="122.82787"
-     y1="83.928268"
-     x2="122.82787"
-     y2="131.76357"
+     x1="152.82788"
+     y1="113.92827"
+     x2="152.82788"
+     y2="161.76357"
      stroke="#dadde4"
      stroke-width="0.448789"
      opacity="0.6"
      id="line93-4" />
   <line
-     x1="126.82787"
-     y1="83.928268"
-     x2="126.82787"
-     y2="131.76357"
+     x1="156.82788"
+     y1="113.92827"
+     x2="156.82788"
+     y2="161.76357"
      stroke="#5a5e66"
      stroke-width="0.448789"
      opacity="0.5"
      id="line94-3"
      style="stroke:#878d98;stroke-opacity:1" />
   <ellipse
-     cx="123.25"
-     cy="98.164703"
+     cx="153.25"
+     cy="128.1647"
      rx="1"
      ry="5.0352941"
      fill="#ffffff"
@@ -1353,25 +1384,25 @@
      id="ellipse94-1"
      style="display:inline;stroke-width:1.12197" />
   <rect
-     x="96.70636"
-     y="83.48097"
+     x="127.02039"
+     y="121.70952"
      width="6.5872769"
-     height="16.249817"
+     height="18.024628"
      fill="#4a4e56"
      opacity="0.8"
      id="rect96"
-     style="opacity:1;fill:#ada0e7;fill-opacity:1;stroke-width:1.59643" />
+     style="opacity:1;fill:#ada0e7;fill-opacity:1;stroke-width:1.68135" />
   <rect
-     x="98.682541"
-     y="83.48097"
+     x="128.68254"
+     y="113.48097"
      width="2.6349108"
      height="16.249817"
      fill="#6a6e76"
      id="rect97"
      style="fill:#a3a3e4;fill-opacity:1;stroke-width:1.2366" />
   <rect
-     x="99.604759"
-     y="84.64168"
+     x="129.91879"
+     y="122.87022"
      width="0.39523664"
      height="13.928414"
      fill="#8a8e96"
@@ -1379,8 +1410,8 @@
      id="rect98"
      style="stroke-width:1.2366" />
   <rect
-     x="90.5"
-     y="68.731"
+     x="120.3"
+     y="106.01803"
      width="20"
      height="8"
      rx="1"
@@ -1399,10 +1430,10 @@
      filter="url(#multiShadow)"
      id="rect100"
      style="display:inline;fill:url(#flatMetalGradient)"
-     transform="matrix(1.1594579,0,0,1.9521529,-16.301826,-180.87671)" />
+     transform="matrix(1.1594579,0,0,1.9521529,14.554211,-131.43165)" />
   <rect
-     x="88.049385"
-     y="87.26766"
+     x="118.75676"
+     y="106.6033"
      width="23.301226"
      height="17.569382"
      rx="0.61317807"
@@ -1415,7 +1446,7 @@
   <g
      opacity="0.6"
      id="g104"
-     transform="matrix(1.1249998,0,0,1.1425651,100,79.93067)">
+     transform="matrix(1.1249998,0,0,1.1425651,130.3,98.975332)">
     <line
        x1="-8"
        y1="16"
@@ -1452,7 +1483,7 @@
   <g
      opacity="0.6"
      id="g104-2"
-     transform="matrix(1.1249998,0,0,1.1425651,99.999997,73.005156)">
+     transform="matrix(1.1249998,0,0,1.1425651,130.3,92.049818)">
     <line
        x1="-8"
        y1="16"
@@ -1487,28 +1518,18 @@
        id="line104-2" />
   </g>
   <rect
-     x="91"
-     y="89.0868"
+     x="121.3"
+     y="108.13146"
      width="18"
      height="0.45702603"
      fill="#cacdd4"
      opacity="0.5"
      id="rect104"
      style="stroke-width:1.06891" />
-  <ellipse
-     cx="99"
-     cy="101.17851"
-     rx="5.9345021"
-     ry="1.4684767"
-     fill="#5a5e66"
-     opacity="0.3"
-     id="ellipse104"
-     style="display:inline;stroke-width:1.70437" />
   <!-- Field 2 text moved lower -->
   <path
-     d="m 68.79506,78.370048 q -0.719519,0 -1.359091,-0.159893 -0.623582,-0.143903 -1.13524,-0.399732 -0.495668,-0.255829 -0.879412,-0.591604 -0.367753,-0.335775 -0.591604,-0.719519 l 1.518984,-1.119251 q 0.399732,0.527647 1.087272,0.879412 0.703529,0.335775 1.61492,0.335775 1.007325,0 1.58294,-0.383743 0.591604,-0.399733 0.671551,-0.991337 0.07995,-0.543636 -0.207861,-0.927379 -0.271818,-0.383743 -0.991337,-0.703529 L 68.043563,72.62989 q -1.327112,-0.607594 -1.854759,-1.423048 -0.527647,-0.831443 -0.367754,-1.934705 0.09594,-0.68754 0.46369,-1.263155 0.367754,-0.591604 0.927379,-1.007326 0.575615,-0.431711 1.343101,-0.67155 0.767487,-0.23984 1.662887,-0.23984 1.007326,0 1.710855,0.319786 0.719519,0.319786 1.15123,0.831444 0.4477,0.495668 0.607593,1.151229 0.175883,0.639572 0.07995,1.279144 H 71.97693 q 0.03198,-0.191871 -0.04797,-0.495668 -0.06396,-0.319786 -0.287807,-0.607593 -0.207861,-0.303797 -0.623583,-0.511658 -0.415721,-0.22385 -1.055293,-0.22385 -0.943369,0 -1.550962,0.415722 -0.591605,0.399732 -0.671551,1.023315 -0.07995,0.559625 0.207861,0.927379 0.287807,0.351765 0.927379,0.639572 l 2.094598,0.991337 q 1.327112,0.607593 1.870749,1.423048 0.559625,0.815454 0.383743,1.966683 -0.09594,0.783476 -0.511658,1.37508 -0.399732,0.591604 -1.007326,0.991337 -0.607593,0.383743 -1.35909,0.575615 -0.735508,0.20786 -1.550962,0.20786 z m 10.615617,-0.255828 0.479679,-3.389732 -2.398395,-8.362404 h 1.966684 l 1.646898,5.852084 3.293795,-5.852084 h 1.934706 L 81.633189,74.724488 81.15351,78.11422 Z M 98.548593,66.362084 h 1.838767 l -1.630907,11.672189 -0.20786,0.09594 -7.067271,-7.802778 -1.087272,7.786789 h -1.83877 l 1.646898,-11.672189 0.175882,-0.07995 7.08326,7.786789 z m 7.593657,5.884063 q -0.12792,0.91139 0.0959,1.694865 0.22385,0.783476 0.71952,1.359091 0.49567,0.575615 1.23118,0.91139 0.73551,0.319786 1.63091,0.319786 0.86342,0 1.66288,-0.351765 0.81546,-0.351764 1.503,-0.927379 l 1.02331,1.279144 q -0.91139,0.815454 -2.07861,1.295133 -1.15123,0.46369 -2.44636,0.46369 -1.27914,0 -2.31845,-0.46369 -1.02331,-0.479679 -1.72684,-1.295133 -0.70353,-0.815454 -1.02332,-1.918716 -0.30379,-1.103262 -0.11192,-2.366416 0.17588,-1.279144 0.78347,-2.382406 0.62359,-1.119251 1.55097,-1.934705 0.92737,-0.815455 2.09459,-1.279144 1.16722,-0.46369 2.46236,-0.46369 1.29513,0 2.30246,0.479679 1.02331,0.46369 1.71085,1.279144 l -1.39107,1.279144 q -0.49567,-0.559626 -1.21519,-0.91139 -0.71951,-0.351765 -1.58294,-0.351765 -0.92738,0 -1.75882,0.335776 -0.83144,0.319786 -1.487,0.8954 -0.65557,0.575615 -1.08728,1.359091 -0.41572,0.783476 -0.54363,1.694866 z"
+     d="m 106.40126,95.449223 q -0.80395,0 -1.51858,-0.1431 -0.69676,-0.12879 -1.26846,-0.357751 -0.55383,-0.228961 -0.9826,-0.529472 -0.41091,-0.30051 -0.66103,-0.643952 l 1.69723,-1.001703 q 0.44664,0.472231 1.21486,0.787053 0.78609,0.30051 1.80443,0.30051 1.12553,0 1.76869,-0.343441 0.66103,-0.357751 0.75036,-0.887223 0.0893,-0.486541 -0.23225,-0.829982 -0.30372,-0.343441 -1.10767,-0.629642 l -2.30466,-0.858603 q -1.48285,-0.543782 -2.07241,-1.273595 -0.58957,-0.744121 -0.41091,-1.731515 0.10719,-0.615332 0.5181,-1.130494 0.41091,-0.529472 1.0362,-0.901533 0.64317,-0.386371 1.50072,-0.601022 0.85755,-0.214651 1.85802,-0.214651 1.12553,0 1.91162,0.286201 0.80395,0.286201 1.28632,0.744123 0.50024,0.443611 0.6789,1.030323 0.19652,0.572402 0.0893,1.144804 h -2.00096 q 0.0357,-0.17172 -0.0536,-0.443611 -0.0715,-0.286201 -0.32158,-0.543782 -0.23225,-0.271891 -0.69676,-0.457922 -0.4645,-0.20034 -1.17913,-0.20034 -1.05407,0 -1.73296,0.372061 -0.66103,0.357751 -0.75036,0.915843 -0.0893,0.500851 0.23226,0.829982 0.32158,0.314822 1.0362,0.572402 l 2.3404,0.887224 q 1.48284,0.543781 2.09027,1.273594 0.6253,0.729812 0.42878,1.760135 -0.1072,0.701193 -0.5717,1.230664 -0.44664,0.529472 -1.12554,0.887224 -0.67889,0.343441 -1.51857,0.515162 -0.82182,0.186029 -1.73297,0.186029 z m 11.86134,-0.22896 0.53596,-3.03373 -2.67984,-7.484155 h 2.19747 l 1.84016,5.237478 3.68032,-5.237478 h 2.16174 l -5.25249,7.484155 -0.53597,3.03373 z m 21.3837,-10.517885 h 2.05454 l -1.82229,10.446335 -0.23225,0.08586 -7.8966,-6.983303 -1.21486,6.968993 h -2.05454 l 1.84015,-10.446335 0.19652,-0.07155 7.91447,6.968993 z m 8.48476,5.266098 q -0.14293,0.815673 0.10715,1.516864 0.25012,0.701193 0.80396,1.216355 0.55383,0.515162 1.37565,0.815672 0.82182,0.286201 1.8223,0.286201 0.96474,0 1.85801,-0.314821 0.91115,-0.314821 1.67937,-0.829982 l 1.1434,1.144803 q -1.01834,0.729812 -2.32253,1.159114 -1.28633,0.414992 -2.73344,0.414992 -1.42924,0 -2.59051,-0.414992 -1.1434,-0.429302 -1.92948,-1.159114 -0.78609,-0.729812 -1.14341,-1.717205 -0.33944,-0.987394 -0.12505,-2.117887 0.19652,-1.144804 0.87541,-2.132197 0.69676,-1.001704 1.73297,-1.731516 1.0362,-0.729813 2.34039,-1.144804 1.30419,-0.414991 2.75131,-0.414991 1.44711,0 2.57265,0.429301 1.14339,0.414992 1.91161,1.144804 l -1.55431,1.144804 q -0.55383,-0.500852 -1.35779,-0.815673 -0.80394,-0.314821 -1.76869,-0.314821 -1.03621,0 -1.96522,0.300511 -0.929,0.286201 -1.66149,0.801362 -0.7325,0.515162 -1.21487,1.216355 -0.46451,0.701192 -0.60743,1.516865 z"
      id="text117"
      style="font-style:oblique;font-weight:bold;font-size:15.9893px;font-family:'Liber Grotesque Family';-inkscape-font-specification:'Liber Grotesque Family, Bold Oblique';letter-spacing:2.68493px;word-spacing:1.77205px;direction:rtl;fill:#ffffff;fill-rule:evenodd;stroke:#646b74;stroke-width:0"
-     transform="scale(1.1173478,0.89497648)"
      aria-label="SYNC" />
 </svg>

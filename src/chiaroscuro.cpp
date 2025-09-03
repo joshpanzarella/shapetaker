@@ -1,62 +1,9 @@
 #include "plugin.hpp"
-#include "sidechainDetector.hpp"
-#include "distortionEngine.hpp"
 #include <dsp/digital.hpp>
 #include <dsp/filter.hpp>
 
 // Custom larger VU meter widget for better visibility
-struct LargeVUMeterWidget : widget::Widget {
-    Module* module;
-    float* vu;
-    std::string face_path;
-    std::string needle_path;
-    
-    LargeVUMeterWidget(Module* module, float* vu, std::string face_path, std::string needle_path) 
-        : module(module), vu(vu), face_path(face_path), needle_path(needle_path) {
-        box.size = Vec(50, 50); // Larger widget size
-    }
-    
-    void drawLayer(const DrawArgs& args, int layer) override {
-        if (layer == 1) {
-            // Draw the VU meter face
-            std::shared_ptr<Svg> face_svg = Svg::load(asset::plugin(pluginInstance, face_path));
-            if (face_svg) {
-                NVGcontext* vg = args.vg;
-                nvgSave(vg);
-                nvgTranslate(vg, box.size.x / 2 - 25, box.size.y / 2 - 25); // Center the face SVG
-                nvgScale(vg, 0.7f, 0.7f); // Larger scale than original (was 0.5f)
-                face_svg->draw(vg);
-                nvgRestore(vg);
-            }
-            
-            // Draw the needle if module exists and has valid VU data
-            if (module && vu) {
-                std::shared_ptr<Svg> needle_svg = Svg::load(asset::plugin(pluginInstance, needle_path));
-                if (needle_svg) {
-                    NVGcontext* vg = args.vg;
-                    nvgSave(vg);
-                    
-                    // Position needle to match face coordinate system
-                    nvgTranslate(vg, box.size.x / 2 - 25, box.size.y / 2 - 25); // Same as face positioning
-                    nvgScale(vg, 0.7f, 0.7f); // Same scale as face
-                    
-                    // Move to center of the 100x100 face coordinate system
-                    nvgTranslate(vg, 50, 50); // Center of 100x100 face SVG
-                    
-                    // Rotate needle based on VU value
-                    // Full scale rotation: -45 degrees (left) to +45 degrees (right)
-                    float angle = (*vu - 0.5f) * 90.0f * M_PI / 180.0f; // Convert to radians
-                    nvgRotate(vg, angle);
-                    
-                    // Center the 50x50 needle SVG on the rotation point
-                    nvgTranslate(vg, -25, -25);
-                    needle_svg->draw(vg);
-                    nvgRestore(vg);
-                }
-            }
-        }
-    }
-};
+// Using VU meter from utilities (implementation moved to ui/widgets.hpp)
 
 // Custom textured jewel LED with layered opacity effects
 struct TexturedJewelLED : ModuleLightWidget {
@@ -235,11 +182,9 @@ struct Chiaroscuro : Module {
         NUM_LIGHTS
     };
     
-    // Polyphonic support (up to 6 voices)
-    static const int MAX_POLY_VOICES = 6;
-    
-    SidechainDetector detector;
-    DistortionEngine distortion_l[MAX_POLY_VOICES], distortion_r[MAX_POLY_VOICES];
+    shapetaker::PolyphonicProcessor polyProcessor;
+    shapetaker::SidechainDetector detector;
+    shapetaker::VoiceArray<shapetaker::DistortionEngine> distortion_l, distortion_r;
     dsp::ExponentialFilter vu_l_filter, vu_r_filter;
     dsp::ExponentialSlewLimiter distortion_slew;
     
@@ -249,27 +194,25 @@ struct Chiaroscuro : Module {
     Chiaroscuro() {
         config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
         
-        configParam(VCA_PARAM, 0.0f, 1.0f, 0.0f, "VCA Gain", "%", 0.0f, 100.0f);
-        configParam(VCA_ATT_PARAM, -1.0f, 1.0f, 0.0f, "VCA CV Attenuverter", "%", 0.0f, 100.0f);
-        configParam(TYPE_PARAM, 0.0f, 5.0f, 0.0f, "Distortion Type");
-        paramQuantities[TYPE_PARAM]->snapEnabled = true;
-        paramQuantities[TYPE_PARAM]->smoothEnabled = false;
-        configParam(DRIVE_PARAM, 0.0f, 1.0f, 0.0f, "Drive", "%", 0.0f, 100.0f);
-        configParam(MIX_PARAM, 0.0f, 1.0f, 0.0f, "Mix", "%", 0.0f, 100.0f);
-        configParam(LINK_PARAM, 0.0f, 1.0f, 0.0f, "Link L/R Channels");
-        configParam(RESPONSE_PARAM, 0.0f, 1.0f, 0.0f, "VCA Response: Linear/Exponential");
-        configParam(MANUAL_DIST_PARAM, 0.0f, 1.0f, 0.0025f, "Manual Distortion", "%", 0.0f, 100.0f);
+        shapetaker::ParameterHelper::configGain(this, VCA_PARAM, "VCA Gain");
+        shapetaker::ParameterHelper::configAttenuverter(this, VCA_ATT_PARAM, "VCA CV Attenuverter");
+        shapetaker::ParameterHelper::configDiscrete(this, TYPE_PARAM, "Distortion Type", 0, 5, 0);
+        shapetaker::ParameterHelper::configDrive(this, DRIVE_PARAM);
+        shapetaker::ParameterHelper::configMix(this, MIX_PARAM);
+        shapetaker::ParameterHelper::configToggle(this, LINK_PARAM, "Link L/R Channels");
+        shapetaker::ParameterHelper::configToggle(this, RESPONSE_PARAM, "VCA Response: Linear/Exponential");
+        shapetaker::ParameterHelper::configGain(this, MANUAL_DIST_PARAM, "Manual Distortion", 0.0025f);
         
-        configInput(AUDIO_L_INPUT, "Audio Left");
-        configInput(AUDIO_R_INPUT, "Audio Right");
-        configInput(VCA_CV_INPUT, "VCA Control Voltage");
-        configInput(SIDECHAIN_INPUT, "Sidechain Detector");
-        configInput(TYPE_CV_INPUT, "Distortion Type CV");
-        configInput(DRIVE_CV_INPUT, "Drive Amount CV");
-        configInput(MIX_CV_INPUT, "Mix Control CV");
+        shapetaker::ParameterHelper::configAudioInput(this, AUDIO_L_INPUT, "Audio Left");
+        shapetaker::ParameterHelper::configAudioInput(this, AUDIO_R_INPUT, "Audio Right");
+        shapetaker::ParameterHelper::configCVInput(this, VCA_CV_INPUT, "VCA Control Voltage");
+        shapetaker::ParameterHelper::configAudioInput(this, SIDECHAIN_INPUT, "Sidechain Detector");
+        shapetaker::ParameterHelper::configCVInput(this, TYPE_CV_INPUT, "Distortion Type CV");
+        shapetaker::ParameterHelper::configCVInput(this, DRIVE_CV_INPUT, "Drive Amount CV");
+        shapetaker::ParameterHelper::configCVInput(this, MIX_CV_INPUT, "Mix Control CV");
         
-        configOutput(AUDIO_L_OUTPUT, "Audio Left");
-        configOutput(AUDIO_R_OUTPUT, "Audio Right");
+        shapetaker::ParameterHelper::configAudioOutput(this, AUDIO_L_OUTPUT, "Audio Left");
+        shapetaker::ParameterHelper::configAudioOutput(this, AUDIO_R_OUTPUT, "Audio Right");
         
         vu_l_filter.setTau(0.1f);  // Slower release for more natural look
         vu_r_filter.setTau(0.1f);
@@ -281,21 +224,19 @@ struct Chiaroscuro : Module {
     
     void onSampleRateChange() override {
         float sr = APP->engine->getSampleRate();
-        for (int ch = 0; ch < MAX_POLY_VOICES; ch++) {
-            distortion_l[ch].setSampleRate(sr);
-            distortion_r[ch].setSampleRate(sr);
-        }
+        distortion_l.forEach([sr](shapetaker::DistortionEngine& engine) {
+            engine.setSampleRate(sr);
+        });
+        distortion_r.forEach([sr](shapetaker::DistortionEngine& engine) {
+            engine.setSampleRate(sr);
+        });
         vu_l_filter.setTau(0.1f);  // Slower release for more natural look
         vu_r_filter.setTau(0.1f);
     }
     
     void process(const ProcessArgs& args) override {
-        // Determine number of polyphonic voices (max 6)
-        int channels = std::min(std::max(inputs[AUDIO_L_INPUT].getChannels(), 1), MAX_POLY_VOICES);
-        
-        // Set output channels to match
-        outputs[AUDIO_L_OUTPUT].setChannels(channels);
-        outputs[AUDIO_R_OUTPUT].setChannels(channels);
+        // Update polyphonic channel count and set outputs
+        int channels = polyProcessor.updateChannels(inputs[AUDIO_L_INPUT], {outputs[AUDIO_L_OUTPUT], outputs[AUDIO_R_OUTPUT]});
         
         // Link switch state
         bool linked = params[LINK_PARAM].getValue() > 0.5f;
@@ -396,9 +337,9 @@ struct Chiaroscuro : Module {
             
             // Process distortion for this voice
             float distorted_l = distortion_l[ch].process(vca_l, distortion_amount, 
-                                                       (DistortionEngine::Type)distortion_type);
+                                                       (shapetaker::DistortionEngine::Type)distortion_type);
             float distorted_r = distortion_r[ch].process(vca_r, distortion_amount, 
-                                                       (DistortionEngine::Type)distortion_type);
+                                                       (shapetaker::DistortionEngine::Type)distortion_type);
             
             // Apply level compensation to match Wave Fold (type 1) as reference level
             float level_compensation = 1.0f;
@@ -497,14 +438,23 @@ struct ChiaroscuroWidget : ModuleWidget {
         // Mix CV input - green circle "mix_cv"
         addInput(createInputCentered<ShapetakerBNCPort>(Vec(29.17642, 288.9314), module, Chiaroscuro::MIX_CV_INPUT));
 
-        // Add VU meters - larger size for better visibility
-        LargeVUMeterWidget* vu_meter_l = new LargeVUMeterWidget(module, &module->vu_l, "res/meters/vu_meter_face_bordered.svg", "res/meters/vu_meter_needle.svg");
-        vu_meter_l->box.pos = Vec(34.897591 - 25, 79.596138 - 25); // Center 50x50 widget on vu_meter_l position (updated)
+        // Add VU meters using utility classes
+        auto* vu_meter_l = new shapetaker::VUMeterWidget(module, -1, Chiaroscuro::VU_L_LED, 
+            asset::plugin(pluginInstance, "res/meters/vu_meter_face_bordered.svg"),
+            asset::plugin(pluginInstance, "res/meters/vu_meter_needle.svg"));
+        vu_meter_l->box.pos = Vec(34.897591 - 25, 79.596138 - 25);
+        vu_meter_l->box.size = Vec(50, 50);
         addChild(vu_meter_l);
-        LargeVUMeterWidget* vu_meter_r = new LargeVUMeterWidget(module, &module->vu_r, "res/meters/vu_meter_face_bordered.svg", "res/meters/vu_meter_needle.svg");
-        vu_meter_r->box.pos = Vec(125.15861 - 25, 79.596138 - 25); // Center 50x50 widget on vu_meter_r position (updated)
+        
+        auto* vu_meter_r = new shapetaker::VUMeterWidget(module, -1, Chiaroscuro::VU_R_LED,
+            asset::plugin(pluginInstance, "res/meters/vu_meter_face_bordered.svg"), 
+            asset::plugin(pluginInstance, "res/meters/vu_meter_needle.svg"));
+        vu_meter_r->box.pos = Vec(125.15861 - 25, 79.596138 - 25);
+        vu_meter_r->box.size = Vec(50, 50);
         addChild(vu_meter_r);
-        addChild(createLightCentered<TexturedJewelLED>(Vec(52.037258, 203.7605), module, Chiaroscuro::DIST_LED_R));
+        
+        // Using large jewel LED from utilities
+        addChild(createLightCentered<shapetaker::LargeJewelLED>(Vec(52.037258, 203.7605), module, Chiaroscuro::DIST_LED_R));
     }
 };
 

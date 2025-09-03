@@ -161,23 +161,29 @@ struct Evocation : Module {
     }
     
     void process(const ProcessArgs& args) override {
-        // Handle triggers
-        bool triggerPressed = triggerTrigger.process(params[TRIGGER_PARAM].getValue() + inputs[TRIGGER_INPUT].getVoltage());
-        bool clearPressed = clearTrigger.process(params[CLEAR_PARAM].getValue() + inputs[CLEAR_INPUT].getVoltage());
+        // Handle triggers using shared helpers
+        bool triggerPressed = shapetaker::TriggerHelper::processTrigger(
+            triggerTrigger,
+            params[TRIGGER_PARAM].getValue(),
+            inputs[TRIGGER_INPUT],
+            1.f
+        );
+        bool clearPressed = shapetaker::TriggerHelper::processTrigger(
+            clearTrigger,
+            params[CLEAR_PARAM].getValue(),
+            inputs[CLEAR_INPUT],
+            1.f
+        );
         bool recordPressed = recordTrigger.process(params[RECORD_PARAM].getValue());
         
         // Handle individual loop button toggles
         for (int i = 0; i < 4; i++) {
-            if (loopTriggers[i].process(params[LOOP_1_PARAM + i].getValue())) {
-                loopStates[i] = !loopStates[i];
-            }
+            shapetaker::TriggerHelper::processToggle(loopTriggers[i], params[LOOP_1_PARAM + i].getValue(), loopStates[i]);
         }
         
         // Handle invert button toggles
         for (int i = 0; i < 4; i++) {
-            if (invertTriggers[i].process(params[INVERT_1_PARAM + i].getValue())) {
-                invertStates[i] = !invertStates[i];
-            }
+            shapetaker::TriggerHelper::processToggle(invertTriggers[i], params[INVERT_1_PARAM + i].getValue(), invertStates[i]);
         }
         
         // Handle clear
@@ -418,18 +424,22 @@ struct Evocation : Module {
         // Load individual loop states
         json_t* loopStatesJ = json_object_get(rootJ, "loopStates");
         if (loopStatesJ) {
-            for (int i = 0; i < 4 && i < json_array_size(loopStatesJ); i++) {
+            size_t n = json_array_size(loopStatesJ);
+            n = std::min(n, (size_t)4);
+            for (size_t i = 0; i < n; i++) {
                 json_t* loopJ = json_array_get(loopStatesJ, i);
-                if (loopJ) loopStates[i] = json_boolean_value(loopJ);
+                if (loopJ) loopStates[(int)i] = json_boolean_value(loopJ);
             }
         }
         
         // Load invert states
         json_t* invertStatesJ = json_object_get(rootJ, "invertStates");
         if (invertStatesJ) {
-            for (int i = 0; i < 4 && i < json_array_size(invertStatesJ); i++) {
+            size_t n = json_array_size(invertStatesJ);
+            n = std::min(n, (size_t)4);
+            for (size_t i = 0; i < n; i++) {
                 json_t* invertJ = json_array_get(invertStatesJ, i);
-                if (invertJ) invertStates[i] = json_boolean_value(invertJ);
+                if (invertJ) invertStates[(int)i] = json_boolean_value(invertJ);
             }
         }
         

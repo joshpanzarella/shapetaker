@@ -6,6 +6,8 @@ CXXFLAGS +=
 LDFLAGS +=
 
 SOURCES += $(wildcard src/*.cpp)
+SOURCES += $(wildcard src/*/*.cpp)
+SOURCES += $(wildcard src/*/*/*.cpp)
 
 DISTRIBUTABLES += res
 DISTRIBUTABLES += chord_packs

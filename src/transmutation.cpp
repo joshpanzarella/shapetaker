@@ -1,5 +1,8 @@
 #include "plugin.hpp"
-#include "alchemySymbols.hpp"
+#include "transmutation/view.hpp"
+#include "transmutation/ui.hpp"
+#include "transmutation/chords.hpp"
+#include "transmutation/engine.hpp"
 #include <vector>
 #include <array>
 #include <string>
@@ -7,430 +10,34 @@
 #include <algorithm>
 #include <fstream>
 #include <sstream>
+#include <cmath>
+#include "voice/PolyOut.hpp"
+
+using stx::transmutation::ChordPack;
+using stx::transmutation::ChordData;
 
 // Forward declarations
 struct Transmutation;
 
-// Custom Shapetaker Widgets (using proper background/indicator setup like Clairaudient)
-struct STKnobLarge : app::SvgKnob {
-    widget::SvgWidget* bg;
-    
-    STKnobLarge() {
-        minAngle = -0.75 * M_PI;
-        maxAngle = 0.75 * M_PI;
-        
-        // Use the indicator as the rotating part
-        setSvg(Svg::load(asset::plugin(pluginInstance, "res/knobs/indicators/st_knob_oscilloscope_indicator_large.svg")));
-        
-        // Add background as first child (will be drawn behind the rotating part)
-        bg = new widget::SvgWidget;
-        bg->setSvg(Svg::load(asset::plugin(pluginInstance, "res/knobs/backgrounds/st_knob_large_bg_light.svg")));
-        addChild(bg);
-        
-        // Move the background to the back by reordering children
-        removeChild(bg);
-        children.insert(children.begin(), bg);
-    }
-};
-
-struct STKnobMedium : app::SvgKnob {
-    widget::SvgWidget* bg;
-    
-    STKnobMedium() {
-        minAngle = -0.75 * M_PI;
-        maxAngle = 0.75 * M_PI;
-        
-        // Use the indicator as the rotating part
-        setSvg(Svg::load(asset::plugin(pluginInstance, "res/knobs/indicators/st_knob_oscilloscope_indicator_medium.svg")));
-        
-        // Add background as first child (will be drawn behind the rotating part)
-        bg = new widget::SvgWidget;
-        bg->setSvg(Svg::load(asset::plugin(pluginInstance, "res/knobs/backgrounds/st_knob_medium_bg_light.svg")));
-        addChild(bg);
-        
-        // Move the background to the back by reordering children
-        removeChild(bg);
-        children.insert(children.begin(), bg);
-    }
-};
-
-struct STKnobSmall : app::SvgKnob {
-    widget::SvgWidget* bg;
-    
-    STKnobSmall() {
-        minAngle = -0.75 * M_PI;
-        maxAngle = 0.75 * M_PI;
-        
-        // Use the indicator as the rotating part
-        setSvg(Svg::load(asset::plugin(pluginInstance, "res/knobs/indicators/st_knob_oscilloscope_indicator_small.svg")));
-        
-        // Add background as first child (will be drawn behind the rotating part)
-        bg = new widget::SvgWidget;
-        bg->setSvg(Svg::load(asset::plugin(pluginInstance, "res/knobs/backgrounds/st_knob_small_bg_light.svg")));
-        addChild(bg);
-        
-        // Move the background to the back by reordering children
-        removeChild(bg);
-        children.insert(children.begin(), bg);
-    }
-};
-
-struct STToggleSwitch : app::SvgSwitch {
-    STToggleSwitch() {
-        addFrame(Svg::load(asset::plugin(pluginInstance, "res/switches/safety_toggle_switch_OFF.svg")));
-        addFrame(Svg::load(asset::plugin(pluginInstance, "res/switches/safety_toggle_switch_ON.svg")));
-    }
-};
-
-struct STToggleSwitchSmall : app::SvgSwitch {
-    STToggleSwitchSmall() {
-        addFrame(Svg::load(asset::plugin(pluginInstance, "res/switches/safety_toggle_switch_OFF_small.svg")));
-        addFrame(Svg::load(asset::plugin(pluginInstance, "res/switches/safety_toggle_switch_ON_small.svg")));
-    }
-};
-
-struct STSelector : app::SvgSwitch {
-    STSelector() {
-        addFrame(Svg::load(asset::plugin(pluginInstance, "res/switches/st_vintage_selector_0.svg")));
-        addFrame(Svg::load(asset::plugin(pluginInstance, "res/switches/st_vintage_selector_1.svg")));
-        addFrame(Svg::load(asset::plugin(pluginInstance, "res/switches/st_vintage_selector_2.svg")));
-        addFrame(Svg::load(asset::plugin(pluginInstance, "res/switches/st_vintage_selector_3.svg")));
-        addFrame(Svg::load(asset::plugin(pluginInstance, "res/switches/st_vintage_selector_4.svg")));
-        addFrame(Svg::load(asset::plugin(pluginInstance, "res/switches/st_vintage_selector_5.svg")));
-        box.size = Vec(35, 35);
-    }
-};
+// Custom Shapetaker Widgets: use shared declarations from plugin.hpp / shapetakerWidgets.hpp
 
 
-struct STPort : app::SvgPort {
-    STPort() {
-        setSvg(Svg::load(asset::plugin(pluginInstance, "res/ports/st_bnc_connector.svg")));
-    }
-};
-
-// Vintage 1940s Push Button Widget
-struct Vintage1940sButton : app::SvgSwitch {
-    Vintage1940sButton() {
-        momentary = true; // Makes it a momentary push button
-        
-        // We'll draw this custom rather than using SVG for more control
-        box.size = Vec(18, 18);
-    }
-    
-    void draw(const DrawArgs& args) override {
-        NVGcontext* vg = args.vg;
-        
-        // Get the current parameter value to determine if pressed
-        bool pressed = false;
-        if (getParamQuantity()) {
-            pressed = getParamQuantity()->getValue() > 0.5f;
-        }
-        
-        nvgSave(vg);
-        
-        float centerX = box.size.x * 0.5f;
-        float centerY = box.size.y * 0.5f;
-        float outerRadius = box.size.x * 0.45f;
-        float innerRadius = outerRadius * 0.7f;
-        
-        // Draw the outer bezel (chrome/steel look)
-        nvgBeginPath(vg);
-        nvgCircle(vg, centerX, centerY, outerRadius);
-        
-        // Create a radial gradient for the chrome bezel
-        NVGpaint bezelGradient = nvgRadialGradient(vg, 
-            centerX - outerRadius * 0.3f, centerY - outerRadius * 0.3f, // Light source from top-left
-            outerRadius * 0.2f, outerRadius * 1.2f,
-            nvgRGB(220, 220, 230), // Bright chrome highlight
-            nvgRGB(120, 120, 130)  // Darker chrome shadow
-        );
-        nvgFillPaint(vg, bezelGradient);
-        nvgFill(vg);
-        
-        // Add a darker outer ring for depth
-        nvgBeginPath(vg);
-        nvgCircle(vg, centerX, centerY, outerRadius);
-        nvgStrokeColor(vg, nvgRGB(80, 80, 90));
-        nvgStrokeWidth(vg, 1.0f);
-        nvgStroke(vg);
-        
-        // Draw the button face
-        nvgBeginPath(vg);
-        nvgCircle(vg, centerX, centerY + (pressed ? 1.0f : 0.0f), innerRadius);
-        
-        // Button face color - bakelite/phenolic resin look
-        NVGcolor buttonColor;
-        if (pressed) {
-            // Darker when pressed
-            buttonColor = nvgRGB(45, 35, 25); // Dark brown bakelite
-        } else {
-            // Normal state - warm brown bakelite
-            buttonColor = nvgRGB(65, 50, 35);
-        }
-        
-        // Create gradient for the button face
-        NVGpaint buttonGradient = nvgRadialGradient(vg,
-            centerX - innerRadius * 0.4f, centerY - innerRadius * 0.4f + (pressed ? 1.0f : 0.0f),
-            innerRadius * 0.1f, innerRadius * 1.1f,
-            nvgRGB(85, 65, 45), // Lighter highlight
-            buttonColor // Base color
-        );
-        nvgFillPaint(vg, buttonGradient);
-        nvgFill(vg);
-        
-        // Add inner shadow when pressed
-        if (pressed) {
-            nvgBeginPath(vg);
-            nvgCircle(vg, centerX, centerY + 1.0f, innerRadius);
-            NVGpaint shadowGradient = nvgRadialGradient(vg,
-                centerX, centerY + 1.0f,
-                0, innerRadius,
-                nvgRGBA(0, 0, 0, 60), // Dark center
-                nvgRGBA(0, 0, 0, 0)   // Transparent edge
-            );
-            nvgFillPaint(vg, shadowGradient);
-            nvgFill(vg);
-        } else {
-            // Add highlight when not pressed
-            nvgBeginPath(vg);
-            nvgCircle(vg, centerX - innerRadius * 0.3f, centerY - innerRadius * 0.3f, innerRadius * 0.4f);
-            NVGpaint highlightGradient = nvgRadialGradient(vg,
-                centerX - innerRadius * 0.3f, centerY - innerRadius * 0.3f,
-                0, innerRadius * 0.4f,
-                nvgRGBA(255, 255, 255, 40), // White highlight
-                nvgRGBA(255, 255, 255, 0)   // Transparent edge
-            );
-            nvgFillPaint(vg, highlightGradient);
-            nvgFill(vg);
-        }
-        
-        // Add a subtle inner ring
-        nvgBeginPath(vg);
-        nvgCircle(vg, centerX, centerY + (pressed ? 1.0f : 0.0f), innerRadius);
-        nvgStrokeColor(vg, pressed ? nvgRGB(30, 25, 20) : nvgRGB(95, 75, 55));
-        nvgStrokeWidth(vg, 0.5f);
-        nvgStroke(vg);
-        
-        nvgRestore(vg);
-    }
-};
-
-// Custom colored jewel LEDs for sequence identification
-struct TealJewelLEDSmall : ModuleLightWidget {
-    TealJewelLEDSmall() {
-        box.size = Vec(15, 15);
-        
-        // Try to load the jewel SVG
-        widget::SvgWidget* sw = new widget::SvgWidget;
-        std::shared_ptr<Svg> svg = APP->window->loadSvg(asset::plugin(pluginInstance, "res/leds/jewel_led_small.svg"));
-        
-        if (svg) {
-            sw->setSvg(svg);
-            addChild(sw);
-        }
-        
-        // Set up teal color (single color, not RGB)
-        addBaseColor(nvgRGB(64, 224, 208)); // Teal color
-    }
-    
-    void draw(const DrawArgs& args) override {
-        if (children.empty()) {
-            nvgBeginPath(args.vg);
-            nvgCircle(args.vg, 7.5, 7.5, 7.2);
-            nvgFillColor(args.vg, nvgRGB(0xc0, 0xc0, 0xc0));
-            nvgFill(args.vg);
-            
-            nvgBeginPath(args.vg);
-            nvgCircle(args.vg, 7.5, 7.5, 4.8);
-            nvgFillColor(args.vg, nvgRGB(0x33, 0x33, 0x33));
-            nvgFill(args.vg);
-        }
-        
-        ModuleLightWidget::draw(args);
-    }
-};
-
-struct PurpleJewelLEDSmall : ModuleLightWidget {
-    PurpleJewelLEDSmall() {
-        box.size = Vec(15, 15);
-        
-        // Try to load the jewel SVG
-        widget::SvgWidget* sw = new widget::SvgWidget;
-        std::shared_ptr<Svg> svg = APP->window->loadSvg(asset::plugin(pluginInstance, "res/leds/jewel_led_small.svg"));
-        
-        if (svg) {
-            sw->setSvg(svg);
-            addChild(sw);
-        }
-        
-        // Set up purple color (single color, not RGB)
-        addBaseColor(nvgRGB(180, 64, 255)); // Purple color
-    }
-    
-    void draw(const DrawArgs& args) override {
-        if (children.empty()) {
-            nvgBeginPath(args.vg);
-            nvgCircle(args.vg, 7.5, 7.5, 7.2);
-            nvgFillColor(args.vg, nvgRGB(0xc0, 0xc0, 0xc0));
-            nvgFill(args.vg);
-            
-            nvgBeginPath(args.vg);
-            nvgCircle(args.vg, 7.5, 7.5, 4.8);
-            nvgFillColor(args.vg, nvgRGB(0x33, 0x33, 0x33));
-            nvgFill(args.vg);
-        }
-        
-        ModuleLightWidget::draw(args);
-    }
-};
-
-struct TealJewelLEDMedium : ModuleLightWidget {
-    TealJewelLEDMedium() {
-        box.size = Vec(20, 20);
-        
-        // Try to load the jewel SVG
-        widget::SvgWidget* sw = new widget::SvgWidget;
-        std::shared_ptr<Svg> svg = APP->window->loadSvg(asset::plugin(pluginInstance, "res/leds/jewel_led_medium.svg"));
-        
-        if (svg) {
-            sw->setSvg(svg);
-            addChild(sw);
-        }
-        
-        // Set up teal color (single color, not RGB)
-        addBaseColor(nvgRGB(64, 224, 208)); // Teal color
-    }
-    
-    void draw(const DrawArgs& args) override {
-        if (children.empty()) {
-            nvgBeginPath(args.vg);
-            nvgCircle(args.vg, 10, 10, 9.6);
-            nvgFillColor(args.vg, nvgRGB(0xc0, 0xc0, 0xc0));
-            nvgFill(args.vg);
-            
-            nvgBeginPath(args.vg);
-            nvgCircle(args.vg, 10, 10, 6.4);
-            nvgFillColor(args.vg, nvgRGB(0x33, 0x33, 0x33));
-            nvgFill(args.vg);
-        }
-        
-        ModuleLightWidget::draw(args);
-    }
-};
-
-struct PurpleJewelLEDMedium : ModuleLightWidget {
-    PurpleJewelLEDMedium() {
-        box.size = Vec(20, 20);
-        
-        // Try to load the jewel SVG
-        widget::SvgWidget* sw = new widget::SvgWidget;
-        std::shared_ptr<Svg> svg = APP->window->loadSvg(asset::plugin(pluginInstance, "res/leds/jewel_led_medium.svg"));
-        
-        if (svg) {
-            sw->setSvg(svg);
-            addChild(sw);
-        }
-        
-        // Set up purple color (single color, not RGB)
-        addBaseColor(nvgRGB(180, 64, 255)); // Purple color
-    }
-    
-    void draw(const DrawArgs& args) override {
-        if (children.empty()) {
-            nvgBeginPath(args.vg);
-            nvgCircle(args.vg, 10, 10, 9.6);
-            nvgFillColor(args.vg, nvgRGB(0xc0, 0xc0, 0xc0));
-            nvgFill(args.vg);
-            
-            nvgBeginPath(args.vg);
-            nvgCircle(args.vg, 10, 10, 6.4);
-            nvgFillColor(args.vg, nvgRGB(0x33, 0x33, 0x33));
-            nvgFill(args.vg);
-        }
-        
-        ModuleLightWidget::draw(args);
-    }
-};
+// Custom colored jewel LEDs moved to shared widgets (plugin.hpp)
 
 // Use the jewel LEDs from plugin.hpp - they're already properly defined there
 // No need to redefine them here since they're in the global header
 
-struct ChordData {
-    std::string name;
-    std::vector<float> intervals;
-    int preferredVoices;
-    std::string category;
-};
+#include "transmutation/chords.hpp"
+#include "transmutation/engine.hpp"
 
-struct ChordPack {
-    std::string name;
-    std::string key;
-    std::vector<ChordData> chords;
-    std::string description;
-};
+// HighResMatrixWidget moved to src/transmutation/ui.{hpp,cpp}
 
-struct SequenceStep {
-    int chordIndex;
-    int voiceCount;
-    int alchemySymbolId;
-    
-    SequenceStep() : chordIndex(-999), voiceCount(1), alchemySymbolId(-999) {} // -999 = uninitialized, -1 = REST
-};
+// (Legacy Matrix8x8Widget removed)
 
-struct Sequence {
-    std::array<SequenceStep, 64> steps;
-    int length;
-    int currentStep;
-    bool running;
-    float clockPhase;
-    
-    Sequence() : length(16), currentStep(0), running(false), clockPhase(0.0f) {}
-};
 
-// Matrix8x8Widget - declaration only, implementation after Transmutation class
-// High-Resolution Matrix Widget - 512x512 pixel canvas with 8x8 logical grid
-struct HighResMatrixWidget : Widget {
-    Transmutation* module;
-    static constexpr int MATRIX_COLS = 8;
-    static constexpr float CANVAS_SIZE = 512.0f;  // High resolution canvas
-    static constexpr float CELL_SIZE = CANVAS_SIZE / MATRIX_COLS;  // 64x64 pixels per cell
-    
-    HighResMatrixWidget(Transmutation* module);
-    void onButton(const event::Button& e) override;
-    void onMatrixClick(int x, int y);
-    void onMatrixRightClick(int x, int y);
-    void programStep(Sequence& seq, int stepIndex);
-    void drawLayer(const DrawArgs& args, int layer) override;
-    void drawMatrix(const DrawArgs& args);
-    // Legacy helpers retained for linkage; primary drawing uses st:: utility
-    void drawAlchemicalSymbol(const DrawArgs& args, Vec pos, int symbolId, NVGcolor color = nvgRGBA(255, 255, 255, 255));
-    void drawRestSymbol(const DrawArgs& args, Vec pos);
-    void drawTieSymbol(const DrawArgs& args, Vec pos);
-    void drawVoiceCount(const DrawArgs& args, Vec pos, int voiceCount, NVGcolor dotColor = nvgRGBA(255, 255, 255, 255));
-};
-
-// Legacy Matrix Widget (keeping for reference during transition)
-struct Matrix8x8Widget : Widget {
-    Transmutation* module;
-    static constexpr int MATRIX_SIZE = 8;
-    static constexpr float LED_SIZE = 16.0f;
-    static constexpr float LED_SPACING = 20.0f;
-    
-    Matrix8x8Widget(Transmutation* module);
-    void onButton(const event::Button& e) override;
-    void onMatrixClick(int x, int y);
-    void onMatrixRightClick(int x, int y);
-    void programStep(Sequence& seq, int stepIndex);
-    void drawLayer(const DrawArgs& args, int layer) override;
-    void drawMatrix(const DrawArgs& args);
-    // Legacy helpers retained for linkage; primary drawing uses st:: utility
-    void drawAlchemicalSymbol(const DrawArgs& args, Vec pos, int symbolId, NVGcolor color = nvgRGBA(255, 255, 255, 255));
-    void drawRestSymbol(const DrawArgs& args, Vec pos);
-    void drawTieSymbol(const DrawArgs& args, Vec pos);
-    void drawVoiceCount(const DrawArgs& args, Vec pos, int voiceCount, NVGcolor dotColor = nvgRGBA(255, 255, 255, 255));
-};
-
-struct Transmutation : Module {
+struct Transmutation : Module,
+    public stx::transmutation::TransmutationView,
+    public stx::transmutation::TransmutationController {
     enum ParamId {
         // Edit mode controls
         EDIT_A_PARAM,
@@ -474,7 +81,7 @@ struct Transmutation : Module {
         
         PARAMS_LEN
     };
-    // Grid steps (visual density): 32 or 64
+    // Grid steps (visual density): 16, 32, or 64
     int gridSteps = 32;
     enum InputId {
         CLOCK_A_INPUT,
@@ -563,13 +170,59 @@ struct Transmutation : Module {
     
     // Chord pack system
     ChordPack currentChordPack;
-    std::array<int, 40> symbolToChordMapping; // Expanded to support all 40 symbols
+    std::array<int, st::SymbolCount> symbolToChordMapping; // Mapping for all symbols
     std::array<int, 12> buttonToSymbolMapping; // Maps button positions 0-11 to symbol IDs 0-39
     std::array<float, 12> buttonPressAnim;     // 1.0 on press, decays to 0 for animation
     
     // Clock system
     float internalClock = 0.0f;
     float clockRate = 120.0f; // BPM
+    
+    // Output shaping / gate driving
+    // Small CV slew per voice (optional)
+    dsp::SlewLimiter cvSlewA[stx::transmutation::MAX_VOICES];
+    dsp::SlewLimiter cvSlewB[stx::transmutation::MAX_VOICES];
+    
+    // Tunables
+    bool enableCvSlew = false;
+    float cvSlewMs = 3.0f;        // per-step pitch slew to soften discontinuities
+    
+    enum GateMode { GATE_SUSTAIN = 0, GATE_PULSE = 1 };
+    GateMode gateMode = GATE_SUSTAIN;
+    float gatePulseMs = 8.0f;     // pulse width when in pulse mode
+    dsp::PulseGenerator gatePulsesA[stx::transmutation::MAX_VOICES];
+    dsp::PulseGenerator gatePulsesB[stx::transmutation::MAX_VOICES];
+
+    // Polyphony policy
+    bool forceSixPoly = true;     // when true, always output 6 channels (duplicates/extends chord tones)
+
+    // Helper: decide if two resolved steps represent a change that should retrigger
+    bool isStepChanged(const SequenceStep* prev, const SequenceStep* curr) const {
+        return stx::transmutation::isStepChanged(prev, curr);
+    }
+
+    float lastCvA[stx::transmutation::MAX_VOICES] = {0.f,0.f,0.f,0.f,0.f,0.f};
+    float lastCvB[stx::transmutation::MAX_VOICES] = {0.f,0.f,0.f,0.f,0.f,0.f};
+
+    // Helper: resolve a step to an effective chord step (follow TIEs backward).
+    // Returns nullptr if no playable chord is found.
+    const SequenceStep* resolveEffectiveStep(const Sequence& seq, int idx) const {
+        return stx::transmutation::resolveEffectiveStep(seq, idx, symbolToChordMapping, currentChordPack);
+    }
+
+    // Helper: keep a stable 6-channel frame with gates low and CV = 0V
+    void stableClearOutputs(int cvOutputId, int gateOutputId) {
+        stx::transmutation::stableClearOutputs(outputs.data(), cvOutputId, gateOutputId, stx::transmutation::MAX_VOICES);
+    }
+
+    // Apply gate policy for current step
+    void applyGates(const ProcessArgs& args, int gateOutputId, dsp::PulseGenerator pulses[stx::transmutation::MAX_VOICES], int activeVoices, bool stepChanged) {
+        stx::transmutation::applyGates(args, outputs.data(), gateOutputId, pulses, activeVoices,
+            gateMode == GATE_SUSTAIN ? stx::transmutation::GATE_SUSTAIN : stx::transmutation::GATE_PULSE,
+            gatePulseMs, stepChanged);
+    }
+
+    
     
     // Triggers
     dsp::SchmittTrigger editATrigger;
@@ -665,6 +318,26 @@ struct Transmutation : Module {
     }
     
     void process(const ProcessArgs& args) override {
+        // Configure slew limiters with current sample rate
+        if (enableCvSlew) {
+            for (int i = 0; i < 6; ++i) {
+                cvSlewA[i].setRiseFall(cvSlewMs / 1000.f, cvSlewMs / 1000.f);
+                cvSlewB[i].setRiseFall(cvSlewMs / 1000.f, cvSlewMs / 1000.f);
+            }
+        }
+        // Keep sequence length knobs bounded by current grid size
+        {
+            float maxLen = (float)gridSteps;
+            if (paramQuantities[LENGTH_A_PARAM]->maxValue != maxLen)
+                paramQuantities[LENGTH_A_PARAM]->maxValue = maxLen;
+            if (paramQuantities[LENGTH_B_PARAM]->maxValue != maxLen)
+                paramQuantities[LENGTH_B_PARAM]->maxValue = maxLen;
+            // Clamp current values if grid shrank
+            if (params[LENGTH_A_PARAM].getValue() > maxLen)
+                params[LENGTH_A_PARAM].setValue(maxLen);
+            if (params[LENGTH_B_PARAM].getValue() > maxLen)
+                params[LENGTH_B_PARAM].setValue(maxLen);
+        }
         // Decay symbol button press animations
         for (int i = 0; i < 12; ++i) {
             if (buttonPressAnim[i] > 0.f) {
@@ -701,9 +374,9 @@ struct Transmutation : Module {
             // This is play mode - explicitly do nothing as this is a valid state
         }
         
-        // Update sequence lengths from parameters
-        sequenceA.length = (int)params[LENGTH_A_PARAM].getValue();
-        sequenceB.length = (int)params[LENGTH_B_PARAM].getValue();
+        // Update sequence lengths from parameters (clamped to gridSteps)
+        sequenceA.length = clamp((int)params[LENGTH_A_PARAM].getValue(), 1, gridSteps);
+        sequenceB.length = clamp((int)params[LENGTH_B_PARAM].getValue(), 1, gridSteps);
         
         // Handle sequence controls
         if (startATrigger.process(params[START_A_PARAM].getValue())) {
@@ -872,9 +545,103 @@ struct Transmutation : Module {
             }
         }
     }
+
+    // TransmutationView implementation
+    float getInternalClockBpm() override { return params[INTERNAL_CLOCK_PARAM].getValue(); }
+    int getBpmMultiplier() override { return (int)params[BPM_MULTIPLIER_PARAM].getValue(); }
+    bool isSeqARunning() const override { return sequenceA.running; }
+    bool isSeqBRunning() const override { return sequenceB.running; }
+    int getSeqACurrentStep() const override { return sequenceA.currentStep; }
+    int getSeqALength() const override { return sequenceA.length; }
+    int getSeqBCurrentStep() const override { return sequenceB.currentStep; }
+    int getSeqBLength() const override { return sequenceB.length; }
+    bool isClockAConnected() override { return inputs[CLOCK_A_INPUT].isConnected(); }
+    bool isClockBConnected() override { return inputs[CLOCK_B_INPUT].isConnected(); }
+    int getSeqBMode() override { return (int)params[SEQ_B_MODE_PARAM].getValue(); }
+    bool isEditModeA() const override { return editModeA; }
+    bool isEditModeB() const override { return editModeB; }
+    int getGridSteps() const override { return gridSteps; }
+    int getButtonSymbol(int pos) const override { return (pos >=0 && pos < 12) ? buttonToSymbolMapping[pos] : -999; }
+    int getSymbolToChord(int symbolId) const override { return st::isValidSymbolId(symbolId) ? symbolToChordMapping[symbolId] : -1; }
+    stx::transmutation::StepInfo getStepA(int idx) const override {
+        stx::transmutation::StepInfo s{};
+        int i = (idx % sequenceA.length + sequenceA.length) % sequenceA.length;
+        s.chordIndex = sequenceA.steps[i].chordIndex;
+        s.voiceCount = sequenceA.steps[i].voiceCount;
+        s.symbolId   = sequenceA.steps[i].alchemySymbolId;
+        return s;
+    }
+    stx::transmutation::StepInfo getStepB(int idx) const override {
+        stx::transmutation::StepInfo s{};
+        int i = (idx % sequenceB.length + sequenceB.length) % sequenceB.length;
+        s.chordIndex = sequenceB.steps[i].chordIndex;
+        s.voiceCount = sequenceB.steps[i].voiceCount;
+        s.symbolId   = sequenceB.steps[i].alchemySymbolId;
+        return s;
+    }
+    int getDisplaySymbolId() const override { return displaySymbolId; }
+    std::string getDisplayChordName() const override { return displayChordName; }
+    float getSymbolPreviewTimer() const override { return symbolPreviewTimer; }
+    bool getSpookyTvMode() const override { return spookyTvMode; }
+    
+    // Symbol button support
+    int getSelectedSymbol() const override { return selectedSymbol; }
+    float getButtonPressAnim(int buttonPos) const override { 
+        return (buttonPos >= 0 && buttonPos < 12) ? buttonPressAnim[buttonPos] : 0.0f; 
+    }
+    int getCurrentChordIndex(bool seqA) const override { 
+        return seqA ? getCurrentChordIndex(sequenceA) : getCurrentChordIndex(sequenceB); 
+    }
+
+    // Controller API (used by matrix programming)
+    void programStepA(int stepIndex) override {
+        if (stepIndex < 0 || stepIndex >= sequenceA.length) return;
+        SequenceStep& step = sequenceA.steps[stepIndex];
+        if (st::isValidSymbolId(selectedSymbol) && symbolToChordMapping[selectedSymbol] >= 0) {
+            step.chordIndex = selectedSymbol;
+            step.alchemySymbolId = selectedSymbol;
+            int ci = symbolToChordMapping[selectedSymbol];
+            if (ci >= 0 && ci < (int)currentChordPack.chords.size())
+                step.voiceCount = std::min(currentChordPack.chords[ci].preferredVoices, 6);
+        } else if (selectedSymbol == -1) {
+            step.chordIndex = -1; step.alchemySymbolId = -1; step.voiceCount = 1;
+        } else if (selectedSymbol == -2) {
+            step.chordIndex = -2; step.alchemySymbolId = -2; step.voiceCount = 1;
+        }
+    }
+    void programStepB(int stepIndex) override {
+        if (stepIndex < 0 || stepIndex >= sequenceB.length) return;
+        SequenceStep& step = sequenceB.steps[stepIndex];
+        if (st::isValidSymbolId(selectedSymbol) && symbolToChordMapping[selectedSymbol] >= 0) {
+            step.chordIndex = selectedSymbol;
+            step.alchemySymbolId = selectedSymbol;
+            int ci = symbolToChordMapping[selectedSymbol];
+            if (ci >= 0 && ci < (int)currentChordPack.chords.size())
+                step.voiceCount = std::min(currentChordPack.chords[ci].preferredVoices, 6);
+        } else if (selectedSymbol == -1) {
+            step.chordIndex = -1; step.alchemySymbolId = -1; step.voiceCount = 1;
+        } else if (selectedSymbol == -2) {
+            step.chordIndex = -2; step.alchemySymbolId = -2; step.voiceCount = 1;
+        }
+    }
+    void cycleVoiceCountA(int idx) override {
+        if (idx < 0 || idx >= sequenceA.length) return;
+        SequenceStep& s = sequenceA.steps[idx];
+        if (st::isValidSymbolId(s.chordIndex) && symbolToChordMapping[s.chordIndex] >= 0)
+            s.voiceCount = (s.voiceCount % stx::transmutation::MAX_VOICES) + 1;
+    }
+    void cycleVoiceCountB(int idx) override {
+        if (idx < 0 || idx >= sequenceB.length) return;
+        SequenceStep& s = sequenceB.steps[idx];
+        if (st::isValidSymbolId(s.chordIndex) && symbolToChordMapping[s.chordIndex] >= 0)
+            s.voiceCount = (s.voiceCount % stx::transmutation::MAX_VOICES) + 1;
+    }
+    void setEditCursorA(int idx) override { if (idx >= 0 && idx < sequenceA.length) sequenceA.currentStep = idx; }
+    void setEditCursorB(int idx) override { if (idx >= 0 && idx < sequenceB.length) sequenceB.currentStep = idx; }
     
     void processSequence(Sequence& seq, int clockInputId, int cvOutputId, int gateOutputId, const ProcessArgs& args, bool internalClockTrigger) {
         if (!seq.running) {
+            // Idle: clear outputs
             outputs[cvOutputId].setChannels(0);
             outputs[gateOutputId].setChannels(0);
             return;
@@ -896,22 +663,20 @@ struct Transmutation : Module {
         }
         
         // Advance sequence on clock
+        bool stepChanged = false;
         if (clockTrigger) {
-            seq.currentStep = (seq.currentStep + 1) % seq.length;
+            int prevIndex = seq.currentStep;
+            int nextIndex = (seq.currentStep + 1) % seq.length;
+            const SequenceStep* prevEff = resolveEffectiveStep(seq, prevIndex);
+            const SequenceStep* nextEff = resolveEffectiveStep(seq, nextIndex);
+            stepChanged = isStepChanged(prevEff, nextEff);
+            seq.currentStep = nextIndex;
         }
         
-        // Get current step data
-        const SequenceStep& currentStep = seq.steps[seq.currentStep];
-        
-        // Output CV and gates based on current step
-        if (currentStep.chordIndex >= 0 && currentStep.chordIndex < 40 && 
-            symbolToChordMapping[currentStep.chordIndex] >= 0) {
-            outputChord(currentStep, cvOutputId, gateOutputId);
-        } else {
-            // Rest or tie
-            outputs[cvOutputId].setChannels(0);
-            outputs[gateOutputId].setChannels(0);
-        }
+        // Resolve effective step (follows TIEs). Output or clear.
+        const SequenceStep* eff = resolveEffectiveStep(seq, seq.currentStep);
+        if (eff) outputChord(args, *eff, cvOutputId, gateOutputId, stepChanged);
+        else stableClearOutputs(cvOutputId, gateOutputId);
     }
     
     void processSequenceB(const ProcessArgs& args, bool internalClockTrigger) {
@@ -957,23 +722,32 @@ struct Transmutation : Module {
             clockTrigger = internalClockTrigger && sequenceA.running;
         }
         
-        // Advance sequence B step
+        bool stepChanged = false;
         if (clockTrigger) {
-            sequenceB.currentStep = (sequenceB.currentStep + 1) % sequenceB.length;
+            int prevB = sequenceB.currentStep;
+            int nextB = (sequenceB.currentStep + 1) % sequenceB.length;
+            const SequenceStep* prevEffB = resolveEffectiveStep(sequenceB, prevB);
+            const SequenceStep* nextEffB = resolveEffectiveStep(sequenceB, nextB);
+            const SequenceStep* prevEffA = resolveEffectiveStep(sequenceA, (sequenceA.currentStep - 1 + sequenceA.length) % sequenceA.length);
+            const SequenceStep* currEffA = resolveEffectiveStep(sequenceA, sequenceA.currentStep);
+            bool changedB = isStepChanged(prevEffB, nextEffB);
+            bool changedA = isStepChanged(prevEffA, currEffA);
+            stepChanged = changedA || changedB;
+            sequenceB.currentStep = nextB;
         }
         
-        // Get current chord from sequence A
-        const SequenceStep& stepA = sequenceA.steps[sequenceA.currentStep];
-        const SequenceStep& stepB = sequenceB.steps[sequenceB.currentStep];
-        
-        if (stepA.chordIndex >= 0 && stepA.chordIndex < 40 && 
-            symbolToChordMapping[stepA.chordIndex] >= 0) {
+        // Resolve effective A/B steps
+        const SequenceStep* effA = resolveEffectiveStep(sequenceA, sequenceA.currentStep);
+        const SequenceStep* effB = resolveEffectiveStep(sequenceB, sequenceB.currentStep);
+        if (effA) {
             // Generate harmony based on sequence A's chord
-            outputHarmony(stepA, stepB, CV_B_OUTPUT, GATE_B_OUTPUT);
+            // If B is null (rest), still use A's chord but a default voiceCount of 1
+            SequenceStep bTmp;
+            if (!effB) { bTmp.chordIndex = -1; bTmp.voiceCount = 1; bTmp.alchemySymbolId = -1; }
+            outputHarmony(args, *effA, effB ? *effB : bTmp, CV_B_OUTPUT, GATE_B_OUTPUT, stepChanged);
         } else {
-            // If A is resting, B rests too
-            outputs[CV_B_OUTPUT].setChannels(0);
-            outputs[GATE_B_OUTPUT].setChannels(0);
+            // If A has no effective chord, silence B (stable frame)
+            stableClearOutputs(CV_B_OUTPUT, GATE_B_OUTPUT);
         }
     }
     
@@ -996,121 +770,121 @@ struct Transmutation : Module {
             clockTrigger = internalClockTrigger;
         }
         
-        // Advance sequence B
+        bool stepChanged = false;
         if (clockTrigger) {
-            sequenceB.currentStep = (sequenceB.currentStep + 1) % sequenceB.length;
+            int prevB = sequenceB.currentStep;
+            int nextB = (sequenceB.currentStep + 1) % sequenceB.length;
+            const SequenceStep* prevEff = resolveEffectiveStep(sequenceB, prevB);
+            const SequenceStep* nextEff = resolveEffectiveStep(sequenceB, nextB);
+            stepChanged = isStepChanged(prevEff, nextEff);
+            sequenceB.currentStep = nextB;
         }
         
         // Output sequence B's programmed progression using same chord pack as A
-        const SequenceStep& currentStep = sequenceB.steps[sequenceB.currentStep];
-        if (currentStep.chordIndex >= 0 && currentStep.chordIndex < 40 && 
-            symbolToChordMapping[currentStep.chordIndex] >= 0) {
-            outputChord(currentStep, CV_B_OUTPUT, GATE_B_OUTPUT);
-        } else {
-            outputs[CV_B_OUTPUT].setChannels(0);
-            outputs[GATE_B_OUTPUT].setChannels(0);
-        }
+        if (const SequenceStep* eff = resolveEffectiveStep(sequenceB, sequenceB.currentStep))
+            outputChord(args, *eff, CV_B_OUTPUT, GATE_B_OUTPUT, stepChanged);
+        else
+            stableClearOutputs(CV_B_OUTPUT, GATE_B_OUTPUT);
     }
     
-    void outputHarmony(const SequenceStep& stepA, const SequenceStep& stepB, int cvOutputId, int gateOutputId) {
-        if (stepA.chordIndex < 0 || stepA.chordIndex >= (int)currentChordPack.chords.size()) {
+    void outputHarmony(const ProcessArgs& args, const SequenceStep& stepA, const SequenceStep& stepB, int cvOutputId, int gateOutputId, bool stepChanged) {
+        // Validate symbol ID and its chord mapping
+        if (!st::isValidSymbolId(stepA.chordIndex)) {
+            outputs[cvOutputId].setChannels(0);
+            outputs[gateOutputId].setChannels(0);
+            return;
+        }
+        int mappedIndexA = symbolToChordMapping[stepA.chordIndex];
+        if (mappedIndexA < 0 || mappedIndexA >= (int)currentChordPack.chords.size()) {
             outputs[cvOutputId].setChannels(0);
             outputs[gateOutputId].setChannels(0);
             return;
         }
         
-        const ChordData& chordA = currentChordPack.chords[symbolToChordMapping[stepA.chordIndex]];
-        int voiceCount = std::min(stepB.voiceCount, 6);
+        const ChordData& chordA = currentChordPack.chords[mappedIndexA];
+        int voiceCount = forceSixPoly ? stx::transmutation::MAX_VOICES : std::min(stepB.voiceCount, stx::transmutation::MAX_VOICES);
         
-        // Set up polyphonic outputs
-        outputs[cvOutputId].setChannels(voiceCount);
-        outputs[gateOutputId].setChannels(voiceCount);
+        // Build targets and assign
+        std::vector<float> targetNotes;
+        stx::poly::buildTargetsFromIntervals(chordA.intervals, voiceCount, /*harmony*/ true, targetNotes);
+        std::vector<float> assigned;
+        stx::poly::assignNearest(targetNotes, (cvOutputId == CV_A_OUTPUT) ? lastCvA : lastCvB, voiceCount, assigned);
         
-        // Generate harmony notes based on the root chord
-        // This creates harmony by using upper chord tones and inversions
-        float rootNote = 0.0f; // C4 = 0V as standard
-        
-        for (int voice = 0; voice < voiceCount; voice++) {
-            float harmonyInterval = 0.0f;
-            
-            if (voice < (int)chordA.intervals.size()) {
-                // Use chord tones but transpose up an octave for harmony
-                harmonyInterval = chordA.intervals[voice] + 12.0f; // +1 octave
-                
-                // Add some variation based on voice number for richer harmony
-                if (voice % 2 == 1) {
-                    harmonyInterval += 7.0f; // Add fifth for more harmonic interest
-                }
-            } else {
-                // If more voices requested, cycle through intervals with additional octaves
-                int intervalIndex = voice % chordA.intervals.size();
-                int octaveOffset = (voice / chordA.intervals.size()) + 1; // Start at +1 octave for harmony
-                harmonyInterval = chordA.intervals[intervalIndex] + octaveOffset * 12.0f;
-                
-                // Add fifth variation for odd voices
-                if (voice % 2 == 1) {
-                    harmonyInterval += 7.0f;
-                }
+        // Set outputs (stable 6-channel layout)
+        const int chCount = stx::transmutation::MAX_VOICES;
+        outputs[cvOutputId].setChannels(chCount);
+        for (int voice = 0; voice < chCount; voice++) {
+            float noteCV = assigned[voice];
+            float smoothed = noteCV;
+            if (enableCvSlew) {
+                smoothed = (cvOutputId == CV_A_OUTPUT) ? cvSlewA[voice].process(args.sampleTime, noteCV)
+                                                       : cvSlewB[voice].process(args.sampleTime, noteCV);
             }
-            
-            float noteCV = rootNote + harmonyInterval / 12.0f; // Convert semitones to V/oct
-            outputs[cvOutputId].setVoltage(noteCV, voice);
-            outputs[gateOutputId].setVoltage(10.0f, voice); // Standard gate voltage
+            // For voices beyond target size, keep gate low
+            outputs[cvOutputId].setVoltage(smoothed, voice);
+            if (cvOutputId == CV_A_OUTPUT) lastCvA[voice] = smoothed; else lastCvB[voice] = smoothed;
         }
+        // Apply gate policy
+        applyGates(args, gateOutputId, cvOutputId == CV_A_OUTPUT ? gatePulsesA : gatePulsesB, voiceCount, stepChanged);
     }
     
-    void outputChord(const SequenceStep& step, int cvOutputId, int gateOutputId) {
-        if (step.chordIndex < 0 || step.chordIndex >= (int)currentChordPack.chords.size()) {
+    void outputChord(const ProcessArgs& args, const SequenceStep& step, int cvOutputId, int gateOutputId, bool stepChanged) {
+        // Validate symbol ID and its chord mapping
+        if (!st::isValidSymbolId(step.chordIndex)) {
+            outputs[cvOutputId].setChannels(0);
+            outputs[gateOutputId].setChannels(0);
+            return;
+        }
+        int mappedIndex = symbolToChordMapping[step.chordIndex];
+        if (mappedIndex < 0 || mappedIndex >= (int)currentChordPack.chords.size()) {
             outputs[cvOutputId].setChannels(0);
             outputs[gateOutputId].setChannels(0);
             return;
         }
         
-        const ChordData& chord = currentChordPack.chords[symbolToChordMapping[step.chordIndex]];
-        int voiceCount = std::min(step.voiceCount, 6);
+        const ChordData& chord = currentChordPack.chords[mappedIndex];
+        int voiceCount = forceSixPoly ? stx::transmutation::MAX_VOICES : std::min(step.voiceCount, stx::transmutation::MAX_VOICES);
         
-        // Set up polyphonic outputs
-        outputs[cvOutputId].setChannels(voiceCount);
-        outputs[gateOutputId].setChannels(voiceCount);
+        // Build targets and assign
+        std::vector<float> targetNotes;
+        stx::poly::buildTargetsFromIntervals(chord.intervals, voiceCount, /*harmony*/ false, targetNotes);
+        std::vector<float> assigned;
+        stx::poly::assignNearest(targetNotes, (cvOutputId == CV_A_OUTPUT) ? lastCvA : lastCvB, voiceCount, assigned);
         
-        // Calculate root note (C4 = 0V as standard in VCV Rack)
-        float rootNote = 0.0f; // C4 = 0V, will be configurable later
-        
-        // Output chord tones with proper voice allocation
-        for (int voice = 0; voice < voiceCount; voice++) {
-            float noteCV = rootNote;
-            
-            if (voice < (int)chord.intervals.size()) {
-                // Use chord intervals directly
-                noteCV = rootNote + chord.intervals[voice] / 12.0f; // Convert semitones to V/oct
-            } else {
-                // If more voices requested than chord intervals, cycle through intervals in higher octaves
-                int intervalIndex = voice % chord.intervals.size();
-                int octaveOffset = voice / chord.intervals.size();
-                noteCV = rootNote + (chord.intervals[intervalIndex] + octaveOffset * 12.0f) / 12.0f;
+        // Set outputs (stable 6-channel layout)
+        const int chCount = stx::transmutation::MAX_VOICES;
+        outputs[cvOutputId].setChannels(chCount);
+        outputs[gateOutputId].setChannels(chCount);
+        for (int voice = 0; voice < chCount; voice++) {
+            float noteCV = assigned[voice];
+            float smoothed = noteCV;
+            if (enableCvSlew) {
+                smoothed = (cvOutputId == CV_A_OUTPUT) ? cvSlewA[voice].process(args.sampleTime, noteCV)
+                                                       : cvSlewB[voice].process(args.sampleTime, noteCV);
             }
-            
-            outputs[cvOutputId].setVoltage(noteCV, voice);
-            outputs[gateOutputId].setVoltage(10.0f, voice); // Standard gate voltage
+            outputs[cvOutputId].setVoltage(smoothed, voice);
+            if (cvOutputId == CV_A_OUTPUT) lastCvA[voice] = smoothed; else lastCvB[voice] = smoothed;
         }
+        // Apply gate policy
+        applyGates(args, gateOutputId, cvOutputId == CV_A_OUTPUT ? gatePulsesA : gatePulsesB, voiceCount, stepChanged);
     }
     
-    int getCurrentChordIndex(const Sequence& seq) {
+    int getCurrentChordIndex(const Sequence& seq) const {
         return seq.steps[seq.currentStep].chordIndex;
     }
     
-    void onSymbolPressed(int symbolIndex) {
+    void onSymbolPressed(int symbolIndex) override {
         selectedSymbol = symbolIndex;
         
         // Debug output
-        if (symbolIndex >= 0 && symbolIndex < 40) {
+        if (st::isValidSymbolId(symbolIndex)) {
             int chordIndex = symbolToChordMapping[symbolIndex];
             INFO("Symbol pressed: %d -> Chord index: %d (of %d chords)", symbolIndex, chordIndex, (int)currentChordPack.chords.size());
         }
         
         // Display chord name on LED matrix
         // Trigger 8-bit symbol preview when selecting a symbol
-        if (symbolIndex >= 0 && symbolIndex < 40 && 
+        if (st::isValidSymbolId(symbolIndex) &&
             symbolToChordMapping[symbolIndex] >= 0 && symbolToChordMapping[symbolIndex] < (int)currentChordPack.chords.size()) {
             const ChordData& chord = currentChordPack.chords[symbolToChordMapping[symbolIndex]];
             displayChordName = chord.name;
@@ -1127,12 +901,12 @@ struct Transmutation : Module {
         }
         
         // Audition the chord if we're in edit mode
-        if ((editModeA || editModeB) && symbolIndex >= 0 && symbolIndex < 40) {
+        if ((editModeA || editModeB) && st::isValidSymbolId(symbolIndex)) {
             auditionChord(symbolIndex);
         }
 
         // Trigger press animation on the corresponding button slot
-        if (symbolIndex >= 0 && symbolIndex < 40) {
+        if (st::isValidSymbolId(symbolIndex)) {
             for (int i = 0; i < 12; ++i) {
                 if (buttonToSymbolMapping[i] == symbolIndex) {
                     buttonPressAnim[i] = 1.0f;
@@ -1143,7 +917,7 @@ struct Transmutation : Module {
     }
     
     void auditionChord(int symbolIndex) {
-        if (symbolIndex < 0 || symbolIndex >= 40 || 
+        if (!st::isValidSymbolId(symbolIndex) ||
             symbolToChordMapping[symbolIndex] < 0 || symbolToChordMapping[symbolIndex] >= (int)currentChordPack.chords.size()) {
             return;
         }
@@ -1159,7 +933,7 @@ struct Transmutation : Module {
     }
     
     void outputChordAudition(const ChordData& chord, int cvOutputId, int gateOutputId) {
-        int voiceCount = std::min(chord.preferredVoices, 6);
+        int voiceCount = std::min(chord.preferredVoices, stx::transmutation::MAX_VOICES);
         
         // Set up polyphonic outputs
         outputs[cvOutputId].setChannels(voiceCount);
@@ -1191,147 +965,19 @@ struct Transmutation : Module {
     }
     
     bool loadChordPackFromFile(const std::string& filepath) {
-        try {
-            std::ifstream file(filepath);
-            if (!file.is_open()) return false;
-            
-            std::string content((std::istreambuf_iterator<char>(file)),
-                               std::istreambuf_iterator<char>());
-            
-            json_error_t error;
-            json_t* rootJ = json_loads(content.c_str(), 0, &error);
-            if (!rootJ) return false;
-            
-            // Parse chord pack
-            json_t* nameJ = json_object_get(rootJ, "name");
-            json_t* keyJ = json_object_get(rootJ, "key");
-            json_t* descJ = json_object_get(rootJ, "description");
-            json_t* chordsJ = json_object_get(rootJ, "chords");
-            
-            if (!nameJ || !keyJ || !chordsJ) {
-                json_decref(rootJ);
-                return false;
-            }
-            
-            currentChordPack.name = json_string_value(nameJ);
-            currentChordPack.key = json_string_value(keyJ);
-            currentChordPack.description = descJ ? json_string_value(descJ) : "";
-            currentChordPack.chords.clear();
-            
-            // Parse chords array
-            size_t chordIndex;
-            json_t* chordJ;
-            json_array_foreach(chordsJ, chordIndex, chordJ) {
-                json_t* chordNameJ = json_object_get(chordJ, "name");
-                json_t* intervalsJ = json_object_get(chordJ, "intervals");
-                json_t* voicesJ = json_object_get(chordJ, "preferredVoices");
-                json_t* categoryJ = json_object_get(chordJ, "category");
-                
-                if (!chordNameJ || !intervalsJ) continue;
-                
-                ChordData chord;
-                chord.name = json_string_value(chordNameJ);
-                chord.preferredVoices = voicesJ ? (int)json_integer_value(voicesJ) : 3;
-                chord.category = categoryJ ? json_string_value(categoryJ) : "unknown";
-                
-                // Parse intervals array
-                size_t intervalIndex;
-                json_t* intervalJ;
-                json_array_foreach(intervalsJ, intervalIndex, intervalJ) {
-                    chord.intervals.push_back((float)json_real_value(intervalJ));
-                }
-                
-                currentChordPack.chords.push_back(chord);
-            }
-            
-            json_decref(rootJ);
+        if (stx::transmutation::loadChordPackFromFile(filepath, currentChordPack)) {
             randomizeSymbolAssignment();
             return true;
-            
-        } catch (...) {
-            return false;
         }
+        return false;
     }
     
     void randomizeSymbolAssignment() {
-        if (currentChordPack.chords.empty()) return;
-        
-        std::random_device rd;
-        std::mt19937 gen(rd());
-        
-        // Create a pool of all available symbol IDs (0-39)
-        std::vector<int> availableSymbolIds;
-        for (int i = 0; i < 40; i++) {
-            availableSymbolIds.push_back(i);
-        }
-        
-        // Shuffle the symbol IDs to randomize which symbols appear on which buttons
-        std::shuffle(availableSymbolIds.begin(), availableSymbolIds.end(), gen);
-        
-        // Clear all mappings first
-        symbolToChordMapping.fill(-1);
-        
-        // Assign the first 12 shuffled symbols to the 12 button positions
-        for (int buttonPos = 0; buttonPos < 12; buttonPos++) {
-            buttonToSymbolMapping[buttonPos] = availableSymbolIds[buttonPos];
-        }
-        
-        // Improved randomization: Assign chords to button symbols with more variation
-        std::uniform_int_distribution<> dis(0, currentChordPack.chords.size() - 1);
-        
-        // First, assign unique chords to avoid duplicates if we have enough chords
-        std::vector<int> availableChordIndices;
-        for (int i = 0; i < (int)currentChordPack.chords.size(); i++) {
-            availableChordIndices.push_back(i);
-        }
-        std::shuffle(availableChordIndices.begin(), availableChordIndices.end(), gen);
-        
-        for (int buttonPos = 0; buttonPos < 12; buttonPos++) {
-            int symbolId = buttonToSymbolMapping[buttonPos];
-            
-            // If we have enough unique chords, use them first, otherwise randomize
-            int chordIndex;
-            if (buttonPos < (int)availableChordIndices.size()) {
-                chordIndex = availableChordIndices[buttonPos];
-            } else {
-                chordIndex = dis(gen);
-            }
-            
-            symbolToChordMapping[symbolId] = chordIndex;
-        }
-        
-        // Ensure ALL 12 button symbols have chord mappings
-        // This guarantees that any symbol shown on buttons can be placed on sequences
-        for (int buttonPos = 0; buttonPos < 12; buttonPos++) {
-            int symbolId = buttonToSymbolMapping[buttonPos];
-            // Double check this symbol has a chord mapping (should already be set above)
-            if (symbolToChordMapping[symbolId] < 0) {
-                symbolToChordMapping[symbolId] = dis(gen);
-            }
-        }
+        stx::transmutation::randomizeSymbolAssignment(currentChordPack, symbolToChordMapping, buttonToSymbolMapping);
     }
     
     void loadDefaultChordPack() {
-        currentChordPack.name = "Basic Major";
-        currentChordPack.key = "C";
-        currentChordPack.description = "Basic major chord progressions";
-        
-        // Add some basic chords
-        ChordData cmaj = {"Cmaj", {0, 4, 7}, 3, "major"};
-        ChordData dmin = {"Dmin", {2, 5, 9}, 3, "minor"};
-        ChordData emin = {"Emin", {4, 7, 11}, 3, "minor"};
-        ChordData fmaj = {"Fmaj", {5, 9, 0}, 3, "major"};
-        ChordData gmaj = {"Gmaj", {7, 11, 2}, 3, "major"};
-        ChordData amin = {"Amin", {9, 0, 4}, 3, "minor"};
-        ChordData gmaj7 = {"Gmaj7", {7, 11, 2, 5}, 4, "major7"};
-        ChordData fmaj7 = {"Fmaj7", {5, 9, 0, 4}, 4, "major7"};
-        ChordData dmin7 = {"Dmin7", {2, 5, 9, 0}, 4, "minor7"};
-        ChordData cmaj7 = {"Cmaj7", {0, 4, 7, 11}, 4, "major7"};
-        ChordData amin7 = {"Amin7", {9, 0, 4, 7}, 4, "minor7"};
-        ChordData emin7 = {"Emin7", {4, 7, 11, 2}, 4, "minor7"};
-        
-        currentChordPack.chords = {cmaj, dmin, emin, fmaj, gmaj, amin, gmaj7, fmaj7, dmin7, cmaj7, amin7, emin7};
-        
+        stx::transmutation::loadDefaultChordPack(currentChordPack);
         randomizeSymbolAssignment();
     }
     
@@ -1339,6 +985,11 @@ struct Transmutation : Module {
     json_t* dataToJson() override {
         json_t* rootJ = json_object();
         json_object_set_new(rootJ, "gridSteps", json_integer(gridSteps));
+        json_object_set_new(rootJ, "enableCvSlew", json_boolean(enableCvSlew));
+        json_object_set_new(rootJ, "cvSlewMs", json_real(cvSlewMs));
+        json_object_set_new(rootJ, "forceSixPoly", json_boolean(forceSixPoly));
+        json_object_set_new(rootJ, "gateMode", json_integer((int)gateMode));
+        json_object_set_new(rootJ, "gatePulseMs", json_real(gatePulseMs));
         return rootJ;
     }
     
@@ -1346,196 +997,32 @@ struct Transmutation : Module {
         json_t* gJ = json_object_get(rootJ, "gridSteps");
         if (gJ && json_is_integer(gJ)) {
             int v = (int)json_integer_value(gJ);
-            if (v == 32 || v == 64) gridSteps = v;
+            if (v == 16 || v == 32 || v == 64) gridSteps = v;
+        }
+        if (json_t* eSlew = json_object_get(rootJ, "enableCvSlew")) {
+            enableCvSlew = json_boolean_value(eSlew);
+        }
+        if (json_t* vSlew = json_object_get(rootJ, "cvSlewMs")) {
+            if (json_is_number(vSlew)) cvSlewMs = (float)json_number_value(vSlew);
+        }
+        if (json_t* f6 = json_object_get(rootJ, "forceSixPoly")) {
+            forceSixPoly = json_boolean_value(f6);
+        }
+        if (json_t* gm = json_object_get(rootJ, "gateMode")) {
+            if (json_is_integer(gm)) gateMode = (GateMode)json_integer_value(gm);
+        }
+        if (json_t* gp = json_object_get(rootJ, "gatePulseMs")) {
+            if (json_is_number(gp)) gatePulseMs = (float)json_number_value(gp);
         }
     }
 };
 
-// Matrix8x8Widget Implementation
-// High-Resolution Matrix Widget Implementation
-HighResMatrixWidget::HighResMatrixWidget(Transmutation* module) : module(module) {
-    // Set widget size slightly larger to give symbols and dots more breathing room
-    // Just a bit bigger than the original matrix for better spacing and visibility
-    box.size = Vec(231.0f, 231.0f); // 10% larger than 210px for improved visibility (28.875px per cell)
-}
 
-void HighResMatrixWidget::onButton(const event::Button& e) {
-    if (e.action == GLFW_PRESS) {
-        Vec pos = e.pos;
-        
-        // Convert click position to grid coordinates based on current grid rows/cols
-        int cols = (module && module->gridSteps == 32) ? 6 : MATRIX_COLS;
-        int rows = (module && module->gridSteps == 32) ? 6 : 8;
-        int x = (int)(pos.x / box.size.x * cols);
-        int y = (int)(pos.y / box.size.y * rows);
-        
-        // Clamp to valid range
-        x = clamp(x, 0, cols - 1);
-        y = clamp(y, 0, rows - 1);
-        
-        if (e.button == GLFW_MOUSE_BUTTON_LEFT) {
-            onMatrixClick(x, y);
-        } else if (e.button == GLFW_MOUSE_BUTTON_RIGHT) {
-            onMatrixRightClick(x, y);
-        }
-        e.consume(this);
-    }
-}
-
-void HighResMatrixWidget::onMatrixClick(int x, int y) {
-    if (!module) return;
-    // Map grid coords to step index; center last row in 32‑step 6x6 layout
-    int stepIndex = -1;
-    if (module->gridSteps == 32) {
-        if (y < 5) stepIndex = y * 6 + x;
-        else if (y == 5 && x >= 2 && x <= 3) stepIndex = 30 + (x - 2);
-    } else {
-        stepIndex = y * MATRIX_COLS + x;
-    }
-    
-    if (stepIndex >= 0) {
-        if (module->editModeA && stepIndex < module->sequenceA.length) {
-            module->sequenceA.currentStep = stepIndex; // move edit cursor
-            programStep(module->sequenceA, stepIndex);
-        }
-        if (module->editModeB && stepIndex < module->sequenceB.length) {
-            module->sequenceB.currentStep = stepIndex; // move edit cursor
-            programStep(module->sequenceB, stepIndex);
-        }
-    }
-}
-
-void HighResMatrixWidget::onMatrixRightClick(int x, int y) {
-    if (!module) return;
-    // Map grid coords to step index; center last row in 32‑step 6x6 layout
-    int stepIndex = -1;
-    if (module->gridSteps == 32) {
-        if (y < 5) stepIndex = y * 6 + x;
-        else if (y == 5 && x >= 2 && x <= 3) stepIndex = 30 + (x - 2);
-    } else {
-        stepIndex = y * MATRIX_COLS + x;
-    }
-    
-    // Right click cycles through voice counts (1-6)
-    if (stepIndex >= 0 && module->editModeA && stepIndex < module->sequenceA.length) {
-        module->sequenceA.currentStep = stepIndex; // move edit cursor
-        SequenceStep& step = module->sequenceA.steps[stepIndex];
-        if (step.chordIndex >= 0 && step.chordIndex < 40 && 
-            module->symbolToChordMapping[step.chordIndex] >= 0) {
-            step.voiceCount = (step.voiceCount % 6) + 1;
-        }
-    }
-    if (stepIndex >= 0 && module->editModeB && stepIndex < module->sequenceB.length) {
-        module->sequenceB.currentStep = stepIndex; // move edit cursor
-        SequenceStep& step = module->sequenceB.steps[stepIndex];
-        if (step.chordIndex >= 0 && step.chordIndex < 40 && 
-            module->symbolToChordMapping[step.chordIndex] >= 0) {
-            step.voiceCount = (step.voiceCount % 6) + 1;
-        }
-    }
-}
-
-void HighResMatrixWidget::programStep(Sequence& seq, int stepIndex) {
-    if (!module) return;
-    if (stepIndex >= module->gridSteps) return;
-    
-    SequenceStep& step = seq.steps[stepIndex];
-    
-    // Debug output
-    INFO("Programming step %d with selected symbol %d", stepIndex, module->selectedSymbol);
-    
-    if (module->selectedSymbol >= 0 && module->selectedSymbol < 40 && 
-        module->symbolToChordMapping[module->selectedSymbol] >= 0) {
-        // Assign chord to step
-        step.chordIndex = module->selectedSymbol;
-        step.alchemySymbolId = module->selectedSymbol;
-        // Set default voice count based on chord's preferred voices
-        if (module->symbolToChordMapping[module->selectedSymbol] < (int)module->currentChordPack.chords.size()) {
-            const ChordData& chord = module->currentChordPack.chords[module->symbolToChordMapping[module->selectedSymbol]];
-            step.voiceCount = std::min(chord.preferredVoices, 6);
-        }
-        INFO("Step %d programmed with symbol %d (chord %d)", stepIndex, module->selectedSymbol, module->symbolToChordMapping[module->selectedSymbol]);
-    } else if (module->selectedSymbol == -1) {
-        // Rest
-        step.chordIndex = -1;
-        step.alchemySymbolId = -1;
-        step.voiceCount = 1;
-        INFO("Step %d programmed as REST", stepIndex);
-    } else if (module->selectedSymbol == -2) {
-        // Tie
-        step.chordIndex = -2;
-        step.alchemySymbolId = -2;
-        step.voiceCount = 1;
-        INFO("Step %d programmed as TIE", stepIndex);
-    } else {
-        INFO("Step %d programming FAILED - selected symbol %d has invalid chord mapping %d", stepIndex, module->selectedSymbol, 
-             module->selectedSymbol >= 0 && module->selectedSymbol < 40 ? module->symbolToChordMapping[module->selectedSymbol] : -999);
-    }
-}
-
-void HighResMatrixWidget::drawLayer(const DrawArgs& args, int layer) {
-    if (layer == 1) {
-        drawMatrix(args);
-    }
-    Widget::drawLayer(args, layer);
-}
-
-std::vector<std::string> wrapText(const std::string& text, float maxWidth, NVGcontext* vg) {
-    std::vector<std::string> lines;
-    if (text.empty()) return lines;
-    
-    // Measure text width
-    float textWidth = nvgTextBounds(vg, 0, 0, text.c_str(), NULL, NULL);
-    
-    // If text fits in one line, return as-is
-    if (textWidth <= maxWidth) {
-        lines.push_back(text);
-        return lines;
-    }
-    
-    // Split text into words
-    std::vector<std::string> words;
-    std::stringstream ss(text);
-    std::string word;
-    while (std::getline(ss, word, ' ')) {
-        if (!word.empty()) {
-            words.push_back(word);
-        }
-    }
-    
-    if (words.empty()) return lines;
-    
-    // Build lines that fit within maxWidth
-    std::string currentLine = words[0];
-    for (size_t i = 1; i < words.size(); i++) {
-        std::string testLine = currentLine + " " + words[i];
-        float testWidth = nvgTextBounds(vg, 0, 0, testLine.c_str(), NULL, NULL);
-        
-        if (testWidth <= maxWidth) {
-            currentLine = testLine;
-        } else {
-            lines.push_back(currentLine);
-            currentLine = words[i];
-        }
-    }
-    
-    if (!currentLine.empty()) {
-        lines.push_back(currentLine);
-    }
-    
-    return lines;
-}
-
+// HighResMatrixWidget draw moved to ui.cpp
+#if 0 // Legacy implementation superseded by src/transmutation/ui.cpp
 void HighResMatrixWidget::drawMatrix(const DrawArgs& args) {
-    // Chord name preview display
-    if (module && !module->displayChordName.empty() && module->displaySymbolId != -999) {
-        if (module->spookyTvMode) {
-            // Spooky 80s horror movie TV preview mode
-        nvgSave(args.vg);
-        
-        // Calculate VHS tape warping effects based on time - even slower, more wobbly (more languid)
-        float time = APP->engine->getFrame() * 0.0009f; // Slower base clock for spooky preview
-        float waveA = sinf(time * 0.30f) * 0.10f + sinf(time * 0.50f) * 0.06f;
+    float time = APP->engine->getFrame() * 0.0009f;
+    float waveA = sinf(time * 0.30f) * 0.10f + sinf(time * 0.50f) * 0.06f;
         float waveB = cosf(time * 0.25f) * 0.08f + cosf(time * 0.45f) * 0.05f;
         float tapeWarp = sinf(time * 0.15f) * 0.04f + cosf(time * 0.22f) * 0.025f;
         float deepWarp = sinf(time * 0.09f) * 0.06f;
@@ -1550,31 +1037,10 @@ void HighResMatrixWidget::drawMatrix(const DrawArgs& args) {
         // Set up clipping to keep all effects within the rounded rectangle
         nvgSave(args.vg);
         nvgIntersectScissor(args.vg, 0, 0, box.size.x, box.size.y);
-        
-        // Slow, wobbly scanlines for spooky preview (thinner, fewer, with vertical wobble)
-        for (int i = 0; i < box.size.y; i += 3) {
-            float wobbleY = sinf(time * 0.35f + i * 0.02f) * 0.9f; // gentler, slower vertical wobble
-            float yPos = i + wobbleY;
-            float warpOffset = sinf((i * 0.009f) + time * 0.45f) * 2.0f;
-            warpOffset += cosf((i * 0.005f) + time * 0.30f) * 1.2f;
-            warpOffset += deepWarp * sinf(i * 0.015f) * 1.0f;
-            nvgBeginPath(args.vg);
-            nvgRect(args.vg, warpOffset, yPos, box.size.x, 0.8f);
-            nvgFillColor(args.vg, nvgRGBA(0, 0, 0, 10 + (int)(waveB * 12)));
-            nvgFill(args.vg);
-        }
-        
-        // Softer distortion bands
-        for (int i = 0; i < 2; i++) {
-            float distortionY = fmodf(time * 1.8f + i * 160, box.size.y); // slower travel
-            float wobble = sinf(time * 0.5f + i) * 0.5f;
-            float warpWidth = sinf(time * 0.3f + i) * 1.4f + deepWarp * 2.0f + wobble;
-            float bandHeight = 1 + sinf(time * 0.28f + i) * 0.35f;
-            nvgBeginPath(args.vg);
-            nvgRect(args.vg, warpWidth, distortionY, box.size.x, bandHeight);
-            nvgFillColor(args.vg, nvgRGBA(70 + (int)(waveA * 24), 90 + (int)(waveB * 24), 110, 20 + (int)(tapeWarp * 80)));
-            nvgFill(args.vg);
-        }
+        // Use shared spooky overlay helpers
+        st::VhsState s { time, waveA, waveB, tapeWarp, deepWarp };
+        st::drawSpookyScanlines(args, box.size.x, box.size.y, s, /*smallVariant*/ false);
+        st::drawSpookyDistortionBands(args, box.size.x, box.size.y, s, /*smallVariant*/ false);
         
         nvgRestore(args.vg); // End clipping
         
@@ -1652,31 +1118,7 @@ void HighResMatrixWidget::drawMatrix(const DrawArgs& args) {
         // Text position with slow, intense VHS warping movement, closer to symbol
         float baseTextX = box.size.x / 2 + sin(time * 1.1f) * 0.6f + tapeWarp * 2.5f + deepWarp * 2.0f;
         
-        // Main text with ultra slowly cycling Shapetaker colors
-        int textR, textG, textB;
-        float textColorCycle = sin(time * 0.25f + 1.5f) * 0.5f + 0.5f; // Even slower text color transitions
-        
-        if (textColorCycle < 0.25f) {
-            // Bright teal with VHS warping
-            textR = 0;
-            textG = 255;
-            textB = 200 + (int)(waveA * 40);
-        } else if (textColorCycle < 0.5f) {
-            // Bright purple with VHS warping
-            textR = 220 + (int)(waveB * 25);
-            textG = 60 + (int)(tapeWarp * 100);
-            textB = 255;
-        } else if (textColorCycle < 0.75f) {
-            // Bright muted green with VHS warping
-            textR = 120 + (int)(waveA * 40);
-            textG = 200 + (int)(waveB * 35);
-            textB = 140 + (int)(tapeWarp * 80);
-        } else {
-            // Bright gray-white with VHS warping
-            textR = 220 + (int)(waveA * 25);
-            textG = 220 + (int)(waveB * 25);
-            textB = 240 + (int)(tapeWarp * 15);
-        }
+        // Text color is a consistent warm ink; remove unused cycling variables
         
         // Render each line of text with all effects
         for (size_t i = 0; i < textLines.size(); i++) {
@@ -1834,8 +1276,13 @@ void HighResMatrixWidget::drawMatrix(const DrawArgs& args) {
     }
     
     // Determine grid based on module setting
-    int cols = (module && module->gridSteps == 32) ? 6 : MATRIX_COLS;
-    int rows = (module && module->gridSteps == 32) ? 6 : 8;
+    int cols = 8;
+    int rows = 8;
+    if (module) {
+        if (module->gridSteps == 16) { cols = rows = 4; }
+        else if (module->gridSteps == 32) { cols = rows = 6; }
+        else { cols = rows = 8; }
+    }
 
     // Add a slight inner padding so edge circles aren't crowded by the bezel
     float pad = std::max(2.0f, std::min(box.size.x, box.size.y) * 0.02f);
@@ -1851,9 +1298,15 @@ void HighResMatrixWidget::drawMatrix(const DrawArgs& args) {
         for (int x = 0; x < cols; x++) {
             // Map grid cell to step index; for 32‑step 6x6, center the last 2 steps
             int stepIndex = -1;
-            if (module && module->gridSteps == 32) {
-                if (y < 5) stepIndex = y * 6 + x;
-                else if (y == 5 && x >= 2 && x <= 3) stepIndex = 30 + (x - 2);
+            if (module) {
+                if (module->gridSteps == 16) {
+                    stepIndex = y * 4 + x;
+                } else if (module->gridSteps == 32) {
+                    if (y < 5) stepIndex = y * 6 + x;
+                    else if (y == 5 && x >= 2 && x <= 3) stepIndex = 30 + (x - 2);
+                } else {
+                    stepIndex = y * cols + x;
+                }
             } else {
                 stepIndex = y * cols + x;
             }
@@ -1902,9 +1355,13 @@ void HighResMatrixWidget::drawMatrix(const DrawArgs& args) {
             // Draw high-resolution cell background
             nvgBeginPath(args.vg);
             
-            // Use larger, smoother circles; set 32‑step size to match 64‑step visual spacing
-            // For equal on-screen gap: gap64 = 0.16*(W/8) = 0.02*W; with 6 cols, radius factor ≈ 0.44
-            float radiusFactor = (module && module->gridSteps == 32) ? 0.44f : 0.42f;
+            // Use larger, smoother circles; adjust per grid density
+            // For equal on-screen gap: tune radius per grid (8:0.42, 6:0.44, 4:0.40)
+            float radiusFactor = 0.42f;
+            if (module) {
+                if (module->gridSteps == 32) radiusFactor = 0.44f;
+                else if (module->gridSteps == 16) radiusFactor = 0.40f;
+            }
             float cellRadius = std::min(cellWidth, cellHeight) * radiusFactor;
             nvgCircle(args.vg, cellCenter.x, cellCenter.y, cellRadius);
             
@@ -1984,10 +1441,7 @@ void HighResMatrixWidget::drawMatrix(const DrawArgs& args) {
             
             // Draw alchemical symbols for both sequences when present
             if (hasA && hasB) {
-                // Emphasis based on edit mode
-                float aAlpha = 0.9f, bAlpha = 0.9f;
-                if (module->editModeA && !module->editModeB) { aAlpha = 1.0f; bAlpha = 0.7f; }
-                if (module->editModeB && !module->editModeA) { bAlpha = 1.0f; aAlpha = 0.7f; }
+                // Emphasis based on edit mode (visual handled by placement/scale)
                 NVGcolor ink = nvgRGBA(232, 224, 200, 255);
                 // Nudge minis toward center to avoid hugging the circle edge
                 float off = std::min(cellWidth, cellHeight) * 0.14f;
@@ -1996,7 +1450,7 @@ void HighResMatrixWidget::drawMatrix(const DrawArgs& args) {
                 nvgSave(args.vg);
                 nvgTranslate(args.vg, cellCenter.x - off, cellCenter.y - off);
                 nvgScale(args.vg, scale, scale);
-                if (aSymbolId >= 0 && aSymbolId < 40) st::drawAlchemicalSymbol(args, Vec(0, 0), aSymbolId, ink, 6.5f, 1.0f);
+                if (st::isValidSymbolId(aSymbolId)) st::drawAlchemicalSymbol(args, Vec(0, 0), aSymbolId, ink, 6.5f, 1.0f);
                 else if (aSymbolId == -1) st::drawRestSymbol(args, Vec(0, 0));
                 else if (aSymbolId == -2) st::drawTieSymbol(args, Vec(0, 0));
                 nvgRestore(args.vg);
@@ -2004,7 +1458,7 @@ void HighResMatrixWidget::drawMatrix(const DrawArgs& args) {
                 nvgSave(args.vg);
                 nvgTranslate(args.vg, cellCenter.x + off, cellCenter.y + off);
                 nvgScale(args.vg, scale, scale);
-                if (bSymbolId >= 0 && bSymbolId < 40) st::drawAlchemicalSymbol(args, Vec(0, 0), bSymbolId, ink, 6.5f, 1.0f);
+                if (st::isValidSymbolId(bSymbolId)) st::drawAlchemicalSymbol(args, Vec(0, 0), bSymbolId, ink, 6.5f, 1.0f);
                 else if (bSymbolId == -1) st::drawRestSymbol(args, Vec(0, 0));
                 else if (bSymbolId == -2) st::drawTieSymbol(args, Vec(0, 0));
                 nvgRestore(args.vg);
@@ -2023,7 +1477,7 @@ void HighResMatrixWidget::drawMatrix(const DrawArgs& args) {
             } else {
                 // Single occupancy fallback (centered)
                 int symbolId = hasA ? aSymbolId : (hasB ? bSymbolId : -999);
-                if (symbolId >= 0 && symbolId < 40) {
+                if (st::isValidSymbolId(symbolId)) {
                     NVGcolor ink = nvgRGBA(232, 224, 200, 255);
                     // Larger single-occupancy symbol for clarity
                     st::drawAlchemicalSymbol(args, cellCenter, symbolId, ink, 8.2f, 1.0f);
@@ -2153,11 +1607,12 @@ void HighResMatrixWidget::drawMatrix(const DrawArgs& args) {
             glowColor = nvgRGBA(180, 0, 255, pulse * 150);
         }
         
-        // Closer, thinner glow
+        // Tighter, inner-edge glow (hug the screen bounds)
         nvgBeginPath(args.vg);
-        nvgRoundedRect(args.vg, -3, -3, box.size.x + 6, box.size.y + 6, 8);
+        // Inset by 0.5px so the glow sits right at the inner edge
+        nvgRoundedRect(args.vg, 0.5f, 0.5f, box.size.x - 1.0f, box.size.y - 1.0f, 7.5f);
         nvgStrokeColor(args.vg, glowColor);
-        nvgStrokeWidth(args.vg, 2.0f);
+        nvgStrokeWidth(args.vg, 1.25f);
         nvgStroke(args.vg);
         
         nvgRestore(args.vg);
@@ -2165,62 +1620,34 @@ void HighResMatrixWidget::drawMatrix(const DrawArgs& args) {
 
     // Vintage screen overlay: vignette + patina + faint micro-scratches (subtle, on top of bezel)
     {
-        // Clip to screen bounds
         nvgSave(args.vg);
-        nvgBeginPath(args.vg);
-        nvgRoundedRect(args.vg, 0, 0, box.size.x, box.size.y, 8.0f);
-        nvgPathWinding(args.vg, NVG_CW);
-        // Vignette
-        NVGpaint vignette = nvgRadialGradient(
-            args.vg,
-            box.size.x * 0.5f, box.size.y * 0.5f,
-            std::min(box.size.x, box.size.y) * 0.35f,
-            std::min(box.size.x, box.size.y) * 0.8f,
-            nvgRGBA(0, 0, 0, 0), nvgRGBA(0, 0, 0, 26)
+        st::drawVignettePatinaScratches(
+            args,
+            0, 0, box.size.x, box.size.y, 8.0f,
+            /*vignetteAlpha*/ 26,
+            /*patinaStart*/ nvgRGBA(24, 30, 20, 10),
+            /*patinaEnd*/   nvgRGBA(50, 40, 22, 12),
+            /*scratchesAlpha*/ 8,
+            /*scratchStroke*/ 0.5f,
+            /*scratchCount*/ 3,
+            /*seed*/ 73321u
         );
-        nvgFillPaint(args.vg, vignette);
-        nvgFill(args.vg);
-        // Patina (diagonal tint)
-        NVGpaint patina = nvgLinearGradient(args.vg, 0, 0, box.size.x, box.size.y, nvgRGBA(24, 30, 20, 10), nvgRGBA(50, 40, 22, 12));
-        nvgBeginPath(args.vg);
-        nvgRoundedRect(args.vg, 1.0f, 1.0f, box.size.x - 2.0f, box.size.y - 2.0f, 7.0f);
-        nvgFillPaint(args.vg, patina);
-        nvgFill(args.vg);
-        // Micro scratches (shorter, fewer)
-        unsigned seed = 73321u;
-        auto rnd = [&]() {
-            seed ^= seed << 13; seed ^= seed >> 17; seed ^= seed << 5; return (seed & 0xFFFF) / 65535.f; };
-        nvgStrokeColor(args.vg, nvgRGBA(255, 255, 255, 8));
-        nvgStrokeWidth(args.vg, 0.5f);
-        for (int i = 0; i < 3; ++i) {
-            float x1 = rnd() * (box.size.x * 0.8f) + box.size.x * 0.1f;
-            float y1 = rnd() * (box.size.y * 0.8f) + box.size.y * 0.1f;
-            float dx = (rnd() - 0.5f) * (box.size.x * 0.08f);
-            float dy = (rnd() - 0.5f) * (box.size.y * 0.08f);
-            nvgBeginPath(args.vg);
-            nvgMoveTo(args.vg, x1, y1);
-            nvgLineTo(args.vg, x1 + dx, y1 + dy);
-            nvgStroke(args.vg);
-        }
         nvgRestore(args.vg);
     }
 
     nvgRestore(args.vg);
 }
+#endif // legacy drawMatrix
 
+#if 0 // Legacy helper superseded by src/transmutation/ui.cpp
 void HighResMatrixWidget::drawAlchemicalSymbol(const DrawArgs& args, Vec pos, int symbolId, NVGcolor color) {
-    nvgSave(args.vg);
-    nvgTranslate(args.vg, pos.x, pos.y);
-    
-    // Set drawing properties for high-resolution symbols
-    nvgStrokeColor(args.vg, color);
-    nvgFillColor(args.vg, color);
-    nvgStrokeWidth(args.vg, 1.0f); // Thinner stroke for lighter appearance
-    nvgLineCap(args.vg, NVG_ROUND);
-    nvgLineJoin(args.vg, NVG_ROUND);
-    
-    float size = 6.5f; // Slightly larger symbol size for better visibility
-    
+    // Delegate to shared utility to avoid duplicate switch logic
+    st::drawAlchemicalSymbol(args, pos, symbolId, color, 6.5f, 1.0f);
+}
+#endif
+
+/* removed legacy switch */
+/*
     switch (symbolId) {
         case 0: // Sol (Sun) - Circle with center dot (match original)
             nvgBeginPath(args.vg);
@@ -2797,1852 +2224,58 @@ void HighResMatrixWidget::drawAlchemicalSymbol(const DrawArgs& args, Vec pos, in
             }
             nvgStroke(args.vg);
             break;
+        }
+        
+        nvgRestore(args.vg);
     }
-    
-    nvgRestore(args.vg);
-}
+*/
 
+#if 0 // Legacy implementation superseded by src/transmutation/ui.cpp
 void HighResMatrixWidget::drawVoiceCount(const DrawArgs& args, Vec pos, int voiceCount, NVGcolor dotColor) {
     nvgSave(args.vg);
-    // Compute cell/circle radius to place dots near the edge
-    int cols = (module && module->gridSteps == 32) ? 6 : MATRIX_COLS;
-    int rows = (module && module->gridSteps == 32) ? 6 : 8;
+    // Compute ring radius based on current grid size
+    int cols = 8;
+    int rows = 8;
+    if (module) {
+        if (module->gridSteps == 16) { cols = rows = 4; }
+        else if (module->gridSteps == 32) { cols = rows = 6; }
+    }
     float cellWidth = box.size.x / cols;
     float cellHeight = box.size.y / rows;
-    // Match 64‑step absolute gap by using ≈0.44 for 32‑step
-    float radiusFactor = (module && module->gridSteps == 32) ? 0.44f : 0.42f;
+    float radiusFactor = 0.42f;
+    if (module) {
+        if (module->gridSteps == 32) radiusFactor = 0.44f;
+        else if (module->gridSteps == 16) radiusFactor = 0.40f;
+    }
     float circleR = std::min(cellWidth, cellHeight) * radiusFactor;
     float ringR = std::max(0.0f, circleR - 1.4f);
-
-    for (int i = 0; i < std::min(voiceCount, 6); i++) {
-        float angle = (float)i / 6.0f * 2.0f * M_PI - M_PI/2; // Start from top
-        float dotX = pos.x + cosf(angle) * ringR;
-        float dotY = pos.y + sinf(angle) * ringR;
-        nvgBeginPath(args.vg);
-        nvgFillColor(args.vg, dotColor);
-        nvgCircle(args.vg, dotX, dotY, 1.2f);
-        nvgFill(args.vg);
-    }
+    st::drawVoiceCountDots(args, pos, voiceCount, ringR, 1.2f, dotColor);
     nvgRestore(args.vg);
 }
+#endif // legacy drawVoiceCount
 
-Matrix8x8Widget::Matrix8x8Widget(Transmutation* module) : module(module) {
-    box.size = Vec(LED_SPACING * MATRIX_SIZE, LED_SPACING * MATRIX_SIZE);
-}
+ 
 
-void Matrix8x8Widget::onButton(const event::Button& e) {
-    if (e.action == GLFW_PRESS) {
-        Vec pos = e.pos;
-        int x = (int)(pos.x / LED_SPACING);
-        int y = (int)(pos.y / LED_SPACING);
-        
-        if (x >= 0 && x < MATRIX_SIZE && y >= 0 && y < MATRIX_SIZE) {
-            if (e.button == GLFW_MOUSE_BUTTON_LEFT) {
-                onMatrixClick(x, y);
-            } else if (e.button == GLFW_MOUSE_BUTTON_RIGHT) {
-                onMatrixRightClick(x, y);
-            }
-            e.consume(this);
-        }
-    }
-    Widget::onButton(e);
-}
+ 
 
-void Matrix8x8Widget::onMatrixClick(int x, int y) {
-    if (!module) return;
-    
-    int stepIndex = y * MATRIX_SIZE + x; // Convert 2D to 1D
-    if (stepIndex >= 64) return;
-    
-    // Only allow programming in edit mode
-    if (module->editModeA) {
-        programStep(module->sequenceA, stepIndex);
-    } else if (module->editModeB) {
-        programStep(module->sequenceB, stepIndex);
-    }
-}
+ 
 
-void Matrix8x8Widget::onMatrixRightClick(int x, int y) {
-    if (!module) return;
-    
-    int stepIndex = y * MATRIX_SIZE + x;
-    if (stepIndex >= 64) return;
-    
-    // Only allow voice count editing in edit mode and on steps with chords
-    if (module->editModeA && stepIndex < module->sequenceA.length) {
-        SequenceStep& step = module->sequenceA.steps[stepIndex];
-        if (step.chordIndex >= 0) {
-            // Cycle through voice counts 1-6
-            step.voiceCount = (step.voiceCount % 6) + 1;
-        }
-    } else if (module->editModeB && stepIndex < module->sequenceB.length) {
-        SequenceStep& step = module->sequenceB.steps[stepIndex];
-        if (step.chordIndex >= 0) {
-            // Cycle through voice counts 1-6
-            step.voiceCount = (step.voiceCount % 6) + 1;
-        }
-    }
-}
+ 
 
-void Matrix8x8Widget::programStep(Sequence& seq, int stepIndex) {
-    if (!module || stepIndex >= 64) return;
-    
-    SequenceStep& step = seq.steps[stepIndex];
-    
-    if (module->selectedSymbol >= 0 && module->selectedSymbol < 40 && 
-        module->symbolToChordMapping[module->selectedSymbol] >= 0) {
-        // Assign chord to step
-        step.chordIndex = module->selectedSymbol;
-        step.alchemySymbolId = module->selectedSymbol;
-        // Set default voice count based on chord's preferred voices
-        if (module->symbolToChordMapping[module->selectedSymbol] < (int)module->currentChordPack.chords.size()) {
-            const ChordData& chord = module->currentChordPack.chords[module->symbolToChordMapping[module->selectedSymbol]];
-            step.voiceCount = std::min(chord.preferredVoices, 6);
-        }
-    } else if (module->selectedSymbol == -1) {
-        // Rest
-        step.chordIndex = -1;
-        step.alchemySymbolId = -1;
-        step.voiceCount = 1;
-    } else if (module->selectedSymbol == -2) {
-        // Tie
-        step.chordIndex = -2;
-        step.alchemySymbolId = -2;
-        step.voiceCount = 1;
-    }
-}
+ 
 
-void Matrix8x8Widget::drawLayer(const DrawArgs& args, int layer) {
-    if (layer == 1) {
-        drawMatrix(args);
-    }
-    Widget::drawLayer(args, layer);
-}
+ 
 
-void Matrix8x8Widget::drawMatrix(const DrawArgs& args) {
-    // Spooky 80s horror movie TV preview mode (8x8 version)
-    if (module && !module->displayChordName.empty() && module->displaySymbolId != -999) {
-        nvgSave(args.vg);
-        
-        // Calculate VHS tape warping effects based on time - ultra slow and warped
-        float time = APP->engine->getFrame() * 0.0009f; // slower spooky timing (8x8)
-        float waveA = sinf(time * 0.30f) * 0.10f + sinf(time * 0.50f) * 0.06f;
-        float waveB = cosf(time * 0.25f) * 0.08f + cosf(time * 0.45f) * 0.05f;
-        float tapeWarp = sinf(time * 0.15f) * 0.04f + cosf(time * 0.22f) * 0.025f;
-        float deepWarp = sinf(time * 0.09f) * 0.06f;
-        
-        float matrixSize = MATRIX_SIZE * LED_SPACING;
-        
-        // Dark VHS horror movie background with slight blue tint and warping (8x8 version)
-        nvgBeginPath(args.vg);
-        nvgRoundedRect(args.vg, 0, 0, matrixSize, matrixSize, 8);
-        int bgBrightness = 8 + (int)(waveA * 8); // Slower brightness variation
-        nvgFillColor(args.vg, nvgRGBA(bgBrightness, bgBrightness * 0.8f, bgBrightness * 1.3f, 255));
-        nvgFill(args.vg);
-
-        // Bezel for 8x8 view
-        {
-            float rOuter = 8.0f;
-            float inset = 2.0f;
-            float rInner = std::max(0.0f, rOuter - 2.0f);
-
-            // Outer border
-            nvgBeginPath(args.vg);
-            nvgRoundedRect(args.vg, 0.5f, 0.5f, matrixSize - 1.0f, matrixSize - 1.0f, rOuter);
-            nvgStrokeColor(args.vg, nvgRGBA(10, 10, 14, 220));
-            nvgStrokeWidth(args.vg, 1.0f);
-            nvgStroke(args.vg);
-
-            // Inner shadow ring using box gradient
-            NVGpaint innerShadow = nvgBoxGradient(
-                args.vg,
-                inset, inset,
-                matrixSize - inset * 2.0f,
-                matrixSize - inset * 2.0f,
-                rInner, 6.0f,
-                nvgRGBA(0, 0, 0, 60),
-                nvgRGBA(0, 0, 0, 0)
-            );
-            nvgBeginPath(args.vg);
-            // Outer path of ring
-            nvgRoundedRect(args.vg, inset - 1.0f, inset - 1.0f, matrixSize - (inset - 1.0f) * 2.0f, matrixSize - (inset - 1.0f) * 2.0f, rInner + 1.0f);
-            // Inner hole
-            nvgRoundedRect(args.vg, inset + 1.0f, inset + 1.0f, matrixSize - (inset + 1.0f) * 2.0f, matrixSize - (inset + 1.0f) * 2.0f, std::max(0.0f, rInner - 1.0f));
-            nvgPathWinding(args.vg, NVG_HOLE);
-            nvgFillPaint(args.vg, innerShadow);
-            nvgFill(args.vg);
-
-            // Top highlight fade
-            nvgSave(args.vg);
-            nvgScissor(args.vg, 0, 0, matrixSize, std::min(10.0f, matrixSize));
-            NVGpaint topHi = nvgLinearGradient(args.vg, 0, 0, 0, 10.0f, nvgRGBA(255, 255, 255, 24), nvgRGBA(255, 255, 255, 0));
-            nvgBeginPath(args.vg);
-            nvgRoundedRect(args.vg, inset + 0.5f, inset + 0.5f, matrixSize - (inset + 1.0f), 8.0f, rInner);
-            nvgFillPaint(args.vg, topHi);
-            nvgFill(args.vg);
-            nvgRestore(args.vg);
-
-            // Bottom shadow fade
-            nvgSave(args.vg);
-            nvgScissor(args.vg, 0, matrixSize - std::min(10.0f, matrixSize), matrixSize, std::min(10.0f, matrixSize));
-            NVGpaint bottomShadow = nvgLinearGradient(args.vg, 0, matrixSize, 0, matrixSize - 10.0f, nvgRGBA(0, 0, 0, 40), nvgRGBA(0, 0, 0, 0));
-            nvgBeginPath(args.vg);
-            nvgRoundedRect(args.vg, inset + 0.5f, matrixSize - 8.5f, matrixSize - (inset + 1.0f), 8.0f, rInner);
-            nvgFillPaint(args.vg, bottomShadow);
-            nvgFill(args.vg);
-            nvgRestore(args.vg);
-
-            // Inner lip stroke
-            nvgBeginPath(args.vg);
-            nvgRoundedRect(args.vg, inset + 1.0f, inset + 1.0f, matrixSize - (inset + 1.0f) * 2.0f, matrixSize - (inset + 1.0f) * 2.0f, std::max(0.0f, rInner - 1.0f));
-            nvgStrokeColor(args.vg, nvgRGBA(255, 255, 255, 30));
-            nvgStrokeWidth(args.vg, 0.8f);
-            nvgStroke(args.vg);
-
-            // Left edge inner highlight (8x8)
-            nvgBeginPath(args.vg);
-            nvgRoundedRect(args.vg, inset - 1.0f, inset - 1.0f, matrixSize - (inset - 1.0f) * 2.0f, matrixSize - (inset - 1.0f) * 2.0f, rInner + 1.0f);
-            nvgRoundedRect(args.vg, inset + 1.0f, inset + 1.0f, matrixSize - (inset + 1.0f) * 2.0f, matrixSize - (inset + 1.0f) * 2.0f, std::max(0.0f, rInner - 1.0f));
-            nvgPathWinding(args.vg, NVG_HOLE);
-            NVGpaint leftHi8 = nvgLinearGradient(args.vg, inset - 1.0f, 0, inset + 8.0f, 0, nvgRGBA(255, 255, 255, 22), nvgRGBA(255, 255, 255, 0));
-            nvgFillPaint(args.vg, leftHi8);
-            nvgFill(args.vg);
-            // Right edge inner highlight (8x8)
-            nvgBeginPath(args.vg);
-            nvgRoundedRect(args.vg, inset - 1.0f, inset - 1.0f, matrixSize - (inset - 1.0f) * 2.0f, matrixSize - (inset - 1.0f) * 2.0f, rInner + 1.0f);
-            nvgRoundedRect(args.vg, inset + 1.0f, inset + 1.0f, matrixSize - (inset + 1.0f) * 2.0f, matrixSize - (inset + 1.0f) * 2.0f, std::max(0.0f, rInner - 1.0f));
-            nvgPathWinding(args.vg, NVG_HOLE);
-            NVGpaint rightHi8 = nvgLinearGradient(args.vg, matrixSize - (inset - 1.0f), 0, matrixSize - (inset + 8.0f), 0, nvgRGBA(255, 255, 255, 14), nvgRGBA(255, 255, 255, 0));
-            nvgFillPaint(args.vg, rightHi8);
-            nvgFill(args.vg);
-        }
-        
-        // Set up clipping to keep all effects within the rounded rectangle (8x8 version)
-        nvgSave(args.vg);
-        nvgIntersectScissor(args.vg, 0, 0, matrixSize, matrixSize);
-        
-        // Softer, wobbly scanlines (8x8)
-        for (int i = 0; i < matrixSize; i += 3) {
-            float wobbleY = sinf(time * 0.35f + i * 0.025f) * 0.7f;
-            float yPos = i + wobbleY;
-            float warpOffset = sinf((i * 0.015f) + time * 0.45f) * 1.4f;
-            warpOffset += cosf((i * 0.009f) + time * 0.30f) * 0.9f;
-            warpOffset += deepWarp * sinf(i * 0.03f) * 0.9f;
-            nvgBeginPath(args.vg);
-            nvgRect(args.vg, warpOffset, yPos, matrixSize, 0.8f);
-            nvgFillColor(args.vg, nvgRGBA(0, 0, 0, 10 + (int)(waveB * 10)));
-            nvgFill(args.vg);
-        }
-        
-        // Softer distortion bands (8x8)
-        for (int i = 0; i < 2; i++) {
-            float distortionY = fmodf(time * 1.4f + i * 100, matrixSize);
-            float wobble = sinf(time * 0.5f + i) * 0.45f;
-            float warpWidth = sinf(time * 0.35f + i) * 1.2f + deepWarp * 1.6f + wobble;
-            float bandHeight = 1 + sinf(time * 0.28f + i) * 0.32f;
-            nvgBeginPath(args.vg);
-            nvgRect(args.vg, warpWidth, distortionY, matrixSize, bandHeight);
-            nvgFillColor(args.vg, nvgRGBA(70 + (int)(waveA * 22), 90 + (int)(waveB * 22), 110, 18 + (int)(tapeWarp * 70)));
-            nvgFill(args.vg);
-        }
-        
-        nvgRestore(args.vg); // End clipping (8x8 version)
-        
-        // Draw the symbol with Shapetaker colors and VHS warping (8x8 version)
-        nvgSave(args.vg);
-        float shakeX = sinf(time * 0.50f) * 0.45f + tapeWarp * 1.6f + deepWarp * 1.2f; // slower wobble
-        float shakeY = cosf(time * 0.38f) * 0.32f + waveA * 1.0f + waveB * 0.7f;
-        nvgTranslate(args.vg, matrixSize / 2 + shakeX, matrixSize * 0.40f + shakeY); // More centered vertically
-        nvgScale(args.vg, 3.0f, 3.0f); // Much bigger and more pixelated for 8x8
-        
-        // Cycle through Shapetaker colors with ultra slow VHS color shift
-        float colorCycle = sin(time * 0.3f) * 0.5f + 0.5f; // Even slower color transitions like old tape
-        int symbolR, symbolG, symbolB;
-        
-        if (colorCycle < 0.25f) {
-            // Teal with VHS warping
-            symbolR = 0;
-            symbolG = 180 + (int)(waveA * 50);
-            symbolB = 180 + (int)(waveB * 50);
-        } else if (colorCycle < 0.5f) {
-            // Purple with VHS warping  
-            symbolR = 180 + (int)(waveA * 50);
-            symbolG = 0;
-            symbolB = 255;
-        } else if (colorCycle < 0.75f) {
-            // Muted green with VHS warping
-            symbolR = 60 + (int)(waveB * 30);
-            symbolG = 120 + (int)(waveA * 40);
-            symbolB = 80 + (int)(tapeWarp * 80);
-        } else {
-            // Gray with VHS warping
-            symbolR = 140 + (int)(waveA * 40);
-            symbolG = 140 + (int)(waveB * 40);
-            symbolB = 150 + (int)(tapeWarp * 60);
-        }
-        
-        // Draw symbol with intense glow layers
-        for (int glow = 0; glow < 6; glow++) {
-            float glowAlpha = 80 / (glow + 1);
-            float glowOffset = glow * 0.8f;
-            
-            // Create blur effect with multiple offset draws
-            for (int blur = 0; blur < 2; blur++) {
-                float blurOffset = blur * 0.3f;
-                st::drawAlchemicalSymbol(args, Vec(glowOffset + blurOffset, glowOffset + blurOffset), module->displaySymbolId, nvgRGBA(symbolR * 0.9f, symbolG * 0.9f, symbolB * 0.9f, glowAlpha));
-                st::drawAlchemicalSymbol(args, Vec(-glowOffset + blurOffset, glowOffset - blurOffset), module->displaySymbolId, nvgRGBA(symbolR * 0.9f, symbolG * 0.9f, symbolB * 0.9f, glowAlpha));
-                st::drawAlchemicalSymbol(args, Vec(glowOffset - blurOffset, -glowOffset + blurOffset), module->displaySymbolId, nvgRGBA(symbolR * 0.9f, symbolG * 0.9f, symbolB * 0.9f, glowAlpha));
-                st::drawAlchemicalSymbol(args, Vec(-glowOffset - blurOffset, -glowOffset - blurOffset), module->displaySymbolId, nvgRGBA(symbolR * 0.9f, symbolG * 0.9f, symbolB * 0.9f, glowAlpha));
-            }
-        }
-        
-        // Main symbol with bright core (positioned to align with glow effects at center)
-        st::drawAlchemicalSymbol(args, Vec(0, 0), module->displaySymbolId, nvgRGBA(symbolR, symbolG, symbolB, 255));
-        
-        // Extra bright white core for VHS warping intensity
-        st::drawAlchemicalSymbol(args, Vec(0, 0), module->displaySymbolId, nvgRGBA(255, 255, 255, 50 + (int)(waveA * 30)));
-        nvgRestore(args.vg);
-        
-        // Set up vintage text for chord name (8x8)
-        nvgFontSize(args.vg, 20.0f);
-        nvgFontFaceId(args.vg, APP->window->uiFont->handle);
-        nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-        
-        // Text position with slow, intense VHS warping movement, positioned lower for better separation (8x8 version)
-        float textX = matrixSize / 2 + sin(time * 1.0f) * 0.5f + tapeWarp * 2.0f + deepWarp * 1.5f;
-        float textY = matrixSize * 0.75f + cos(time * 0.8f) * 0.3f + waveB * 1.0f + waveA * 0.6f; // More warped movement
-        
-        // Multiple chunky shadows for extreme pixelated horror effect
-        nvgFillColor(args.vg, nvgRGBA(40, 40, 50, 220)); // Dark gray shadow
-        // Soft single shadow
-        nvgFillColor(args.vg, nvgRGBA(0, 0, 0, 140));
-        nvgText(args.vg, textX + 1.5f, textY + 1.5f, module->displayChordName.c_str(), NULL);
-        
-        // Main text with ultra slowly cycling Shapetaker colors
-        int textR, textG, textB;
-        float textColorCycle = sin(time * 0.25f + 1.5f) * 0.5f + 0.5f; // Even slower text color transitions
-        
-        if (textColorCycle < 0.25f) {
-            // Bright teal with VHS warping
-            textR = 0;
-            textG = 255;
-            textB = 200 + (int)(waveA * 40);
-        } else if (textColorCycle < 0.5f) {
-            // Bright purple with VHS warping
-            textR = 220 + (int)(waveB * 25);
-            textG = 60 + (int)(tapeWarp * 100);
-            textB = 255;
-        } else if (textColorCycle < 0.75f) {
-            // Bright muted green with VHS warping
-            textR = 120 + (int)(waveA * 40);
-            textG = 200 + (int)(waveB * 35);
-            textB = 140 + (int)(tapeWarp * 80);
-        } else {
-            // Bright gray-white with VHS warping
-            textR = 220 + (int)(waveA * 25);
-            textG = 220 + (int)(waveB * 25);
-            textB = 240 + (int)(tapeWarp * 15);
-        }
-        
-        // Fuzzy halo (low-alpha offsets) for a softer, vintage CRT look
-        NVGcolor inkFuzz = nvgRGBA(232, 224, 200, 110);
-        const float fx2[8] = {  0.9f, -0.9f,  0.9f, -0.9f,  0.6f, -0.6f,  0.0f,  0.0f };
-        const float fy2[8] = {  0.9f,  0.9f, -0.9f, -0.9f,  0.0f,  0.0f,  0.6f, -0.6f };
-        for (int k = 0; k < 8; ++k) {
-            nvgFillColor(args.vg, inkFuzz);
-            nvgText(args.vg, textX + fx2[k], textY + fy2[k], module->displayChordName.c_str(), NULL);
-        }
-        // Warm ink
-        nvgFillColor(args.vg, nvgRGBA(232, 224, 200, 240));
-        nvgText(args.vg, textX, textY, module->displayChordName.c_str(), NULL);
-        
-        nvgRestore(args.vg);
-        return; // Skip normal LED matrix drawing
-    }
-    
-    for (int x = 0; x < MATRIX_SIZE; x++) {
-        for (int y = 0; y < MATRIX_SIZE; y++) {
-            Vec ledPos = Vec(x * LED_SPACING + LED_SPACING/2, y * LED_SPACING + LED_SPACING/2);
-            int stepIndex = y * MATRIX_SIZE + x;
-            
-            // Get step data from both sequences
-            bool hasA = false, hasB = false;
-            bool playheadA = false, playheadB = false;
-            int symbolId = -999; // Default to "no symbol" - different from REST (-1)
-            
-            if (module && stepIndex < 64) {
-                // Check if this step is within sequence lengths (for LED color)
-                if (stepIndex < module->sequenceA.length) {
-                    hasA = true;
-                    // Only set symbol if step has actual data
-                    if (module->sequenceA.steps[stepIndex].chordIndex >= -2) {
-                        symbolId = module->sequenceA.steps[stepIndex].alchemySymbolId;
-                    }
-                }
-                
-                if (stepIndex < module->sequenceB.length) {
-                    hasB = true;
-                    // Only set symbol if step has actual data and no symbol from A
-                    if (symbolId == -999 && module->sequenceB.steps[stepIndex].chordIndex >= -2) {
-                        symbolId = module->sequenceB.steps[stepIndex].alchemySymbolId;
-                    }
-                }
-                
-                // Check for playhead or edit-cursor position
-                bool editCursorA = (module->editModeA && module->sequenceA.currentStep == stepIndex);
-                bool editCursorB = (module->editModeB && module->sequenceB.currentStep == stepIndex);
-                playheadA = ((module->sequenceA.running && module->sequenceA.currentStep == stepIndex) || editCursorA);
-                playheadB = ((module->sequenceB.running && module->sequenceB.currentStep == stepIndex) || editCursorB);
-                // Do not gate playheads by edit mode; running playheads always light
-            }
-            
-            // Draw LED background
-            nvgBeginPath(args.vg);
-            nvgCircle(args.vg, ledPos.x, ledPos.y, LED_SIZE/2);
-            
-            // LED color logic with edit mode feedback
-            NVGcolor ledColor = nvgRGBA(20, 20, 20, 255); // Default off
-            
-            // Check for edit mode highlighting
-            bool editModeHighlight = false;
-            if (module && ((module->editModeA && hasA) || (module->editModeB && hasB))) {
-                editModeHighlight = true;
-            }
-            
-            if (playheadA && playheadB) {
-                // Both playheads - mix colors
-                ledColor = nvgRGBA(90, 127, 217, 255); // Teal + Purple mix
-            } else if (playheadA) {
-                ledColor = nvgRGBA(0, 255, 180, 255); // Bright teal
-            } else if (playheadB) {
-                ledColor = nvgRGBA(180, 0, 255, 255); // Bright purple
-            } else if (editModeHighlight) {
-                // Edit mode - make editable steps more visible
-                if (hasA && module->editModeA) {
-                    ledColor = nvgRGBA(0, 200, 140, 200); // Brighter teal for editing
-                } else if (hasB && module->editModeB) {
-                    ledColor = nvgRGBA(140, 0, 200, 200); // Brighter purple for editing
-                }
-            } else if (hasA && hasB) {
-                // Both sequences have data - dim mix
-                ledColor = nvgRGBA(45, 63, 108, 255); // Dim mix
-            } else if (hasA) {
-                ledColor = nvgRGBA(0, 127, 90, 255); // Dim teal
-            } else if (hasB) {
-                ledColor = nvgRGBA(90, 0, 127, 255); // Dim purple
-            }
-            
-            // Add edit mode matrix border glow for empty steps, but do not override playhead highlight
-            if (module && (module->editModeA || module->editModeB)) {
-                // Subtle edit mode indication on empty steps
-                if (!hasA && !hasB && !(playheadA || playheadB)) {
-                    ledColor = nvgRGBA(40, 40, 60, 100); // Subtle highlight for programmable steps
-                }
-            }
-            
-            nvgFillColor(args.vg, ledColor);
-            nvgFill(args.vg);
-            
-            // Draw alchemical symbol if assigned (but not if it's the default "no symbol" value)
-            if (symbolId >= 0 && symbolId < 40) {
-                // Vintage ink color for symbols on LEDs
-                NVGcolor ink = nvgRGBA(232, 224, 200, 255);
-                st::drawAlchemicalSymbol(args, ledPos, symbolId, ink);
-            } else if (symbolId == -1) {
-                // Draw rest symbol (only when explicitly programmed)
-                st::drawRestSymbol(args, ledPos);
-            } else if (symbolId == -2) {
-                // Draw tie symbol
-                st::drawTieSymbol(args, ledPos);
-            }
-            // symbolId == -999 means empty step - draw nothing
-            
-            // Draw voice count indicators
-            if (module && stepIndex < 64 && (hasA || hasB)) {
-                int voiceCount = 1;
-                if (hasA && stepIndex < module->sequenceA.length) {
-                    voiceCount = module->sequenceA.steps[stepIndex].voiceCount;
-                } else if (hasB && stepIndex < module->sequenceB.length) {
-                    voiceCount = module->sequenceB.steps[stepIndex].voiceCount;
-                }
-                
-                // Only draw voice dots for actual chords (not REST/TIE)
-                if (symbolId >= 0 && symbolId < 40) {
-                    // Use same color logic as symbols - black when LED is lit, white otherwise
-                    NVGcolor dotColor = nvgRGBA(255, 255, 255, 255); // Default white
-                    if (playheadA || playheadB) {
-                        // LED is lit - make dots black for contrast
-                        dotColor = nvgRGBA(0, 0, 0, 255); // Black
-                    }
-                    drawVoiceCount(args, ledPos, voiceCount, dotColor);
-                }
-            }
-            
-            // Playhead ring overlay for visibility
-            if (playheadA || playheadB) {
-                float ringR = LED_SIZE * 0.5f + 1.0f;
-                if (playheadA && playheadB) {
-                    nvgBeginPath(args.vg);
-                    nvgArc(args.vg, ledPos.x, ledPos.y, ringR, -M_PI, 0, NVG_CW);
-                    nvgStrokeColor(args.vg, nvgRGBA(0, 255, 180, 220));
-                    nvgStrokeWidth(args.vg, 1.5f);
-                    nvgStroke(args.vg);
-                    nvgBeginPath(args.vg);
-                    nvgArc(args.vg, ledPos.x, ledPos.y, ringR, 0, M_PI, NVG_CW);
-                    nvgStrokeColor(args.vg, nvgRGBA(180, 0, 255, 220));
-                    nvgStrokeWidth(args.vg, 1.5f);
-                    nvgStroke(args.vg);
-                } else if (playheadA) {
-                    nvgBeginPath(args.vg);
-                    nvgCircle(args.vg, ledPos.x, ledPos.y, ringR);
-                    nvgStrokeColor(args.vg, nvgRGBA(0, 255, 180, 220));
-                    nvgStrokeWidth(args.vg, 1.5f);
-                    nvgStroke(args.vg);
-                } else if (playheadB) {
-                    nvgBeginPath(args.vg);
-                    nvgCircle(args.vg, ledPos.x, ledPos.y, ringR);
-                    nvgStrokeColor(args.vg, nvgRGBA(180, 0, 255, 220));
-                    nvgStrokeWidth(args.vg, 1.5f);
-                    nvgStroke(args.vg);
-                }
-            }
-
-            // LED border
-            nvgStrokeColor(args.vg, nvgRGBA(80, 80, 80, 255));
-            nvgStrokeWidth(args.vg, 1.0f);
-            nvgStroke(args.vg);
-        }
-    }
-    
-    // Draw edit mode matrix border glow
-    if (module && (module->editModeA || module->editModeB)) {
-        nvgSave(args.vg);
-        
-        // Set up glow effect
-        nvgGlobalCompositeOperation(args.vg, NVG_LIGHTER);
-        
-        // Draw animated border glow
-        float time = system::getTime();
-        float pulse = 0.3f + 0.2f * sin(time * 3.0f);
-        
-        NVGcolor glowColor;
-        if (module->editModeA) {
-            glowColor = nvgRGBA(0, 255, 180, pulse * 100);
-        } else {
-            glowColor = nvgRGBA(180, 0, 255, pulse * 100);
-        }
-        
-        // Draw closer, thinner glow border
-        nvgBeginPath(args.vg);
-        nvgRoundedRect(args.vg, -2, -2, 
-                      MATRIX_SIZE * LED_SPACING + 4, 
-                      MATRIX_SIZE * LED_SPACING + 4, 4);
-        nvgStrokeColor(args.vg, glowColor);
-        nvgStrokeWidth(args.vg, 1.5f);
-        nvgStroke(args.vg);
-        
-            nvgRestore(args.vg);
-        }
-
-        // Vintage overlay for 8x8
-        {
-            float matrixSize = MATRIX_SIZE * LED_SPACING;
-            nvgSave(args.vg);
-            nvgBeginPath(args.vg);
-            nvgRoundedRect(args.vg, 0, 0, matrixSize, matrixSize, 8);
-            nvgPathWinding(args.vg, NVG_CW);
-            NVGpaint vignette = nvgRadialGradient(args.vg, matrixSize * 0.5f, matrixSize * 0.5f, matrixSize * 0.35f, matrixSize * 0.8f, nvgRGBA(0, 0, 0, 0), nvgRGBA(0, 0, 0, 24));
-            nvgFillPaint(args.vg, vignette);
-            nvgFill(args.vg);
-            NVGpaint patina = nvgLinearGradient(args.vg, 0, 0, matrixSize, matrixSize, nvgRGBA(24, 30, 20, 10), nvgRGBA(50, 40, 22, 12));
-            nvgBeginPath(args.vg);
-            nvgRoundedRect(args.vg, 1.0f, 1.0f, matrixSize - 2.0f, matrixSize - 2.0f, 7.0f);
-            nvgFillPaint(args.vg, patina);
-            nvgFill(args.vg);
-            // Scratches (shorter, fewer)
-            unsigned seed2 = 55831u;
-            auto rnd2 = [&]() { seed2 ^= seed2 << 13; seed2 ^= seed2 >> 17; seed2 ^= seed2 << 5; return (seed2 & 0xFFFF) / 65535.f; };
-            nvgStrokeColor(args.vg, nvgRGBA(255, 255, 255, 8));
-            nvgStrokeWidth(args.vg, 0.5f);
-            for (int i = 0; i < 2; ++i) {
-                float x1 = rnd2() * (matrixSize * 0.8f) + matrixSize * 0.1f;
-                float y1 = rnd2() * (matrixSize * 0.8f) + matrixSize * 0.1f;
-                float dx = (rnd2() - 0.5f) * (matrixSize * 0.08f);
-                float dy = (rnd2() - 0.5f) * (matrixSize * 0.08f);
-                nvgBeginPath(args.vg);
-                nvgMoveTo(args.vg, x1, y1);
-                nvgLineTo(args.vg, x1 + dx, y1 + dy);
-                nvgStroke(args.vg);
-            }
-            nvgRestore(args.vg);
-        }
-}
-
-void Matrix8x8Widget::drawAlchemicalSymbol(const DrawArgs& args, Vec pos, int symbolId, NVGcolor color) {
-    nvgSave(args.vg);
-    nvgTranslate(args.vg, pos.x, pos.y);
-    
-    // Set drawing properties - use the provided color for symbol
-    nvgStrokeColor(args.vg, color);
-    nvgFillColor(args.vg, color);
-    nvgStrokeWidth(args.vg, 1.2f); // Slightly thicker stroke for visibility
-    nvgLineCap(args.vg, NVG_ROUND);
-    nvgLineJoin(args.vg, NVG_ROUND);
-    
-    float size = 4.0f; // Bigger symbol size
-    
-    switch (symbolId) {
-        case 0: // Sol (Sun) - Circle with center dot
-            nvgBeginPath(args.vg);
-            nvgCircle(args.vg, 0, 0, size);
-            nvgStroke(args.vg);
-            nvgBeginPath(args.vg);
-            nvgCircle(args.vg, 0, 0, size * 0.3f);
-            nvgFill(args.vg);
-            break;
-            
-        case 1: // Luna (Moon) - Crescent
-            nvgBeginPath(args.vg);
-            nvgArc(args.vg, 0, 0, size, 0.3f * M_PI, 1.7f * M_PI, NVG_CW);
-            nvgStroke(args.vg);
-            break;
-            
-        case 2: // Mercury - Circle with horns and cross
-            nvgBeginPath(args.vg);
-            nvgCircle(args.vg, 0, -size * 0.3f, size * 0.4f);
-            nvgStroke(args.vg);
-            // Horns
-            nvgBeginPath(args.vg);
-            nvgMoveTo(args.vg, -size * 0.6f, -size * 0.8f);
-            nvgLineTo(args.vg, 0, -size * 0.6f);
-            nvgLineTo(args.vg, size * 0.6f, -size * 0.8f);
-            nvgStroke(args.vg);
-            // Cross below
-            nvgBeginPath(args.vg);
-            nvgMoveTo(args.vg, 0, size * 0.2f);
-            nvgLineTo(args.vg, 0, size * 0.8f);
-            nvgMoveTo(args.vg, -size * 0.3f, size * 0.5f);
-            nvgLineTo(args.vg, size * 0.3f, size * 0.5f);
-            nvgStroke(args.vg);
-            break;
-            
-        case 3: // Venus - Circle with cross below
-            nvgBeginPath(args.vg);
-            nvgCircle(args.vg, 0, -size * 0.3f, size * 0.5f);
-            nvgStroke(args.vg);
-            nvgBeginPath(args.vg);
-            nvgMoveTo(args.vg, 0, size * 0.2f);
-            nvgLineTo(args.vg, 0, size * 0.8f);
-            nvgMoveTo(args.vg, -size * 0.3f, size * 0.5f);
-            nvgLineTo(args.vg, size * 0.3f, size * 0.5f);
-            nvgStroke(args.vg);
-            break;
-            
-        case 4: // Mars - Circle with arrow up-right
-            nvgBeginPath(args.vg);
-            nvgCircle(args.vg, -size * 0.2f, size * 0.2f, size * 0.4f);
-            nvgStroke(args.vg);
-            nvgBeginPath(args.vg);
-            nvgMoveTo(args.vg, size * 0.2f, -size * 0.2f);
-            nvgLineTo(args.vg, size * 0.7f, -size * 0.7f);
-            nvgLineTo(args.vg, size * 0.4f, -size * 0.7f);
-            nvgMoveTo(args.vg, size * 0.7f, -size * 0.7f);
-            nvgLineTo(args.vg, size * 0.7f, -size * 0.4f);
-            nvgStroke(args.vg);
-            break;
-            
-        case 5: // Jupiter - Cross with curved line
-            nvgBeginPath(args.vg);
-            nvgMoveTo(args.vg, -size * 0.6f, 0);
-            nvgLineTo(args.vg, size * 0.2f, 0);
-            nvgMoveTo(args.vg, 0, -size * 0.6f);
-            nvgLineTo(args.vg, 0, size * 0.6f);
-            nvgStroke(args.vg);
-            nvgBeginPath(args.vg);
-            nvgArc(args.vg, size * 0.4f, -size * 0.3f, size * 0.3f, M_PI * 0.5f, M_PI * 1.5f, NVG_CCW);
-            nvgStroke(args.vg);
-            break;
-            
-        case 6: // Saturn - Cross with curved line (flipped)
-            nvgBeginPath(args.vg);
-            nvgMoveTo(args.vg, -size * 0.2f, 0);
-            nvgLineTo(args.vg, size * 0.6f, 0);
-            nvgMoveTo(args.vg, 0, -size * 0.6f);
-            nvgLineTo(args.vg, 0, size * 0.6f);
-            nvgStroke(args.vg);
-            nvgBeginPath(args.vg);
-            nvgArc(args.vg, -size * 0.4f, -size * 0.3f, size * 0.3f, M_PI * 1.5f, M_PI * 0.5f, NVG_CCW);
-            nvgStroke(args.vg);
-            break;
-            
-        case 7: // Fire - Triangle pointing up
-            nvgBeginPath(args.vg);
-            nvgMoveTo(args.vg, 0, -size);
-            nvgLineTo(args.vg, -size * 0.8f, size * 0.6f);
-            nvgLineTo(args.vg, size * 0.8f, size * 0.6f);
-            nvgClosePath(args.vg);
-            nvgStroke(args.vg);
-            break;
-            
-        case 8: // Water - Triangle pointing down  
-            nvgBeginPath(args.vg);
-            nvgMoveTo(args.vg, 0, size);
-            nvgLineTo(args.vg, -size * 0.8f, -size * 0.6f);
-            nvgLineTo(args.vg, size * 0.8f, -size * 0.6f);
-            nvgClosePath(args.vg);
-            nvgStroke(args.vg);
-            break;
-            
-        case 9: // Air - Triangle up with line through
-            nvgBeginPath(args.vg);
-            nvgMoveTo(args.vg, 0, -size);
-            nvgLineTo(args.vg, -size * 0.8f, size * 0.6f);
-            nvgLineTo(args.vg, size * 0.8f, size * 0.6f);
-            nvgClosePath(args.vg);
-            nvgStroke(args.vg);
-            nvgBeginPath(args.vg);
-            nvgMoveTo(args.vg, -size * 0.4f, 0);
-            nvgLineTo(args.vg, size * 0.4f, 0);
-            nvgStroke(args.vg);
-            break;
-            
-        case 10: // Earth - Triangle down with line through
-            nvgBeginPath(args.vg);
-            nvgMoveTo(args.vg, 0, size);
-            nvgLineTo(args.vg, -size * 0.8f, -size * 0.6f);
-            nvgLineTo(args.vg, size * 0.8f, -size * 0.6f);
-            nvgClosePath(args.vg);
-            nvgStroke(args.vg);
-            nvgBeginPath(args.vg);
-            nvgMoveTo(args.vg, -size * 0.4f, 0);
-            nvgLineTo(args.vg, size * 0.4f, 0);
-            nvgStroke(args.vg);
-            break;
-            
-        case 11: // Quintessence - Interwoven circles
-            nvgBeginPath(args.vg);
-            nvgCircle(args.vg, -size * 0.3f, 0, size * 0.4f);
-            nvgStroke(args.vg);
-            nvgBeginPath(args.vg);
-            nvgCircle(args.vg, size * 0.3f, 0, size * 0.4f);
-            nvgStroke(args.vg);
-            break;
-            
-        // Additional Occult Symbols (Matrix8x8 version)
-        case 12: // Pentagram - Five-pointed star
-            nvgBeginPath(args.vg);
-            for (int i = 0; i < 5; i++) {
-                int pointIndex = (i * 2) % 5;
-                float angle = pointIndex * 2.0f * M_PI / 5.0f - M_PI / 2.0f;
-                float x = cosf(angle) * size;
-                float y = sinf(angle) * size;
-                if (i == 0) nvgMoveTo(args.vg, x, y);
-                else nvgLineTo(args.vg, x, y);
-            }
-            nvgClosePath(args.vg);
-            nvgStroke(args.vg);
-            break;
-            
-        case 13: // Hexagram - Six-pointed star
-            nvgBeginPath(args.vg);
-            nvgMoveTo(args.vg, 0, -size);
-            nvgLineTo(args.vg, -size * 0.866f, size * 0.5f);
-            nvgLineTo(args.vg, size * 0.866f, size * 0.5f);
-            nvgClosePath(args.vg);
-            nvgStroke(args.vg);
-            nvgBeginPath(args.vg);
-            nvgMoveTo(args.vg, 0, size);
-            nvgLineTo(args.vg, -size * 0.866f, -size * 0.5f);
-            nvgLineTo(args.vg, size * 0.866f, -size * 0.5f);
-            nvgClosePath(args.vg);
-            nvgStroke(args.vg);
-            break;
-            
-        case 14: // Ankh - Egyptian symbol
-            nvgBeginPath(args.vg);
-            nvgMoveTo(args.vg, 0, -size * 0.2f);
-            nvgLineTo(args.vg, 0, size);
-            nvgStroke(args.vg);
-            nvgBeginPath(args.vg);
-            nvgMoveTo(args.vg, -size * 0.5f, size * 0.2f);
-            nvgLineTo(args.vg, size * 0.5f, size * 0.2f);
-            nvgStroke(args.vg);
-            nvgBeginPath(args.vg);
-            nvgArc(args.vg, 0, -size * 0.4f, size * 0.3f, 0, M_PI, NVG_CW);
-            nvgStroke(args.vg);
-            break;
-            
-        case 15: // Eye of Horus
-            nvgBeginPath(args.vg);
-            nvgMoveTo(args.vg, -size * 0.8f, 0);
-            nvgBezierTo(args.vg, -size * 0.8f, -size * 0.5f, size * 0.8f, -size * 0.5f, size * 0.8f, 0);
-            nvgBezierTo(args.vg, size * 0.8f, size * 0.5f, -size * 0.8f, size * 0.5f, -size * 0.8f, 0);
-            nvgStroke(args.vg);
-            nvgBeginPath(args.vg);
-            nvgCircle(args.vg, 0, 0, size * 0.2f);
-            nvgFill(args.vg);
-            nvgBeginPath(args.vg);
-            nvgMoveTo(args.vg, -size * 0.3f, size * 0.2f);
-            nvgLineTo(args.vg, -size * 0.3f, size * 0.8f);
-            nvgStroke(args.vg);
-            break;
-            
-        case 16: // Ouroboros
-            nvgBeginPath(args.vg);
-            nvgCircle(args.vg, 0, 0, size * 0.8f);
-            nvgStroke(args.vg);
-            nvgBeginPath(args.vg);
-            nvgCircle(args.vg, size * 0.8f, 0, size * 0.15f);
-            nvgStroke(args.vg);
-            nvgBeginPath(args.vg);
-            nvgMoveTo(args.vg, size * 0.65f, 0);
-            nvgLineTo(args.vg, size * 0.5f, 0);
-            nvgStroke(args.vg);
-            break;
-            
-        case 17: // Triskele
-            nvgBeginPath(args.vg);
-            for (int i = 0; i < 3; i++) {
-                float angle = i * 2.0f * M_PI / 3.0f;
-                nvgMoveTo(args.vg, 0, 0);
-                for (int j = 1; j <= 8; j++) {
-                    float r = (j / 8.0f) * size;
-                    float a = angle + (j / 8.0f) * M_PI;
-                    nvgLineTo(args.vg, cosf(a) * r, sinf(a) * r);
-                }
-            }
-            nvgStroke(args.vg);
-            break;
-            
-        case 18: // Caduceus
-            nvgBeginPath(args.vg);
-            nvgMoveTo(args.vg, 0, -size);
-            nvgLineTo(args.vg, 0, size);
-            nvgStroke(args.vg);
-            nvgBeginPath(args.vg);
-            nvgMoveTo(args.vg, 0, -size * 0.6f);
-            nvgBezierTo(args.vg, -size * 0.4f, -size * 0.2f, -size * 0.4f, size * 0.2f, 0, size * 0.6f);
-            nvgStroke(args.vg);
-            nvgBeginPath(args.vg);
-            nvgMoveTo(args.vg, 0, -size * 0.6f);
-            nvgBezierTo(args.vg, size * 0.4f, -size * 0.2f, size * 0.4f, size * 0.2f, 0, size * 0.6f);
-            nvgStroke(args.vg);
-            nvgBeginPath(args.vg);
-            nvgMoveTo(args.vg, -size * 0.3f, -size * 0.8f);
-            nvgLineTo(args.vg, 0, -size * 0.6f);
-            nvgLineTo(args.vg, size * 0.3f, -size * 0.8f);
-            nvgStroke(args.vg);
-            break;
-            
-        case 19: // Yin Yang
-            nvgBeginPath(args.vg);
-            nvgCircle(args.vg, 0, 0, size);
-            nvgStroke(args.vg);
-            nvgBeginPath(args.vg);
-            nvgArc(args.vg, 0, -size * 0.5f, size * 0.5f, 0, M_PI, NVG_CW);
-            nvgArc(args.vg, 0, size * 0.5f, size * 0.5f, M_PI, 2 * M_PI, NVG_CCW);
-            nvgStroke(args.vg);
-            nvgBeginPath(args.vg);
-            nvgCircle(args.vg, 0, -size * 0.5f, size * 0.15f);
-            nvgFill(args.vg);
-            nvgBeginPath(args.vg);
-            nvgCircle(args.vg, 0, size * 0.5f, size * 0.15f);
-            nvgStroke(args.vg);
-            break;
-    }
-    
-    nvgRestore(args.vg);
-}
-
-void Matrix8x8Widget::drawRestSymbol(const DrawArgs& args, Vec pos) {
-    nvgStrokeColor(args.vg, nvgRGBA(150, 150, 150, 255));
-    nvgStrokeWidth(args.vg, 1.0f);
-    
-    // Draw rest symbol (small horizontal line)
-    nvgBeginPath(args.vg);
-    nvgMoveTo(args.vg, pos.x - 3, pos.y);
-    nvgLineTo(args.vg, pos.x + 3, pos.y);
-    nvgStroke(args.vg);
-}
-
-void Matrix8x8Widget::drawTieSymbol(const DrawArgs& args, Vec pos) {
-    nvgStrokeColor(args.vg, nvgRGBA(255, 200, 100, 255));
-    nvgStrokeWidth(args.vg, 1.0f);
-    
-    // Draw tie symbol (curved line)
-    nvgBeginPath(args.vg);
-    nvgMoveTo(args.vg, pos.x - 3, pos.y);
-    nvgBezierTo(args.vg, pos.x - 1, pos.y - 3, pos.x + 1, pos.y - 3, pos.x + 3, pos.y);
-    nvgStroke(args.vg);
-}
-
-void Matrix8x8Widget::drawVoiceCount(const DrawArgs& args, Vec pos, int voiceCount, NVGcolor dotColor) {
-    // Draw smaller dots positioned to not interfere with symbols
-    nvgSave(args.vg);
-    
-    float radius = 7.0f; // Position dots around the symbol
-    
-    for (int i = 0; i < std::min(voiceCount, 6); i++) {
-        float angle = (float)i / 6.0f * 2.0f * M_PI - M_PI/2; // Start from top
-        float dotX = pos.x + cos(angle) * radius;
-        float dotY = pos.y + sin(angle) * radius;
-        
-        nvgBeginPath(args.vg);
-        nvgFillColor(args.vg, dotColor);
-        nvgStrokeWidth(args.vg, 0.0f); // Disable stroke completely
-        nvgCircle(args.vg, dotX, dotY, 0.8f);
-        nvgFill(args.vg);
-    }
-    
-    nvgRestore(args.vg);
-}
-
-// Alchemical Symbol Button Widget
-struct AlchemicalSymbolWidget : Widget {
-    Transmutation* module;
-    int buttonPosition; // Button position (0-11)
-    
-    AlchemicalSymbolWidget(Transmutation* module, int buttonPosition) : module(module), buttonPosition(buttonPosition) {
-        box.size = Vec(20, 20);
-    }
-    
-    int getSymbolId() {
-        if (!module) return buttonPosition; // Fallback to button position if no module
-        return module->buttonToSymbolMapping[buttonPosition];
-    }
-    
-    void draw(const DrawArgs& args) override {
-        int symbolId = getSymbolId();
-        bool isSelected = module && module->selectedSymbol == symbolId;
-        bool inEditMode = module && (module->editModeA || module->editModeB);
-        float press = module ? module->buttonPressAnim[buttonPosition] : 0.0f;
-        // Background and border depend on playhead and selection state
-        
-        // Draw button background with enhanced states
-        nvgBeginPath(args.vg);
-        nvgRoundedRect(args.vg, 0, 0, box.size.x, box.size.y, 3);
-        
-        // Check which sequence(s) are playing this symbol for background color
-        bool playheadA = false, playheadB = false;
-        if (module) {
-            int currentChordA = module->getCurrentChordIndex(module->sequenceA);
-            int currentChordB = module->getCurrentChordIndex(module->sequenceB);
-            
-            if (module->sequenceA.running && currentChordA == symbolId) {
-                playheadA = true;
-            }
-            if (module->sequenceB.running && currentChordB == symbolId) {
-                playheadB = true;
-            }
-        }
-        
-        if (playheadA && playheadB) {
-            // Both sequences playing - mixed color background
-            nvgFillColor(args.vg, nvgRGBA(90, 127, 217, 200));
-            nvgFill(args.vg);
-            nvgStrokeColor(args.vg, nvgRGBA(90, 127, 217, 255));
-            nvgStrokeWidth(args.vg, 2.0f);
-            nvgStroke(args.vg);
-        } else if (playheadA) {
-            // Sequence A playing - teal background
-            nvgFillColor(args.vg, nvgRGBA(0, 255, 180, 200));
-            nvgFill(args.vg);
-            nvgStrokeColor(args.vg, nvgRGBA(0, 255, 180, 255));
-            nvgStrokeWidth(args.vg, 2.0f);
-            nvgStroke(args.vg);
-        } else if (playheadB) {
-            // Sequence B playing - purple background
-            nvgFillColor(args.vg, nvgRGBA(180, 0, 255, 200));
-            nvgFill(args.vg);
-            nvgStrokeColor(args.vg, nvgRGBA(180, 0, 255, 255));
-            nvgStrokeWidth(args.vg, 2.0f);
-            nvgStroke(args.vg);
-        } else if (isSelected && inEditMode) {
-            // Selected for editing - bright blue
-            nvgFillColor(args.vg, nvgRGBA(0, 200, 255, 150));
-            nvgFill(args.vg);
-            nvgStrokeColor(args.vg, nvgRGBA(0, 255, 255, 255));
-            nvgStrokeWidth(args.vg, 2.0f);
-            nvgStroke(args.vg);
-        } else if (inEditMode) {
-            // In edit mode but not selected - subtle highlight
-            nvgFillColor(args.vg, nvgRGBA(60, 60, 80, 120));
-            nvgFill(args.vg);
-            nvgStrokeColor(args.vg, nvgRGBA(140, 140, 160, 200));
-            nvgStrokeWidth(args.vg, 1.0f);
-            nvgStroke(args.vg);
-        } else {
-            // Normal state
-            nvgFillColor(args.vg, nvgRGBA(40, 40, 40, 100));
-            nvgFill(args.vg);
-            nvgStrokeColor(args.vg, nvgRGBA(100, 100, 100, 150));
-            nvgStrokeWidth(args.vg, 1.0f);
-            nvgStroke(args.vg);
-        }
-        
-        // Bezel/depth for button to feel integrated with panel
-        {
-            float inset = 1.0f;
-            float rOuter = 3.0f;
-            float rInner = std::max(0.0f, rOuter - 1.0f);
-            // Inner shadow ring
-            NVGpaint innerShadow = nvgBoxGradient(
-                args.vg,
-                inset, inset,
-                box.size.x - inset * 2.0f,
-                box.size.y - inset * 2.0f,
-                rInner, 3.5f,
-                nvgRGBA(0, 0, 0, 50),
-                nvgRGBA(0, 0, 0, 0)
-            );
-            nvgBeginPath(args.vg);
-            nvgRoundedRect(args.vg, inset - 0.5f, inset - 0.5f, box.size.x - (inset - 0.5f) * 2.0f, box.size.y - (inset - 0.5f) * 2.0f, rInner + 0.5f);
-            nvgRoundedRect(args.vg, inset + 0.8f, inset + 0.8f, box.size.x - (inset + 0.8f) * 2.0f, box.size.y - (inset + 0.8f) * 2.0f, std::max(0.0f, rInner - 0.8f));
-            nvgPathWinding(args.vg, NVG_HOLE);
-            nvgFillPaint(args.vg, innerShadow);
-            nvgFill(args.vg);
-            
-            // Top highlight
-            nvgSave(args.vg);
-            nvgScissor(args.vg, 0, 0, box.size.x, std::min(6.0f, box.size.y));
-            NVGpaint topHi = nvgLinearGradient(args.vg, 0, 0, 0, 6.0f, nvgRGBA(255, 255, 255, 28), nvgRGBA(255, 255, 255, 0));
-            nvgBeginPath(args.vg);
-            nvgRoundedRect(args.vg, inset + 0.5f, inset + 0.5f, box.size.x - (inset + 1.0f), 5.0f, rInner);
-            nvgFillPaint(args.vg, topHi);
-            nvgFill(args.vg);
-            nvgRestore(args.vg);
-            
-            // Left and right inner highlights (very subtle)
-            nvgBeginPath(args.vg);
-            nvgRoundedRect(args.vg, inset - 0.5f, inset - 0.5f, box.size.x - (inset - 0.5f) * 2.0f, box.size.y - (inset - 0.5f) * 2.0f, rInner + 0.5f);
-            nvgRoundedRect(args.vg, inset + 0.8f, inset + 0.8f, box.size.x - (inset + 0.8f) * 2.0f, box.size.y - (inset + 0.8f) * 2.0f, std::max(0.0f, rInner - 0.8f));
-            nvgPathWinding(args.vg, NVG_HOLE);
-            NVGpaint leftHi = nvgLinearGradient(args.vg, inset - 0.5f, 0, inset + 4.5f, 0, nvgRGBA(255, 255, 255, 18), nvgRGBA(255, 255, 255, 0));
-            nvgFillPaint(args.vg, leftHi);
-            nvgFill(args.vg);
-            nvgBeginPath(args.vg);
-            nvgRoundedRect(args.vg, inset - 0.5f, inset - 0.5f, box.size.x - (inset - 0.5f) * 2.0f, box.size.y - (inset - 0.5f) * 2.0f, rInner + 0.5f);
-            nvgRoundedRect(args.vg, inset + 0.8f, inset + 0.8f, box.size.x - (inset + 0.8f) * 2.0f, box.size.y - (inset + 0.8f) * 2.0f, std::max(0.0f, rInner - 0.8f));
-            nvgPathWinding(args.vg, NVG_HOLE);
-            NVGpaint rightHi = nvgLinearGradient(args.vg, box.size.x - (inset - 0.5f), 0, box.size.x - (inset + 4.5f), 0, nvgRGBA(255, 255, 255, 12), nvgRGBA(255, 255, 255, 0));
-            nvgFillPaint(args.vg, rightHi);
-            nvgFill(args.vg);
-        }
-
-        // Vintage face treatment: vignette + patina + micro-scratches
-        {
-            float r = 3.0f;
-            // Subtle vignette to darken edges
-            NVGpaint vignette = nvgRadialGradient(
-                args.vg,
-                box.size.x * 0.5f, box.size.y * 0.5f,
-                std::min(box.size.x, box.size.y) * 0.2f,
-                std::min(box.size.x, box.size.y) * 0.6f,
-                nvgRGBA(0, 0, 0, 0), nvgRGBA(0, 0, 0, 28)
-            );
-            nvgBeginPath(args.vg);
-            nvgRoundedRect(args.vg, 0.5f, 0.5f, box.size.x - 1.0f, box.size.y - 1.0f, r);
-            nvgFillPaint(args.vg, vignette);
-            nvgFill(args.vg);
-
-            // Patina tint (very subtle greenish/sepia film)
-            NVGpaint patina = nvgLinearGradient(
-                args.vg,
-                0, 0, box.size.x, box.size.y,
-                nvgRGBA(20, 30, 18, 12), nvgRGBA(50, 40, 20, 10)
-            );
-            nvgBeginPath(args.vg);
-            nvgRoundedRect(args.vg, 1.0f, 1.0f, box.size.x - 2.0f, box.size.y - 2.0f, r - 1.0f);
-            nvgFillPaint(args.vg, patina);
-            nvgFill(args.vg);
-
-            // Micro-scratches (static, low alpha)
-            unsigned seed = 14621u + (unsigned)buttonPosition * 9283u;
-            auto rnd = [&]() {
-                seed ^= seed << 13; seed ^= seed >> 17; seed ^= seed << 5; return (seed & 0xFFFF) / 65535.f; };
-            nvgStrokeColor(args.vg, nvgRGBA(255, 255, 255, 14));
-            nvgStrokeWidth(args.vg, 0.6f);
-            for (int i = 0; i < 3; ++i) {
-                float x1 = rnd() * (box.size.x * 0.7f) + box.size.x * 0.15f;
-                float y1 = rnd() * (box.size.y * 0.7f) + box.size.y * 0.15f;
-                float dx = (rnd() - 0.5f) * (box.size.x * 0.25f);
-                float dy = (rnd() - 0.5f) * (box.size.y * 0.25f);
-                nvgBeginPath(args.vg);
-                nvgMoveTo(args.vg, x1, y1);
-                nvgLineTo(args.vg, x1 + dx, y1 + dy);
-                nvgStroke(args.vg);
-            }
-        }
-        
-        // Draw the alchemical symbol with a more vintage look
-        // Slight "depress" on press animation
-        nvgSave(args.vg);
-        nvgTranslate(args.vg, 0, press * 1.0f);
-        drawAlchemicalSymbol(args, Vec(box.size.x/2, box.size.y/2), symbolId);
-        nvgRestore(args.vg);
-    }
-    
-    void drawAlchemicalSymbol(const DrawArgs& args, Vec pos, int symbolId) {
-        nvgSave(args.vg);
-        nvgTranslate(args.vg, pos.x, pos.y);
-        
-        // Set drawing properties for button symbols (vintage ink look)
-        double t = system::getTime();
-        // Warm off-white ink tones
-        NVGcolor ink = nvgRGBA(232, 224, 200, 255);
-        NVGcolor inkFill = nvgRGBA(232, 224, 200, 190);
-        // Slight stroke width wobble for hand-drawn feel
-        float wobble = 1.2f * (1.0f + 0.08f * std::sin(t * 7.0 + buttonPosition * 1.37f));
-        // Tiny rotation jitter to simulate imperfect stamp
-        float jitter = 0.010f * std::sin(t * 2.5 + buttonPosition * 0.77f);
-        nvgRotate(args.vg, jitter);
-        nvgStrokeColor(args.vg, ink);
-        nvgFillColor(args.vg, inkFill);
-        nvgStrokeWidth(args.vg, wobble);
-        nvgLineCap(args.vg, NVG_ROUND);
-        nvgLineJoin(args.vg, NVG_ROUND);
-        
-        // Scale symbol to button size while keeping margins
-        float size = std::min(box.size.x, box.size.y) * 0.36f;
-        
-        switch (symbolId) {
-            case 0: // Sol (Sun)
-                nvgBeginPath(args.vg);
-                nvgCircle(args.vg, 0, 0, size);
-                nvgStroke(args.vg);
-                nvgBeginPath(args.vg);
-                nvgCircle(args.vg, 0, 0, size * 0.3f);
-                nvgFill(args.vg);
-                break;
-                
-            case 1: // Luna (Moon)
-                nvgBeginPath(args.vg);
-                nvgArc(args.vg, 0, 0, size, 0.3f * M_PI, 1.7f * M_PI, NVG_CW);
-                nvgStroke(args.vg);
-                break;
-                
-            case 2: // Mercury
-                nvgBeginPath(args.vg);
-                nvgCircle(args.vg, 0, -size * 0.3f, size * 0.4f);
-                nvgStroke(args.vg);
-                nvgBeginPath(args.vg);
-                nvgMoveTo(args.vg, -size * 0.6f, -size * 0.8f);
-                nvgLineTo(args.vg, 0, -size * 0.6f);
-                nvgLineTo(args.vg, size * 0.6f, -size * 0.8f);
-                nvgStroke(args.vg);
-                nvgBeginPath(args.vg);
-                nvgMoveTo(args.vg, 0, size * 0.2f);
-                nvgLineTo(args.vg, 0, size * 0.8f);
-                nvgMoveTo(args.vg, -size * 0.3f, size * 0.5f);
-                nvgLineTo(args.vg, size * 0.3f, size * 0.5f);
-                nvgStroke(args.vg);
-                break;
-                
-            case 3: // Venus
-                nvgBeginPath(args.vg);
-                nvgCircle(args.vg, 0, -size * 0.3f, size * 0.5f);
-                nvgStroke(args.vg);
-                nvgBeginPath(args.vg);
-                nvgMoveTo(args.vg, 0, size * 0.2f);
-                nvgLineTo(args.vg, 0, size * 0.8f);
-                nvgMoveTo(args.vg, -size * 0.3f, size * 0.5f);
-                nvgLineTo(args.vg, size * 0.3f, size * 0.5f);
-                nvgStroke(args.vg);
-                break;
-                
-            case 4: // Mars
-                nvgBeginPath(args.vg);
-                nvgCircle(args.vg, -size * 0.2f, size * 0.2f, size * 0.4f);
-                nvgStroke(args.vg);
-                nvgBeginPath(args.vg);
-                nvgMoveTo(args.vg, size * 0.2f, -size * 0.2f);
-                nvgLineTo(args.vg, size * 0.7f, -size * 0.7f);
-                nvgLineTo(args.vg, size * 0.4f, -size * 0.7f);
-                nvgMoveTo(args.vg, size * 0.7f, -size * 0.7f);
-                nvgLineTo(args.vg, size * 0.7f, -size * 0.4f);
-                nvgStroke(args.vg);
-                break;
-                
-            case 5: // Jupiter
-                nvgBeginPath(args.vg);
-                nvgMoveTo(args.vg, -size * 0.6f, 0);
-                nvgLineTo(args.vg, size * 0.2f, 0);
-                nvgMoveTo(args.vg, 0, -size * 0.6f);
-                nvgLineTo(args.vg, 0, size * 0.6f);
-                nvgStroke(args.vg);
-                nvgBeginPath(args.vg);
-                nvgArc(args.vg, size * 0.4f, -size * 0.3f, size * 0.3f, M_PI * 0.5f, M_PI * 1.5f, NVG_CCW);
-                nvgStroke(args.vg);
-                break;
-                
-            case 6: // Saturn
-                nvgBeginPath(args.vg);
-                nvgMoveTo(args.vg, -size * 0.2f, 0);
-                nvgLineTo(args.vg, size * 0.6f, 0);
-                nvgMoveTo(args.vg, 0, -size * 0.6f);
-                nvgLineTo(args.vg, 0, size * 0.6f);
-                nvgStroke(args.vg);
-                nvgBeginPath(args.vg);
-                nvgArc(args.vg, -size * 0.4f, -size * 0.3f, size * 0.3f, M_PI * 1.5f, M_PI * 0.5f, NVG_CCW);
-                nvgStroke(args.vg);
-                break;
-                
-            case 7: // Fire
-                nvgBeginPath(args.vg);
-                nvgMoveTo(args.vg, 0, -size);
-                nvgLineTo(args.vg, -size * 0.8f, size * 0.6f);
-                nvgLineTo(args.vg, size * 0.8f, size * 0.6f);
-                nvgClosePath(args.vg);
-                nvgStroke(args.vg);
-                break;
-                
-            case 8: // Water
-                nvgBeginPath(args.vg);
-                nvgMoveTo(args.vg, 0, size);
-                nvgLineTo(args.vg, -size * 0.8f, -size * 0.6f);
-                nvgLineTo(args.vg, size * 0.8f, -size * 0.6f);
-                nvgClosePath(args.vg);
-                nvgStroke(args.vg);
-                break;
-                
-            case 9: // Air
-                nvgBeginPath(args.vg);
-                nvgMoveTo(args.vg, 0, -size);
-                nvgLineTo(args.vg, -size * 0.8f, size * 0.6f);
-                nvgLineTo(args.vg, size * 0.8f, size * 0.6f);
-                nvgClosePath(args.vg);
-                nvgStroke(args.vg);
-                nvgBeginPath(args.vg);
-                nvgMoveTo(args.vg, -size * 0.4f, 0);
-                nvgLineTo(args.vg, size * 0.4f, 0);
-                nvgStroke(args.vg);
-                break;
-                
-            case 10: // Earth
-                nvgBeginPath(args.vg);
-                nvgMoveTo(args.vg, 0, size);
-                nvgLineTo(args.vg, -size * 0.8f, -size * 0.6f);
-                nvgLineTo(args.vg, size * 0.8f, -size * 0.6f);
-                nvgClosePath(args.vg);
-                nvgStroke(args.vg);
-                nvgBeginPath(args.vg);
-                nvgMoveTo(args.vg, -size * 0.4f, 0);
-                nvgLineTo(args.vg, size * 0.4f, 0);
-                nvgStroke(args.vg);
-                break;
-                
-            case 11: // Quintessence
-                nvgBeginPath(args.vg);
-                nvgCircle(args.vg, -size * 0.3f, 0, size * 0.4f);
-                nvgStroke(args.vg);
-                nvgBeginPath(args.vg);
-                nvgCircle(args.vg, size * 0.3f, 0, size * 0.4f);
-                nvgStroke(args.vg);
-                break;
-                
-            // Additional Occult Symbols (Button version)
-            case 12: // Pentagram
-                nvgBeginPath(args.vg);
-                for (int i = 0; i < 5; i++) {
-                    int pointIndex = (i * 2) % 5;
-                    float angle = pointIndex * 2.0f * M_PI / 5.0f - M_PI / 2.0f;
-                    float x = cosf(angle) * size;
-                    float y = sinf(angle) * size;
-                    if (i == 0) nvgMoveTo(args.vg, x, y);
-                    else nvgLineTo(args.vg, x, y);
-                }
-                nvgClosePath(args.vg);
-                nvgStroke(args.vg);
-                break;
-                
-            case 13: // Hexagram
-                nvgBeginPath(args.vg);
-                nvgMoveTo(args.vg, 0, -size);
-                nvgLineTo(args.vg, -size * 0.866f, size * 0.5f);
-                nvgLineTo(args.vg, size * 0.866f, size * 0.5f);
-                nvgClosePath(args.vg);
-                nvgStroke(args.vg);
-                nvgBeginPath(args.vg);
-                nvgMoveTo(args.vg, 0, size);
-                nvgLineTo(args.vg, -size * 0.866f, -size * 0.5f);
-                nvgLineTo(args.vg, size * 0.866f, -size * 0.5f);
-                nvgClosePath(args.vg);
-                nvgStroke(args.vg);
-                break;
-                
-            case 14: // Ankh
-                nvgBeginPath(args.vg);
-                nvgMoveTo(args.vg, 0, -size * 0.2f);
-                nvgLineTo(args.vg, 0, size);
-                nvgStroke(args.vg);
-                nvgBeginPath(args.vg);
-                nvgMoveTo(args.vg, -size * 0.5f, size * 0.2f);
-                nvgLineTo(args.vg, size * 0.5f, size * 0.2f);
-                nvgStroke(args.vg);
-                nvgBeginPath(args.vg);
-                nvgArc(args.vg, 0, -size * 0.4f, size * 0.3f, 0, M_PI, NVG_CW);
-                nvgStroke(args.vg);
-                break;
-                
-            case 15: // Eye of Horus
-                nvgBeginPath(args.vg);
-                nvgMoveTo(args.vg, -size * 0.8f, 0);
-                nvgBezierTo(args.vg, -size * 0.8f, -size * 0.5f, size * 0.8f, -size * 0.5f, size * 0.8f, 0);
-                nvgBezierTo(args.vg, size * 0.8f, size * 0.5f, -size * 0.8f, size * 0.5f, -size * 0.8f, 0);
-                nvgStroke(args.vg);
-                nvgBeginPath(args.vg);
-                nvgCircle(args.vg, 0, 0, size * 0.2f);
-                nvgFill(args.vg);
-                nvgBeginPath(args.vg);
-                nvgMoveTo(args.vg, -size * 0.3f, size * 0.2f);
-                nvgLineTo(args.vg, -size * 0.3f, size * 0.8f);
-                nvgStroke(args.vg);
-                break;
-                
-            case 16: // Ouroboros
-                nvgBeginPath(args.vg);
-                nvgCircle(args.vg, 0, 0, size * 0.8f);
-                nvgStroke(args.vg);
-                nvgBeginPath(args.vg);
-                nvgCircle(args.vg, size * 0.8f, 0, size * 0.15f);
-                nvgStroke(args.vg);
-                nvgBeginPath(args.vg);
-                nvgMoveTo(args.vg, size * 0.65f, 0);
-                nvgLineTo(args.vg, size * 0.5f, 0);
-                nvgStroke(args.vg);
-                break;
-                
-            case 17: // Triskele
-                nvgBeginPath(args.vg);
-                for (int i = 0; i < 3; i++) {
-                    float angle = i * 2.0f * M_PI / 3.0f;
-                    nvgMoveTo(args.vg, 0, 0);
-                    for (int j = 1; j <= 8; j++) {
-                        float r = (j / 8.0f) * size;
-                        float a = angle + (j / 8.0f) * M_PI;
-                        nvgLineTo(args.vg, cosf(a) * r, sinf(a) * r);
-                    }
-                }
-                nvgStroke(args.vg);
-                break;
-                
-            case 18: // Caduceus
-                nvgBeginPath(args.vg);
-                nvgMoveTo(args.vg, 0, -size);
-                nvgLineTo(args.vg, 0, size);
-                nvgStroke(args.vg);
-                nvgBeginPath(args.vg);
-                nvgMoveTo(args.vg, 0, -size * 0.6f);
-                nvgBezierTo(args.vg, -size * 0.4f, -size * 0.2f, -size * 0.4f, size * 0.2f, 0, size * 0.6f);
-                nvgStroke(args.vg);
-                nvgBeginPath(args.vg);
-                nvgMoveTo(args.vg, 0, -size * 0.6f);
-                nvgBezierTo(args.vg, size * 0.4f, -size * 0.2f, size * 0.4f, size * 0.2f, 0, size * 0.6f);
-                nvgStroke(args.vg);
-                nvgBeginPath(args.vg);
-                nvgMoveTo(args.vg, -size * 0.3f, -size * 0.8f);
-                nvgLineTo(args.vg, 0, -size * 0.6f);
-                nvgLineTo(args.vg, size * 0.3f, -size * 0.8f);
-                nvgStroke(args.vg);
-                break;
-                
-            case 19: // Yin Yang
-                nvgBeginPath(args.vg);
-                nvgCircle(args.vg, 0, 0, size);
-                nvgStroke(args.vg);
-                nvgBeginPath(args.vg);
-                nvgArc(args.vg, 0, -size * 0.5f, size * 0.5f, 0, M_PI, NVG_CW);
-                nvgArc(args.vg, 0, size * 0.5f, size * 0.5f, M_PI, 2 * M_PI, NVG_CCW);
-                nvgStroke(args.vg);
-                nvgBeginPath(args.vg);
-                nvgCircle(args.vg, 0, -size * 0.5f, size * 0.15f);
-                nvgFill(args.vg);
-                nvgBeginPath(args.vg);
-                nvgCircle(args.vg, 0, size * 0.5f, size * 0.15f);
-                nvgStroke(args.vg);
-                break;
-                
-            case 20: // Seal of Solomon - Hexagram with circle
-                nvgBeginPath(args.vg);
-                nvgCircle(args.vg, 0, 0, size);
-                nvgStroke(args.vg);
-                // Star of David inside
-                nvgBeginPath(args.vg);
-                nvgMoveTo(args.vg, 0, -size * 0.7f);
-                nvgLineTo(args.vg, -size * 0.6f, size * 0.35f);
-                nvgLineTo(args.vg, size * 0.6f, size * 0.35f);
-                nvgClosePath(args.vg);
-                nvgStroke(args.vg);
-                nvgBeginPath(args.vg);
-                nvgMoveTo(args.vg, 0, size * 0.7f);
-                nvgLineTo(args.vg, -size * 0.6f, -size * 0.35f);
-                nvgLineTo(args.vg, size * 0.6f, -size * 0.35f);
-                nvgClosePath(args.vg);
-                nvgStroke(args.vg);
-                break;
-                
-            case 21: // Sulfur - Triangle over cross
-                nvgBeginPath(args.vg);
-                // Triangle
-                nvgMoveTo(args.vg, 0, -size * 0.5f);
-                nvgLineTo(args.vg, -size * 0.6f, size * 0.1f);
-                nvgLineTo(args.vg, size * 0.6f, size * 0.1f);
-                nvgClosePath(args.vg);
-                nvgStroke(args.vg);
-                // Cross below
-                nvgBeginPath(args.vg);
-                nvgMoveTo(args.vg, 0, size * 0.1f);
-                nvgLineTo(args.vg, 0, size * 0.8f);
-                nvgStroke(args.vg);
-                nvgBeginPath(args.vg);
-                nvgMoveTo(args.vg, -size * 0.3f, size * 0.45f);
-                nvgLineTo(args.vg, size * 0.3f, size * 0.45f);
-                nvgStroke(args.vg);
-                break;
-                
-            case 22: // Salt - Circle with horizontal line
-                nvgBeginPath(args.vg);
-                nvgCircle(args.vg, 0, 0, size * 0.6f);
-                nvgStroke(args.vg);
-                nvgBeginPath(args.vg);
-                nvgMoveTo(args.vg, -size * 0.8f, 0);
-                nvgLineTo(args.vg, size * 0.8f, 0);
-                nvgStroke(args.vg);
-                break;
-                
-            case 23: // Antimony - Circle with cross below
-                nvgBeginPath(args.vg);
-                nvgCircle(args.vg, 0, -size * 0.3f, size * 0.4f);
-                nvgStroke(args.vg);
-                // Cross below
-                nvgBeginPath(args.vg);
-                nvgMoveTo(args.vg, 0, size * 0.1f);
-                nvgLineTo(args.vg, 0, size * 0.8f);
-                nvgStroke(args.vg);
-                nvgBeginPath(args.vg);
-                nvgMoveTo(args.vg, -size * 0.3f, size * 0.45f);
-                nvgLineTo(args.vg, size * 0.3f, size * 0.45f);
-                nvgStroke(args.vg);
-                break;
-                
-            case 24: // Philosopher's Stone - Square with inscribed circle and dot
-                nvgBeginPath(args.vg);
-                nvgRect(args.vg, -size * 0.7f, -size * 0.7f, size * 1.4f, size * 1.4f);
-                nvgStroke(args.vg);
-                nvgBeginPath(args.vg);
-                nvgCircle(args.vg, 0, 0, size * 0.5f);
-                nvgStroke(args.vg);
-                nvgBeginPath(args.vg);
-                nvgCircle(args.vg, 0, 0, size * 0.1f);
-                nvgFill(args.vg);
-                break;
-                
-            case 25: // Arsenic - Stylized As
-                nvgBeginPath(args.vg);
-                // Zigzag pattern
-                nvgMoveTo(args.vg, -size * 0.6f, -size * 0.8f);
-                nvgLineTo(args.vg, 0, size * 0.8f);
-                nvgLineTo(args.vg, size * 0.6f, -size * 0.8f);
-                nvgStroke(args.vg);
-                // Horizontal line through middle
-                nvgBeginPath(args.vg);
-                nvgMoveTo(args.vg, -size * 0.4f, 0);
-                nvgLineTo(args.vg, size * 0.4f, 0);
-                nvgStroke(args.vg);
-                break;
-                
-            case 26: // Copper - Venus symbol variant
-                nvgBeginPath(args.vg);
-                nvgCircle(args.vg, 0, -size * 0.2f, size * 0.4f);
-                nvgStroke(args.vg);
-                // Cross with curved arms
-                nvgBeginPath(args.vg);
-                nvgMoveTo(args.vg, 0, size * 0.2f);
-                nvgLineTo(args.vg, 0, size * 0.8f);
-                nvgStroke(args.vg);
-                nvgBeginPath(args.vg);
-                nvgArc(args.vg, -size * 0.2f, size * 0.5f, size * 0.2f, 0, M_PI, NVG_CW);
-                nvgArc(args.vg, size * 0.2f, size * 0.5f, size * 0.2f, M_PI, 2 * M_PI, NVG_CW);
-                nvgStroke(args.vg);
-                break;
-                
-            case 27: // Iron - Mars symbol variant with double arrow
-                nvgBeginPath(args.vg);
-                nvgCircle(args.vg, -size * 0.2f, size * 0.2f, size * 0.3f);
-                nvgStroke(args.vg);
-                // Double arrow
-                nvgBeginPath(args.vg);
-                nvgMoveTo(args.vg, size * 0.1f, -size * 0.1f);
-                nvgLineTo(args.vg, size * 0.8f, -size * 0.8f);
-                nvgStroke(args.vg);
-                nvgBeginPath(args.vg);
-                nvgMoveTo(args.vg, size * 0.6f, -size * 0.8f);
-                nvgLineTo(args.vg, size * 0.8f, -size * 0.8f);
-                nvgLineTo(args.vg, size * 0.8f, -size * 0.6f);
-                nvgStroke(args.vg);
-                break;
-                
-            case 28: // Lead - Saturn symbol with additional cross
-                nvgBeginPath(args.vg);
-                nvgMoveTo(args.vg, -size * 0.6f, -size * 0.3f);
-                nvgLineTo(args.vg, size * 0.6f, -size * 0.3f);
-                nvgStroke(args.vg);
-                nvgBeginPath(args.vg);
-                nvgMoveTo(args.vg, 0, -size * 0.8f);
-                nvgLineTo(args.vg, 0, size * 0.8f);
-                nvgStroke(args.vg);
-                nvgBeginPath(args.vg);
-                nvgArc(args.vg, 0, size * 0.2f, size * 0.3f, 0, M_PI, NVG_CW);
-                nvgStroke(args.vg);
-                break;
-                
-            case 29: // Silver - Crescent moon
-                nvgBeginPath(args.vg);
-                nvgArc(args.vg, size * 0.2f, 0, size * 0.8f, M_PI * 0.6f, M_PI * 1.4f, NVG_CW);
-                nvgStroke(args.vg);
-                break;
-                
-            case 30: // Zinc - Jupiter symbol with line through
-                nvgBeginPath(args.vg);
-                nvgMoveTo(args.vg, -size * 0.6f, 0);
-                nvgLineTo(args.vg, size * 0.6f, 0);
-                nvgStroke(args.vg);
-                nvgBeginPath(args.vg);
-                nvgMoveTo(args.vg, 0, -size * 0.6f);
-                nvgLineTo(args.vg, 0, size * 0.6f);
-                nvgStroke(args.vg);
-                nvgBeginPath(args.vg);
-                nvgMoveTo(args.vg, -size * 0.4f, -size * 0.4f);
-                nvgLineTo(args.vg, size * 0.4f, size * 0.4f);
-                nvgStroke(args.vg);
-                break;
-                
-            case 31: // Tin - Jupiter variant with double cross
-                nvgBeginPath(args.vg);
-                nvgMoveTo(args.vg, -size * 0.6f, -size * 0.2f);
-                nvgLineTo(args.vg, size * 0.6f, -size * 0.2f);
-                nvgStroke(args.vg);
-                nvgBeginPath(args.vg);
-                nvgMoveTo(args.vg, -size * 0.6f, size * 0.2f);
-                nvgLineTo(args.vg, size * 0.6f, size * 0.2f);
-                nvgStroke(args.vg);
-                nvgBeginPath(args.vg);
-                nvgMoveTo(args.vg, 0, -size * 0.8f);
-                nvgLineTo(args.vg, 0, size * 0.8f);
-                nvgStroke(args.vg);
-                break;
-                
-            case 32: // Bismuth - Stylized Bi with flourishes
-                nvgBeginPath(args.vg);
-                nvgCircle(args.vg, 0, -size * 0.3f, size * 0.3f);
-                nvgStroke(args.vg);
-                nvgBeginPath(args.vg);
-                nvgMoveTo(args.vg, 0, 0);
-                nvgLineTo(args.vg, 0, size * 0.8f);
-                nvgStroke(args.vg);
-                nvgBeginPath(args.vg);
-                nvgMoveTo(args.vg, -size * 0.4f, size * 0.5f);
-                nvgLineTo(args.vg, size * 0.4f, size * 0.5f);
-                nvgStroke(args.vg);
-                break;
-                
-            case 33: // Magnesium - Alchemical Mg symbol
-                nvgBeginPath(args.vg);
-                nvgMoveTo(args.vg, -size * 0.6f, -size * 0.8f);
-                nvgLineTo(args.vg, -size * 0.6f, size * 0.8f);
-                nvgLineTo(args.vg, size * 0.6f, size * 0.8f);
-                nvgLineTo(args.vg, size * 0.6f, -size * 0.8f);
-                nvgStroke(args.vg);
-                nvgBeginPath(args.vg);
-                nvgMoveTo(args.vg, -size * 0.6f, 0);
-                nvgLineTo(args.vg, size * 0.6f, 0);
-                nvgStroke(args.vg);
-                break;
-                
-            case 34: // Platinum - Crossed circle with dots
-                nvgBeginPath(args.vg);
-                nvgCircle(args.vg, 0, 0, size * 0.6f);
-                nvgStroke(args.vg);
-                nvgBeginPath(args.vg);
-                nvgMoveTo(args.vg, -size * 0.8f, -size * 0.8f);
-                nvgLineTo(args.vg, size * 0.8f, size * 0.8f);
-                nvgStroke(args.vg);
-                nvgBeginPath(args.vg);
-                nvgMoveTo(args.vg, size * 0.8f, -size * 0.8f);
-                nvgLineTo(args.vg, -size * 0.8f, size * 0.8f);
-                nvgStroke(args.vg);
-                nvgBeginPath(args.vg);
-                nvgCircle(args.vg, 0, 0, size * 0.2f);
-                nvgFill(args.vg);
-                break;
-                
-            case 35: // Aether - Upward pointing triangle with horizontal line above
-                nvgBeginPath(args.vg);
-                nvgMoveTo(args.vg, 0, -size * 0.8f);
-                nvgLineTo(args.vg, -size * 0.7f, size * 0.4f);
-                nvgLineTo(args.vg, size * 0.7f, size * 0.4f);
-                nvgClosePath(args.vg);
-                nvgStroke(args.vg);
-                nvgBeginPath(args.vg);
-                nvgMoveTo(args.vg, -size * 0.8f, -size * 0.9f);
-                nvgLineTo(args.vg, size * 0.8f, -size * 0.9f);
-                nvgStroke(args.vg);
-                break;
-                
-            case 36: // Void - Empty circle with cross through
-                nvgBeginPath(args.vg);
-                nvgCircle(args.vg, 0, 0, size * 0.7f);
-                nvgStroke(args.vg);
-                nvgBeginPath(args.vg);
-                nvgMoveTo(args.vg, -size, 0);
-                nvgLineTo(args.vg, size, 0);
-                nvgStroke(args.vg);
-                nvgBeginPath(args.vg);
-                nvgMoveTo(args.vg, 0, -size);
-                nvgLineTo(args.vg, 0, size);
-                nvgStroke(args.vg);
-                break;
-                
-            case 37: // Chaos Star - Eight-pointed star
-                nvgBeginPath(args.vg);
-                for (int i = 0; i < 8; i++) {
-                    float angle = i * M_PI / 4.0f;
-                    nvgMoveTo(args.vg, 0, 0);
-                    nvgLineTo(args.vg, cosf(angle) * size, sinf(angle) * size);
-                }
-                nvgStroke(args.vg);
-                nvgBeginPath(args.vg);
-                nvgCircle(args.vg, 0, 0, size * 0.2f);
-                nvgFill(args.vg);
-                break;
-                
-            case 38: // Tree of Life - Stylized Kabbalah tree
-                nvgBeginPath(args.vg);
-                // Central pillar
-                nvgMoveTo(args.vg, 0, -size * 0.9f);
-                nvgLineTo(args.vg, 0, size * 0.9f);
-                nvgStroke(args.vg);
-                // Sephirot (circles)
-                for (int i = 0; i < 3; i++) {
-                    float y = -size * 0.6f + i * size * 0.6f;
-                    nvgBeginPath(args.vg);
-                    nvgCircle(args.vg, 0, y, size * 0.15f);
-                    nvgStroke(args.vg);
-                }
-                // Side connections
-                nvgBeginPath(args.vg);
-                nvgMoveTo(args.vg, -size * 0.6f, -size * 0.3f);
-                nvgLineTo(args.vg, size * 0.6f, -size * 0.3f);
-                nvgStroke(args.vg);
-                break;
-                
-            case 39: // Leviathan Cross - Cross of Satan with infinity
-                nvgBeginPath(args.vg);
-                nvgMoveTo(args.vg, 0, -size * 0.8f);
-                nvgLineTo(args.vg, 0, size * 0.4f);
-                nvgStroke(args.vg);
-                nvgBeginPath(args.vg);
-                nvgMoveTo(args.vg, -size * 0.6f, -size * 0.2f);
-                nvgLineTo(args.vg, size * 0.6f, -size * 0.2f);
-                nvgStroke(args.vg);
-                // Double cross
-                nvgBeginPath(args.vg);
-                nvgMoveTo(args.vg, -size * 0.4f, -size * 0.5f);
-                nvgLineTo(args.vg, size * 0.4f, -size * 0.5f);
-                nvgStroke(args.vg);
-                // Infinity at bottom
-                nvgBeginPath(args.vg);
-                for (float t = 0; t < 2 * M_PI; t += 0.1f) {
-                    float x = size * 0.4f * sinf(t) / (1 + cosf(t) * cosf(t));
-                    float y = size * 0.6f + size * 0.2f * sinf(t) * cosf(t) / (1 + cosf(t) * cosf(t));
-                    if (t == 0) nvgMoveTo(args.vg, x, y);
-                    else nvgLineTo(args.vg, x, y);
-                }
-                nvgStroke(args.vg);
-                break;
-        }
-        
-        nvgRestore(args.vg);
-    }
-    
-    void onButton(const event::Button& e) override {
-        if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_LEFT && module) {
-            int symbolId = getSymbolId();
-            module->onSymbolPressed(symbolId);
-            e.consume(this);
-        }
-        Widget::onButton(e);
-    }
-};
+// (Legacy Matrix8x8Widget removed)
 
 
-// Custom Display Widget - shows BPM, sequence status, steps, and mode information
-struct TransmutationDisplayWidget : TransparentWidget {
-    Transmutation* module;
-    std::shared_ptr<Font> font;
-    
-    TransmutationDisplayWidget(Transmutation* module) {
-        this->module = module;
-        box.size = mm2px(Vec(40, 20)); // 40mm x 20mm display area
-        font = APP->window->loadFont(asset::system("res/fonts/ShareTechMono-Regular.ttf"));
-        if (!font) {
-            // Fallback to a default font if ShareTech isn't available
-            font = APP->window->loadFont(asset::system("res/fonts/DejaVuSans.ttf"));
-        }
-    }
-    
-    void draw(const DrawArgs& args) override {
-        if (!module) return;
-        if (!font) return; // Safety check
-        
-        // Additional safety check for module initialization
-        try {
-        
-        // Background
-        nvgSave(args.vg);
-        nvgBeginPath(args.vg);
-        nvgRoundedRect(args.vg, 0, 0, box.size.x, box.size.y, 3);
-        nvgFillColor(args.vg, nvgRGBA(20, 25, 30, 200));
-        nvgFill(args.vg);
-        nvgStrokeColor(args.vg, nvgRGBA(80, 90, 100, 150));
-        nvgStrokeWidth(args.vg, 1.0f);
-        nvgStroke(args.vg);
-        
-        // Set up text properties (vintage ink look)
-        nvgFontSize(args.vg, 10);
-        if (font && font->handle >= 0) {
-            nvgFontFaceId(args.vg, font->handle);
-        }
-        nvgTextAlign(args.vg, NVG_ALIGN_LEFT | NVG_ALIGN_TOP);
-        auto drawVintageText = [&](float x, float y, NVGcolor color, const std::string& s) {
-            // Soft shadow
-            nvgFillColor(args.vg, nvgRGBA(0, 0, 0, 120));
-            nvgText(args.vg, x + 1, y + 1, s.c_str(), NULL);
-            // Warm ink
-            nvgFillColor(args.vg, color);
-            nvgText(args.vg, x, y, s.c_str(), NULL);
-        };
-        
-        float y = 5;
-        
-        // BPM Display
-        NVGcolor ink = nvgRGBA(232, 224, 200, 230);
-        NVGcolor tealInk = nvgRGBA(150, 230, 210, 230);
-        NVGcolor purpleInk = nvgRGBA(210, 160, 250, 230);
-        NVGcolor yellowInk = nvgRGBA(240, 230, 140, 230);
-        
-        float baseBPM = module->params[Transmutation::INTERNAL_CLOCK_PARAM].getValue();
-        int multiplierIndex = (int)module->params[Transmutation::BPM_MULTIPLIER_PARAM].getValue();
-        float multipliers[] = {1.0f, 2.0f, 4.0f, 8.0f};
-        const char* multiplierLabels[] = {"1x", "2x", "4x", "8x"};
-        float effectiveBPM = baseBPM * multipliers[multiplierIndex];
-        std::string bpmText = "BPM: " + std::to_string((int)baseBPM) + " (" + multiplierLabels[multiplierIndex] + " = " + std::to_string((int)effectiveBPM) + ")"; 
-        drawVintageText(5, y, ink, bpmText);
-        y += 12;
-        
-        // Sequence A Status
-        // Teal for A
-        std::string statusA = std::string("A: ") + (module->sequenceA.running ? "RUN" : "STOP") + 
-                              " [" + std::to_string(module->sequenceA.currentStep + 1) + 
-                              "/" + std::to_string(module->sequenceA.length) + "]";
-        drawVintageText(5, y, tealInk, statusA);
-        y += 12;
-        
-        // Sequence B Status with Mode
-        // Purple for B
-        int bMode = (int)module->params[Transmutation::SEQ_B_MODE_PARAM].getValue();
-        std::string modeNames[] = {"IND", "HAR", "LOK"}; // Independent, Harmony, Lock
-        std::string statusB = std::string("B: ") + (module->sequenceB.running ? "RUN" : "STOP") + 
-                              " [" + std::to_string(module->sequenceB.currentStep + 1) + 
-                              "/" + std::to_string(module->sequenceB.length) + "] " + 
-                              modeNames[bMode];
-        drawVintageText(5, y, purpleInk, statusB);
-        y += 12;
-        
-        // Edit Mode Status
-        // Yellow for edit mode
-        std::string editStatus = "EDIT: ";
-        if (module->editModeA) {
-            editStatus += "A";
-        } else if (module->editModeB) {
-            editStatus += "B";
-        } else {
-            editStatus += "OFF";
-        }
-        drawVintageText(5, y, yellowInk, editStatus);
-        
-        // Clock source indicators (small icons on the right)
-        float rightX = box.size.x - 25;
-        // Small caps in warm grey
-        NVGcolor smallInk = nvgRGBA(210, 210, 210, 200);
-        nvgFillColor(args.vg, smallInk);
-        nvgFontSize(args.vg, 8);
-        nvgTextAlign(args.vg, NVG_ALIGN_RIGHT | NVG_ALIGN_TOP);
-        
-        // Clock A source
-        std::string clockAText = module->inputs[Transmutation::CLOCK_A_INPUT].isConnected() ? "EXT" : "INT";
-        // Shadow for right-aligned text
-        nvgFillColor(args.vg, nvgRGBA(0, 0, 0, 120));
-        nvgText(args.vg, rightX + 1, 18, clockAText.c_str(), NULL);
-        nvgFillColor(args.vg, smallInk);
-        nvgText(args.vg, rightX, 17, clockAText.c_str(), NULL);
-        
-        // Clock B source  
-        std::string clockBText = module->inputs[Transmutation::CLOCK_B_INPUT].isConnected() ? "EXT" : "INT";
-        nvgFillColor(args.vg, nvgRGBA(0, 0, 0, 120));
-        nvgText(args.vg, rightX + 1, 30, clockBText.c_str(), NULL);
-        nvgFillColor(args.vg, smallInk);
-        nvgText(args.vg, rightX, 29, clockBText.c_str(), NULL);
-        
-        nvgRestore(args.vg);
-        
-        } catch (...) {
-            // Silently handle any drawing errors to prevent crashes
-            if (args.vg) {
-                nvgRestore(args.vg);
-            }
-        }
-    }
-};
+// AlchemicalSymbolWidget moved to src/transmutation/ui.{hpp,cpp}
+
+
+// TransmutationDisplayWidget moved to src/transmutation/ui.{hpp,cpp}
 
 struct TransmutationWidget : ModuleWidget {
     HighResMatrixWidget* matrix;
-    struct PanelPatinaOverlay : TransparentWidget {
-        void draw(const DrawArgs& args) override {
-            // Full-module subtle vignette and patina for cohesive vintage look
-            float w = box.size.x;
-            float h = box.size.y;
-            // Vignette
-            NVGpaint vignette = nvgRadialGradient(args.vg, w * 0.5f, h * 0.5f, std::min(w, h) * 0.6f, std::min(w, h) * 0.95f,
-                                                  nvgRGBA(0, 0, 0, 0), nvgRGBA(0, 0, 0, 20));
-            nvgBeginPath(args.vg);
-            nvgRect(args.vg, 0, 0, w, h);
-            nvgFillPaint(args.vg, vignette);
-            nvgFill(args.vg);
-            // Gentle patina wash
-            NVGpaint wash = nvgLinearGradient(args.vg, 0, 0, w, h, nvgRGBA(22, 28, 18, 8), nvgRGBA(50, 40, 22, 6));
-            nvgBeginPath(args.vg);
-            nvgRect(args.vg, 0, 0, w, h);
-            nvgFillPaint(args.vg, wash);
-            nvgFill(args.vg);
-            // Sparse micro-scratches
-            unsigned seed = 99173u;
-            auto rnd = [&]() {
-                seed ^= seed << 13; seed ^= seed >> 17; seed ^= seed << 5; return (seed & 0xFFFF) / 65535.f; };
-            nvgStrokeColor(args.vg, nvgRGBA(255, 255, 255, 8));
-            nvgStrokeWidth(args.vg, 0.7f);
-            for (int i = 0; i < 8; ++i) {
-                float x1 = rnd() * w;
-                float y1 = rnd() * h;
-                float dx = (rnd() - 0.5f) * (w * 0.15f);
-                float dy = (rnd() - 0.5f) * (h * 0.15f);
-                nvgBeginPath(args.vg);
-                nvgMoveTo(args.vg, x1, y1);
-                nvgLineTo(args.vg, x1 + dx, y1 + dy);
-                nvgStroke(args.vg);
-            }
-        }
-    };
     // Draw background image behind panel and widgets without holding persistent window resources
     void draw(const DrawArgs& args) override {
         // Draw panel background texture first
@@ -4666,6 +2299,9 @@ struct TransmutationWidget : ModuleWidget {
         menu->addChild(new MenuSeparator);
         menu->addChild(createMenuLabel("Steps Grid"));
         auto check = [](bool on){ return on ? "✓" : ""; };
+        menu->addChild(createMenuItem("16 steps", check(module->gridSteps == 16), [module]() {
+            module->gridSteps = 16;
+        }));
         menu->addChild(createMenuItem("32 steps", check(module->gridSteps == 32), [module]() {
             module->gridSteps = 32;
         }));
@@ -4678,6 +2314,38 @@ struct TransmutationWidget : ModuleWidget {
         menu->addChild(createMenuLabel("Display Mode"));
         menu->addChild(createMenuItem("Spooky TV Effect", check(module->spookyTvMode), [module]() {
             module->spookyTvMode = !module->spookyTvMode;
+        }));
+
+        // Output shaping options
+        menu->addChild(new MenuSeparator);
+        menu->addChild(createMenuLabel("Output Shaping"));
+        menu->addChild(createMenuItem("CV Slew", check(module->enableCvSlew), [module]() {
+            module->enableCvSlew = !module->enableCvSlew;
+        }));
+        menu->addChild(createMenuItem("Force 6-voice Polyphony", check(module->forceSixPoly), [module]() {
+            module->forceSixPoly = !module->forceSixPoly;
+        }));
+        menu->addChild(createSubmenuItem("Gate Mode", "", [module, check](Menu* sub){
+            sub->addChild(createMenuItem("Sustain", check(module->gateMode == Transmutation::GATE_SUSTAIN), [module]() { module->gateMode = Transmutation::GATE_SUSTAIN; }));
+            sub->addChild(createMenuItem("Pulse", check(module->gateMode == Transmutation::GATE_PULSE), [module]() { module->gateMode = Transmutation::GATE_PULSE; }));
+        }));
+        menu->addChild(createSubmenuItem("Pulse Width (ms)", "", [module, check](Menu* sub){
+            const float opts[] = {2.f, 5.f, 8.f, 10.f, 20.f, 50.f};
+            for (float v : opts) {
+                std::string label = std::to_string((int)v);
+                sub->addChild(createMenuItem(label, check(fabsf(module->gatePulseMs - v) < 0.5f), [module, v]() {
+                    module->gatePulseMs = v;
+                }));
+            }
+        }));
+        menu->addChild(createSubmenuItem("CV Slew (ms)", "", [module, check](Menu* sub){
+            const float opts[] = {0.f, 1.f, 2.f, 3.f, 5.f, 10.f};
+            for (float v : opts) {
+                std::string label = std::to_string((int)v);
+                sub->addChild(createMenuItem(label, check(fabsf(module->cvSlewMs - v) < 0.5f), [module, v]() {
+                    module->cvSlewMs = v;
+                }));
+            }
         }));
 
         // Chord packs submenu
@@ -4855,7 +2523,10 @@ struct TransmutationWidget : ModuleWidget {
         };
 
         // High-Resolution 8x8 Matrix positioned from <rect id="main_screen" x y width height>
-        matrix = new HighResMatrixWidget(module);
+        matrix = new HighResMatrixWidget(
+            static_cast<stx::transmutation::TransmutationView*>(module), 
+            static_cast<stx::transmutation::TransmutationController*>(module)
+        );
         {
             std::string tag = findTagForId("main_screen");
             float mx = getAttr(tag, "x", 27.143473f);
@@ -4898,24 +2569,29 @@ struct TransmutationWidget : ModuleWidget {
                 return mm2px(Vec(cx, cy));
             };
             // Sequence A
-            addParam(createParamCentered<STKnobMedium>(pos("seq_a_length", 15.950587f, 37.849998f), module, Transmutation::LENGTH_A_PARAM));
-            addParam(createParamCentered<STKnobMedium>(pos("main_bpm", 15.950588f, 18.322521f), module, Transmutation::INTERNAL_CLOCK_PARAM));
-            addParam(createParamCentered<STKnobSmall>(pos("clk_mult_select", 34.340317f, 18.322521f), module, Transmutation::BPM_MULTIPLIER_PARAM));
+            addParam(createParamCentered<ShapetakerKnobMedium>(pos("seq_a_length", 15.950587f, 37.849998f), module, Transmutation::LENGTH_A_PARAM));
+            addParam(createParamCentered<ShapetakerKnobMedium>(pos("main_bpm", 15.950588f, 18.322521f), module, Transmutation::INTERNAL_CLOCK_PARAM));
+            addParam(createParamCentered<ShapetakerKnobOscilloscopeSmall>(pos("clk_mult_select", 34.340317f, 18.322521f), module, Transmutation::BPM_MULTIPLIER_PARAM));
             addParam(createParamCentered<ShapetakerVintageMomentary>(pos("a_play_btn", 22.586929f, 67.512939f), module, Transmutation::START_A_PARAM));
             addParam(createParamCentered<ShapetakerVintageMomentary>(pos("a_stop_btn", 22.784245f, 75.573959f), module, Transmutation::STOP_A_PARAM));
             addParam(createParamCentered<ShapetakerVintageMomentary>(pos("a_reset_btn", 22.784245f, 83.509323f), module, Transmutation::RESET_A_PARAM));
             // Sequence B
-            addParam(createParamCentered<STKnobMedium>(pos("seq_b_length", 115.02555f, 37.849998f), module, Transmutation::LENGTH_B_PARAM));
+            addParam(createParamCentered<ShapetakerKnobMedium>(pos("seq_b_length", 115.02555f, 37.849998f), module, Transmutation::LENGTH_B_PARAM));
             addParam(createParamCentered<ShapetakerVintageMomentary>(pos("b_play_btn", 108.43727f, 67.450111f), module, Transmutation::START_B_PARAM));
             addParam(createParamCentered<ShapetakerVintageMomentary>(pos("b_stop_btn", 108.43727f, 75.511131f), module, Transmutation::STOP_B_PARAM));
             addParam(createParamCentered<ShapetakerVintageMomentary>(pos("b_reset_btn", 108.43728f, 83.446495f), module, Transmutation::RESET_B_PARAM));
-            addParam(createParamCentered<STSelector>(pos("mode_switch", 110.08858f, 19.271444f), module, Transmutation::SEQ_B_MODE_PARAM));
+            addParam(createParamCentered<ShapetakerVintageSelector>(pos("mode_switch", 110.08858f, 19.271444f), module, Transmutation::SEQ_B_MODE_PARAM));
         }
         
-        // Custom Display Widget - temporarily commented out for debugging
-        // TransmutationDisplayWidget* display = new TransmutationDisplayWidget(module);
-        // display->box.pos = mm2px(Vec(10, 115)); // Position in lower left area
-        // addChild(display);
+        // Status display widget (vintage text panel)
+        if (module) {
+            auto* display = new TransmutationDisplayWidget(
+                static_cast<stx::transmutation::TransmutationView*>(module)
+            );
+            display->box.pos = mm2px(Vec(10, 115));
+            display->box.size = mm2px(Vec(40, 20));
+            addChild(display);
+        }
         
         // I/O - read from panel IDs to stay in sync
         {
@@ -4926,19 +2602,19 @@ struct TransmutationWidget : ModuleWidget {
                 return mm2px(Vec(cx, cy));
             };
             // A side
-            addInput(createInputCentered<STPort>(cpos("a_clk_cv", 15.950586f, 95.834518f), module, Transmutation::CLOCK_A_INPUT));
-            addInput(createInputCentered<STPort>(cpos("a_reset_cv", 7.5470452f, 83.509323f), module, Transmutation::RESET_A_INPUT));
-            addInput(createInputCentered<STPort>(cpos("a_play_cv", 7.5470452f, 67.512939f), module, Transmutation::START_A_INPUT));
-            addInput(createInputCentered<STPort>(cpos("a_stop_cv", 7.5470452f, 75.511131f), module, Transmutation::STOP_A_INPUT));
-            addOutput(createOutputCentered<STPort>(cpos("a_cv_out", 15.950586f, 105.7832f), module, Transmutation::CV_A_OUTPUT));
-            addOutput(createOutputCentered<STPort>(cpos("a_gate_out", 15.950586f, 115.73187f), module, Transmutation::GATE_A_OUTPUT));
+            addInput(createInputCentered<ShapetakerBNCPort>(cpos("a_clk_cv", 15.950586f, 95.834518f), module, Transmutation::CLOCK_A_INPUT));
+            addInput(createInputCentered<ShapetakerBNCPort>(cpos("a_reset_cv", 7.5470452f, 83.509323f), module, Transmutation::RESET_A_INPUT));
+            addInput(createInputCentered<ShapetakerBNCPort>(cpos("a_play_cv", 7.5470452f, 67.512939f), module, Transmutation::START_A_INPUT));
+            addInput(createInputCentered<ShapetakerBNCPort>(cpos("a_stop_cv", 7.5470452f, 75.511131f), module, Transmutation::STOP_A_INPUT));
+            addOutput(createOutputCentered<ShapetakerBNCPort>(cpos("a_cv_out", 15.950586f, 105.7832f), module, Transmutation::CV_A_OUTPUT));
+            addOutput(createOutputCentered<ShapetakerBNCPort>(cpos("a_gate_out", 15.950586f, 115.73187f), module, Transmutation::GATE_A_OUTPUT));
             // B side
-            addInput(createInputCentered<STPort>(cpos("b_clk_cv", 115.02555f, 95.834518f), module, Transmutation::CLOCK_B_INPUT));
-            addInput(createInputCentered<STPort>(cpos("b_reset_cv", 123.6797f, 83.509323f), module, Transmutation::RESET_B_INPUT));
-            addInput(createInputCentered<STPort>(cpos("b_play_cv", 123.6797f, 67.512939f), module, Transmutation::START_B_INPUT));
-            addInput(createInputCentered<STPort>(cpos("b_stop_cv", 123.6797f, 75.511131f), module, Transmutation::STOP_B_INPUT));
-            addOutput(createOutputCentered<STPort>(cpos("b_cv_out", 115.02555f, 105.7832f), module, Transmutation::CV_B_OUTPUT));
-            addOutput(createOutputCentered<STPort>(cpos("b_gate_out", 115.02555f, 115.73187f), module, Transmutation::GATE_B_OUTPUT));
+            addInput(createInputCentered<ShapetakerBNCPort>(cpos("b_clk_cv", 115.02555f, 95.834518f), module, Transmutation::CLOCK_B_INPUT));
+            addInput(createInputCentered<ShapetakerBNCPort>(cpos("b_reset_cv", 123.6797f, 83.509323f), module, Transmutation::RESET_B_INPUT));
+            addInput(createInputCentered<ShapetakerBNCPort>(cpos("b_play_cv", 123.6797f, 67.512939f), module, Transmutation::START_B_INPUT));
+            addInput(createInputCentered<ShapetakerBNCPort>(cpos("b_stop_cv", 123.6797f, 75.511131f), module, Transmutation::STOP_B_INPUT));
+            addOutput(createOutputCentered<ShapetakerBNCPort>(cpos("b_cv_out", 115.02555f, 105.7832f), module, Transmutation::CV_B_OUTPUT));
+            addOutput(createOutputCentered<ShapetakerBNCPort>(cpos("b_gate_out", 115.02555f, 115.73187f), module, Transmutation::GATE_B_OUTPUT));
         }
         
         // Alchemical Symbol Buttons from SVG rects alchem_1..alchem_12 (x,y are top-left)
@@ -4957,7 +2633,11 @@ struct TransmutationWidget : ModuleWidget {
             float cy = y + hRect * 0.5f;
             float xPos = cx - w * 0.5f;
             float yPos = cy - h * 0.5f;
-            AlchemicalSymbolWidget* symbolWidget = new AlchemicalSymbolWidget(module, i);
+            AlchemicalSymbolWidget* symbolWidget = new AlchemicalSymbolWidget(
+                static_cast<stx::transmutation::TransmutationView*>(module), 
+                static_cast<stx::transmutation::TransmutationController*>(module), 
+                i
+            );
             symbolWidget->box.pos = mm2px(Vec(xPos, yPos));
             symbolWidget->box.size = mm2px(Vec(w, h));
             addChild(symbolWidget);
@@ -4983,8 +2663,8 @@ struct TransmutationWidget : ModuleWidget {
             float ay = getAttr(la, "cy", 33.132351f);
             float bx = getAttr(lb, "cx", 102.28805f);
             float by = getAttr(lb, "cy", 33.5513f);
-            addChild(createLightCentered<TealJewelLEDMedium>(mm2px(Vec(ax, ay)), module, Transmutation::RUNNING_A_LIGHT));
-            addChild(createLightCentered<PurpleJewelLEDMedium>(mm2px(Vec(bx, by)), module, Transmutation::RUNNING_B_LIGHT));
+            addChild(createLightCentered<shapetaker::ui::TealJewelLEDMedium>(mm2px(Vec(ax, ay)), module, Transmutation::RUNNING_A_LIGHT));
+            addChild(createLightCentered<shapetaker::ui::PurpleJewelLEDMedium>(mm2px(Vec(bx, by)), module, Transmutation::RUNNING_B_LIGHT));
         }
 
         // Panel-wide patina overlay for cohesive vintage appearance (added last so it sits on top subtly)

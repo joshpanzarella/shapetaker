@@ -6,9 +6,8 @@ using namespace rack;
 
 extern Plugin* pluginInstance;
 
-// Include utility headers for common functionality
-#include "shapetakerUtils.hpp"
-#include "shapetakerWidgets.hpp"
+// Include reorganized utilities
+#include "utilities.hpp"
 
 extern Model* modelClairaudient;
 extern Model* modelChiaroscuro;
@@ -266,94 +265,10 @@ struct ShapetakerVintageSelector : app::SvgSwitch {
     }
 };
 
-struct VUMeterWidget : widget::Widget {
-    Module* module;
-    float* vu;
-    std::string face_path;
-    std::string needle_path;
-    
-    VUMeterWidget(Module* module, float* vu, std::string face_path, std::string needle_path) : module(module), vu(vu), face_path(face_path), needle_path(needle_path) {
-        box.size = Vec(35, 35); // Smaller widget size
-    }
-    
-    void drawLayer(const DrawArgs& args, int layer) override {
-        if (layer == 1) {
-            // Draw the VU meter face
-            std::shared_ptr<Svg> face_svg = Svg::load(asset::plugin(pluginInstance, face_path));
-            if (face_svg) {
-                NVGcontext* vg = args.vg;
-                nvgSave(vg);
-                nvgTranslate(vg, box.size.x / 2 - 25, box.size.y / 2 - 25); // Center the face SVG
-                nvgScale(vg, 0.5f, 0.5f); // Same scale as needle
-                face_svg->draw(vg);
-                nvgRestore(vg);
-            } else {
-                // Fallback if face SVG is not loading
-                nvgBeginPath(args.vg);
-                nvgCircle(args.vg, box.size.x / 2, box.size.y / 2, box.size.x / 2);
-                nvgFillColor(args.vg, nvgRGB(50, 50, 50));
-                nvgFill(args.vg);
-            }
-            
-            // Safety check to prevent crashes
-            if (!module || !vu) {
-                return;
-            }
-            
-            // VU meter scaling: *vu ranges 0-1 where 1.0 = clipped 10V signal
-            // More uniform scaling across the full range
-            float vu_value = *vu;
-            float vu_scaled;
-            if (vu_value <= 0.6f) {
-                // Main scale: map 0-0.6 to -20 VU to 0 VU  
-                vu_scaled = (vu_value / 0.6f) * 20.0f - 20.0f; // -20 to 0 VU
-            } else if (vu_value <= 0.85f) {
-                // Approach overload: map 0.6-0.85 to 0 VU to +3 VU
-                vu_scaled = ((vu_value - 0.6f) / 0.25f) * 3.0f; // 0 to +3 VU
-            } else {
-                // Red overload zone: map 0.85-1.0 to +3 VU to +5 VU
-                vu_scaled = 3.0f + ((vu_value - 0.85f) / 0.15f) * 2.0f; // +3 to +5 VU (red zone)
-            }
-            
-            // Map VU range (-20 to +3) to needle angle - note +3 is max, not +5
-            float normalized_vu = clamp((vu_scaled + 20.0f) / 23.0f, 0.0f, 1.0f); // 23 = range from -20 to +3
-            // Needle sweeps from lower left (-20) to lower right (+3)
-            // Approximate angles: -60° to +60° (120° total sweep)
-            float angle = normalized_vu * (120.0f * M_PI / 180.0f) - (60.0f * M_PI / 180.0f);
-            
-            // Draw custom needle - positioned to match SVG center (50,50) at 0.5 scale
-            nvgSave(args.vg);
-            nvgTranslate(args.vg, box.size.x / 2 - 25, box.size.y / 2 - 25); // Match face center
-            nvgScale(args.vg, 0.5f, 0.5f); // Match face scale  
-            nvgTranslate(args.vg, 50, 50); // Move to SVG center point (50,50)
-            nvgRotate(args.vg, angle);
-            
-            // Draw needle body
-            nvgBeginPath(args.vg);
-            nvgMoveTo(args.vg, 0, 8); // Start from bottom of needle
-            nvgLineTo(args.vg, 0, -25); // Length of needle
-            nvgStrokeColor(args.vg, nvgRGB(0, 0, 0)); // Black needle
-            nvgStrokeWidth(args.vg, 2.5f);
-            nvgStroke(args.vg);
-            
-            // Draw needle tip
-            nvgBeginPath(args.vg);
-            nvgCircle(args.vg, 0, -25, 1.5f);
-            nvgFillColor(args.vg, nvgRGB(0, 0, 0));
-            nvgFill(args.vg);
-            
-            // Draw center pivot
-            nvgBeginPath(args.vg);
-            nvgCircle(args.vg, 0, 0, 3);
-            nvgFillColor(args.vg, nvgRGB(50, 50, 50));
-            nvgFill(args.vg);
-            
-            nvgRestore(args.vg);
-        }
-    }
-};
+// VUMeterWidget moved to shapetakerWidgets.hpp (namespace shapetaker)
 
-struct JewelLED : ModuleLightWidget {
+// Legacy JewelLED variants removed in favor of shapetakerWidgets.hpp LEDs
+/* struct JewelLED : ModuleLightWidget {
     JewelLED() {
         // Set a fixed size
         box.size = Vec(25, 25);
@@ -408,9 +323,9 @@ struct JewelLED : ModuleLightWidget {
         // Call parent draw for lighting effects
         ModuleLightWidget::draw(args);
     }
-};
+}; */
 
-struct JewelLEDSmall : ModuleLightWidget {
+/* struct JewelLEDSmall : ModuleLightWidget {
     JewelLEDSmall() {
         // Set a fixed size
         box.size = Vec(15, 15);
@@ -458,9 +373,9 @@ struct JewelLEDSmall : ModuleLightWidget {
         
         ModuleLightWidget::draw(args);
     }
-};
+}; */
 
-struct JewelLEDMedium : ModuleLightWidget {
+/* struct JewelLEDMedium : ModuleLightWidget {
     JewelLEDMedium() {
         // Set a fixed size
         box.size = Vec(20, 20);
@@ -508,9 +423,11 @@ struct JewelLEDMedium : ModuleLightWidget {
         
         ModuleLightWidget::draw(args);
     }
-};
+}; */
 
-struct JewelLEDLarge : ModuleLightWidget {
+// TealJewelLEDMedium and PurpleJewelLEDMedium are now defined in shapetakerWidgets.hpp
+
+/* struct JewelLEDLarge : ModuleLightWidget {
     JewelLEDLarge() {
         // Set a fixed size
         box.size = Vec(30, 30);
@@ -558,9 +475,9 @@ struct JewelLEDLarge : ModuleLightWidget {
         
         ModuleLightWidget::draw(args);
     }
-};
+}; */
 
-struct JewelLEDXLarge : ModuleLightWidget {
+/* struct JewelLEDXLarge : ModuleLightWidget {
     JewelLEDXLarge() {
         // Set a fixed size
         box.size = Vec(40, 40);
@@ -608,9 +525,9 @@ struct JewelLEDXLarge : ModuleLightWidget {
         
         ModuleLightWidget::draw(args);
     }
-};
+}; */
 
-struct JewelLEDHuge : ModuleLightWidget {
+/* struct JewelLEDHuge : ModuleLightWidget {
     JewelLEDHuge() {
         // Set a fixed size
         box.size = Vec(50, 50);
@@ -658,7 +575,7 @@ struct JewelLEDHuge : ModuleLightWidget {
         
         ModuleLightWidget::draw(args);
     }
-};
+}; */
 
 // An interface for modules that can provide data to the oscilloscope
 struct IOscilloscopeSource {
