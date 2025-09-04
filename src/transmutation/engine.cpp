@@ -16,7 +16,7 @@ bool isStepChanged(const SequenceStep* prev, const SequenceStep* curr) {
 }
 
 const SequenceStep* resolveEffectiveStep(const Sequence& seq, int idx,
-                                         const std::array<int, 40>& symbolToChordMapping,
+                                         const std::array<int, st::SymbolCount>& symbolToChordMapping,
                                          const ChordPack& pack) {
     if (seq.length <= 0) return nullptr;
     int i = (idx % seq.length + seq.length) % seq.length;
@@ -26,7 +26,7 @@ const SequenceStep* resolveEffectiveStep(const Sequence& seq, int idx,
             i = (i - 1 + seq.length) % seq.length;
             continue;
         }
-        if (st.chordIndex >= 0 && st.chordIndex < 40) {
+        if (st.chordIndex >= 0 && st.chordIndex < st::SymbolCount) {
             int mapped = symbolToChordMapping[st.chordIndex];
             if (mapped >= 0 && mapped < (int)pack.chords.size())
                 return &seq.steps[i];

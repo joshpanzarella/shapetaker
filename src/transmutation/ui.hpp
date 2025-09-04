@@ -57,6 +57,6 @@ struct HighResMatrixWidget : Widget {
     void onMatrixRightClick(int x, int y);
     void drawLayer(const DrawArgs& args, int layer) override;
     void drawMatrix(const DrawArgs& args);
-    void drawAlchemicalSymbol(const DrawArgs& args, Vec pos, int symbolId, NVGcolor color = nvgRGBA(255,255,255,255));
+    void drawAlchemicalSymbol(const DrawArgs& args, Vec pos, int symbolId, NVGcolor color = nvgRGBA(255,255,255,255), float scale = 1.0f);
     void drawVoiceCount(const DrawArgs& args, Vec pos, int voiceCount, NVGcolor dotColor = nvgRGBA(255,255,255,255));
 };

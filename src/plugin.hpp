@@ -24,8 +24,8 @@ struct ShapetakerKnobLarge : app::SvgKnob {
         minAngle = -0.75 * M_PI;
         maxAngle = 0.75 * M_PI;
         
-        // Use the indicator as the rotating part (this sets up the internal SvgWidget)
-        setSvg(Svg::load(asset::plugin(pluginInstance, "res/knobs/indicators/st_knob_large_indicator_light.svg")));
+        // Use the oscilloscope indicator variant
+        setSvg(Svg::load(asset::plugin(pluginInstance, "res/knobs/indicators/st_knob_oscilloscope_indicator_large.svg")));
         
         // Add background as first child (will be drawn behind the rotating part)
         bg = new widget::SvgWidget;
@@ -45,8 +45,8 @@ struct ShapetakerKnobMedium : app::SvgKnob {
         minAngle = -0.75 * M_PI;
         maxAngle = 0.75 * M_PI;
         
-        // Use the indicator as the rotating part (this sets up the internal SvgWidget)
-        setSvg(Svg::load(asset::plugin(pluginInstance, "res/knobs/indicators/st_knob_medium_indicator_light.svg")));
+        // Use the oscilloscope indicator variant
+        setSvg(Svg::load(asset::plugin(pluginInstance, "res/knobs/indicators/st_knob_oscilloscope_indicator_medium.svg")));
         
         // Add background as first child (will be drawn behind the rotating part)
         bg = new widget::SvgWidget;

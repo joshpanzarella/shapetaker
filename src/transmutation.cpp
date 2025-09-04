@@ -3,6 +3,7 @@
 #include "transmutation/ui.hpp"
 #include "transmutation/chords.hpp"
 #include "transmutation/engine.hpp"
+#include "transmutation/widgets.hpp"
 #include <vector>
 #include <array>
 #include <string>
@@ -42,7 +43,10 @@ struct Transmutation : Module,
         // Edit mode controls
         EDIT_A_PARAM,
         EDIT_B_PARAM,
-        
+
+        // Display style
+        SCREEN_STYLE_PARAM,
+
         // Sequence controls
         LENGTH_A_PARAM,
         LENGTH_B_PARAM,
@@ -166,7 +170,8 @@ struct Transmutation : Module,
     int displaySymbolId = -999; // -999 means no symbol display
     float symbolPreviewTimer = 0.0f;
     static constexpr float SYMBOL_PREVIEW_DURATION = 0.50f; // Show for 500ms
-    bool spookyTvMode = true; // Toggle for spooky TV effect vs clean display
+    bool spookyTvMode = true; // Toggle for spooky TV effect vs clean display (backed by SCREEN_STYLE_PARAM)
+    bool doubleOccupancyMode = false; // Visual split mode for step circles
     
     // Chord pack system
     ChordPack currentChordPack;
@@ -251,6 +256,9 @@ struct Transmutation : Module,
         // Edit mode buttons
         configParam(EDIT_A_PARAM, 0.f, 1.f, 0.f, "Edit Transmutation A");
         configParam(EDIT_B_PARAM, 0.f, 1.f, 0.f, "Edit Transmutation B");
+
+        // Screen style (0 = Clean, 1 = Spooky)
+        configSwitch(SCREEN_STYLE_PARAM, 0.f, 1.f, 1.f, "Screen Style", {"Clean", "Spooky"});
         
         // Transmutation controls
         configParam(LENGTH_A_PARAM, 1.f, 64.f, 16.f, "Transmutation A Length");
@@ -318,6 +326,9 @@ struct Transmutation : Module,
     }
     
     void process(const ProcessArgs& args) override {
+        // Mirror param to internal flag for UI drawing
+        spookyTvMode = params[SCREEN_STYLE_PARAM].getValue() > 0.5f;
+
         // Configure slew limiters with current sample rate
         if (enableCvSlew) {
             for (int i = 0; i < 6; ++i) {
@@ -583,6 +594,7 @@ struct Transmutation : Module,
     std::string getDisplayChordName() const override { return displayChordName; }
     float getSymbolPreviewTimer() const override { return symbolPreviewTimer; }
     bool getSpookyTvMode() const override { return spookyTvMode; }
+    bool isDoubleOccupancy() const override { return doubleOccupancyMode; }
     
     // Symbol button support
     int getSelectedSymbol() const override { return selectedSymbol; }
@@ -2312,8 +2324,19 @@ struct TransmutationWidget : ModuleWidget {
         // Display mode options
         menu->addChild(new MenuSeparator);
         menu->addChild(createMenuLabel("Display Mode"));
-        menu->addChild(createMenuItem("Spooky TV Effect", check(module->spookyTvMode), [module]() {
-            module->spookyTvMode = !module->spookyTvMode;
+        menu->addChild(createMenuItem("Spooky TV Effect", check(module->params[Transmutation::SCREEN_STYLE_PARAM].getValue() > 0.5f), [module]() {
+            float v = module->params[Transmutation::SCREEN_STYLE_PARAM].getValue();
+            module->params[Transmutation::SCREEN_STYLE_PARAM].setValue(v > 0.5f ? 0.f : 1.f);
+        }));
+
+        // Occupancy display options
+        menu->addChild(new MenuSeparator);
+        menu->addChild(createMenuLabel("Step Occupancy"));
+        menu->addChild(createMenuItem("Single (blended)", check(!module->doubleOccupancyMode), [module]() {
+            module->doubleOccupancyMode = false;
+        }));
+        menu->addChild(createMenuItem("Double (split)", check(module->doubleOccupancyMode), [module]() {
+            module->doubleOccupancyMode = true;
         }));
 
         // Output shaping options
@@ -2387,9 +2410,9 @@ struct TransmutationWidget : ModuleWidget {
             chordMenu->addChild(createMenuItem("Basic Major", rightText, [module]() {
                 module->loadDefaultChordPack();
                 module->randomizeSymbolAssignment();
-                module->displayChordName = "Basic Major LOADED";
-                module->displaySymbolId = -1;
-                module->symbolPreviewTimer = 0.5f;
+                module->displayChordName = "Basic Major";
+                module->displaySymbolId = -999; // text-only preview
+                module->symbolPreviewTimer = 1.0f;
             }));
 
             if (!system::isDirectory(chordPackDir)) {
@@ -2457,14 +2480,14 @@ struct TransmutationWidget : ModuleWidget {
                             if (!module) return;
                             if (module->loadChordPackFromFile(packPath)) {
                                 module->randomizeSymbolAssignment();
-                                module->displayChordName = displayName + " LOADED";
-                                module->displaySymbolId = -1;
-                                module->symbolPreviewTimer = 0.5f;
+                                module->displayChordName = displayName;
+                                module->displaySymbolId = -999; // text-only preview
+                                module->symbolPreviewTimer = 1.0f;
                                 INFO("Loaded chord pack: %s", displayName.c_str());
                             } else {
                                 module->displayChordName = "LOAD ERROR";
-                                module->displaySymbolId = -1;
-                                module->symbolPreviewTimer = 0.5f;
+                                module->displaySymbolId = -999;
+                                module->symbolPreviewTimer = 1.0f;
                                 WARN("Failed to load chord pack: %s", packPath.c_str());
                             }
                         }));
@@ -2583,15 +2606,7 @@ struct TransmutationWidget : ModuleWidget {
             addParam(createParamCentered<ShapetakerVintageSelector>(pos("mode_switch", 110.08858f, 19.271444f), module, Transmutation::SEQ_B_MODE_PARAM));
         }
         
-        // Status display widget (vintage text panel)
-        if (module) {
-            auto* display = new TransmutationDisplayWidget(
-                static_cast<stx::transmutation::TransmutationView*>(module)
-            );
-            display->box.pos = mm2px(Vec(10, 115));
-            display->box.size = mm2px(Vec(40, 20));
-            addChild(display);
-        }
+        // Status display widget removed per design cleanup
         
         // I/O - read from panel IDs to stay in sync
         {
@@ -2622,7 +2637,7 @@ struct TransmutationWidget : ModuleWidget {
             std::string id = std::string("alchem_") + std::to_string(i + 1);
             std::string tag = findTagForId(id);
             float x = getAttr(tag, "x", (i < 6 ? (36.0f + 10.65f * i) : (36.0f + 10.65f * (i - 6))));
-            float y = getAttr(tag, "y", (i < 6 ? 30.55f : 117.56f));
+            float y = getAttr(tag, "y", (i < 6 ? 110.0f : 117.56f)); // Both rows at bottom of matrix
             float wRect = getAttr(tag, "width", 6.0f);
             float hRect = getAttr(tag, "height", 6.0f);
             // Enlarge buttons but keep center aligned in their reserved rect
@@ -2663,8 +2678,8 @@ struct TransmutationWidget : ModuleWidget {
             float ay = getAttr(la, "cy", 33.132351f);
             float bx = getAttr(lb, "cx", 102.28805f);
             float by = getAttr(lb, "cy", 33.5513f);
-            addChild(createLightCentered<shapetaker::ui::TealJewelLEDMedium>(mm2px(Vec(ax, ay)), module, Transmutation::RUNNING_A_LIGHT));
-            addChild(createLightCentered<shapetaker::ui::PurpleJewelLEDMedium>(mm2px(Vec(bx, by)), module, Transmutation::RUNNING_B_LIGHT));
+            addChild(createLightCentered<shapetaker::transmutation::TealJewelLEDMedium>(mm2px(Vec(ax, ay)), module, Transmutation::RUNNING_A_LIGHT));
+            addChild(createLightCentered<shapetaker::transmutation::PurpleJewelLEDMedium>(mm2px(Vec(bx, by)), module, Transmutation::RUNNING_B_LIGHT));
         }
 
         // Panel-wide patina overlay for cohesive vintage appearance (added last so it sits on top subtly)

@@ -2,6 +2,7 @@
 #pragma once
 #include <string>
 #include <vector>
+#include "../utilities.hpp"
 // alchemySymbols.hpp not needed in chords
 
 namespace stx { namespace transmutation {
@@ -24,7 +25,7 @@ struct ChordPack {
 bool loadChordPackFromFile(const std::string& filepath, ChordPack& out);
 void loadDefaultChordPack(ChordPack& out);
 void randomizeSymbolAssignment(const ChordPack& pack,
-                               std::array<int, 40>& symbolToChordMapping,
+                               std::array<int, st::SymbolCount>& symbolToChordMapping,
                                std::array<int, 12>& buttonToSymbolMapping);
 
 }} // namespace stx::transmutation

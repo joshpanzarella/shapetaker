@@ -26,7 +26,7 @@ void drawAlchemicalSymbol(const widget::Widget::DrawArgs& args, Vec pos, int sym
 bool isValidSymbolId(int symbolId);
 
 // Get symbol count (40 total symbols available)
-constexpr int getSymbolCount() { return 40; }
+constexpr int getSymbolCount() { return 60; }
 
 // Draw vintage panel effects: vignette + patina + micro-scratches
 void drawVignettePatinaScratches(const widget::Widget::DrawArgs& args,
@@ -49,5 +49,19 @@ void drawScanlines(const widget::Widget::DrawArgs& args, float x, float y,
 // Draw phosphor glow effect for CRT displays
 void drawPhosphorGlow(const widget::Widget::DrawArgs& args, Vec center, 
                      float radius, NVGcolor color, float intensity = 1.0f);
+
+/**
+ * Draw subtle CRT shadow mask (RGB triads) over a region
+ * triadWidth is the pixel width of one R+G+B set; alpha controls overall opacity.
+ */
+void drawShadowMask(const widget::Widget::DrawArgs& args, float x, float y,
+                   float w, float h, float triadWidth = 3.0f, float alpha = 0.04f);
+
+/**
+ * Draw soft glass reflections over a screen rectangle for depth and realism
+ * intensity controls overall reflection strength.
+ */
+void drawGlassReflections(const widget::Widget::DrawArgs& args, float x, float y,
+                         float w, float h, float intensity = 0.12f);
 
 }} // namespace shapetaker::graphics

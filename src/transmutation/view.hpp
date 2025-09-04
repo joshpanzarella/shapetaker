@@ -49,6 +49,8 @@ struct TransmutationView {
     virtual std::string getDisplayChordName() const = 0;
     virtual float getSymbolPreviewTimer() const = 0;
     virtual bool getSpookyTvMode() const = 0;
+    // Visual mode: when true, draw double-occupancy layout (split step)
+    virtual bool isDoubleOccupancy() const = 0;
     
     // Symbol button support
     virtual int getSelectedSymbol() const = 0;

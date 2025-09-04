@@ -74,7 +74,7 @@ namespace st {
     using shapetaker::graphics::drawVignettePatinaScratches;
     
     // Symbol constants
-    constexpr int SymbolCount = 40;
+    constexpr int SymbolCount = 60;
 }
 
 // TODO: Remove these legacy includes in future version

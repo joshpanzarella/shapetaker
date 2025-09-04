@@ -32,7 +32,7 @@ bool isStepChanged(const SequenceStep* prev, const SequenceStep* curr);
 
 // Follow TIEs backward and validate mapping against the chord pack
 const SequenceStep* resolveEffectiveStep(const Sequence& seq, int idx,
-                                         const std::array<int, 40>& symbolToChordMapping,
+                                         const std::array<int, st::SymbolCount>& symbolToChordMapping,
                                          const ChordPack& pack);
 
 // Gate policy used by helpers

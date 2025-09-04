@@ -5,6 +5,7 @@
 #include <random>
 #include <algorithm>
 #include "chords.hpp"
+#include "../utilities.hpp"
 
 using namespace rack;
 
@@ -85,17 +86,17 @@ void loadDefaultChordPack(ChordPack& out) {
 }
 
 void randomizeSymbolAssignment(const ChordPack& pack,
-                               std::array<int, 40>& symbolToChordMapping,
+                               std::array<int, st::SymbolCount>& symbolToChordMapping,
                                std::array<int, 12>& buttonToSymbolMapping) {
     if (pack.chords.empty()) return;
     std::random_device rd;
     std::mt19937 gen(rd());
 
-    // randomize which symbols appear on buttons (unique 12 of all symbols)
-    std::vector<int> symbolIds(40);
-    for (int i = 0; i < 40; ++i) symbolIds[i] = i;
+    // randomize which symbols appear on buttons (use full symbol set)
+    std::vector<int> symbolIds(st::SymbolCount);
+    for (int i = 0; i < st::SymbolCount; ++i) symbolIds[i] = i;
     std::shuffle(symbolIds.begin(), symbolIds.end(), gen);
-    for (int i = 0; i < 12; ++i) buttonToSymbolMapping[i] = symbolIds[i];
+    for (int i = 0; i < 12; ++i) buttonToSymbolMapping[i] = symbolIds[i % symbolIds.size()];
 
     // clear map and assign chords to the 12 button symbols (prefer unique)
     symbolToChordMapping.fill(-1);

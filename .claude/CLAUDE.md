@@ -17,7 +17,30 @@ shapetaker/
 │   ├── fatebinder.cpp     # Fatebinder module
 │   ├── incantation.cpp    # Incantation module (MuRF-inspired filter bank)
 │   ├── involution.cpp     # Involution module
-│   └── sequencer.cpp      # Transmutation module (dual chord sequencer)
+│   ├── transmutation.cpp  # Transmutation module (dual chord sequencer)
+│   ├── dsp/               # DSP Utilities (NEW)
+│   │   ├── polyphony.hpp  # Polyphonic voice management
+│   │   ├── parameters.hpp # Parameter configuration helpers
+│   │   ├── effects.hpp    # Audio effects (sidechain, distortion)
+│   │   ├── filters.hpp    # Filter utilities 
+│   │   ├── envelopes.hpp  # Envelope generators
+│   │   ├── oscillators.hpp# Oscillator helpers
+│   │   └── audio.hpp      # Audio processing utilities
+│   ├── graphics/          # Graphics Utilities
+│   │   ├── drawing.hpp    # Drawing functions
+│   │   ├── lighting.hpp   # RGB lighting helpers
+│   │   └── effects.hpp    # Visual effects
+│   ├── ui/                # UI Utilities
+│   │   ├── widgets.hpp    # Custom widget library
+│   │   └── helpers.hpp    # UI helper functions
+│   ├── transmutation/     # Transmutation module components (NEW)
+│   │   ├── view.hpp       # Read-only interface for UI widgets
+│   │   ├── ui.hpp/.cpp    # UI classes and widgets
+│   │   ├── engine.hpp/.cpp# Sequencer engine helpers
+│   │   ├── chords.hpp/.cpp# Chord pack system
+│   │   ├── types.hpp      # Core data structures
+│   │   └── widgets.hpp/.cpp# Custom LED widgets
+│   └── utilities.hpp      # Unified utility access with aliases
 ├── res/                   # Resources
 │   ├── panels/           # SVG panel designs
 │   ├── buttons/         # Button graphics (vintage 1940s style)
@@ -156,6 +179,46 @@ The Transmutation module is a sophisticated dual chord sequencer with advanced a
 
 ## Code Architecture
 
+### Modular Architecture (NEW - 2025-01-09)
+
+The Transmutation module has been refactored into a clean, modular architecture that separates concerns and provides better maintainability:
+
+#### View/Controller Pattern
+**TransmutationView Interface** - Read-only access for UI widgets:
+- Provides safe, read-only access to module state for widgets
+- Includes methods for sequence state, chord names, symbol mappings
+- Enables widgets to display information without direct module coupling
+
+**TransmutationController Interface** - Action interface for UI widgets:
+- Handles user interactions like step programming and symbol selection
+- Provides methods like `programStepA()`, `onSymbolPressed()`, `cycleVoiceCount()`
+- Enables widgets to control module behavior through clean API
+
+#### Component Organization
+**Transmutation Module Structure**:
+```cpp
+struct Transmutation : Module,
+    public stx::transmutation::TransmutationView,
+    public stx::transmutation::TransmutationController {
+    // Core module implementation with clean interfaces
+};
+```
+
+#### Separated Components
+- **src/transmutation/view.hpp**: Read-only interface definitions
+- **src/transmutation/ui.hpp/.cpp**: Widget implementations using view/controller
+- **src/transmutation/engine.hpp/.cpp**: Core sequencer logic and helpers
+- **src/transmutation/chords.hpp/.cpp**: Chord pack loading and management
+- **src/transmutation/types.hpp**: Data structure definitions
+- **src/transmutation/widgets.hpp/.cpp**: Custom LED widget implementations
+
+#### Benefits Achieved
+- **Clean Separation**: UI widgets only access module through defined interfaces
+- **Testability**: Core logic separated from UI for easier unit testing
+- **Maintainability**: Changes to internal structure don't break UI widgets
+- **Reusability**: Widgets can work with any implementation of the interfaces
+- **Type Safety**: Interfaces prevent unauthorized access to module internals
+
 ### Module Structure
 Each module follows the VCV Rack module pattern:
 - **Parameter Enums**: Define all knobs, switches, and buttons
@@ -164,10 +227,12 @@ Each module follows the VCV Rack module pattern:
 - **process()**: Main audio processing loop (called per sample)
 - **Widget Class**: UI layout and control positioning
 
-### Key Classes in Transmutation
+### Key Classes in Transmutation (Updated Architecture)
 
-#### ChordData & ChordPack
+#### Core Data Structures (src/transmutation/types.hpp)
 ```cpp
+namespace shapetaker::transmutation {
+
 struct ChordData {
     std::string name;
     std::vector<float> intervals;  // Semitone intervals from root
@@ -181,10 +246,7 @@ struct ChordPack {
     std::vector<ChordData> chords;
     std::string description;
 };
-```
 
-#### Sequence Engine
-```cpp
 struct SequenceStep {
     int chordIndex;        // Which chord from pack (-1=rest, -2=tie)
     int voiceCount;        // 1-6 voices for this step
@@ -198,28 +260,70 @@ struct Sequence {
     bool running;
     float clockPhase;
 };
+
+} // namespace shapetaker::transmutation
 ```
 
-#### Custom Widgets
+#### Interface Definitions (src/transmutation/view.hpp)
 ```cpp
-struct Matrix8x8Widget : Widget {
-    static constexpr int MATRIX_SIZE = 8;
-    static constexpr float LED_SIZE = 10.0f;
-    static constexpr float LED_SPACING = 14.0f;
+namespace stx::transmutation {
+
+struct StepInfo {
+    int chordIndex;
+    int voiceCount;
+    int symbolId;
+};
+
+struct TransmutationView {
+    virtual bool isSeqARunning() const = 0;
+    virtual bool isSeqBRunning() const = 0;
+    virtual int getSeqACurrentStep() const = 0;
+    virtual StepInfo getStepA(int idx) const = 0;
+    virtual StepInfo getStepB(int idx) const = 0;
+    virtual int getDisplaySymbolId() const = 0;
+    virtual std::string getDisplayChordName() const = 0;
+    // ... additional interface methods
+};
+
+struct TransmutationController {
+    virtual void programStepA(int idx) = 0;
+    virtual void programStepB(int idx) = 0;
+    virtual void cycleVoiceCountA(int idx) = 0;
+    virtual void onSymbolPressed(int symbolId) = 0;
+    // ... additional control methods
+};
+
+} // namespace stx::transmutation
+```
+
+#### Modern Widget System (src/transmutation/ui.hpp)
+```cpp
+// High-resolution matrix using view/controller pattern
+struct HighResMatrixWidget : Widget {
+    stx::transmutation::TransmutationView* view = nullptr;
+    stx::transmutation::TransmutationController* ctrl = nullptr;
+    static constexpr float CANVAS_SIZE = 512.0f;
+    static constexpr float CELL_SIZE = CANVAS_SIZE / 8;
     
     void drawMatrix(const DrawArgs& args);
     void onMatrixClick(int x, int y);
-    void programStep(Sequence& seq, int stepIndex);
+    // Uses interfaces instead of direct module access
 };
 
 struct AlchemicalSymbolWidget : Widget {
-    void drawSymbol(const DrawArgs& args, int symbolId);
-    // Renders geometric planetary/alchemical symbols
+    stx::transmutation::TransmutationView* view = nullptr;
+    stx::transmutation::TransmutationController* ctrl = nullptr;
+    int buttonPosition; // Button position (0-11)
+    
+    void drawAlchemicalSymbol(const DrawArgs& args, Vec pos, int symbolId);
+    void onButton(const event::Button& e) override;
+    // Decoupled from module internals through interfaces
 };
 
-struct ChordPackButton : Widget {
-    void loadChordPack();
-    // Cycles through available chord pack JSON files
+struct TransmutationDisplayWidget : TransparentWidget {
+    stx::transmutation::TransmutationView* view;
+    void draw(const DrawArgs& args) override;
+    // Safe read-only access to module state
 };
 ```
 
@@ -266,34 +370,58 @@ The Transmutation module underwent extensive development phases:
 10. **Symbol System Expansion**: Extended from 30 to 40 alchemical symbols with improved randomization
 11. **Final Polish**: Color-coded lighting system and professional panel design
 12. **Display Mode Options**: Added configurable spooky TV effect toggle with clean alternative display mode
+13. **Modular Architecture Refactor (2025-01-09)**: Complete separation of concerns with view/controller interfaces, modular file organization, and clean widget system
 
 ## Common Development Tasks
 
-### Adding New Parameters
-1. Add to Parameter enum in module header
-2. Configure in constructor with `configParam()` or `configSwitch()`
+### Working with New Modular Architecture
+
+#### Adding New UI Widgets
+1. Create widget class extending `Widget` or appropriate base
+2. Accept `TransmutationView*` and `TransmutationController*` in constructor
+3. Use view interface for reading module state in `draw()` methods
+4. Use controller interface for handling user interactions
+5. Add widget to `TransmutationWidget` constructor with proper interface pointers
+
+#### Extending Interface Capabilities
+1. Add new virtual methods to `TransmutationView` (read-only) or `TransmutationController` (actions)
+2. Implement methods in main `Transmutation` module class
+3. Update existing widgets to use new interface methods if needed
+4. Maintain backward compatibility with existing widget code
+
+#### Modifying Core Engine Logic
+1. Update logic in `src/transmutation/engine.hpp/.cpp` for sequencer functions
+2. Update chord management in `src/transmutation/chords.hpp/.cpp`
+3. Add new data structures to `src/transmutation/types.hpp` if needed
+4. Update interface methods in main module to expose new functionality
+
+### Legacy Development Tasks (Still Applicable)
+
+#### Adding New Parameters
+1. Add to Parameter enum in `transmutation.cpp`
+2. Configure in constructor with `shapetaker::ParameterHelper` methods
 3. Add processing logic in `process()` method
-4. Position widget in ModuleWidget constructor
+4. Position widget in `TransmutationWidget` constructor
 5. Update panel SVG if needed
 
-### Creating New Chord Packs
+#### Creating New Chord Packs
 1. Create JSON file in `chord_packs/` directory
 2. Use existing format with name, key, description, and chords array
 3. Each chord needs name, intervals array, preferredVoices, and category
 4. Chord pack will automatically be discoverable by the module
 
-### Extending Matrix Functionality
-- **New Modes**: Add to sequence processing logic
-- **Visual States**: Update `drawMatrix()` method color logic
-- **Interaction**: Modify `onMatrixClick()` for new behaviors
-- **Size Changes**: Update `MATRIX_SIZE`, `LED_SIZE`, `LED_SPACING` constants
+#### Extending Matrix Functionality
+- **New Modes**: Add to sequence processing logic in `src/transmutation/engine.cpp`
+- **Visual States**: Update `HighResMatrixWidget::drawMatrix()` method color logic
+- **Interaction**: Modify controller interface and `onMatrixClick()` for new behaviors
+- **Size Changes**: Update `CANVAS_SIZE`, `CELL_SIZE` constants in widget
 
-### Symbol System Modifications
-- **New Symbols**: Add to `drawAlchemicalSymbol()` method with cases 0-39
+#### Symbol System Modifications
+- **New Symbols**: Add to `drawAlchemicalSymbol()` method with cases 0-39 in `src/transmutation/ui.cpp`
 - **Symbol Range Updates**: Ensure all drawing functions use `< 40` instead of older `< 20` limits
-- **Lighting Changes**: Update RGB lighting logic in `process()`
-- **Randomization**: Modify `randomizeSymbolAssignment()` for new symbol distribution
-- **Button Mapping**: Update `buttonToSymbolMapping` array to include symbols 0-39
+- **Lighting Changes**: Update RGB lighting logic in main module `process()` method
+- **Randomization**: Modify helper functions in `src/transmutation/chords.cpp`
+- **Button Mapping**: Update symbol assignment logic using view/controller interfaces
 
 ## Testing and Debugging
 
@@ -566,6 +694,13 @@ namespace shapetaker {
 - **Module Count**: Plugin contains 7 modules (Clairaudient, Chiaroscuro, Fatebinder, Involution, Evocation, Incantation, Transmutation)
 - **Transmutation Focus**: The flagship 26HP sequencer module with advanced chord functionality
 - **Color System**: Teal (#00ffb4) for A, Purple (#b400ff) for B throughout UI
+- **Modular Architecture**: Transmutation uses view/controller interfaces (`stx::transmutation` namespace) for clean widget separation
+
+### Transmutation Modular System (NEW)
+- **Interface-Based Design**: Widgets access module through `TransmutationView` (read-only) and `TransmutationController` (actions)
+- **Component Separation**: Engine logic, UI widgets, and chord management in separate files under `src/transmutation/`
+- **Clean Dependencies**: Widgets have no direct access to module internals, only through interfaces
+- **Testable Architecture**: Core logic can be tested independently of UI components
 
 ### Utility System (IMPORTANT)
 - **Organized by Function**: DSP utilities in `src/dsp/`, graphics in `src/graphics/`, UI in `src/ui/`
@@ -604,7 +739,8 @@ MyDSPClass voices[MAX_VOICES];
 - ✅ **Polyphony Utilities**: `PolyphonicProcessor`, `VoiceArray<T>` implemented & demonstrated
 - ✅ **Parameter Helpers**: Complete standardized parameter configuration system
 - ✅ **Effects Migration**: SidechainDetector, DistortionEngine moved to organized structure
-- 🟨 **Module Decomposition**: In progress - breaking down large modules
+- ✅ **Transmutation Modular Architecture**: View/controller interfaces implemented with complete component separation
+- 🟨 **Module Decomposition**: Transmutation complete, other large modules pending
 - ⏳ **Widget Extraction**: Common widget base classes pending
 - ⏳ **Layout Utilities**: Positioning and spacing helpers pending
 

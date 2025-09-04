@@ -1,6 +1,9 @@
 #pragma once
 
 #include <rack.hpp>
+#include <string>
+#include <fstream>
+#include <sstream>
 
 using namespace rack;
 
@@ -46,6 +49,97 @@ public:
         WIDTH_28HP = 28,
         WIDTH_32HP = 32,
         WIDTH_42HP = 42
+    };
+
+    /**
+     * Lightweight SVG panel parser to position controls by element id
+     * Usage:
+     *   PanelSVGParser p(asset::plugin(pluginInstance, "res/panels/YourPanel.svg"));
+     *   Vec knobPos = p.centerPx("knob_id", 10.0f, 25.0f); // mm defaults
+     *   auto r = p.rectMm("screen_id", 20.0f, 40.0f, 80.0f, 80.0f); // mm rect
+     */
+    class PanelSVGParser {
+    private:
+        std::string svg;
+
+        static std::string readFile(const std::string& path) {
+            std::ifstream f(path);
+            if (!f) return {};
+            std::stringstream ss; ss << f.rdbuf();
+            return ss.str();
+        }
+
+        // Find the full tag string that contains id="..."
+        std::string findTagForIdInternal(const std::string& id) const {
+            if (svg.empty()) return {};
+            std::string needle = std::string("id=\"") + id + "\"";
+            size_t pos = svg.find(needle);
+            if (pos == std::string::npos) return {};
+            size_t start = svg.rfind('<', pos);
+            size_t end = svg.find('>', pos);
+            if (start == std::string::npos || end == std::string::npos || end <= start) return {};
+            return svg.substr(start, end - start + 1);
+        }
+
+        static float getAttrInternal(const std::string& tag, const std::string& key, float defVal) {
+            if (tag.empty()) return defVal;
+            std::string k = key + "=\"";
+            size_t p = tag.find(k);
+            if (p == std::string::npos) return defVal;
+            p += k.size();
+            size_t q = tag.find('"', p);
+            if (q == std::string::npos) return defVal;
+            try {
+                return std::stof(tag.substr(p, q - p));
+            } catch (...) { return defVal; }
+        }
+
+    public:
+        explicit PanelSVGParser(const std::string& svgPath) : svg(readFile(svgPath)) {}
+
+        // Low-level helpers
+        std::string findTagForId(const std::string& id) const { return findTagForIdInternal(id); }
+        static float getAttr(const std::string& tag, const std::string& key, float defVal) { return getAttrInternal(tag, key, defVal); }
+
+        // Get element center in millimeters (from circle cx/cy or rect x+width/2, y+height/2)
+        Vec centerMm(const std::string& id, float defx, float defy) const {
+            std::string tag = findTagForIdInternal(id);
+            if (tag.find("<rect") != std::string::npos) {
+                float rx = getAttrInternal(tag, "x", defx);
+                float ry = getAttrInternal(tag, "y", defy);
+                float rw = getAttrInternal(tag, "width", 0.0f);
+                float rh = getAttrInternal(tag, "height", 0.0f);
+                return Vec(rx + rw * 0.5f, ry + rh * 0.5f);
+            }
+            float cx = getAttrInternal(tag, "cx", defx);
+            float cy = getAttrInternal(tag, "cy", defy);
+            return Vec(cx, cy);
+        }
+
+        // Get element center in pixels (mm2px converted)
+        Vec centerPx(const std::string& id, float defx, float defy) const {
+            return mm2px(centerMm(id, defx, defy));
+        }
+
+        // Get element rect in millimeters
+        Rect rectMm(const std::string& id, float defx, float defy, float defw, float defh) const {
+            std::string tag = findTagForIdInternal(id);
+            float x = getAttrInternal(tag, "x", defx);
+            float y = getAttrInternal(tag, "y", defy);
+            float w = getAttrInternal(tag, "width", defw);
+            float h = getAttrInternal(tag, "height", defh);
+            return Rect(Vec(x, y), Vec(w, h));
+        }
+
+        // Convenience static helpers (one-off)
+        static Vec centerPxFromFile(const std::string& svgPath, const std::string& id, float defx, float defy) {
+            PanelSVGParser p(svgPath);
+            return p.centerPx(id, defx, defy);
+        }
+        static Rect rectMmFromFile(const std::string& svgPath, const std::string& id, float defx, float defy, float defw, float defh) {
+            PanelSVGParser p(svgPath);
+            return p.rectMm(id, defx, defy, defw, defh);
+        }
     };
     
     /**
