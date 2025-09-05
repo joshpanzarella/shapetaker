@@ -30,6 +30,9 @@ dep/
 *.tmp
 *.temp
 
+# Local clones / scratch
+impromptu/
+
 # Windows
 ehthumbs.db
 Thumbs.db
