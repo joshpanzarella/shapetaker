@@ -55,13 +55,76 @@ void TransmutationDisplayWidget::draw(const DrawArgs& args) {
     if (!font) return;
 
     nvgSave(args.vg);
+    // CRT-like mini screen with subtle bezel and glass depth
+    bool spooky = view->getSpookyTvMode();
+    float w = box.size.x, h = box.size.y;
+    float r = 4.0f; // corner radius
+
+    // Base near-black fill (neutral to match spooky preview palette)
     nvgBeginPath(args.vg);
-    nvgRoundedRect(args.vg, 0, 0, box.size.x, box.size.y, 3);
-    nvgFillColor(args.vg, nvgRGBA(20, 25, 30, 200));
+    nvgRoundedRect(args.vg, 0.0f, 0.0f, w, h, r);
+    nvgFillColor(args.vg, nvgRGBA(8, 8, 10, 255));
     nvgFill(args.vg);
-    nvgStrokeColor(args.vg, nvgRGBA(80, 90, 100, 150));
+
+    // Subtle center bulge glow
+    NVGpaint centerGlow = nvgRadialGradient(args.vg,
+        w * 0.5f, h * 0.5f,
+        std::min(w, h) * 0.20f,
+        std::min(w, h) * 0.85f,
+        nvgRGBA(36, 36, 40, 64), nvgRGBA(0, 0, 0, 0));
+    nvgBeginPath(args.vg);
+    nvgRoundedRect(args.vg, 0.5f, 0.5f, w - 1.0f, h - 1.0f, r - 0.5f);
+    nvgFillPaint(args.vg, centerGlow);
+    nvgFill(args.vg);
+
+    // Inset edge shadow for seating
+    NVGpaint inset = nvgBoxGradient(args.vg, 1.5f, 1.5f, w - 3.0f, h - 3.0f,
+                                    r - 2.5f, 6.0f, nvgRGBA(0, 0, 0, 55), nvgRGBA(0, 0, 0, 0));
+    nvgBeginPath(args.vg);
+    nvgRoundedRect(args.vg, 1.0f, 1.0f, w - 2.0f, h - 2.0f, r - 1.0f);
+    nvgRoundedRect(args.vg, 3.5f, 3.5f, w - 7.0f, h - 7.0f, std::max(0.0f, r - 3.5f));
+    nvgPathWinding(args.vg, NVG_HOLE);
+    nvgFillPaint(args.vg, inset);
+    nvgFill(args.vg);
+
+    // Bezel ring for depth (very subtle)
+    float bezel = 3.0f;
+    NVGpaint bezelPaint = nvgLinearGradient(args.vg, 0.f, 0.f, 0.f, h,
+        nvgRGBA(26, 26, 32, 200), nvgRGBA(10, 10, 14, 200));
+    nvgBeginPath(args.vg);
+    nvgRoundedRect(args.vg, 0.5f, 0.5f, w - 1.0f, h - 1.0f, r - 0.5f);
+    nvgRoundedRect(args.vg, bezel + 0.5f, bezel + 0.5f,
+                   w - 2.f * bezel - 1.0f, h - 2.f * bezel - 1.0f,
+                   std::max(0.0f, r - bezel - 0.5f));
+    nvgPathWinding(args.vg, NVG_HOLE);
+    nvgFillPaint(args.vg, bezelPaint);
+    nvgFill(args.vg);
+
+    // Bezel highlight and shadow strokes
+    nvgBeginPath(args.vg);
+    nvgRoundedRect(args.vg, bezel + 0.8f, bezel + 0.8f, w - 2.f * (bezel + 0.8f), h - 2.f * (bezel + 0.8f), std::max(0.0f, r - bezel - 0.8f));
     nvgStrokeWidth(args.vg, 1.0f);
+    nvgStrokeColor(args.vg, nvgRGBA(210, 210, 225, 30));
     nvgStroke(args.vg);
+    nvgBeginPath(args.vg);
+    nvgRoundedRect(args.vg, bezel - 0.4f, bezel - 0.4f, w - 2.f * (bezel - 0.4f), h - 2.f * (bezel - 0.4f), std::max(0.0f, r - bezel + 0.4f));
+    nvgStrokeWidth(args.vg, 1.0f);
+    nvgStrokeColor(args.vg, nvgRGBA(5, 5, 8, 80));
+    nvgStroke(args.vg);
+
+    // Screen rect (inside bezel)
+    float sx = bezel + 0.5f;
+    float sy = bezel + 0.5f;
+    float sw = w - 2.0f * bezel - 1.0f;
+    float sh = h - 2.0f * bezel - 1.0f;
+
+    // Softer, sparser scanlines on the mini display too
+    float scanAlpha = spooky ? 0.008f : 0.006f;
+    float lineSpacing = spooky ? 4.0f : 3.0f;
+    shapetaker::graphics::drawScanlines(args, sx, sy, sw, sh, lineSpacing, scanAlpha);
+
+    // Glass reflections to sell curvature
+    shapetaker::graphics::drawGlassReflections(args, sx, sy, sw, sh, 0.10f);
 
     nvgFontSize(args.vg, 10);
     if (font && font->handle >= 0)
@@ -128,6 +191,19 @@ void TransmutationDisplayWidget::draw(const DrawArgs& args) {
     nvgText(args.vg, rightX + 1, 30, clockBText.c_str(), NULL);
     nvgFillColor(args.vg, smallInk);
     nvgText(args.vg, rightX, 29, clockBText.c_str(), NULL);
+
+    // Vintage micro-scratches overlay (match matrix spooky palette)
+    nvgSave(args.vg);
+    shapetaker::graphics::drawVignettePatinaScratches(args,
+        0, 0, w, h, r,
+        /*scratchCount*/ 26,
+        /*vignette1*/ nvgRGBA(24,30,20,10),
+        /*vignette2*/ nvgRGBA(50,40,22,12),
+        /*patinaLayers*/ 8,
+        /*scratchAlpha*/ 0.30f,
+        /*scratchVariations*/ 3,
+        /*seed*/ 73321u);
+    nvgRestore(args.vg);
 
     nvgRestore(args.vg);
 }
@@ -304,8 +380,9 @@ void HighResMatrixWidget::drawMatrix(const DrawArgs& args) {
 
         // Very light scanlines overlay confined to screen area
         bool spookyLocal = view && view->getSpookyTvMode();
-        float scanAlpha = spookyLocal ? 0.012f : 0.012f;
-        float lineSpacing = spookyLocal ? 4.0f : 2.0f;
+        // Softer, sparser scanlines
+        float scanAlpha = spookyLocal ? 0.007f : 0.006f;
+        float lineSpacing = spookyLocal ? 4.5f : 3.0f;
         graphics::drawScanlines(args, screenX, screenY, screenW, screenH, lineSpacing, scanAlpha);
 
         // Stronger perceived depth via neutral inner vignettes and bevels (no bright whites)
@@ -608,8 +685,9 @@ void HighResMatrixWidget::drawMatrix(const DrawArgs& args) {
         float screenY = bezel + 0.5f;
         float screenW = box.size.x - 2.0f * bezel - 1.0f;
         float screenH = box.size.y - 2.0f * bezel - 1.0f;
-        float shakeX = sinf(time * 0.55f) * 0.5f + tapeWarp * 1.8f + deepWarp * 1.4f;
-        float shakeY = cosf(time * 0.40f) * 0.4f + waveA * 1.2f + waveB * 0.8f;
+        // Reduce jumpiness by lowering wobble amplitudes and speeds
+        float shakeX = sinf(time * 0.35f) * 0.18f + tapeWarp * 0.60f + deepWarp * 0.45f;
+        float shakeY = cosf(time * 0.28f) * 0.14f + waveA   * 0.40f + waveB    * 0.28f;
         nvgTranslate(args.vg, (screenX + screenW * 0.5f) + shakeX, (screenY + screenH * 0.40f) + shakeY);
         nvgScale(args.vg, 5.0f, 5.0f);
         float colorCycle = sin(time * 0.3f) * 0.5f + 0.5f;
@@ -638,15 +716,30 @@ void HighResMatrixWidget::drawMatrix(const DrawArgs& args) {
         };
         if (dispId >= 0) {
             if (spooky) {
+                // Additive halos, RGB ghosts, and soft multi-pass blur with minimal drift
                 nvgGlobalCompositeOperation(args.vg, NVG_LIGHTER);
-                // Single soft halo and subtle RGB ghosts
-                shapetaker::graphics::drawAlchemicalSymbol(args, Vec(-0.6f, -0.3f), dispId, nvgRGBA(255, 255, 255, 32), 10.0f, 1.1f);
-                shapetaker::graphics::drawAlchemicalSymbol(args, Vec(-0.5f, 0.0f), dispId, nvgRGBA(255, 0, 0, 90), 10.0f, 1.05f);
-                shapetaker::graphics::drawAlchemicalSymbol(args, Vec(0.5f, 0.0f), dispId, nvgRGBA(0, 255, 0, 90), 10.0f, 1.05f);
-                shapetaker::graphics::drawAlchemicalSymbol(args, Vec(0.0f, 0.5f), dispId, nvgRGBA(0, 128, 255, 90), 10.0f, 1.05f);
+                // Base halo
+                shapetaker::graphics::drawAlchemicalSymbol(args, Vec(-0.5f, -0.25f), dispId, nvgRGBA(255, 255, 255, 22), 10.3f, 1.00f);
+                // RGB ghosts
+                shapetaker::graphics::drawAlchemicalSymbol(args, Vec(-0.6f, 0.0f),  dispId, nvgRGBA(255,  30,  30, 70), 10.1f, 1.02f);
+                shapetaker::graphics::drawAlchemicalSymbol(args, Vec( 0.6f, 0.0f),  dispId, nvgRGBA( 30, 255,  30, 70), 10.1f, 1.02f);
+                shapetaker::graphics::drawAlchemicalSymbol(args, Vec( 0.0f, 0.6f),  dispId, nvgRGBA( 30, 130, 255, 70), 10.1f, 1.02f);
+                // Static blur ring (8 directions) with slight, slow drift to reduce jumpiness
+                const int passes = 10;
+                float baseR = 0.7f; // base blur radius
+                float slow = sinf(time * 0.15f) * 0.12f; // very slow micro‑movement
+                for (int i = 0; i < passes; ++i) {
+                    float ang = (2.f * M_PI * i) / passes;
+                    float rr = baseR + slow; // tiny drift
+                    float jx = cosf(ang) * rr;
+                    float jy = sinf(ang) * rr;
+                    NVGcolor haze = nvgRGBA(255, 255, 255, 20);
+                    shapetaker::graphics::drawAlchemicalSymbol(args, Vec(jx, jy), dispId, haze, 10.2f, 0.98f);
+                }
                 nvgGlobalCompositeOperation(args.vg, NVG_SOURCE_OVER);
             }
-            shapetaker::graphics::drawAlchemicalSymbol(args, Vec(0, 0), dispId, mainCol, 10.0f, 1.15f);
+            // Main readable symbol (kept smaller stroke; blur above does the softening)
+            shapetaker::graphics::drawAlchemicalSymbol(args, Vec(0, 0), dispId, mainCol, 10.0f, 1.06f);
         } else if (dispId == -1) { // REST
             if (spooky) {
                 nvgGlobalCompositeOperation(args.vg, NVG_LIGHTER);
@@ -670,8 +763,9 @@ void HighResMatrixWidget::drawMatrix(const DrawArgs& args) {
         }
         nvgRestore(args.vg);
         // Text
-        // Larger, more readable chord name
-        nvgFontSize(args.vg, 50);
+        // Larger, more readable chord name (auto-fit to inner screen)
+        float baseFont = 50.f;
+        nvgFontSize(args.vg, baseFont);
         // Keep titles well inside the inner screen bounds to avoid spillover
         float bezelT = 5.5f;
         float screenXT = bezelT + 0.5f;
@@ -679,14 +773,42 @@ void HighResMatrixWidget::drawMatrix(const DrawArgs& args) {
         float screenWT = box.size.x - 2.0f * bezelT - 1.0f;
         float screenHT = box.size.y - 2.0f * bezelT - 1.0f;
         float maxTextWidth = screenWT * 0.72f;
-        auto lines = wrapTextLocal(view->getDisplayChordName(), maxTextWidth, args.vg);
-        // If no symbol (-999), center the title vertically within the screen
-        float textY = (dispId == -999) ? (screenYT + screenHT * 0.52f) : (screenYT + screenHT * 0.79f);
-        // Use font metrics for consistent, roomy line spacing
+        std::string title = view->getDisplayChordName();
+
+        auto measureWidth = [&](const std::string& s) {
+            float b[4] = {0};
+            nvgTextBounds(args.vg, 0, 0, s.c_str(), NULL, b);
+            return b[2] - b[0];
+        };
+        auto maxLineWidth = [&](const std::vector<std::string>& ls){
+            float m = 0.f; for (auto& t : ls) m = std::max(m, measureWidth(t)); return m; };
+
+        // Determine allowed text block height (smaller if symbol is shown)
+        float allowedH = (dispId == -999) ? (screenHT * 0.54f) : (screenHT * 0.34f);
+
+        // Iteratively fit font size so longest line <= maxTextWidth and total height <= allowedH
+        std::vector<std::string> lines = wrapTextLocal(title, maxTextWidth, args.vg);
         float asc = 0.f, desc = 0.f, lineh = 0.f;
         nvgTextMetrics(args.vg, &asc, &desc, &lineh);
-        float lineH = lineh * 1.35f; // extra spacing so wrapped lines don't overlap
-        // Center multi-line block around textY
+        float lineH = lineh * 1.35f;
+        auto totalH = [&](){ return (float)std::max<size_t>(1, lines.size()) * lineH; };
+        int it = 0; const int maxIt = 3;
+        while (it++ < maxIt) {
+            float w = maxLineWidth(lines);
+            float scaleW = (w > 1.f) ? (maxTextWidth / w) : 1.f;
+            float scaleH = (totalH() > 1.f) ? (allowedH / totalH()) : 1.f;
+            float scale = std::min(1.f, std::min(scaleW, scaleH));
+            if (scale >= 0.999f) break;
+            baseFont *= scale;
+            baseFont = std::max(16.f, baseFont);
+            nvgFontSize(args.vg, baseFont);
+            nvgTextMetrics(args.vg, &asc, &desc, &lineh);
+            lineH = lineh * 1.35f;
+            lines = wrapTextLocal(title, maxTextWidth, args.vg);
+        }
+
+        // Final vertical anchor: center multi-line block around target y
+        float textY = (dispId == -999) ? (screenYT + screenHT * 0.52f) : (screenYT + screenHT * 0.79f);
         float blockOffset = ((float)lines.size() - 1.f) * lineH * 0.5f;
         nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
         // Helper to draw letter-spaced, centered text (used only for "TIE")
@@ -712,7 +834,9 @@ void HighResMatrixWidget::drawMatrix(const DrawArgs& args) {
             }
         };
 
-        // No scissor; text positions are kept within inner screen bounds
+        // Clip text strictly to inner screen to prevent spillover
+        nvgSave(args.vg);
+        nvgIntersectScissor(args.vg, screenXT, screenYT, screenWT, screenHT);
         for (size_t i = 0; i < lines.size(); ++i) {
             std::string s = lines[i];
             float cx = screenXT + screenWT / 2.0f;
@@ -749,6 +873,7 @@ void HighResMatrixWidget::drawMatrix(const DrawArgs& args) {
             else { nvgFillColor(args.vg, nvgRGBA(232, 224, 200, spooky ? 205 : 235)); nvgText(args.vg, cx, cy, s.c_str(), NULL); }
             if (spooky) nvgFontBlur(args.vg, 0.0f);
         }
+        nvgRestore(args.vg); // scissor
         // end text
         if (spooky) {
             nvgSave(args.vg);

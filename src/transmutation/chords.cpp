@@ -109,6 +109,18 @@ void randomizeSymbolAssignment(const ChordPack& pack,
     for (int s = 0; s < st::SymbolCount; ++s) {
         symbolToChordMapping[s] = chordDist(rng);
     }
+
+    // Ensure the 12 visible button symbols map to 12 distinct chords when possible
+    if ((int)pack.chords.size() >= 12) {
+        std::vector<int> chordIdx;
+        chordIdx.reserve(pack.chords.size());
+        for (int i = 0; i < (int)pack.chords.size(); ++i) chordIdx.push_back(i);
+        std::shuffle(chordIdx.begin(), chordIdx.end(), rng);
+        for (int i = 0; i < 12; ++i) {
+            int sym = buttonToSymbolMapping[i];
+            symbolToChordMapping[sym] = chordIdx[i];
+        }
+    }
 }
 
 }} // namespace stx::transmutation
