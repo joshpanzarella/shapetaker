@@ -97,6 +97,139 @@ void drawAlchemicalSymbol(const widget::Widget::DrawArgs& args, Vec pos, int sym
         case 57: { nvgBeginPath(args.vg); nvgMoveTo(args.vg, -size, -size*0.2f); nvgLineTo(args.vg, size, -size*0.2f); nvgLineTo(args.vg, size*0.4f, size*0.6f); nvgLineTo(args.vg, -size*0.4f, size*0.6f); nvgClosePath(args.vg); nvgStroke(args.vg); break; } // Anvil
         case 58: { nvgBeginPath(args.vg); nvgMoveTo(args.vg, -size*0.7f, -size); nvgLineTo(args.vg, size*0.7f, -size); nvgLineTo(args.vg, -size*0.7f, size); nvgLineTo(args.vg, size*0.7f, size); nvgStroke(args.vg); nvgBeginPath(args.vg); nvgMoveTo(args.vg, -size*0.7f, -size); nvgLineTo(args.vg, size*0.7f, size); nvgMoveTo(args.vg, size*0.7f, -size); nvgLineTo(args.vg, -size*0.7f, size); nvgStroke(args.vg); break; } // Hourglass
         case 59: { for(int i=1;i<=4;i++){ nvgBeginPath(args.vg); nvgCircle(args.vg, 0,0, size*(i/4.0f)); nvgStroke(args.vg);} break; } // Labyrinth
+        // --- New glyphs 60..79 ---
+        case 60: { // Triple Moon (full with two crescents)
+            float r = size * 0.55f;
+            nvgBeginPath(args.vg); nvgCircle(args.vg, 0, 0, r); nvgStroke(args.vg);
+            nvgBeginPath(args.vg); nvgArc(args.vg, -size*1.05f, 0, r, -M_PI/2, M_PI/2, NVG_CW); nvgStroke(args.vg);
+            nvgBeginPath(args.vg); nvgArc(args.vg,  size*1.05f, 0, r,  M_PI/2, -M_PI/2, NVG_CW); nvgStroke(args.vg);
+            break;
+        }
+        case 61: { // Heptagram inside circle
+            nvgBeginPath(args.vg); nvgCircle(args.vg, 0, 0, size); nvgStroke(args.vg);
+            nvgBeginPath(args.vg);
+            for (int i = 0; i < 7; ++i) {
+                int j = (i * 3) % 7; // skip-3 star
+                float ai = -M_PI/2 + i * 2*M_PI/7; float aj = -M_PI/2 + j * 2*M_PI/7;
+                float xi = size * cosf(ai), yi = size * sinf(ai);
+                float xj = size * cosf(aj), yj = size * sinf(aj);
+                if (i == 0) nvgMoveTo(args.vg, xi, yi); nvgLineTo(args.vg, xj, yj);
+            }
+            nvgStroke(args.vg);
+            break;
+        }
+        case 62: { // Triquetra (three interlaced arcs)
+            float r = size * 0.9f;
+            for (int k = 0; k < 3; ++k) {
+                float a = k * 2.f * M_PI / 3.f - M_PI/2;
+                nvgBeginPath(args.vg);
+                nvgArc(args.vg, 0, 0, r*0.6f, a, a + M_PI, NVG_CW);
+                nvgStroke(args.vg);
+            }
+            break;
+        }
+        case 63: { // Ankh
+            nvgBeginPath(args.vg); nvgCircle(args.vg, 0, -size*0.45f, size*0.35f); nvgStroke(args.vg);
+            nvgBeginPath(args.vg); nvgMoveTo(args.vg, 0, -size*0.1f); nvgLineTo(args.vg, 0, size*0.9f); nvgStroke(args.vg);
+            nvgBeginPath(args.vg); nvgMoveTo(args.vg, -size*0.5f, 0); nvgLineTo(args.vg, size*0.5f, 0); nvgStroke(args.vg);
+            break;
+        }
+        case 64: { // Hexagram (two triangles)
+            nvgBeginPath(args.vg);
+            nvgMoveTo(args.vg, 0, -size);
+            nvgLineTo(args.vg, -size*0.866f, size*0.5f);
+            nvgLineTo(args.vg,  size*0.866f, size*0.5f);
+            nvgClosePath(args.vg); nvgStroke(args.vg);
+            nvgBeginPath(args.vg);
+            nvgMoveTo(args.vg, 0, size);
+            nvgLineTo(args.vg,  size*0.866f, -size*0.5f);
+            nvgLineTo(args.vg, -size*0.866f, -size*0.5f);
+            nvgClosePath(args.vg); nvgStroke(args.vg);
+            break;
+        }
+        case 65: { // Crescent over cross
+            nvgBeginPath(args.vg); nvgArc(args.vg, 0, -size*0.6f, size*0.5f, M_PI*0.1f, M_PI*0.9f, NVG_CW); nvgStroke(args.vg);
+            nvgBeginPath(args.vg); nvgMoveTo(args.vg, 0, -size*0.2f); nvgLineTo(args.vg, 0, size*0.9f); nvgStroke(args.vg);
+            nvgBeginPath(args.vg); nvgMoveTo(args.vg, -size*0.5f, 0); nvgLineTo(args.vg, size*0.5f, 0); nvgStroke(args.vg);
+            break;
+        }
+        case 66: { // Triple cross on staff
+            nvgBeginPath(args.vg); nvgMoveTo(args.vg, 0, -size); nvgLineTo(args.vg, 0, size); nvgStroke(args.vg);
+            for (int i = -1; i <= 1; ++i) { float y = i * size*0.3f; nvgBeginPath(args.vg); nvgMoveTo(args.vg, -size*0.6f, y); nvgLineTo(args.vg, size*0.6f, y); nvgStroke(args.vg);} break;
+        }
+        case 67: { // Arrow in circle
+            nvgBeginPath(args.vg); nvgCircle(args.vg, 0, 0, size); nvgStroke(args.vg);
+            nvgBeginPath(args.vg); nvgMoveTo(args.vg, -size*0.7f, size*0.7f); nvgLineTo(args.vg, size*0.7f, -size*0.7f); nvgStroke(args.vg);
+            nvgBeginPath(args.vg); nvgMoveTo(args.vg, size*0.5f, -size*0.7f); nvgLineTo(args.vg, size*0.8f, -size*0.7f); nvgLineTo(args.vg, size*0.8f, -size*0.4f); nvgStroke(args.vg);
+            break;
+        }
+        case 68: { // Eye
+            nvgBeginPath(args.vg); nvgMoveTo(args.vg, -size, 0); nvgQuadraticCurveTo(args.vg, 0, -size*0.7f, size, 0); nvgStroke(args.vg);
+            nvgBeginPath(args.vg); nvgMoveTo(args.vg, -size, 0); nvgQuadraticCurveTo(args.vg, 0,  size*0.7f, size, 0); nvgStroke(args.vg);
+            nvgBeginPath(args.vg); nvgCircle(args.vg, 0, 0, size*0.3f); nvgStroke(args.vg);
+            break;
+        }
+        case 69: { // Crescent with dot
+            nvgBeginPath(args.vg); nvgArc(args.vg, 0, 0, size, M_PI*0.2f, M_PI*1.8f, NVG_CW); nvgStroke(args.vg);
+            nvgBeginPath(args.vg); nvgCircle(args.vg, size*0.4f, 0, size*0.12f); nvgFill(args.vg);
+            break;
+        }
+        case 70: { // Crossed arrows
+            nvgBeginPath(args.vg); nvgMoveTo(args.vg, -size*0.9f, size*0.9f); nvgLineTo(args.vg, size*0.9f, -size*0.9f); nvgStroke(args.vg);
+            nvgBeginPath(args.vg); nvgMoveTo(args.vg, size*0.65f, -size*0.9f); nvgLineTo(args.vg, size*0.9f, -size*0.65f); nvgStroke(args.vg);
+            nvgBeginPath(args.vg); nvgMoveTo(args.vg, -size*0.9f, -size*0.9f); nvgLineTo(args.vg, size*0.9f, size*0.9f); nvgStroke(args.vg);
+            nvgBeginPath(args.vg); nvgMoveTo(args.vg, size*0.65f, size*0.9f); nvgLineTo(args.vg, size*0.9f, size*0.65f); nvgStroke(args.vg);
+            break;
+        }
+        case 71: { // S-curve in circle
+            nvgBeginPath(args.vg); nvgCircle(args.vg, 0, 0, size); nvgStroke(args.vg);
+            for (int i=0;i<10;++i){ float t=i/9.f; float x=-size + 2*size*t; float y = sinf(t*M_PI*2) * size*0.4f; if(i==0) nvgBeginPath(args.vg), nvgMoveTo(args.vg,x,y); else nvgLineTo(args.vg,x,y);} nvgStroke(args.vg);
+            break;
+        }
+        case 72: { // Single spiral
+            nvgBeginPath(args.vg); for (int i=0;i<64;++i){ float t=i/63.f; float r=t*size; float a=t*3.5f*M_PI - M_PI/2; float x=r*cosf(a), y=r*sinf(a); if(i==0) nvgMoveTo(args.vg,x,y); else nvgLineTo(args.vg,x,y);} nvgStroke(args.vg); break;
+        }
+        case 73: { // Labrys (double axe)
+            nvgBeginPath(args.vg); nvgMoveTo(args.vg, 0, -size*0.7f); nvgLineTo(args.vg, 0, size*0.7f); nvgStroke(args.vg);
+            nvgBeginPath(args.vg); nvgArc(args.vg, -size*0.3f, 0, size*0.4f, -M_PI/2, M_PI/2, NVG_CW); nvgStroke(args.vg);
+            nvgBeginPath(args.vg); nvgArc(args.vg,  size*0.3f, 0, size*0.4f,  M_PI/2, -M_PI/2, NVG_CW); nvgStroke(args.vg);
+            break;
+        }
+        case 74: { // Node (circle with two bars)
+            nvgBeginPath(args.vg); nvgCircle(args.vg, 0, 0, size*0.6f); nvgStroke(args.vg);
+            nvgBeginPath(args.vg); nvgMoveTo(args.vg, -size, -size*0.5f); nvgLineTo(args.vg, size, -size*0.5f); nvgStroke(args.vg);
+            nvgBeginPath(args.vg); nvgMoveTo(args.vg, -size,  size*0.5f); nvgLineTo(args.vg, size,  size*0.5f); nvgStroke(args.vg);
+            break;
+        }
+        case 75: { // Dagaz-like rune
+            nvgBeginPath(args.vg); nvgMoveTo(args.vg, -size, -size); nvgLineTo(args.vg, 0, 0); nvgLineTo(args.vg, size, -size); nvgStroke(args.vg);
+            nvgBeginPath(args.vg); nvgMoveTo(args.vg, -size, size); nvgLineTo(args.vg, 0, 0); nvgLineTo(args.vg, size, size); nvgStroke(args.vg);
+            break;
+        }
+        case 76: { // Ehwaz/M shape
+            nvgBeginPath(args.vg); nvgMoveTo(args.vg, -size*0.8f, size*0.8f); nvgLineTo(args.vg, -size*0.2f, -size*0.8f); nvgLineTo(args.vg, size*0.2f, size*0.8f); nvgLineTo(args.vg, size*0.8f, -size*0.8f); nvgStroke(args.vg);
+            break;
+        }
+        case 77: { // Inguz (double diamonds)
+            nvgBeginPath(args.vg); nvgMoveTo(args.vg, -size*0.8f, 0); nvgLineTo(args.vg, -size*0.4f, -size*0.6f); nvgLineTo(args.vg, 0, 0); nvgLineTo(args.vg, -size*0.4f, size*0.6f); nvgClosePath(args.vg); nvgStroke(args.vg);
+            nvgBeginPath(args.vg); nvgMoveTo(args.vg,  size*0.8f, 0); nvgLineTo(args.vg,  size*0.4f, -size*0.6f); nvgLineTo(args.vg, 0, 0); nvgLineTo(args.vg,  size*0.4f, size*0.6f); nvgClosePath(args.vg); nvgStroke(args.vg);
+            break;
+        }
+        case 78: { // Triquetral knot (three small circles)
+            float r = size*0.45f; float d = size*0.5f;
+            nvgBeginPath(args.vg); nvgCircle(args.vg, 0, -d, r); nvgStroke(args.vg);
+            nvgBeginPath(args.vg); nvgCircle(args.vg, -d*0.866f, d*0.5f, r); nvgStroke(args.vg);
+            nvgBeginPath(args.vg); nvgCircle(args.vg,  d*0.866f,  d*0.5f, r); nvgStroke(args.vg);
+            break;
+        }
+        case 79: { // Yin-Yang simplified
+            nvgBeginPath(args.vg); nvgCircle(args.vg, 0, 0, size); nvgStroke(args.vg);
+            nvgBeginPath(args.vg); nvgArc(args.vg, 0, 0, size, -M_PI/2, M_PI/2, NVG_CW); nvgStroke(args.vg);
+            nvgBeginPath(args.vg); nvgArc(args.vg, 0, -size*0.5f, size*0.5f, 0, 2*M_PI, NVG_CW); nvgStroke(args.vg);
+            nvgBeginPath(args.vg); nvgArc(args.vg, 0,  size*0.5f, size*0.5f, 0, 2*M_PI, NVG_CW); nvgStroke(args.vg);
+            nvgBeginPath(args.vg); nvgCircle(args.vg, 0, -size*0.5f, size*0.12f); nvgFill(args.vg);
+            break;
+        }
         default: nvgBeginPath(args.vg); nvgCircle(args.vg, 0, 0, size); nvgStroke(args.vg); break;
     }
     nvgRestore(args.vg);
