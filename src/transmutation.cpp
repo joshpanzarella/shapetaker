@@ -386,6 +386,9 @@ struct Transmutation : Module,
         configSwitch(SEQ_B_MODE_PARAM, 0.f, 2.f, 0.f, "Transmutation B Mode", {"Independent", "Harmony", "Lock"});
         
         
+        // Ensure Spooky TV effect defaults to ON
+        params[SCREEN_STYLE_PARAM].setValue(1.f);
+
         // Alchemical symbol buttons
         for (int i = 0; i < 12; i++) {
             configParam(SYMBOL_1_PARAM + i, 0.f, 1.f, 0.f, "Alchemical Symbol " + std::to_string(i + 1));
@@ -1422,8 +1425,8 @@ struct Transmutation : Module,
     bool loadChordPackFromFile(const std::string& filepath) {
         if (stx::transmutation::loadChordPackFromFile(filepath, currentChordPack)) {
             INFO("Loaded: '%s' (%d chords)", currentChordPack.name.c_str(), (int)currentChordPack.chords.size());
-            // Keep placed symbols as-is; only chord mappings change
-            randomizeSymbolAssignment(false);
+            // Remap placed steps to preserve button positions with the new symbol set
+            randomizeSymbolAssignment(true);
             // Normalize existing sequences to new pack (ensure playable voices)
             auto normalize = [&](Sequence& seq){
                 for (int i = 0; i < seq.length; ++i) {
@@ -1479,11 +1482,35 @@ struct Transmutation : Module,
             remapPlacedSymbols(oldButtons, buttonToSymbolMapping);
         }
     }
+
+    // Derive the 12 button symbols from existing sequences so UI matches placed steps on load
+    void deriveButtonsFromSequences() {
+        std::vector<int> found;
+        found.reserve(12);
+        auto addIf = [&](int sym){
+            if (!st::isValidSymbolId(sym)) return;
+            if (std::find(found.begin(), found.end(), sym) == found.end()) found.push_back(sym);
+        };
+        // Scan A then B in order
+        for (int i = 0; i < sequenceA.length && (int)found.size() < 12; ++i) addIf(sequenceA.steps[i].chordIndex);
+        for (int i = 0; i < sequenceB.length && (int)found.size() < 12; ++i) addIf(sequenceB.steps[i].chordIndex);
+        // If none found, keep current mapping
+        if (found.empty()) return;
+        // Fill remaining with any valid symbols not already chosen
+        for (int s = 0; s < st::SymbolCount && (int)found.size() < 12; ++s) {
+            int mapped = symbolToChordMapping[s];
+            if (mapped >= 0 && mapped < (int)currentChordPack.chords.size()) {
+                if (std::find(found.begin(), found.end(), s) == found.end()) found.push_back(s);
+            }
+        }
+        // Write into buttonToSymbolMapping
+        for (int i = 0; i < 12; ++i) buttonToSymbolMapping[i] = (i < (int)found.size()) ? found[i] : i;
+    }
     
     void loadDefaultChordPack() {
         stx::transmutation::loadDefaultChordPack(currentChordPack);
-        // Keep placed symbols as-is; only chord mappings change
-        randomizeSymbolAssignment(false);
+        // Remap placed steps to preserve button positions with the new symbol set
+        randomizeSymbolAssignment(true);
     }
 
     // Randomize both sequence lengths with improved variety and musicality
@@ -1605,7 +1632,8 @@ struct Transmutation : Module,
             params[INTERNAL_CLOCK_PARAM].setValue(bpm(rng));
         }
         if (randomAllMultiplier) {
-            int idx = (int)(rack::random::u32() % 4); // 0..3
+            // Exclude the fastest (8x) from randomization
+            int idx = (int)(rack::random::u32() % 3); // 0..2 -> 1x,2x,4x
             params[BPM_MULTIPLIER_PARAM].setValue((float)idx);
         }
         // Restart both sequences at step 0 and force immediate update
@@ -1659,13 +1687,22 @@ struct Transmutation : Module,
     bool randomAllPack = true;
     bool randomAllLengths = true;
     bool randomAllSteps = true;
-    bool randomAllBpm = false;
-    bool randomAllMultiplier = false;
+    bool randomAllBpm = true;
+    bool randomAllMultiplier = true;
     bool  randomUsePreferredVoices = true; // prefer chord.preferredVoices for chord steps
 
     // Randomize a sequence's content (steps and voice counts)
     void randomizeSequence(Sequence& seq) {
-        auto symbols = getValidSymbols();
+        // Prefer the 12 visible button symbols so steps match button icons; fallback to all valid symbols
+        std::vector<int> symbols;
+        for (int i = 0; i < 12; ++i) {
+            int sym = buttonToSymbolMapping[i];
+            if (st::isValidSymbolId(sym)) {
+                int mapped = symbolToChordMapping[sym];
+                if (mapped >= 0 && mapped < (int)currentChordPack.chords.size()) symbols.push_back(sym);
+            }
+        }
+        if (symbols.empty()) symbols = getValidSymbols();
         if (symbols.empty()) return;
         std::mt19937 rng(rack::random::u32());
         std::uniform_int_distribution<int> voiceDist(1, stx::transmutation::MAX_VOICES);
@@ -1777,8 +1814,8 @@ struct Transmutation : Module,
         randomAllPack = true;
         randomAllLengths = true;
         randomAllSteps = true;
-        randomAllBpm = false;
-        randomAllMultiplier = false;
+        randomAllBpm = true;
+        randomAllMultiplier = true;
         randomUsePreferredVoices = true;
         randomRestProb = 0.12f;
         randomTieProb = 0.10f;
@@ -1798,7 +1835,8 @@ struct Transmutation : Module,
         for (int i = 0; i < 12; ++i) buttonToSymbolMapping[i] = i;
         loadDefaultChordPack();
 
-        // 7) Reassert poly handshakes for downstream modules
+        // 7) Set matrix grid to 16 and reassert poly handshakes
+        gridSteps = 16;
         reassertPolyA = true; reassertPolyB = true;
         oneShotExactPolyA = true; oneShotExactPolyB = true;
         forceChordUpdateA = true; forceChordUpdateB = true;
@@ -2071,9 +2109,10 @@ struct Transmutation : Module,
             }
         }
         
-        // Randomize symbol mappings after loading chord pack; keep placed symbols unchanged
+        // On load, populate symbol mappings but align button symbols to existing steps
         if (!currentChordPack.chords.empty()) {
-            randomizeSymbolAssignment(false);
+            randomizeSymbolAssignment(false); // fill symbolToChordMapping
+            deriveButtonsFromSequences();     // make buttons reflect placed symbols
         }
     }
 };
@@ -3493,6 +3532,10 @@ struct TransmutationWidget : ModuleWidget {
             randMenu->addChild(new MenuSeparator);
             randMenu->addChild(createMenuItem("Use Preferred Voice Counts", check(module->randomUsePreferredVoices), [module]() {
                 module->randomUsePreferredVoices = !module->randomUsePreferredVoices;
+            }));
+            randMenu->addChild(createMenuLabel("Step Symbol Source"));
+            randMenu->addChild(createMenuItem("Use 12 Button Symbols", "✓", [module]() {
+                // Always use 12 visible symbols on randomization (requested behavior)
             }));
             
             // Sliders for chord density, rest, and tie probabilities (Impromptu pattern)

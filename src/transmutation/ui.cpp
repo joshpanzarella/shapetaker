@@ -259,26 +259,54 @@ void HighResMatrixWidget::drawMatrix(const DrawArgs& args) {
         nvgFillPaint(args.vg, glassHi);
         nvgFill(args.vg);
 
-        // Fine border line (neutral gray)
+        // (Removed fine gray outline to let bezel + glow define edges)
+
+        // Subtle bezel ring for added depth
+        float bezel = 5.5f; // ring thickness
+        NVGpaint bezelPaint = nvgLinearGradient(args.vg,
+            0.f, 0.f, 0.f, box.size.y,
+            nvgRGBA(26, 26, 32, 220), nvgRGBA(10, 10, 14, 220));
         nvgBeginPath(args.vg);
+        // Outer path
         nvgRoundedRect(args.vg, 0.5f, 0.5f, box.size.x - 1.0f, box.size.y - 1.0f, radius - 0.5f);
-        nvgStrokeColor(args.vg, nvgRGBA(84, 84, 92, 140));
-        nvgStrokeWidth(args.vg, 1.0f);
+        // Inner hole (screen area)
+        nvgRoundedRect(args.vg, bezel + 0.5f, bezel + 0.5f,
+                       box.size.x - 2.f * bezel - 1.0f,
+                       box.size.y - 2.f * bezel - 1.0f,
+                       std::max(0.0f, radius - bezel - 0.5f));
+        nvgPathWinding(args.vg, NVG_HOLE);
+        nvgFillPaint(args.vg, bezelPaint);
+        nvgFill(args.vg);
+
+        // Bezel highlight (top-left) and shadow (bottom-right)
+        nvgBeginPath(args.vg);
+        nvgRoundedRect(args.vg, bezel + 1.0f, bezel + 1.0f,
+                       box.size.x - 2.f * (bezel + 1.0f),
+                       box.size.y - 2.f * (bezel + 1.0f),
+                       std::max(0.0f, radius - bezel - 1.0f));
+        nvgStrokeWidth(args.vg, 1.2f);
+        nvgStrokeColor(args.vg, nvgRGBA(210, 210, 225, 35)); // faint highlight
+        nvgStroke(args.vg);
+        nvgBeginPath(args.vg);
+        nvgRoundedRect(args.vg, bezel - 0.5f, bezel - 0.5f,
+                       box.size.x - 2.f * (bezel - 0.5f),
+                       box.size.y - 2.f * (bezel - 0.5f),
+                       std::max(0.0f, radius - bezel + 0.5f));
+        nvgStrokeWidth(args.vg, 1.2f);
+        nvgStrokeColor(args.vg, nvgRGBA(5, 5, 8, 90)); // faint shadow
         nvgStroke(args.vg);
 
-        // All overlays should respect rounded corners: clip to an inset rectangle
-        // inset chosen near corner radius so rectangular overlays never poke past rounded edges
-        float clipInset = radius - 1.0f; // ~7px
-        float innerX = clipInset;
-        float innerY = clipInset;
-        float innerW = box.size.x - 2.0f * clipInset;
-        float innerH = box.size.y - 2.0f * clipInset;
+        // Compute screen (inside bezel) rect for screen-space overlays
+        float screenX = bezel + 0.5f;
+        float screenY = bezel + 0.5f;
+        float screenW = box.size.x - 2.0f * bezel - 1.0f;
+        float screenH = box.size.y - 2.0f * bezel - 1.0f;
 
-        // Very light scanlines overlay (gray, subtle). Reduce and spread out in spooky mode.
+        // Very light scanlines overlay confined to screen area
         bool spookyLocal = view && view->getSpookyTvMode();
-        float scanAlpha = spookyLocal ? 0.012f : 0.012f; // same strength both modes for consistency
+        float scanAlpha = spookyLocal ? 0.012f : 0.012f;
         float lineSpacing = spookyLocal ? 4.0f : 2.0f;
-        graphics::drawScanlines(args, innerX, innerY, innerW, innerH, lineSpacing, scanAlpha);
+        graphics::drawScanlines(args, screenX, screenY, screenW, screenH, lineSpacing, scanAlpha);
 
         // Stronger perceived depth via neutral inner vignettes and bevels (no bright whites)
         nvgSave(args.vg);
@@ -315,13 +343,24 @@ void HighResMatrixWidget::drawMatrix(const DrawArgs& args) {
 
     // Preview display moved later to render above grid
 
-    // Grid
+    // Grid (constrained to the inner screen inside the bezel)
     int cols = 8, rows = 8; int gs = view->getGridSteps();
     if (gs == 16) { cols = rows = 4; }
     else if (gs == 32) { cols = rows = 6; }
-    float pad = std::max(2.0f, std::min(box.size.x, box.size.y) * 0.02f);
-    float innerW = box.size.x - pad * 2.0f, innerH = box.size.y - pad * 2.0f;
+
+    // Compute screen rect (inside bezel) and use it as the drawing area for the grid
+    const float bezel = 5.5f;
+    const float screenX = bezel + 0.5f;
+    const float screenY = bezel + 0.5f;
+    const float screenW = box.size.x - 2.0f * bezel - 1.0f;
+    const float screenH = box.size.y - 2.0f * bezel - 1.0f;
+
+    // Pad within the screen area
+    float pad = std::max(2.0f, std::min(screenW, screenH) * 0.02f);
+    float innerW = screenW - pad * 2.0f, innerH = screenH - pad * 2.0f;
     float cellWidth = innerW / cols, cellHeight = innerH / rows;
+
+    // Draw grid content positioned within the screen area (no global scissor)
 
     for (int y = 0; y < rows; ++y) {
         for (int x = 0; x < cols; ++x) {
@@ -333,7 +372,7 @@ void HighResMatrixWidget::drawMatrix(const DrawArgs& args) {
             // Skip drawing cells that don't correspond to valid steps
             if (stepIndex < 0) continue;
 
-            Vec cellPos = Vec(pad + x * cellWidth, pad + y * cellHeight);
+            Vec cellPos = Vec(screenX + pad + x * cellWidth, screenY + pad + y * cellHeight);
             Vec cellCenter = Vec(cellPos.x + cellWidth/2, cellPos.y + cellHeight/2);
 
             bool inA = (stepIndex < view->getSeqALength());
@@ -345,6 +384,7 @@ void HighResMatrixWidget::drawMatrix(const DrawArgs& args) {
             bool playheadA = (view->isSeqARunning() && view->getSeqACurrentStep() == stepIndex) || (view->isEditModeA() && inA && view->getSeqACurrentStep() == stepIndex);
             bool playheadB = (view->isSeqBRunning() && view->getSeqBCurrentStep() == stepIndex) || (view->isEditModeB() && inB && view->getSeqBCurrentStep() == stepIndex);
 
+            // Original cell sizes
             float radiusFactor = 0.42f; if (gs == 32) radiusFactor = 0.44f; else if (gs == 16) radiusFactor = 0.48f;
             float cellRadius = std::min(cellWidth, cellHeight) * radiusFactor;
 
@@ -499,10 +539,11 @@ void HighResMatrixWidget::drawMatrix(const DrawArgs& args) {
             // Subtle outline
             nvgBeginPath(args.vg);
             nvgCircle(args.vg, cellCenter.x, cellCenter.y, cellRadius);
-            nvgStrokeColor(args.vg, nvgRGBA(60,60,70,100));
+            nvgStrokeColor(args.vg, nvgRGBA(60,60,70,80));
             nvgStrokeWidth(args.vg, 1.0f);
             nvgStroke(args.vg);
         }
+    // (no scissor used; rely on geometry to stay within the bezel)
     }
 
     // Preview display (drawn above grid)
@@ -515,30 +556,40 @@ void HighResMatrixWidget::drawMatrix(const DrawArgs& args) {
         float tapeWarp = sinf(time * 0.15f) * 0.04f + cosf(time * 0.22f) * 0.025f;
         float deepWarp = sinf(time * 0.09f) * 0.06f;
         if (spooky) {
-            nvgBeginPath(args.vg); nvgRoundedRect(args.vg, 0, 0, box.size.x, box.size.y, 8.0f);
+            // Constrain spooky TV preview overlays to screen area (inside bezel)
+            float radius = 8.0f; float bezel = 5.5f;
+            float screenX = bezel + 0.5f;
+            float screenY = bezel + 0.5f;
+            float screenW = box.size.x - 2.0f * bezel - 1.0f;
+            float screenH = box.size.y - 2.0f * bezel - 1.0f;
+            float innerR = std::max(0.0f, radius - bezel - 0.5f);
+            // Save and clip strictly to screen rect for entire spooky block
+            nvgSave(args.vg);
+            nvgIntersectScissor(args.vg, screenX, screenY, screenW, screenH);
+
             // Neutral grayscale base to avoid green tint
+            nvgBeginPath(args.vg);
+            nvgRoundedRect(args.vg, screenX, screenY, screenW, screenH, innerR);
             int base = 10 + (int)((waveA + waveB) * 10.0f);
             base = std::max(0, std::min(48, base));
             nvgFillColor(args.vg, nvgRGBA(base, base, base, 255));
             nvgFill(args.vg);
-            nvgSave(args.vg); nvgIntersectScissor(args.vg, 0, 0, box.size.x, box.size.y);
-            // VHS-style noise: random thin horizontal bars and speckles
+
+            // VHS-style noise: random thin horizontal bars and speckles (confined by scissor)
             nvgSave(args.vg);
             nvgGlobalAlpha(args.vg, 0.06f);
             for (int i = 0; i < 6; ++i) {
-                float y = fmodf((i * 13.37f + time * 90.0f), box.size.y);
+                float y = screenY + fmodf((i * 13.37f + time * 90.0f), screenH);
                 float h = 0.6f + fmodf(i * 1.7f, 1.2f);
                 nvgBeginPath(args.vg);
-                nvgRect(args.vg, 0, y, box.size.x, h);
-                // Alternate neutral gray/white bars
+                nvgRect(args.vg, screenX, y, screenW, h);
                 int g = 180 + (i * 11) % 50;
                 nvgFillColor(args.vg, nvgRGBA(g, g, g, 255));
                 nvgFill(args.vg);
             }
-            // Speckle noise (white noise static) — slightly lighter again
             for (int i = 0; i < 320; ++i) {
-                float x = fmodf((i * 37.1f + time * 300.0f), box.size.x);
-                float y = fmodf((i * 21.7f + time * 220.0f), box.size.y);
+                float x = screenX + fmodf((i * 37.1f + time * 300.0f), screenW);
+                float y = screenY + fmodf((i * 21.7f + time * 220.0f), screenH);
                 nvgBeginPath(args.vg);
                 float w = 0.6f + fmodf(i * 0.91f, 0.8f);
                 float h = 0.6f + fmodf(i * 1.13f, 0.8f);
@@ -547,13 +598,19 @@ void HighResMatrixWidget::drawMatrix(const DrawArgs& args) {
                 nvgFillColor(args.vg, nvgRGBA(g, g, g, 150));
                 nvgFill(args.vg);
             }
-            nvgRestore(args.vg);
-            nvgRestore(args.vg);
+            nvgRestore(args.vg); // alpha
+            nvgRestore(args.vg); // scissor
         }
         nvgSave(args.vg);
+        // Center preview within the inner screen area (inside bezel)
+        float bezel = 5.5f;
+        float screenX = bezel + 0.5f;
+        float screenY = bezel + 0.5f;
+        float screenW = box.size.x - 2.0f * bezel - 1.0f;
+        float screenH = box.size.y - 2.0f * bezel - 1.0f;
         float shakeX = sinf(time * 0.55f) * 0.5f + tapeWarp * 1.8f + deepWarp * 1.4f;
         float shakeY = cosf(time * 0.40f) * 0.4f + waveA * 1.2f + waveB * 0.8f;
-        nvgTranslate(args.vg, box.size.x / 2 + shakeX, box.size.y * 0.40f + shakeY);
+        nvgTranslate(args.vg, (screenX + screenW * 0.5f) + shakeX, (screenY + screenH * 0.40f) + shakeY);
         nvgScale(args.vg, 5.0f, 5.0f);
         float colorCycle = sin(time * 0.3f) * 0.5f + 0.5f;
         int symbolR = 140, symbolG = 140, symbolB = 150;
@@ -615,11 +672,16 @@ void HighResMatrixWidget::drawMatrix(const DrawArgs& args) {
         // Text
         // Larger, more readable chord name
         nvgFontSize(args.vg, 50);
-        // Keep titles well inside the screen bounds to avoid spillover
-        float maxTextWidth = box.size.x * 0.72f;
+        // Keep titles well inside the inner screen bounds to avoid spillover
+        float bezelT = 5.5f;
+        float screenXT = bezelT + 0.5f;
+        float screenYT = bezelT + 0.5f;
+        float screenWT = box.size.x - 2.0f * bezelT - 1.0f;
+        float screenHT = box.size.y - 2.0f * bezelT - 1.0f;
+        float maxTextWidth = screenWT * 0.72f;
         auto lines = wrapTextLocal(view->getDisplayChordName(), maxTextWidth, args.vg);
-        // If no symbol (-999), center the title vertically
-        float textY = (dispId == -999) ? (box.size.y * 0.52f) : (box.size.y * 0.79f);
+        // If no symbol (-999), center the title vertically within the screen
+        float textY = (dispId == -999) ? (screenYT + screenHT * 0.52f) : (screenYT + screenHT * 0.79f);
         // Use font metrics for consistent, roomy line spacing
         float asc = 0.f, desc = 0.f, lineh = 0.f;
         nvgTextMetrics(args.vg, &asc, &desc, &lineh);
@@ -650,12 +712,10 @@ void HighResMatrixWidget::drawMatrix(const DrawArgs& args) {
             }
         };
 
-        // Clip text to the screen area for safety
-        nvgSave(args.vg);
-        nvgIntersectScissor(args.vg, 2.0f, 2.0f, box.size.x - 4.0f, box.size.y - 4.0f);
+        // No scissor; text positions are kept within inner screen bounds
         for (size_t i = 0; i < lines.size(); ++i) {
             std::string s = lines[i];
-            float cx = box.size.x / 2;
+            float cx = screenXT + screenWT / 2.0f;
             float cy = textY - blockOffset + i * lineH;
             float tracking = 6.0f; // used only when s == "TIE"
             if (spooky) {
@@ -689,7 +749,7 @@ void HighResMatrixWidget::drawMatrix(const DrawArgs& args) {
             else { nvgFillColor(args.vg, nvgRGBA(232, 224, 200, spooky ? 205 : 235)); nvgText(args.vg, cx, cy, s.c_str(), NULL); }
             if (spooky) nvgFontBlur(args.vg, 0.0f);
         }
-        nvgRestore(args.vg);
+        // end text
         if (spooky) {
             nvgSave(args.vg);
             graphics::drawVignettePatinaScratches(args, 0, 0, box.size.x, box.size.y, 8.0f,
@@ -703,10 +763,23 @@ void HighResMatrixWidget::drawMatrix(const DrawArgs& args) {
     if (view->isEditModeA() || view->isEditModeB()) {
         nvgSave(args.vg); nvgGlobalCompositeOperation(args.vg, NVG_LIGHTER);
         float time = system::getTime(); float pulse = 0.4f + 0.3f * sin(time * 3.0f);
-        NVGcolor glow = view->isEditModeA() ? nvgRGBA(0,255,180, pulse*150) : nvgRGBA(180,0,255, pulse*150);
+        NVGcolor glow  = view->isEditModeA() ? nvgRGBA(0,255,180, pulse*150) : nvgRGBA(180,0,255, pulse*150);
+        NVGcolor halo1 = view->isEditModeA() ? nvgRGBA(0,255,180, pulse*70)  : nvgRGBA(180,0,255, pulse*70);
+        NVGcolor halo2 = view->isEditModeA() ? nvgRGBA(0,255,180, pulse*40)  : nvgRGBA(180,0,255, pulse*40);
+        // Draw the glow around the inner screen (inside the bezel), not the full widget
+        float radius = 8.0f; float bezel = 5.5f;
+        float screenX = bezel + 0.5f;
+        float screenY = bezel + 0.5f;
+        float screenW = box.size.x - 2.0f * bezel - 1.0f;
+        float screenH = box.size.y - 2.0f * bezel - 1.0f;
+        float innerR  = std::max(0.0f, radius - bezel - 0.5f);
         nvgBeginPath(args.vg);
-        nvgRoundedRect(args.vg, 0.5f, 0.5f, box.size.x - 1.0f, box.size.y - 1.0f, 7.5f);
-        nvgStrokeColor(args.vg, glow); nvgStrokeWidth(args.vg, 1.25f); nvgStroke(args.vg);
+        nvgRoundedRect(args.vg, screenX, screenY, screenW, screenH, innerR);
+        // Outer halo layers (broad, soft)
+        nvgStrokeColor(args.vg, halo2); nvgStrokeWidth(args.vg, 10.0f); nvgStroke(args.vg);
+        nvgStrokeColor(args.vg, halo1); nvgStrokeWidth(args.vg, 6.0f);  nvgStroke(args.vg);
+        // Inner crisp glow
+        nvgStrokeColor(args.vg, glow);  nvgStrokeWidth(args.vg, 2.0f);  nvgStroke(args.vg);
         nvgRestore(args.vg);
     }
 
