@@ -47,7 +47,7 @@
     },
     {
       "name": "Eb(maj7#11)",
-      "intervals": [3, 7, 10, 2, 10],
+      "intervals": [3, 7, 10, 2, 9],
       "preferredVoices": 5,
       "category": "major7#11"
     },

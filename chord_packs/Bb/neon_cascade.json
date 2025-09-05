@@ -1,0 +1,79 @@
+{
+  "name": "Neon Cascade",
+  "key": "Bb",
+  "description": "Vibey synthwave cascades with neon-bright harmonies and flowing textures",
+  "chords": [
+    {
+      "name": "Bbmaj7",
+      "intervals": [10, 2, 5, 9],
+      "preferredVoices": 4,
+      "category": "major7"
+    },
+    {
+      "name": "Gm7",
+      "intervals": [7, 10, 2, 5],
+      "preferredVoices": 4,
+      "category": "minor7"
+    },
+    {
+      "name": "Ebmaj7",
+      "intervals": [3, 7, 10, 2],
+      "preferredVoices": 4,
+      "category": "major7"
+    },
+    {
+      "name": "F7",
+      "intervals": [5, 9, 0, 3],
+      "preferredVoices": 4,
+      "category": "dominant7"
+    },
+    {
+      "name": "Dm7",
+      "intervals": [2, 5, 9, 0],
+      "preferredVoices": 4,
+      "category": "minor7"
+    },
+    {
+      "name": "Cm7",
+      "intervals": [0, 3, 7, 10],
+      "preferredVoices": 4,
+      "category": "minor7"
+    },
+    {
+      "name": "Bbmaj9",
+      "intervals": [10, 2, 5, 9, 0],
+      "preferredVoices": 5,
+      "category": "major9"
+    },
+    {
+      "name": "Gm9",
+      "intervals": [7, 10, 2, 5, 9],
+      "preferredVoices": 5,
+      "category": "minor9"
+    },
+    {
+      "name": "Ebmaj9",
+      "intervals": [3, 7, 10, 2, 5],
+      "preferredVoices": 5,
+      "category": "major9"
+    },
+    {
+      "name": "F9sus4",
+      "intervals": [5, 10, 0, 3, 7],
+      "preferredVoices": 5,
+      "category": "dominant9sus4"
+    },
+    {
+      "name": "Bbadd9",
+      "intervals": [10, 2, 5, 0],
+      "preferredVoices": 4,
+      "category": "majoradd9"
+    },
+    {
+      "name": "Gm(add9)",
+      "intervals": [7, 10, 2, 9],
+      "preferredVoices": 4,
+      "category": "minoradd9"
+    }
+  ]
+}

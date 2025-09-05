@@ -5,7 +5,7 @@
   "chords": [
     {
       "name": "Am",
-      "intervals": [9, 0, 4],
+      "intervals": [0, 3, 7],
       "preferredVoices": 3,
       "category": "minor"
     },
@@ -47,7 +47,7 @@
     },
     {
       "name": "Am(maj7)",
-      "intervals": [9, 0, 4, 8],
+      "intervals": [0, 3, 7, 11],
       "preferredVoices": 4,
       "category": "minorMaj7"
     },
@@ -65,7 +65,7 @@
     },
     {
       "name": "Fm6",
-      "intervals": [5, 9, 0, 2],
+      "intervals": [5, 8, 0, 2],
       "preferredVoices": 4,
       "category": "minor6"
     },

@@ -1,0 +1,79 @@
+{
+  "name": "Astral Flow",
+  "key": "B",
+  "description": "Flowing ambient synthwave with astral projections and ethereal chord movements",
+  "chords": [
+    {
+      "name": "Bmaj7",
+      "intervals": [11, 3, 6, 10],
+      "preferredVoices": 4,
+      "category": "major7"
+    },
+    {
+      "name": "G#m7",
+      "intervals": [8, 11, 3, 6],
+      "preferredVoices": 4,
+      "category": "minor7"
+    },
+    {
+      "name": "Emaj7",
+      "intervals": [4, 8, 11, 3],
+      "preferredVoices": 4,
+      "category": "major7"
+    },
+    {
+      "name": "F#7",
+      "intervals": [6, 10, 1, 4],
+      "preferredVoices": 4,
+      "category": "dominant7"
+    },
+    {
+      "name": "D#m7",
+      "intervals": [3, 6, 10, 1],
+      "preferredVoices": 4,
+      "category": "minor7"
+    },
+    {
+      "name": "C#m7",
+      "intervals": [1, 4, 8, 11],
+      "preferredVoices": 4,
+      "category": "minor7"
+    },
+    {
+      "name": "Bmaj9",
+      "intervals": [11, 3, 6, 10, 1],
+      "preferredVoices": 5,
+      "category": "major9"
+    },
+    {
+      "name": "G#m9",
+      "intervals": [8, 11, 3, 6, 10],
+      "preferredVoices": 5,
+      "category": "minor9"
+    },
+    {
+      "name": "Emaj9",
+      "intervals": [4, 8, 11, 3, 6],
+      "preferredVoices": 5,
+      "category": "major9"
+    },
+    {
+      "name": "F#9sus4",
+      "intervals": [6, 11, 1, 4, 8],
+      "preferredVoices": 5,
+      "category": "dominant9sus4"
+    },
+    {
+      "name": "Badd9",
+      "intervals": [11, 3, 6, 1],
+      "preferredVoices": 4,
+      "category": "majoradd9"
+    },
+    {
+      "name": "G#m(add9)",
+      "intervals": [8, 11, 3, 10],
+      "preferredVoices": 4,
+      "category": "minoradd9"
+    }
+  ]
+}

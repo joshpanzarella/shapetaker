@@ -1,0 +1,79 @@
+{
+  "name": "Shadow Waves",
+  "key": "Ab",
+  "description": "Dark ambient synthwave with mysterious chords and deep atmospheric textures",
+  "chords": [
+    {
+      "name": "Abmaj7",
+      "intervals": [8, 0, 3, 7],
+      "preferredVoices": 4,
+      "category": "major7"
+    },
+    {
+      "name": "Fm7",
+      "intervals": [5, 8, 0, 3],
+      "preferredVoices": 4,
+      "category": "minor7"
+    },
+    {
+      "name": "Dbmaj7",
+      "intervals": [1, 5, 8, 0],
+      "preferredVoices": 4,
+      "category": "major7"
+    },
+    {
+      "name": "Eb7",
+      "intervals": [3, 7, 10, 1],
+      "preferredVoices": 4,
+      "category": "dominant7"
+    },
+    {
+      "name": "Cm7",
+      "intervals": [0, 3, 7, 10],
+      "preferredVoices": 4,
+      "category": "minor7"
+    },
+    {
+      "name": "Bbm7",
+      "intervals": [10, 1, 5, 8],
+      "preferredVoices": 4,
+      "category": "minor7"
+    },
+    {
+      "name": "Abmaj9",
+      "intervals": [8, 0, 3, 7, 10],
+      "preferredVoices": 5,
+      "category": "major9"
+    },
+    {
+      "name": "Fm9",
+      "intervals": [5, 8, 0, 3, 7],
+      "preferredVoices": 5,
+      "category": "minor9"
+    },
+    {
+      "name": "Dbmaj9",
+      "intervals": [1, 5, 8, 0, 3],
+      "preferredVoices": 5,
+      "category": "major9"
+    },
+    {
+      "name": "Eb9sus4",
+      "intervals": [3, 8, 10, 1, 5],
+      "preferredVoices": 5,
+      "category": "dominant9sus4"
+    },
+    {
+      "name": "Abadd9",
+      "intervals": [8, 0, 3, 10],
+      "preferredVoices": 4,
+      "category": "majoradd9"
+    },
+    {
+      "name": "Fm(add9)",
+      "intervals": [5, 8, 0, 7],
+      "preferredVoices": 4,
+      "category": "minoradd9"
+    }
+  ]
+}

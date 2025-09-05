@@ -1,0 +1,79 @@
+{
+  "name": "Velvet Sky",
+  "key": "F",
+  "description": "Lush ambient synthwave with deep nostalgic resonance",
+  "chords": [
+    {
+      "name": "Fmaj7",
+      "intervals": [5, 9, 0, 4],
+      "preferredVoices": 4,
+      "category": "major7"
+    },
+    {
+      "name": "Dm7",
+      "intervals": [2, 5, 9, 0],
+      "preferredVoices": 4,
+      "category": "minor7"
+    },
+    {
+      "name": "Bbmaj7",
+      "intervals": [10, 2, 5, 9],
+      "preferredVoices": 4,
+      "category": "major7"
+    },
+    {
+      "name": "C7",
+      "intervals": [0, 4, 7, 10],
+      "preferredVoices": 4,
+      "category": "dominant7"
+    },
+    {
+      "name": "Am7",
+      "intervals": [9, 0, 4, 7],
+      "preferredVoices": 4,
+      "category": "minor7"
+    },
+    {
+      "name": "Gm7",
+      "intervals": [7, 10, 2, 5],
+      "preferredVoices": 4,
+      "category": "minor7"
+    },
+    {
+      "name": "Fmaj9",
+      "intervals": [5, 9, 0, 4, 7],
+      "preferredVoices": 5,
+      "category": "major9"
+    },
+    {
+      "name": "Dm9",
+      "intervals": [2, 5, 9, 0, 4],
+      "preferredVoices": 5,
+      "category": "minor9"
+    },
+    {
+      "name": "Bbmaj9",
+      "intervals": [10, 2, 5, 9, 0],
+      "preferredVoices": 5,
+      "category": "major9"
+    },
+    {
+      "name": "C9sus4",
+      "intervals": [0, 5, 7, 10, 2],
+      "preferredVoices": 5,
+      "category": "dominant9sus4"
+    },
+    {
+      "name": "Fadd9",
+      "intervals": [5, 9, 0, 7],
+      "preferredVoices": 4,
+      "category": "majoradd9"
+    },
+    {
+      "name": "Dm(add9)",
+      "intervals": [2, 5, 9, 4],
+      "preferredVoices": 4,
+      "category": "minoradd9"
+    }
+  ]
+}

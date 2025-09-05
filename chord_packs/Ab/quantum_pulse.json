@@ -23,7 +23,7 @@
     },
     {
       "name": "Dbmaj7",
-      "intervals": [1, 5, 8, 0],
+      "intervals": [1, 5, 8, 11],
       "preferredVoices": 4,
       "category": "major7"
     },
@@ -35,7 +35,7 @@
     },
     {
       "name": "Fm7",
-      "intervals": [5, 8, 0, 3],
+      "intervals": [5, 8, 11, 3],
       "preferredVoices": 4,
       "category": "minor7"
     },

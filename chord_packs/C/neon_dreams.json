@@ -71,7 +71,7 @@
     },
     {
       "name": "Csus2add9",
-      "intervals": [0, 2, 7, 2],
+      "intervals": [0, 2, 7, 9],
       "preferredVoices": 4,
       "category": "sus2add9"
     }

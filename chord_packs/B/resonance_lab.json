@@ -5,7 +5,7 @@
   "chords": [
     {
       "name": "Bmaj7#11",
-      "intervals": [11, 3, 6, 10, 6],
+      "intervals": [11, 3, 6, 10, 5],
       "preferredVoices": 5,
       "category": "major7#11"
     },
@@ -53,7 +53,7 @@
     },
     {
       "name": "Emaj9#11",
-      "intervals": [4, 8, 11, 3, 6, 11],
+      "intervals": [4, 8, 11, 3, 6, 10],
       "preferredVoices": 6,
       "category": "major9#11"
     },

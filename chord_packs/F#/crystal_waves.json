@@ -1,0 +1,79 @@
+{
+  "name": "Crystal Waves",
+  "key": "F#",
+  "description": "Crystalline ambient synthwave with shimmering harmonies and wave-like textures",
+  "chords": [
+    {
+      "name": "F#maj7",
+      "intervals": [6, 10, 1, 5],
+      "preferredVoices": 4,
+      "category": "major7"
+    },
+    {
+      "name": "D#m7",
+      "intervals": [3, 6, 10, 1],
+      "preferredVoices": 4,
+      "category": "minor7"
+    },
+    {
+      "name": "Bmaj7",
+      "intervals": [11, 3, 6, 10],
+      "preferredVoices": 4,
+      "category": "major7"
+    },
+    {
+      "name": "C#7",
+      "intervals": [1, 5, 8, 11],
+      "preferredVoices": 4,
+      "category": "dominant7"
+    },
+    {
+      "name": "A#m7",
+      "intervals": [10, 1, 5, 8],
+      "preferredVoices": 4,
+      "category": "minor7"
+    },
+    {
+      "name": "G#m7",
+      "intervals": [8, 11, 3, 6],
+      "preferredVoices": 4,
+      "category": "minor7"
+    },
+    {
+      "name": "F#maj9",
+      "intervals": [6, 10, 1, 5, 8],
+      "preferredVoices": 5,
+      "category": "major9"
+    },
+    {
+      "name": "D#m9",
+      "intervals": [3, 6, 10, 1, 5],
+      "preferredVoices": 5,
+      "category": "minor9"
+    },
+    {
+      "name": "Bmaj9",
+      "intervals": [11, 3, 6, 10, 1],
+      "preferredVoices": 5,
+      "category": "major9"
+    },
+    {
+      "name": "C#9sus4",
+      "intervals": [1, 6, 8, 11, 3],
+      "preferredVoices": 5,
+      "category": "dominant9sus4"
+    },
+    {
+      "name": "F#add9",
+      "intervals": [6, 10, 1, 8],
+      "preferredVoices": 4,
+      "category": "majoradd9"
+    },
+    {
+      "name": "D#m(add9)",
+      "intervals": [3, 6, 10, 5],
+      "preferredVoices": 4,
+      "category": "minoradd9"
+    }
+  ]
+}
