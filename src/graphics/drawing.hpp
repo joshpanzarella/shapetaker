@@ -22,11 +22,11 @@ void drawAlchemicalSymbol(const widget::Widget::DrawArgs& args, Vec pos, int sym
                          NVGcolor color = nvgRGBA(255,255,255,255), 
                          float size = 10.0f, float strokeWidth = 1.0f);
 
-// Check if symbol ID is valid (0-39 range)
+// Check if symbol ID is valid (0..SymbolCount-1)
 bool isValidSymbolId(int symbolId);
 
-// Get symbol count (40 total symbols available)
-constexpr int getSymbolCount() { return 60; }
+// Get symbol count
+constexpr int getSymbolCount() { return 80; }
 
 // Draw vintage panel effects: vignette + patina + micro-scratches
 void drawVignettePatinaScratches(const widget::Widget::DrawArgs& args,

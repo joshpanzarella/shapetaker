@@ -170,7 +170,7 @@ struct Transmutation : Module,
     // Chord pack system
     ChordPack currentChordPack;
     std::array<int, st::SymbolCount> symbolToChordMapping; // Mapping for all symbols
-    std::array<int, 12> buttonToSymbolMapping; // Maps button positions 0-11 to symbol IDs 0-39
+    std::array<int, 12> buttonToSymbolMapping; // Maps button positions 0-11 to symbol IDs 0..(st::SymbolCount-1)
     std::array<float, 12> buttonPressAnim;     // 1.0 on press, decays to 0 for animation
 
     // Clock system

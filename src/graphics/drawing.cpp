@@ -103,7 +103,7 @@ void drawAlchemicalSymbol(const widget::Widget::DrawArgs& args, Vec pos, int sym
 }
 
 bool isValidSymbolId(int symbolId) {
-    return symbolId >= 0 && symbolId < 60;
+    return symbolId >= 0 && symbolId < 80;
 }
 
 void drawVignettePatinaScratches(const widget::Widget::DrawArgs& args,

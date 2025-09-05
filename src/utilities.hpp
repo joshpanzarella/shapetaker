@@ -75,7 +75,8 @@ namespace st {
     using shapetaker::graphics::wrapText;
     
     // Symbol constants
-    constexpr int SymbolCount = 60;
+    // Total number of available alchemical symbols
+    constexpr int SymbolCount = 80;
 }
 
 // Global convenience functions for backward compatibility
