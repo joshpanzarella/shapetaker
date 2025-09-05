@@ -164,8 +164,11 @@ void drawAlchemicalSymbol(const widget::Widget::DrawArgs& args, Vec pos, int sym
             break;
         }
         case 68: { // Eye
-            nvgBeginPath(args.vg); nvgMoveTo(args.vg, -size, 0); nvgQuadraticCurveTo(args.vg, 0, -size*0.7f, size, 0); nvgStroke(args.vg);
-            nvgBeginPath(args.vg); nvgMoveTo(args.vg, -size, 0); nvgQuadraticCurveTo(args.vg, 0,  size*0.7f, size, 0); nvgStroke(args.vg);
+            nvgBeginPath(args.vg); nvgMoveTo(args.vg, -size, 0);
+            // Use cubic with identical control points to emulate a quadratic arch
+            nvgBezierTo(args.vg, 0, -size*0.7f, 0, -size*0.7f, size, 0); nvgStroke(args.vg);
+            nvgBeginPath(args.vg); nvgMoveTo(args.vg, -size, 0);
+            nvgBezierTo(args.vg, 0,  size*0.7f, 0,  size*0.7f, size, 0); nvgStroke(args.vg);
             nvgBeginPath(args.vg); nvgCircle(args.vg, 0, 0, size*0.3f); nvgStroke(args.vg);
             break;
         }
