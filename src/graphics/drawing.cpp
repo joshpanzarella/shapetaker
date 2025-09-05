@@ -1,5 +1,8 @@
 // Graphics drawing utilities implementation
 #include "drawing.hpp"
+#include <sstream>
+#include <vector>
+#include <string>
 // Legacy includes removed - functionality now implemented directly
 
 namespace shapetaker {
@@ -260,6 +263,53 @@ void drawGlassReflections(const widget::Widget::DrawArgs& args, float x, float y
     nvgFill(args.vg);
 
     nvgRestore(args.vg);
+}
+
+std::vector<std::string> wrapText(const std::string& text, float maxWidth, NVGcontext* vg) {
+    std::vector<std::string> lines;
+    if (text.empty()) return lines;
+    
+    // Check if text fits in single line
+    float textWidth = nvgTextBounds(vg, 0, 0, text.c_str(), NULL, NULL);
+    if (textWidth <= maxWidth) {
+        lines.push_back(text);
+        return lines;
+    }
+    
+    // Split into words
+    std::vector<std::string> words;
+    std::stringstream ss(text);
+    std::string word;
+    while (std::getline(ss, word, ' ')) {
+        if (!word.empty()) {
+            words.push_back(word);
+        }
+    }
+    
+    if (words.empty()) return lines;
+    
+    // Build lines by adding words until maxWidth is exceeded
+    std::string currentLine = words[0];
+    
+    for (size_t i = 1; i < words.size(); ++i) {
+        std::string testLine = currentLine + " " + words[i];
+        float testWidth = nvgTextBounds(vg, 0, 0, testLine.c_str(), NULL, NULL);
+        
+        if (testWidth <= maxWidth) {
+            currentLine = testLine;
+        } else {
+            // Line is full, start new line
+            lines.push_back(currentLine);
+            currentLine = words[i];
+        }
+    }
+    
+    // Add final line
+    if (!currentLine.empty()) {
+        lines.push_back(currentLine);
+    }
+    
+    return lines;
 }
 
 }} // namespace shapetaker::graphics

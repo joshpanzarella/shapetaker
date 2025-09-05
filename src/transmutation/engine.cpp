@@ -52,8 +52,9 @@ void applyGates(const rack::engine::Module::ProcessArgs& args,
                 int activeVoices,
                 GateMode gateMode,
                 float gatePulseMs,
-                bool stepChanged) {
-    const int chCount = MAX_VOICES;
+                bool stepChanged,
+                int totalChannels) {
+    int chCount = rack::math::clamp(totalChannels, 1, MAX_VOICES);
     outputs[gateOutputId].setChannels(chCount);
     if (gateMode == GATE_SUSTAIN) {
         for (int v = 0; v < chCount; ++v) {
@@ -67,7 +68,7 @@ void applyGates(const rack::engine::Module::ProcessArgs& args,
         for (int v = 0; v < activeVoices && v < MAX_VOICES; ++v) pulses[v].trigger(pw);
     }
     for (int v = 0; v < chCount; ++v) {
-        bool high = pulses[v].process(args.sampleTime);
+        bool high = (v < activeVoices) && pulses[v].process(args.sampleTime);
         outputs[gateOutputId].setVoltage(high ? 10.f : 0.f, v);
     }
 }

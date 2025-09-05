@@ -806,12 +806,27 @@ void AlchemicalSymbolWidget::draw(const DrawArgs& args) {
         nvgStrokeWidth(args.vg, 2.0f);
         nvgStroke(args.vg);
     } else if (isSelected && inEditMode) {
-        // Selected for editing - bright blue
-        nvgFillColor(args.vg, nvgRGBA(0, 200, 255, 150));
+        // Selected for editing — blink to indicate "awaiting placement"
+        double t = system::getTime();
+        float pulse01 = 0.5f + 0.5f * std::sin(t * 6.0f); // ~3Hz blink
+        int fillA = (int)(90 + pulse01 * 80);  // 90..170
+        int strokeA = (int)(140 + pulse01 * 115); // 140..255
+        nvgFillColor(args.vg, nvgRGBA(0, 200, 255, fillA));
         nvgFill(args.vg);
-        nvgStrokeColor(args.vg, nvgRGBA(0, 255, 255, 255));
+        // Outer stroke with pulsating alpha
+        nvgStrokeColor(args.vg, nvgRGBA(0, 255, 255, strokeA));
         nvgStrokeWidth(args.vg, 2.0f);
         nvgStroke(args.vg);
+        // Soft additive glow ring
+        nvgSave(args.vg);
+        nvgGlobalCompositeOperation(args.vg, NVG_LIGHTER);
+        nvgBeginPath(args.vg);
+        nvgRoundedRect(args.vg, -1.0f, -1.0f, box.size.x + 2.0f, box.size.y + 2.0f, 4);
+        nvgStrokeColor(args.vg, nvgRGBA(0, 255, 255, (int)(50 + pulse01 * 60))); // 50..110
+        nvgStrokeWidth(args.vg, 1.5f);
+        nvgStroke(args.vg);
+        nvgGlobalCompositeOperation(args.vg, NVG_SOURCE_OVER);
+        nvgRestore(args.vg);
     } else if (inEditMode) {
         // In edit mode but not selected - subtle highlight
         nvgFillColor(args.vg, nvgRGBA(60, 60, 80, 120));

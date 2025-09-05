@@ -72,10 +72,14 @@ namespace st {
     using shapetaker::graphics::drawAlchemicalSymbol;
     using shapetaker::graphics::isValidSymbolId;
     using shapetaker::graphics::drawVignettePatinaScratches;
+    using shapetaker::graphics::wrapText;
     
     // Symbol constants
     constexpr int SymbolCount = 60;
 }
+
+// Global convenience functions for backward compatibility
+using shapetaker::graphics::wrapText;
 
 // TODO: Remove these legacy includes in future version
 // For now, they provide compatibility during transition

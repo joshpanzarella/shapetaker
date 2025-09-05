@@ -53,7 +53,7 @@ bool loadChordPackFromFile(const std::string& filepath, ChordPack& out) {
 
             size_t intervalIndex; json_t* intervalJ;
             json_array_foreach(intervalsJ, intervalIndex, intervalJ) {
-                c.intervals.push_back((float)json_real_value(intervalJ));
+                c.intervals.push_back((float)json_number_value(intervalJ));
             }
             out.chords.push_back(std::move(c));
         }
@@ -89,33 +89,25 @@ void randomizeSymbolAssignment(const ChordPack& pack,
                                std::array<int, st::SymbolCount>& symbolToChordMapping,
                                std::array<int, 12>& buttonToSymbolMapping) {
     if (pack.chords.empty()) return;
-    std::random_device rd;
-    std::mt19937 gen(rd());
 
-    // randomize which symbols appear on buttons (use full symbol set)
-    std::vector<int> symbolIds(st::SymbolCount);
-    for (int i = 0; i < st::SymbolCount; ++i) symbolIds[i] = i;
-    std::shuffle(symbolIds.begin(), symbolIds.end(), gen);
-    for (int i = 0; i < 12; ++i) buttonToSymbolMapping[i] = symbolIds[i % symbolIds.size()];
-
-    // clear map and assign chords to the 12 button symbols (prefer unique)
-    symbolToChordMapping.fill(-1);
-    std::vector<int> chordIdx(pack.chords.size());
-    for (int i = 0; i < (int)pack.chords.size(); ++i) chordIdx[i] = i;
-    std::shuffle(chordIdx.begin(), chordIdx.end(), gen);
-
-    std::uniform_int_distribution<> dis(0, (int)pack.chords.size() - 1);
-    for (int b = 0; b < 12; ++b) {
-        int sym = buttonToSymbolMapping[b];
-        int idx = (b < (int)chordIdx.size()) ? chordIdx[b] : dis(gen);
-        symbolToChordMapping[sym] = idx;
+    std::mt19937 rng(rack::random::u32());
+    
+    // Create a shuffled array of all available symbols (0 to SymbolCount-1)
+    std::vector<int> availableSymbols;
+    for (int i = 0; i < st::SymbolCount; ++i) {
+        availableSymbols.push_back(i);
     }
-
-    // final pass: ensure every shown symbol has a chord
-    for (int b = 0; b < 12; ++b) {
-        int sym = buttonToSymbolMapping[b];
-        if (symbolToChordMapping[sym] < 0)
-            symbolToChordMapping[sym] = dis(gen);
+    std::shuffle(availableSymbols.begin(), availableSymbols.end(), rng);
+    
+    // Assign the first 12 shuffled symbols to the buttons
+    for (int i = 0; i < 12; ++i) {
+        buttonToSymbolMapping[i] = availableSymbols[i];
+    }
+    
+    // Map all symbols to chords (with some symbols appearing on multiple chords for variety)
+    std::uniform_int_distribution<int> chordDist(0, (int)pack.chords.size() - 1);
+    for (int s = 0; s < st::SymbolCount; ++s) {
+        symbolToChordMapping[s] = chordDist(rng);
     }
 }
 

@@ -21,7 +21,14 @@ struct Sequence {
     bool running;
     float clockPhase;
 
-    Sequence() : length(16), currentStep(0), running(false), clockPhase(0.0f) {}
+    // Groove scheduling state (microtiming delay per step)
+    bool groovePending;
+    float grooveDelay;        // seconds remaining until advancing to next step
+    double lastClockTime;     // last incoming clock tick time (seconds)
+    float estPeriod;          // estimated step period (seconds)
+
+    Sequence() : length(16), currentStep(0), running(false), clockPhase(0.0f),
+        groovePending(false), grooveDelay(0.f), lastClockTime(0.0), estPeriod(0.5f) {}
 };
 
 namespace stx { namespace transmutation {
@@ -42,6 +49,7 @@ enum GateMode { GATE_SUSTAIN = 0, GATE_PULSE = 1 };
 void stableClearOutputs(rack::engine::Output* outputs, int cvOutputId, int gateOutputId, int chCount = MAX_VOICES);
 
 // Apply gate policy; pulses array must be at least 6
+// totalChannels controls the number of output channels exposed (for stable polyphony)
 void applyGates(const rack::engine::Module::ProcessArgs& args,
                 rack::engine::Output* outputs,
                 int gateOutputId,
@@ -49,5 +57,6 @@ void applyGates(const rack::engine::Module::ProcessArgs& args,
                 int activeVoices,
                 GateMode gateMode,
                 float gatePulseMs,
-                bool stepChanged);
+                bool stepChanged,
+                int totalChannels = MAX_VOICES);
 }} // namespace stx::transmutation

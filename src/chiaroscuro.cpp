@@ -1,6 +1,7 @@
 #include "plugin.hpp"
 #include <dsp/digital.hpp>
 #include <dsp/filter.hpp>
+#include <cmath>
 
 // Custom larger VU meter widget for better visibility
 // Using VU meter from utilities (implementation moved to ui/widgets.hpp)
@@ -321,11 +322,13 @@ struct Chiaroscuro : Module {
             }
             
             vca_gain = clamp(vca_gain, 0.0f, 2.0f);
-            
+
             // Apply response curve
             if (exponential_response) {
                 vca_gain = vca_gain * vca_gain; // Square for exponential
             }
+
+            // No automatic polyphonic normalization here; leave gain as-is
             
             // Get audio inputs for this voice
             float input_l = inputs[AUDIO_L_INPUT].getPolyVoltage(ch);

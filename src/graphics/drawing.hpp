@@ -64,4 +64,10 @@ void drawShadowMask(const widget::Widget::DrawArgs& args, float x, float y,
 void drawGlassReflections(const widget::Widget::DrawArgs& args, float x, float y,
                          float w, float h, float intensity = 0.12f);
 
+/**
+ * Wrap text to fit within a maximum width, breaking at word boundaries
+ * Returns vector of strings, each fitting within maxWidth
+ */
+std::vector<std::string> wrapText(const std::string& text, float maxWidth, NVGcontext* vg);
+
 }} // namespace shapetaker::graphics

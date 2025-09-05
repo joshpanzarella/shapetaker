@@ -82,6 +82,11 @@ struct Transmutation : Module,
         // Rest and tie buttons
         REST_PARAM,
         TIE_PARAM,
+
+        // Context-only sliders for randomization probabilities
+        CHORD_DENSITY_PARAM,
+        REST_PROB_PARAM,
+        TIE_PROB_PARAM,
         
         PARAMS_LEN
     };
@@ -182,6 +187,7 @@ struct Transmutation : Module,
     // Clock system
     float internalClock = 0.0f;
     float clockRate = 120.0f; // BPM
+    double engineTimeSec = 0.0; // running wallclock for scheduling
     
     // Output shaping / gate driving
     // Small CV slew per voice (optional)
@@ -189,8 +195,72 @@ struct Transmutation : Module,
     dsp::SlewLimiter cvSlewB[stx::transmutation::MAX_VOICES];
     
     // Tunables
-    bool enableCvSlew = false;
+    bool enableCvSlew = false; // Disabled by default - slewing is bad for polyphonic chords
     float cvSlewMs = 3.0f;        // per-step pitch slew to soften discontinuities
+    bool stablePolyChannels = true; // Keep poly channel count stable across steps to avoid gate/channel drops
+
+    // Groove engine
+    bool grooveEnabled = false;
+    float grooveAmount = 0.0f; // 0..1
+    enum GroovePreset { GROOVE_NONE = 0, GROOVE_SWING8 = 1, GROOVE_SWING16 = 2, GROOVE_SHUFFLE16 = 3, GROOVE_REGGAETON = 4 };
+    GroovePreset groovePreset = GROOVE_NONE;
+
+    // Built-in 16-step offset tables (fraction of step period, clamped >= 0)
+    // Values in [0..0.5) recommended. Amount scales these.
+    const float* getGrooveTable(GroovePreset p) const {
+        static float none[16] = {0};
+        static float swing8[16];
+        static float swing16[16];
+        static float shuffle16[16];
+        static float dembow[16];
+        static bool inited = false;
+        if (!inited) {
+            // Swing 8ths: delay off-beats (steps 2,4,6,8,10,12,14,16) by 33%
+            for (int i = 0; i < 16; ++i) {
+                swing8[i] = ((i % 2) == 1) ? 0.33f : 0.f; // 0-based: 1,3,5,... are the "&" of the beat
+            }
+            // Swing 16ths: delay 2 and 4 in each group of 4 (0-based indices 1 and 3)
+            for (int i = 0; i < 16; ++i) {
+                int pos4 = i % 4;
+                swing16[i] = (pos4 == 1 || pos4 == 3) ? 0.20f : 0.f;
+            }
+            // Shuffle16: slightly delay step 2 in each group of 2 16ths (i odd)
+            for (int i = 0; i < 16; ++i) {
+                shuffle16[i] = ((i % 2) == 1) ? 0.12f : 0.f;
+            }
+            // Reggaeton (dembow-inspired) microdelay emphasis
+            // Slight delays on characteristic backbeats: 4, 7-8, 12-13 (0-based)
+            for (int i = 0; i < 16; ++i) dembow[i] = 0.f;
+            dembow[3] = 0.10f; // beat 2 backbeat
+            dembow[6] = 0.16f; dembow[7] = 0.10f; // syncopation
+            dembow[11] = 0.14f; dembow[12] = 0.08f; // late hits
+            inited = true;
+        }
+        switch (p) {
+            case GROOVE_SWING8: return swing8;
+            case GROOVE_SWING16: return swing16;
+            case GROOVE_SHUFFLE16: return shuffle16;
+            case GROOVE_REGGAETON: return dembow;
+            default: return none;
+        }
+    }
+
+    // Compute per-step micro-delay (seconds), clamped to [0 .. 0.45 * stepPeriod]
+    float computeGrooveDelaySec(const Sequence& seq, int nextIndex, float stepPeriodSec) const {
+        if (!grooveEnabled || grooveAmount <= 0.f) return 0.f;
+        const float* table = getGrooveTable(groovePreset);
+        int idx = (nextIndex % 16 + 16) % 16;
+        float frac = table[idx];
+        float delay = grooveAmount * frac * stepPeriodSec;
+        float maxDelay = 0.45f * stepPeriodSec; // keep within half step to avoid overlap
+        if (delay < 0.f) delay = 0.f;
+        if (delay > maxDelay) delay = maxDelay;
+        return delay;
+    }
+    
+    // Force chord updates when parameters change during playback
+    bool forceChordUpdateA = false;
+    bool forceChordUpdateB = false;
     
     enum GateMode { GATE_SUSTAIN = 0, GATE_PULSE = 1 };
     GateMode gateMode = GATE_SUSTAIN;
@@ -198,8 +268,24 @@ struct Transmutation : Module,
     dsp::PulseGenerator gatePulsesA[stx::transmutation::MAX_VOICES];
     dsp::PulseGenerator gatePulsesB[stx::transmutation::MAX_VOICES];
 
+    // Placement / voicing
+    bool oneVoiceRandomNote = false;     // when a step is 1-voice, select a random chord tone instead of the first
+    bool randomizeChordVoicing = false;  // when multi-voice, randomize target notes ordering per placement
+    bool harmonyLimitVoices = true;      // in Harmony mode, limit B to 1–2 voices (sparser counterpoint)
+    int lastStepA = -1;
+    int lastStepB = -1;
+
     // Polyphony policy
-    bool forceSixPoly = true;     // when true, always output 6 channels (duplicates/extends chord tones)
+    bool forceSixPoly = false;    // when true, always output 6 channels (duplicates/extends chord tones)
+    // Force a one-shot reassert of poly channel count to downstream modules
+    bool reassertPolyA = false;
+    bool reassertPolyB = false;
+    // One-shot exact-channel emission (ignore stablePolyChannels for one frame)
+    bool oneShotExactPolyA = false;
+    bool oneShotExactPolyB = false;
+    // Poly test (one frame override)
+    bool polyTestA = false;
+    bool polyTestB = false;
 
     // Helper: decide if two resolved steps represent a change that should retrigger
     bool isStepChanged(const SequenceStep* prev, const SequenceStep* curr) const {
@@ -215,16 +301,32 @@ struct Transmutation : Module,
         return stx::transmutation::resolveEffectiveStep(seq, idx, symbolToChordMapping, currentChordPack);
     }
 
-    // Helper: keep a stable 6-channel frame with gates low and CV = 0V
+    // Helper: clear gates but HOLD last CV so releases don't pitch-jump to 0V
     void stableClearOutputs(int cvOutputId, int gateOutputId) {
-        stx::transmutation::stableClearOutputs(outputs.data(), cvOutputId, gateOutputId, stx::transmutation::MAX_VOICES);
+        // Keep current channel count (or fall back to MAX_VOICES) so downstream modules
+        // see a stable number of channels during envelope release tails.
+        int ch = outputs[cvOutputId].getChannels();
+        if (ch <= 0) ch = 1; // minimal safe fallback
+        outputs[cvOutputId].setChannels(ch);
+        outputs[gateOutputId].setChannels(ch);
+
+        for (int v = 0; v < ch && v < stx::transmutation::MAX_VOICES; ++v) {
+            float last = (cvOutputId == CV_A_OUTPUT) ? lastCvA[v] : lastCvB[v];
+            outputs[cvOutputId].setVoltage(last, v);   // hold pitch
+            outputs[gateOutputId].setVoltage(0.f, v);  // gate low
+        }
     }
 
     // Apply gate policy for current step
     void applyGates(const ProcessArgs& args, int gateOutputId, dsp::PulseGenerator pulses[stx::transmutation::MAX_VOICES], int activeVoices, bool stepChanged) {
+        bool exact = (gateOutputId == GATE_A_OUTPUT) ? oneShotExactPolyA : oneShotExactPolyB;
+        int totalChannels = (stablePolyChannels && !exact) ? stx::transmutation::MAX_VOICES : rack::math::clamp(activeVoices, 1, stx::transmutation::MAX_VOICES);
         stx::transmutation::applyGates(args, outputs.data(), gateOutputId, pulses, activeVoices,
             gateMode == GATE_SUSTAIN ? stx::transmutation::GATE_SUSTAIN : stx::transmutation::GATE_PULSE,
-            gatePulseMs, stepChanged);
+            gatePulseMs, stepChanged, totalChannels);
+        if (exact) {
+            if (gateOutputId == GATE_A_OUTPUT) oneShotExactPolyA = false; else oneShotExactPolyB = false;
+        }
     }
 
     
@@ -292,6 +394,11 @@ struct Transmutation : Module,
         // Rest and tie
         configParam(REST_PARAM, 0.f, 1.f, 0.f, "Rest");
         configParam(TIE_PARAM, 0.f, 1.f, 0.f, "Tie");
+
+        // Context-only sliders (0..1) for randomization probabilities
+        configParam(CHORD_DENSITY_PARAM, 0.f, 1.f, 0.60f, "Chord Density");
+        configParam(REST_PROB_PARAM, 0.f, 1.f, 0.12f, "Rest Probability");
+        configParam(TIE_PROB_PARAM, 0.f, 1.f, 0.10f, "Tie Probability");
         
         // Inputs
         configInput(CLOCK_A_INPUT, "Clock A");
@@ -326,8 +433,11 @@ struct Transmutation : Module,
     }
     
     void process(const ProcessArgs& args) override {
+        engineTimeSec += args.sampleTime;
         // Mirror param to internal flag for UI drawing
         spookyTvMode = params[SCREEN_STYLE_PARAM].getValue() > 0.5f;
+
+        // Randomization floats are controlled directly by context menu sliders
 
         // Configure slew limiters with current sample rate
         if (enableCvSlew) {
@@ -513,47 +623,80 @@ struct Transmutation : Module,
             }
         }
         
+        // Optional: Poly test override (one frame), applied after sequence processing
+        if (polyTestA) {
+            const int n = stx::transmutation::MAX_VOICES;
+            outputs[CV_A_OUTPUT].setChannels(n);
+            outputs[GATE_A_OUTPUT].setChannels(n);
+            for (int v = 0; v < n; ++v) {
+                float cv = 0.2f * v; // 0, 0.2, 0.4, ...
+                outputs[CV_A_OUTPUT].setVoltage(cv, v);
+                outputs[GATE_A_OUTPUT].setVoltage(10.f, v);
+                lastCvA[v] = cv;
+            }
+            polyTestA = false;
+        }
+        if (polyTestB) {
+            const int n = stx::transmutation::MAX_VOICES;
+            outputs[CV_B_OUTPUT].setChannels(n);
+            outputs[GATE_B_OUTPUT].setChannels(n);
+            for (int v = 0; v < n; ++v) {
+                float cv = 0.2f * v;
+                outputs[CV_B_OUTPUT].setVoltage(cv, v);
+                outputs[GATE_B_OUTPUT].setVoltage(10.f, v);
+                lastCvB[v] = cv;
+            }
+            polyTestB = false;
+        }
+
         // Update lights
         // Dimmer run lights for a subtler always-on indicator
         lights[RUNNING_A_LIGHT].setBrightness(sequenceA.running ? 0.15f : 0.0f);
         lights[RUNNING_B_LIGHT].setBrightness(sequenceB.running ? 0.15f : 0.0f);
         
-        // Update symbol lights with color coding for sequences
+        // Determine effective symbols at current steps (follow ties)
+        int effSymA = -1;
+        int effSymB = -1;
+        if (sequenceA.running) {
+            if (const SequenceStep* eff = resolveEffectiveStep(sequenceA, sequenceA.currentStep)) effSymA = eff->chordIndex;
+        }
+        if (sequenceB.running) {
+            if (const SequenceStep* eff = resolveEffectiveStep(sequenceB, sequenceB.currentStep)) effSymB = eff->chordIndex;
+        }
+
+        // Trigger a short pulse on the corresponding button each time the step advances
+        auto pulseForSymbol = [&](int sym){
+            if (!st::isValidSymbolId(sym)) return;
+            for (int i = 0; i < 12; ++i) if (buttonToSymbolMapping[i] == sym) { buttonPressAnim[i] = 1.0f; break; }
+        };
+        if (sequenceA.running && sequenceA.currentStep != lastStepA) { pulseForSymbol(effSymA); lastStepA = sequenceA.currentStep; }
+        if (sequenceB.running && sequenceB.currentStep != lastStepB) { pulseForSymbol(effSymB); lastStepB = sequenceB.currentStep; }
+
+        // Update symbol lights with color coding and pulse intensity
         for (int i = 0; i < 12; i++) {
-            bool symbolActiveA = false;
-            bool symbolActiveB = false;
-            
-            if (sequenceA.running && getCurrentChordIndex(sequenceA) == i) {
-                symbolActiveA = true;
-            }
-            if (sequenceB.running && getCurrentChordIndex(sequenceB) == i) {
-                symbolActiveB = true;
-            }
+            bool symbolActiveA = sequenceA.running && (effSymA >= 0) && (buttonToSymbolMapping[i] == effSymA);
+            bool symbolActiveB = sequenceB.running && (effSymB >= 0) && (buttonToSymbolMapping[i] == effSymB);
+            float pulse = rack::math::clamp(buttonPressAnim[i], 0.f, 1.f);
             
             // RGB Light indices: Red=0, Green=1, Blue=2
             int lightIndex = SYMBOL_1_LIGHT + i * 3;
-            
-            if (symbolActiveA && symbolActiveB) {
-                // Both sequences - mix teal and purple = cyan-magenta
-                lights[lightIndex + 0].setBrightness(0.5f); // Red
-                lights[lightIndex + 1].setBrightness(1.0f); // Green (for teal component)
-                lights[lightIndex + 2].setBrightness(1.0f); // Blue (for both teal and purple)
-            } else if (symbolActiveA) {
-                // Sequence A - Teal color (#00ffb4)
-                lights[lightIndex + 0].setBrightness(0.0f); // Red
-                lights[lightIndex + 1].setBrightness(1.0f); // Green
-                lights[lightIndex + 2].setBrightness(0.7f); // Blue
-            } else if (symbolActiveB) {
-                // Sequence B - Purple color (#b400ff)
-                lights[lightIndex + 0].setBrightness(0.7f); // Red
-                lights[lightIndex + 1].setBrightness(0.0f); // Green
-                lights[lightIndex + 2].setBrightness(1.0f); // Blue
-            } else {
-                // No sequence active - off
-                lights[lightIndex + 0].setBrightness(0.0f);
-                lights[lightIndex + 1].setBrightness(0.0f);
-                lights[lightIndex + 2].setBrightness(0.0f);
+
+            float r = 0.f, g = 0.f, b = 0.f;
+            if (symbolActiveA) {
+                // Teal flash (A): mix G+B
+                float intensity = 0.25f + 0.75f * pulse;
+                g = std::max(g, intensity);
+                b = std::max(b, intensity * 0.7f);
             }
+            if (symbolActiveB) {
+                // Purple flash (B): mix R+B
+                float intensity = 0.25f + 0.75f * pulse;
+                r = std::max(r, intensity * 0.7f);
+                b = std::max(b, intensity);
+            }
+            lights[lightIndex + 0].setBrightness(r);
+            lights[lightIndex + 1].setBrightness(g);
+            lights[lightIndex + 2].setBrightness(b);
         }
     }
 
@@ -639,23 +782,94 @@ struct Transmutation : Module,
     void cycleVoiceCountA(int idx) override {
         if (idx < 0 || idx >= sequenceA.length) return;
         SequenceStep& s = sequenceA.steps[idx];
-        if (st::isValidSymbolId(s.chordIndex) && symbolToChordMapping[s.chordIndex] >= 0)
+        if (st::isValidSymbolId(s.chordIndex) && symbolToChordMapping[s.chordIndex] >= 0) {
             s.voiceCount = (s.voiceCount % stx::transmutation::MAX_VOICES) + 1;
+            // Force immediate chord update if this is the current playing step
+            if (sequenceA.running && idx == sequenceA.currentStep) {
+                forceChordUpdateA = true;
+            }
+        }
     }
     void cycleVoiceCountB(int idx) override {
         if (idx < 0 || idx >= sequenceB.length) return;
         SequenceStep& s = sequenceB.steps[idx];
-        if (st::isValidSymbolId(s.chordIndex) && symbolToChordMapping[s.chordIndex] >= 0)
+        if (st::isValidSymbolId(s.chordIndex) && symbolToChordMapping[s.chordIndex] >= 0) {
             s.voiceCount = (s.voiceCount % stx::transmutation::MAX_VOICES) + 1;
+            // Force immediate chord update if this is the current playing step
+            if (sequenceB.running && idx == sequenceB.currentStep) {
+                forceChordUpdateB = true;
+            }
+        }
     }
-    void setEditCursorA(int idx) override { if (idx >= 0 && idx < sequenceA.length) sequenceA.currentStep = idx; }
-    void setEditCursorB(int idx) override { if (idx >= 0 && idx < sequenceB.length) sequenceB.currentStep = idx; }
+    void setEditCursorA(int idx) override {
+        if (idx < 0 || idx >= sequenceA.length) return;
+        // Do not move the playhead while running; allow cursor move only when stopped
+        if (!sequenceA.running) sequenceA.currentStep = idx;
+    }
+    void setEditCursorB(int idx) override {
+        if (idx < 0 || idx >= sequenceB.length) return;
+        // Do not move the playhead while running; allow cursor move only when stopped
+        if (!sequenceB.running) sequenceB.currentStep = idx;
+    }
     
+    // Write CV preview for a step while stopped (gates low)
+    void writeCvPreview(const ProcessArgs& args, const SequenceStep& step, int cvOutputId, int gateOutputId) {
+        if (!st::isValidSymbolId(step.chordIndex)) {
+            stableClearOutputs(cvOutputId, gateOutputId);
+            return;
+        }
+        int mappedIndex = symbolToChordMapping[step.chordIndex];
+        if (mappedIndex < 0 || mappedIndex >= (int)currentChordPack.chords.size()) {
+            stableClearOutputs(cvOutputId, gateOutputId);
+            return;
+        }
+        const ChordData& chord = currentChordPack.chords[mappedIndex];
+        int voiceCount = forceSixPoly ? stx::transmutation::MAX_VOICES : std::min(step.voiceCount, stx::transmutation::MAX_VOICES);
+
+        std::vector<float> targetNotes;
+        stx::poly::buildTargetsFromIntervals(chord.intervals, voiceCount, /*harmony*/ false, targetNotes);
+        if (randomizeChordVoicing && voiceCount > 1) {
+            std::mt19937 rng(rack::random::u32());
+            std::shuffle(targetNotes.begin(), targetNotes.end(), rng);
+        }
+        std::vector<float> assigned(6, 0.0f);
+        for (int v = 0; v < voiceCount && v < 6; ++v) assigned[v] = targetNotes[v % targetNotes.size()];
+
+        bool exact = (cvOutputId == CV_A_OUTPUT) ? oneShotExactPolyA : oneShotExactPolyB;
+        const int totalCh = (stablePolyChannels && !exact) ? stx::transmutation::MAX_VOICES : voiceCount;
+        outputs[cvOutputId].setChannels(totalCh);
+        outputs[gateOutputId].setChannels(totalCh);
+        for (int v = 0; v < totalCh; ++v) {
+            if (v < voiceCount) {
+                float noteCV = assigned[v];
+                float smoothed = enableCvSlew ? ((cvOutputId == CV_A_OUTPUT) ? cvSlewA[v].process(args.sampleTime, noteCV)
+                                                                               : cvSlewB[v].process(args.sampleTime, noteCV))
+                                              : noteCV;
+                outputs[cvOutputId].setVoltage(smoothed, v);
+                if (cvOutputId == CV_A_OUTPUT) lastCvA[v] = smoothed; else lastCvB[v] = smoothed;
+            } else {
+                float held = (cvOutputId == CV_A_OUTPUT) ? lastCvA[v] : lastCvB[v];
+                outputs[cvOutputId].setVoltage(held, v);
+            }
+            outputs[gateOutputId].setVoltage(0.f, v);
+        }
+        // Do not clear oneShotExactPoly here; let the first running step use exact channels for gate handshake
+    }
+
     void processSequence(Sequence& seq, int clockInputId, int cvOutputId, int gateOutputId, const ProcessArgs& args, bool internalClockTrigger) {
-        if (!seq.running) {
-            // Idle: clear outputs
+        // If requested, bump channels to 0 then rebuild this frame so downstream modules refresh poly mode
+        bool& reassertPoly = (cvOutputId == CV_A_OUTPUT) ? reassertPolyA : reassertPolyB;
+        if (reassertPoly) {
             outputs[cvOutputId].setChannels(0);
             outputs[gateOutputId].setChannels(0);
+            reassertPoly = false;
+        }
+        if (!seq.running) {
+            // While stopped: preview current step CV so users see/hear a chord immediately, gates remain low
+            if (const SequenceStep* eff = resolveEffectiveStep(seq, seq.currentStep))
+                writeCvPreview(args, *eff, cvOutputId, gateOutputId);
+            else
+                stableClearOutputs(cvOutputId, gateOutputId);
             return;
         }
         
@@ -674,15 +888,50 @@ struct Transmutation : Module,
             clockTrigger = internalClockTrigger;
         }
         
-        // Advance sequence on clock
-        bool stepChanged = false;
+        // Measure period on external clock
+        if (useExternalClock && clockTrigger) {
+            float period = (float)(engineTimeSec - seq.lastClockTime);
+            if (period > 1e-4f && period < 5.0f) {
+                seq.estPeriod = 0.8f * seq.estPeriod + 0.2f * period;
+            }
+            seq.lastClockTime = engineTimeSec;
+        }
+
+        // Schedule/advance with groove micro-delay
+        float basePeriod = useExternalClock ? (seq.estPeriod > 1e-4f ? seq.estPeriod : 0.5f)
+                                            : (60.f / std::max(1.f, clockRate));
         if (clockTrigger) {
-            int prevIndex = seq.currentStep;
+            // If a previous advance is pending but hasn't fired, force it now to avoid backlog
+            if (seq.groovePending && seq.grooveDelay > 0.f) {
+                seq.grooveDelay = 0.f; // will advance this frame
+            }
             int nextIndex = (seq.currentStep + 1) % seq.length;
-            const SequenceStep* prevEff = resolveEffectiveStep(seq, prevIndex);
-            const SequenceStep* nextEff = resolveEffectiveStep(seq, nextIndex);
-            stepChanged = isStepChanged(prevEff, nextEff);
-            seq.currentStep = nextIndex;
+            seq.grooveDelay = computeGrooveDelaySec(seq, nextIndex, basePeriod);
+            seq.groovePending = true;
+        }
+
+        bool stepChanged = false;
+        if (seq.groovePending) {
+            seq.grooveDelay -= args.sampleTime;
+            if (seq.grooveDelay <= 0.f) {
+                int prevIndex = seq.currentStep;
+                int nextIndex = (seq.currentStep + 1) % seq.length;
+                const SequenceStep* prevEff = resolveEffectiveStep(seq, prevIndex);
+                const SequenceStep* nextEff = resolveEffectiveStep(seq, nextIndex);
+                stepChanged = isStepChanged(prevEff, nextEff);
+                seq.currentStep = nextIndex;
+                seq.groovePending = false;
+            }
+        }
+        
+        // Check for forced updates from parameter changes
+        if (cvOutputId == CV_A_OUTPUT && forceChordUpdateA) {
+            stepChanged = true;
+            forceChordUpdateA = false;
+        }
+        if (cvOutputId == CV_B_OUTPUT && forceChordUpdateB) {
+            stepChanged = true;
+            forceChordUpdateB = false;
         }
         
         // Resolve effective step (follows TIEs). Output or clear.
@@ -711,15 +960,13 @@ struct Transmutation : Module,
     
     void processSequenceBHarmony(const ProcessArgs& args, bool internalClockTrigger) {
         if (!sequenceB.running) {
-            outputs[CV_B_OUTPUT].setChannels(0);
-            outputs[GATE_B_OUTPUT].setChannels(0);
+            stableClearOutputs(CV_B_OUTPUT, GATE_B_OUTPUT);
             return;
         }
         
         // In harmony mode, sequence B follows A's timing and chord but plays harmony notes
         if (!sequenceA.running) {
-            outputs[CV_B_OUTPUT].setChannels(0);
-            outputs[GATE_B_OUTPUT].setChannels(0);
+            stableClearOutputs(CV_B_OUTPUT, GATE_B_OUTPUT);
             return;
         }
         
@@ -733,19 +980,41 @@ struct Transmutation : Module,
             // Follow sequence A's timing using internal clock
             clockTrigger = internalClockTrigger && sequenceA.running;
         }
-        
-        bool stepChanged = false;
+        // Measure B external period
+        if (useExternalClock && clockTrigger) {
+            float period = (float)(engineTimeSec - sequenceB.lastClockTime);
+            if (period > 1e-4f && period < 5.0f) {
+                sequenceB.estPeriod = 0.8f * sequenceB.estPeriod + 0.2f * period;
+            }
+            sequenceB.lastClockTime = engineTimeSec;
+        }
+        // Schedule/advance with groove (for Harmony, use same base period as A's internal clock)
+        float basePeriod = useExternalClock ? (sequenceB.estPeriod > 1e-4f ? sequenceB.estPeriod : 0.5f)
+                                            : (60.f / std::max(1.f, clockRate));
         if (clockTrigger) {
-            int prevB = sequenceB.currentStep;
+            if (sequenceB.groovePending && sequenceB.grooveDelay > 0.f) {
+                sequenceB.grooveDelay = 0.f;
+            }
             int nextB = (sequenceB.currentStep + 1) % sequenceB.length;
-            const SequenceStep* prevEffB = resolveEffectiveStep(sequenceB, prevB);
-            const SequenceStep* nextEffB = resolveEffectiveStep(sequenceB, nextB);
-            const SequenceStep* prevEffA = resolveEffectiveStep(sequenceA, (sequenceA.currentStep - 1 + sequenceA.length) % sequenceA.length);
-            const SequenceStep* currEffA = resolveEffectiveStep(sequenceA, sequenceA.currentStep);
-            bool changedB = isStepChanged(prevEffB, nextEffB);
-            bool changedA = isStepChanged(prevEffA, currEffA);
-            stepChanged = changedA || changedB;
-            sequenceB.currentStep = nextB;
+            sequenceB.grooveDelay = computeGrooveDelaySec(sequenceB, nextB, basePeriod);
+            sequenceB.groovePending = true;
+        }
+        bool stepChanged = false;
+        if (sequenceB.groovePending) {
+            sequenceB.grooveDelay -= args.sampleTime;
+            if (sequenceB.grooveDelay <= 0.f) {
+                int prevB = sequenceB.currentStep;
+                int nextB = (sequenceB.currentStep + 1) % sequenceB.length;
+                const SequenceStep* prevEffB = resolveEffectiveStep(sequenceB, prevB);
+                const SequenceStep* nextEffB = resolveEffectiveStep(sequenceB, nextB);
+                const SequenceStep* prevEffA = resolveEffectiveStep(sequenceA, (sequenceA.currentStep - 1 + sequenceA.length) % sequenceA.length);
+                const SequenceStep* currEffA = resolveEffectiveStep(sequenceA, sequenceA.currentStep);
+                bool changedB = isStepChanged(prevEffB, nextEffB);
+                bool changedA = isStepChanged(prevEffA, currEffA);
+                stepChanged = changedA || changedB;
+                sequenceB.currentStep = nextB;
+                sequenceB.groovePending = false;
+            }
         }
         
         // Resolve effective A/B steps
@@ -765,8 +1034,7 @@ struct Transmutation : Module,
     
     void processSequenceBLock(const ProcessArgs& args, bool internalClockTrigger) {
         if (!sequenceB.running) {
-            outputs[CV_B_OUTPUT].setChannels(0);
-            outputs[GATE_B_OUTPUT].setChannels(0);
+            stableClearOutputs(CV_B_OUTPUT, GATE_B_OUTPUT);
             return;
         }
         
@@ -781,15 +1049,37 @@ struct Transmutation : Module,
             // Use the global internal clock trigger
             clockTrigger = internalClockTrigger;
         }
-        
-        bool stepChanged = false;
+        // Measure external period
+        if (useExternalClock && clockTrigger) {
+            float period = (float)(engineTimeSec - sequenceB.lastClockTime);
+            if (period > 1e-4f && period < 5.0f) {
+                sequenceB.estPeriod = 0.8f * sequenceB.estPeriod + 0.2f * period;
+            }
+            sequenceB.lastClockTime = engineTimeSec;
+        }
+        // Schedule/advance with groove
+        float basePeriod = useExternalClock ? (sequenceB.estPeriod > 1e-4f ? sequenceB.estPeriod : 0.5f)
+                                            : (60.f / std::max(1.f, clockRate));
         if (clockTrigger) {
-            int prevB = sequenceB.currentStep;
+            if (sequenceB.groovePending && sequenceB.grooveDelay > 0.f) {
+                sequenceB.grooveDelay = 0.f;
+            }
             int nextB = (sequenceB.currentStep + 1) % sequenceB.length;
-            const SequenceStep* prevEff = resolveEffectiveStep(sequenceB, prevB);
-            const SequenceStep* nextEff = resolveEffectiveStep(sequenceB, nextB);
-            stepChanged = isStepChanged(prevEff, nextEff);
-            sequenceB.currentStep = nextB;
+            sequenceB.grooveDelay = computeGrooveDelaySec(sequenceB, nextB, basePeriod);
+            sequenceB.groovePending = true;
+        }
+        bool stepChanged = false;
+        if (sequenceB.groovePending) {
+            sequenceB.grooveDelay -= args.sampleTime;
+            if (sequenceB.grooveDelay <= 0.f) {
+                int prevB = sequenceB.currentStep;
+                int nextB = (sequenceB.currentStep + 1) % sequenceB.length;
+                const SequenceStep* prevEff = resolveEffectiveStep(sequenceB, prevB);
+                const SequenceStep* nextEff = resolveEffectiveStep(sequenceB, nextB);
+                stepChanged = isStepChanged(prevEff, nextEff);
+                sequenceB.currentStep = nextB;
+                sequenceB.groovePending = false;
+            }
         }
         
         // Output sequence B's programmed progression using same chord pack as A
@@ -802,55 +1092,91 @@ struct Transmutation : Module,
     void outputHarmony(const ProcessArgs& args, const SequenceStep& stepA, const SequenceStep& stepB, int cvOutputId, int gateOutputId, bool stepChanged) {
         // Validate symbol ID and its chord mapping
         if (!st::isValidSymbolId(stepA.chordIndex)) {
-            outputs[cvOutputId].setChannels(0);
-            outputs[gateOutputId].setChannels(0);
+            stableClearOutputs(cvOutputId, gateOutputId);
             return;
         }
         int mappedIndexA = symbolToChordMapping[stepA.chordIndex];
         if (mappedIndexA < 0 || mappedIndexA >= (int)currentChordPack.chords.size()) {
-            outputs[cvOutputId].setChannels(0);
-            outputs[gateOutputId].setChannels(0);
+            stableClearOutputs(cvOutputId, gateOutputId);
             return;
         }
         
         const ChordData& chordA = currentChordPack.chords[mappedIndexA];
-        int voiceCount = forceSixPoly ? stx::transmutation::MAX_VOICES : std::min(stepB.voiceCount, stx::transmutation::MAX_VOICES);
+        int reqVoices = std::min(stepB.voiceCount, stx::transmutation::MAX_VOICES);
+        if (harmonyLimitVoices) reqVoices = rack::math::clamp(reqVoices, 1, 2);
+        int voiceCount = forceSixPoly ? stx::transmutation::MAX_VOICES : reqVoices;
         
         // Build targets and assign
         std::vector<float> targetNotes;
-        stx::poly::buildTargetsFromIntervals(chordA.intervals, voiceCount, /*harmony*/ true, targetNotes);
-        std::vector<float> assigned;
-        stx::poly::assignNearest(targetNotes, (cvOutputId == CV_A_OUTPUT) ? lastCvA : lastCvB, voiceCount, assigned);
-        
-        // Set outputs (stable 6-channel layout)
-        const int chCount = stx::transmutation::MAX_VOICES;
-        outputs[cvOutputId].setChannels(chCount);
-        for (int voice = 0; voice < chCount; voice++) {
-            float noteCV = assigned[voice];
-            float smoothed = noteCV;
-            if (enableCvSlew) {
-                smoothed = (cvOutputId == CV_A_OUTPUT) ? cvSlewA[voice].process(args.sampleTime, noteCV)
-                                                       : cvSlewB[voice].process(args.sampleTime, noteCV);
+        int baseVoices = stepB.voiceCount; // requested on B side
+        if (baseVoices == 1 && oneVoiceRandomNote) {
+            // pick a random chord tone
+            if (!chordA.intervals.empty()) {
+                int idx = (int)std::floor(rack::random::uniform() * chordA.intervals.size());
+                idx = rack::clamp(idx, 0, (int)chordA.intervals.size() - 1);
+                stx::poly::buildTargetsFromIntervals({ chordA.intervals[idx] }, 1, /*harmony*/ true, targetNotes);
+            } else {
+                stx::poly::buildTargetsFromIntervals(chordA.intervals, voiceCount, /*harmony*/ true, targetNotes);
             }
-            // For voices beyond target size, keep gate low
-            outputs[cvOutputId].setVoltage(smoothed, voice);
-            if (cvOutputId == CV_A_OUTPUT) lastCvA[voice] = smoothed; else lastCvB[voice] = smoothed;
+        } else {
+            stx::poly::buildTargetsFromIntervals(chordA.intervals, voiceCount, /*harmony*/ true, targetNotes);
+            if (randomizeChordVoicing && voiceCount > 1) {
+                std::mt19937 rng(rack::random::u32());
+                std::shuffle(targetNotes.begin(), targetNotes.end(), rng);
+            }
+        }
+        // SIMPLE DIRECT ASSIGNMENT - NO MORE assignNearest!
+        std::vector<float> assigned(6, 0.0f);  // Always 6 elements, but only fill voiceCount
+        if (!targetNotes.empty()) {
+            // Calculate root note (C4 = 0V as standard in VCV Rack)
+            float rootNote = 0.0f; // C4 = 0V - can be modified for transposition
+            
+            for (int v = 0; v < voiceCount && v < 6; v++) {
+                // Cycle through all target notes for the requested voice count
+                int targetIdx = v % targetNotes.size();
+                assigned[v] = rootNote + targetNotes[targetIdx]; // Add root note offset!
+            }
+            // Voices beyond voiceCount remain at 0.0f
+        }
+        
+        // Set outputs to total channel count (stable if enabled)
+        bool exact = (cvOutputId == CV_A_OUTPUT) ? oneShotExactPolyA : oneShotExactPolyB;
+        const int totalCh = (stablePolyChannels && !exact) ? stx::transmutation::MAX_VOICES : voiceCount;
+        outputs[cvOutputId].setChannels(totalCh);
+        for (int voice = 0; voice < totalCh; voice++) {
+            if (voice < voiceCount) {
+                float noteCV = assigned[voice];
+                float smoothed = noteCV;
+                if (enableCvSlew) {
+                    smoothed = (cvOutputId == CV_A_OUTPUT) ? cvSlewA[voice].process(args.sampleTime, noteCV)
+                                                           : cvSlewB[voice].process(args.sampleTime, noteCV);
+                }
+                outputs[cvOutputId].setVoltage(smoothed, voice);
+                if (cvOutputId == CV_A_OUTPUT) lastCvA[voice] = smoothed; else lastCvB[voice] = smoothed;
+            } else {
+                // Hold last CV for inactive channels to avoid pitch jumps
+                float held = (cvOutputId == CV_A_OUTPUT) ? lastCvA[voice] : lastCvB[voice];
+                outputs[cvOutputId].setVoltage(held, voice);
+            }
         }
         // Apply gate policy
         applyGates(args, gateOutputId, cvOutputId == CV_A_OUTPUT ? gatePulsesA : gatePulsesB, voiceCount, stepChanged);
+        if (exact) {
+            if (cvOutputId == CV_A_OUTPUT) oneShotExactPolyA = false; else oneShotExactPolyB = false;
+        }
+        
+        // DEBUG: Removed gate voltage logging to save log space
     }
     
     void outputChord(const ProcessArgs& args, const SequenceStep& step, int cvOutputId, int gateOutputId, bool stepChanged) {
         // Validate symbol ID and its chord mapping
         if (!st::isValidSymbolId(step.chordIndex)) {
-            outputs[cvOutputId].setChannels(0);
-            outputs[gateOutputId].setChannels(0);
+            stableClearOutputs(cvOutputId, gateOutputId);
             return;
         }
         int mappedIndex = symbolToChordMapping[step.chordIndex];
         if (mappedIndex < 0 || mappedIndex >= (int)currentChordPack.chords.size()) {
-            outputs[cvOutputId].setChannels(0);
-            outputs[gateOutputId].setChannels(0);
+            stableClearOutputs(cvOutputId, gateOutputId);
             return;
         }
         
@@ -859,30 +1185,140 @@ struct Transmutation : Module,
         
         // Build targets and assign
         std::vector<float> targetNotes;
-        stx::poly::buildTargetsFromIntervals(chord.intervals, voiceCount, /*harmony*/ false, targetNotes);
-        std::vector<float> assigned;
-        stx::poly::assignNearest(targetNotes, (cvOutputId == CV_A_OUTPUT) ? lastCvA : lastCvB, voiceCount, assigned);
-        
-        // Set outputs (stable 6-channel layout)
-        const int chCount = stx::transmutation::MAX_VOICES;
-        outputs[cvOutputId].setChannels(chCount);
-        outputs[gateOutputId].setChannels(chCount);
-        for (int voice = 0; voice < chCount; voice++) {
-            float noteCV = assigned[voice];
-            float smoothed = noteCV;
-            if (enableCvSlew) {
-                smoothed = (cvOutputId == CV_A_OUTPUT) ? cvSlewA[voice].process(args.sampleTime, noteCV)
-                                                       : cvSlewB[voice].process(args.sampleTime, noteCV);
+        int baseVoices = step.voiceCount; // requested on the step
+        if (baseVoices == 1 && oneVoiceRandomNote) {
+            // pick a random chord tone
+            if (!chord.intervals.empty()) {
+                int idx = (int)std::floor(rack::random::uniform() * chord.intervals.size());
+                idx = rack::clamp(idx, 0, (int)chord.intervals.size() - 1);
+                stx::poly::buildTargetsFromIntervals({ chord.intervals[idx] }, 1, /*harmony*/ false, targetNotes);
+            } else {
+                stx::poly::buildTargetsFromIntervals(chord.intervals, voiceCount, /*harmony*/ false, targetNotes);
             }
-            outputs[cvOutputId].setVoltage(smoothed, voice);
-            if (cvOutputId == CV_A_OUTPUT) lastCvA[voice] = smoothed; else lastCvB[voice] = smoothed;
+        } else {
+            stx::poly::buildTargetsFromIntervals(chord.intervals, voiceCount, /*harmony*/ false, targetNotes);
+            if (randomizeChordVoicing && voiceCount > 1) {
+                std::mt19937 rng(rack::random::u32());
+                std::shuffle(targetNotes.begin(), targetNotes.end(), rng);
+            }
         }
+        // SIMPLE DIRECT ASSIGNMENT - NO MORE assignNearest!
+        std::vector<float> assigned(6, 0.0f);  // Always 6 elements, but only fill voiceCount
+        if (!targetNotes.empty()) {
+            // Calculate root note (C4 = 0V as standard in VCV Rack)
+            float rootNote = 0.0f; // C4 = 0V - can be modified for transposition
+            
+            for (int v = 0; v < voiceCount && v < 6; v++) {
+                // Cycle through all target notes for the requested voice count
+                int targetIdx = v % targetNotes.size();
+                assigned[v] = rootNote + targetNotes[targetIdx]; // Add root note offset!
+            }
+            // Voices beyond voiceCount remain at 0.0f
+        }
+        
+        
+        // Set outputs to total channel count (stable if enabled)
+        bool exact2 = (cvOutputId == CV_A_OUTPUT) ? oneShotExactPolyA : oneShotExactPolyB;
+        const int totalCh2 = (stablePolyChannels && !exact2) ? stx::transmutation::MAX_VOICES : voiceCount;
+        outputs[cvOutputId].setChannels(totalCh2);
+        outputs[gateOutputId].setChannels(totalCh2);
+        for (int voice = 0; voice < totalCh2; voice++) {
+            if (voice < voiceCount) {
+                float noteCV = assigned[voice];
+                float smoothed = noteCV;
+                if (enableCvSlew) {
+                    smoothed = (cvOutputId == CV_A_OUTPUT) ? cvSlewA[voice].process(args.sampleTime, noteCV)
+                                                           : cvSlewB[voice].process(args.sampleTime, noteCV);
+                }
+                outputs[cvOutputId].setVoltage(smoothed, voice);
+                if (cvOutputId == CV_A_OUTPUT) lastCvA[voice] = smoothed; else lastCvB[voice] = smoothed;
+            } else {
+                float held = (cvOutputId == CV_A_OUTPUT) ? lastCvA[voice] : lastCvB[voice];
+                outputs[cvOutputId].setVoltage(held, voice);
+            }
+        }
+        
+        // DEBUG: Removed voltage logging to save log space
+        
         // Apply gate policy
         applyGates(args, gateOutputId, cvOutputId == CV_A_OUTPUT ? gatePulsesA : gatePulsesB, voiceCount, stepChanged);
+        if (exact2) {
+            if (cvOutputId == CV_A_OUTPUT) oneShotExactPolyA = false; else oneShotExactPolyB = false;
+        }
+        
+        // DEBUG: Removed gate voltage logging to save log space
     }
     
     int getCurrentChordIndex(const Sequence& seq) const {
         return seq.steps[seq.currentStep].chordIndex;
+    }
+
+    // Pattern operations --------------------------------------------------
+    void clampCursorToLength(Sequence& seq) {
+        if (seq.length < 1) seq.length = 1;
+        if (seq.length > 64) seq.length = 64;
+        if (seq.currentStep >= seq.length) seq.currentStep = std::max(0, seq.length - 1);
+        if (seq.currentStep < 0) seq.currentStep = 0;
+    }
+
+    void clearSequence(Sequence& seq) {
+        for (int i = 0; i < seq.length; ++i) seq.steps[i] = SequenceStep();
+        clampCursorToLength(seq);
+    }
+    
+    void initializeSequences() {
+        // Reset both sequences to default empty 8-step state
+        sequenceA = Sequence();
+        sequenceB = Sequence();
+        sequenceA.length = 8;
+        sequenceB.length = 8;
+        sequenceA.running = false;
+        sequenceB.running = false;
+        clearSequence(sequenceA);
+        clearSequence(sequenceB);
+        sequenceA.currentStep = 0;
+        sequenceB.currentStep = 0;
+        // Sync parameters
+        params[LENGTH_A_PARAM].setValue(8.0f);
+        params[LENGTH_B_PARAM].setValue(8.0f);
+    }
+
+    void shiftSequence(Sequence& seq, int dir) {
+        // dir: -1 left, +1 right
+        if (seq.length <= 1) return;
+        if (dir < 0) {
+            SequenceStep first = seq.steps[0];
+            for (int i = 0; i < seq.length - 1; ++i) seq.steps[i] = seq.steps[i + 1];
+            seq.steps[seq.length - 1] = first;
+        } else if (dir > 0) {
+            SequenceStep last = seq.steps[seq.length - 1];
+            for (int i = seq.length - 1; i > 0; --i) seq.steps[i] = seq.steps[i - 1];
+            seq.steps[0] = last;
+        }
+        clampCursorToLength(seq);
+    }
+
+    void copySequence(const Sequence& from, Sequence& to, bool copyLength = true) {
+        int len = copyLength ? from.length : std::min(from.length, to.length);
+        for (int i = 0; i < len; ++i) to.steps[i] = from.steps[i];
+        if (copyLength) {
+            to.length = from.length;
+            clampCursorToLength((Sequence&)to);
+        }
+    }
+
+    void swapSequencesContent(Sequence& a, Sequence& b) {
+        Sequence tmp;
+        tmp.length = a.length;
+        for (int i = 0; i < a.length; ++i) tmp.steps[i] = a.steps[i];
+        // copy b -> a
+        a.length = b.length;
+        for (int i = 0; i < b.length; ++i) a.steps[i] = b.steps[i];
+        // copy tmp -> b
+        b.length = tmp.length;
+        for (int i = 0; i < tmp.length; ++i) b.steps[i] = tmp.steps[i];
+        clampCursorToLength(a);
+        clampCursorToLength(b);
     }
     
     void onSymbolPressed(int symbolIndex) override {
@@ -947,29 +1383,36 @@ struct Transmutation : Module,
     void outputChordAudition(const ChordData& chord, int cvOutputId, int gateOutputId) {
         int voiceCount = std::min(chord.preferredVoices, stx::transmutation::MAX_VOICES);
         
-        // Set up polyphonic outputs
-        outputs[cvOutputId].setChannels(voiceCount);
-        outputs[gateOutputId].setChannels(voiceCount);
+        // Set up polyphonic outputs to actual voice count
+        const int chCount = voiceCount;
+        outputs[cvOutputId].setChannels(chCount);
+        outputs[gateOutputId].setChannels(chCount);
         
         // Calculate root note (C4 = 0V as standard in VCV Rack)
         float rootNote = 0.0f; // C4 = 0V
         
         // Output chord tones with proper voice allocation (same as outputChord)
-        for (int voice = 0; voice < voiceCount; voice++) {
-            float noteCV = rootNote;
-            
-            if (voice < (int)chord.intervals.size()) {
-                // Use chord intervals directly
-                noteCV = rootNote + chord.intervals[voice] / 12.0f; // Convert semitones to V/oct
+        for (int voice = 0; voice < chCount; voice++) {
+            if (voice < voiceCount) {
+                float noteCV = rootNote;
+                
+                if (voice < (int)chord.intervals.size()) {
+                    // Use chord intervals directly
+                    noteCV = rootNote + chord.intervals[voice] / 12.0f; // Convert semitones to V/oct
+                } else {
+                    // If more voices requested than chord intervals, cycle through intervals in higher octaves
+                    int intervalIndex = voice % chord.intervals.size();
+                    int octaveOffset = voice / chord.intervals.size();
+                    noteCV = rootNote + (chord.intervals[intervalIndex] + octaveOffset * 12.0f) / 12.0f;
+                }
+                
+                outputs[cvOutputId].setVoltage(noteCV, voice);
+                outputs[gateOutputId].setVoltage(10.0f, voice); // Standard gate voltage
             } else {
-                // If more voices requested than chord intervals, cycle through intervals in higher octaves
-                int intervalIndex = voice % chord.intervals.size();
-                int octaveOffset = voice / chord.intervals.size();
-                noteCV = rootNote + (chord.intervals[intervalIndex] + octaveOffset * 12.0f) / 12.0f;
+                // Clear unused voices
+                outputs[cvOutputId].setVoltage(0.0f, voice);
+                outputs[gateOutputId].setVoltage(0.0f, voice);
             }
-            
-            outputs[cvOutputId].setVoltage(noteCV, voice);
-            outputs[gateOutputId].setVoltage(10.0f, voice); // Standard gate voltage
         }
         
         // Set a timer to turn off the audition after a short time
@@ -978,19 +1421,387 @@ struct Transmutation : Module,
     
     bool loadChordPackFromFile(const std::string& filepath) {
         if (stx::transmutation::loadChordPackFromFile(filepath, currentChordPack)) {
-            randomizeSymbolAssignment();
+            INFO("Loaded: '%s' (%d chords)", currentChordPack.name.c_str(), (int)currentChordPack.chords.size());
+            // Keep placed symbols as-is; only chord mappings change
+            randomizeSymbolAssignment(false);
+            // Normalize existing sequences to new pack (ensure playable voices)
+            auto normalize = [&](Sequence& seq){
+                for (int i = 0; i < seq.length; ++i) {
+                    SequenceStep& st = seq.steps[i];
+                    if (st.chordIndex >= 0 && st.chordIndex < st::SymbolCount) {
+                        int mapped = symbolToChordMapping[st.chordIndex];
+                        if (mapped >= 0 && mapped < (int)currentChordPack.chords.size()) {
+                            int pv = currentChordPack.chords[mapped].preferredVoices;
+                            st.voiceCount = clamp(pv, 1, stx::transmutation::MAX_VOICES);
+                            // Ensure alchemySymbolId matches chordIndex for UI
+                            st.alchemySymbolId = st.chordIndex;
+                        }
+                    }
+                }
+            };
+            normalize(sequenceA);
+            normalize(sequenceB);
+            // Force immediate refresh
+            forceChordUpdateA = true; forceChordUpdateB = true;
+            reassertPolyA = true; reassertPolyB = true;
+            oneShotExactPolyA = true; oneShotExactPolyB = true;
             return true;
         }
+        INFO("FAILED to load: %s", system::getFilename(filepath).c_str());
         return false;
     }
     
-    void randomizeSymbolAssignment() {
+    void remapPlacedSymbols(const std::array<int, 12>& oldButtons, const std::array<int, 12>& newButtons) {
+        auto remapSeq = [&](Sequence& seq) {
+            for (int i = 0; i < seq.length; ++i) {
+                SequenceStep& st = seq.steps[i];
+                if (st.chordIndex >= 0) {
+                    for (int b = 0; b < 12; ++b) {
+                        int fromSym = oldButtons[b];
+                        int toSym   = newButtons[b];
+                        if (st.chordIndex == fromSym) {
+                            st.chordIndex = toSym;
+                            st.alchemySymbolId = toSym;
+                            break;
+                        }
+                    }
+                }
+            }
+        };
+        remapSeq(sequenceA);
+        remapSeq(sequenceB);
+    }
+
+    void randomizeSymbolAssignment(bool remapPlacedSteps = false) {
+        std::array<int, 12> oldButtons = buttonToSymbolMapping;
         stx::transmutation::randomizeSymbolAssignment(currentChordPack, symbolToChordMapping, buttonToSymbolMapping);
+        if (remapPlacedSteps) {
+            remapPlacedSymbols(oldButtons, buttonToSymbolMapping);
+        }
     }
     
     void loadDefaultChordPack() {
         stx::transmutation::loadDefaultChordPack(currentChordPack);
-        randomizeSymbolAssignment();
+        // Keep placed symbols as-is; only chord mappings change
+        randomizeSymbolAssignment(false);
+    }
+
+    // Randomize both sequence lengths with improved variety and musicality
+    void randomizeSequenceLengths() {
+        // 1) Build candidate values within grid
+        int valsAll[] = {3,4,5,6,7,8,9,10,11,12,13,14,15,16,18,20,21,22,24,28,30,32,36,40,42,48,56,64};
+        std::vector<int> vals;
+        for (int v : valsAll) if (v <= gridSteps) vals.push_back(v);
+        if (vals.empty()) {
+            for (int v = 1; v <= gridSteps; ++v) vals.push_back(v);
+        }
+
+        // 2) Optionally sample from curated, musical pairs for extra spice
+        std::vector<std::pair<int,int>> curated = {
+            {7,8},{5,7},{3,4},{4,5},{6,7},{7,9},
+            {12,16},{10,12},{12,15},{9,16},{14,16},{8,12},
+            {15,16},{10,16},{6,10},{5,8},{5,9}
+        };
+        auto fits = [&](const std::pair<int,int>& p){ return p.first <= gridSteps && p.second <= gridSteps; };
+        std::vector<std::pair<int,int>> curatedFit;
+        for (auto& p : curated) if (fits(p)) curatedFit.push_back(p);
+
+        auto gcd = [](int a, int b){ a = std::abs(a); b = std::abs(b); while (b) { int t = a % b; a = b; b = t; } return a; };
+        auto pickFrom = [&](const std::vector<int>& p) -> int {
+            if (p.empty()) return std::max(1, std::min(gridSteps, 8));
+            uint32_t r = rack::random::u32();
+            return p[r % p.size()];
+        };
+
+        // Weighted pool with bias toward 4..16 and select A
+        std::vector<int> pool; pool.reserve(vals.size() * 3);
+        for (int v : vals) {
+            int w = (v >= 4 && v <= 16) ? 3 : ((v == 24 || v == 28 || v == 32) ? 2 : 1);
+            for (int i = 0; i < w; ++i) pool.push_back(v);
+        }
+        int a = pickFrom(pool);
+
+        // With some probability, use curated pairs
+        int b = a;
+        if (!curatedFit.empty() && (rack::random::uniform() < 0.35f)) {
+            auto pr = curatedFit[rack::random::u32() % curatedFit.size()];
+            // Randomly assign orientation
+            if (rack::random::uniform() < 0.5f) { a = pr.first; b = pr.second; }
+            else { a = pr.second; b = pr.first; }
+        } else {
+            // Else, search randomly for a good partner using a scoring function
+            float bestScore = -1e9f; int bestB = a;
+            for (int tries = 0; tries < 24; ++tries) {
+                int cand = pickFrom(pool);
+                // Score
+                float s = 0.f;
+                if (cand != a) s += 1.0f; else s -= 1.5f;       // discourage equality
+                int g = gcd(a, cand);
+                if (g == 1) s += 2.0f; else if (g == 2) s += 1.0f; else s -= 0.25f * g; // favor coprime/small gcd
+                float ratio = (float)std::max(a,cand) / (float)std::min(a,cand);
+                float nearInt = std::fabs(ratio - std::round(ratio));
+                if (nearInt < 0.02f) s -= 1.0f;                  // avoid exact multiples
+                s += std::fabs(a - cand) / (float)std::max(16, gridSteps); // encourage different sizes
+                if (cand >= 4 && cand <= 16) s += 0.25f;         // slight bias toward usable lengths
+                if (s > bestScore) { bestScore = s; bestB = cand; }
+            }
+            b = bestB;
+        }
+
+        // Apply
+        params[LENGTH_A_PARAM].setValue((float)a);
+        params[LENGTH_B_PARAM].setValue((float)b);
+        sequenceA.length = a;
+        sequenceB.length = b;
+        clampCursorToLength(sequenceA);
+        clampCursorToLength(sequenceB);
+    }
+
+    // Discover all chord pack files under chord_packs/*/*.json
+    std::vector<std::string> listAllChordPackFiles() {
+        std::vector<std::string> packs;
+        std::string chordPackDir = asset::plugin(pluginInstance, "chord_packs");
+        if (!system::isDirectory(chordPackDir)) return packs;
+        for (const std::string& entry : system::getEntries(chordPackDir)) {
+            std::string fullPath = entry; // system::getEntries returns full paths
+            if (!system::isDirectory(fullPath)) continue;
+            for (const std::string& fileEntry : system::getEntries(fullPath)) {
+                if (system::getExtension(fileEntry) == ".json") packs.push_back(fileEntry);
+            }
+        }
+        return packs;
+    }
+
+    // Randomly choose and load a chord pack; returns true if loaded
+    bool randomizeChordPack() {
+        auto packs = listAllChordPackFiles();
+        if (packs.empty()) return false;
+        std::mt19937 rng(rack::random::u32());
+        const std::string& path = packs[rng() % packs.size()];
+        bool ok = loadChordPackFromFile(path);
+        if (ok) {
+            // Brief on-screen preview using proper chord pack name
+            displayChordName = currentChordPack.name;
+            displaySymbolId = -999;
+            symbolPreviewTimer = 1.0f;
+        }
+        return ok;
+    }
+
+    void randomizeEverything() {
+        // Try to pick a random pack; if none, keep current/default
+        if (randomAllPack) randomizeChordPack();
+        // Pick complementary lengths
+        if (randomAllLengths) randomizeSequenceLengths();
+        // Fill content for both sequences
+        if (randomAllSteps) {
+            randomizeSequence(sequenceA);
+            randomizeSequence(sequenceB);
+        }
+        // Randomize clock settings if enabled
+        if (randomAllBpm) {
+            std::mt19937 rng(rack::random::u32());
+            std::uniform_real_distribution<float> bpm(60.f, 160.f); // sensible musical range
+            params[INTERNAL_CLOCK_PARAM].setValue(bpm(rng));
+        }
+        if (randomAllMultiplier) {
+            int idx = (int)(rack::random::u32() % 4); // 0..3
+            params[BPM_MULTIPLIER_PARAM].setValue((float)idx);
+        }
+        // Restart both sequences at step 0 and force immediate update
+        sequenceA.currentStep = 0;
+        sequenceB.currentStep = 0;
+        forceChordUpdateA = true;
+        forceChordUpdateB = true;
+        // Reassert poly to downstream
+        reassertPolyA = true;
+        reassertPolyB = true;
+        // For one frame, emit exact voiceCount channels to guarantee downstream re-latch
+        oneShotExactPolyA = true;
+        oneShotExactPolyB = true;
+    }
+
+    void randomizePackSafe() {
+        // Randomize pack + steps + lengths with hard poly handshake
+        randomizeChordPack();
+        randomizeSequenceLengths();
+        randomizeSequence(sequenceA);
+        randomizeSequence(sequenceB);
+        sequenceA.currentStep = 0;
+        sequenceB.currentStep = 0;
+        forceChordUpdateA = true;
+        forceChordUpdateB = true;
+        // Force re-latch
+        reassertPolyA = true; reassertPolyB = true;
+        oneShotExactPolyA = true; oneShotExactPolyB = true;
+    }
+
+    // Collect valid symbol IDs that are mapped to a chord in the current pack
+    std::vector<int> getValidSymbols() const {
+        std::vector<int> ids;
+        ids.reserve(st::SymbolCount);
+        for (int s = 0; s < st::SymbolCount; ++s) {
+            int mapped = symbolToChordMapping[s];
+            if (mapped >= 0 && mapped < (int)currentChordPack.chords.size()) ids.push_back(s);
+        }
+        if (ids.empty()) {
+            // Fallback: all 0..11 if somehow no mapping yet
+            for (int s = 0; s < 12; ++s) ids.push_back(s);
+        }
+        return ids;
+    }
+
+    // Randomization controls
+    float randomRestProb = 0.12f; // 12% base weight for rests
+    float randomTieProb  = 0.10f; // 10% base weight for ties
+    float randomChordProb = 0.60f; // direct chord density (0..1); non-chord split by rest/tie weights
+    // Randomize Everything options
+    bool randomAllPack = true;
+    bool randomAllLengths = true;
+    bool randomAllSteps = true;
+    bool randomAllBpm = false;
+    bool randomAllMultiplier = false;
+    bool  randomUsePreferredVoices = true; // prefer chord.preferredVoices for chord steps
+
+    // Randomize a sequence's content (steps and voice counts)
+    void randomizeSequence(Sequence& seq) {
+        auto symbols = getValidSymbols();
+        if (symbols.empty()) return;
+        std::mt19937 rng(rack::random::u32());
+        std::uniform_int_distribution<int> voiceDist(1, stx::transmutation::MAX_VOICES);
+        std::uniform_real_distribution<float> pick(0.f, 1.f);
+
+        int len = clamp(seq.length, 1, gridSteps);
+        // Compute final probabilities: chord density wins; remaining split by rest/tie weights
+        float chordP = clamp(randomChordProb, 0.f, 1.f);
+        float rtWeight = clamp(randomRestProb, 0.f, 1.f) + clamp(randomTieProb, 0.f, 1.f);
+        float remaining = 1.f - chordP;
+        if (remaining < 0.f) remaining = 0.f;
+        float restP = 0.f, tieP = 0.f;
+        if (rtWeight <= 1e-6f) {
+            restP = remaining; tieP = 0.f;
+        } else {
+            restP = remaining * (randomRestProb / rtWeight);
+            tieP  = remaining * (randomTieProb  / rtWeight);
+        }
+        float tieThreshold = restP + tieP;
+        bool anyChord = false;
+        for (int i = 0; i < len; ++i) {
+            float r = pick(rng);
+            SequenceStep stp;
+            if (r < restP) {
+                // REST
+                stp.chordIndex = -1;
+                stp.alchemySymbolId = -1;
+                stp.voiceCount = 1;
+            } else if (r < tieThreshold) {
+                // TIE (follows previous)
+                stp.chordIndex = -2;
+                stp.alchemySymbolId = -2;
+                stp.voiceCount = 1;
+            } else {
+                // Chord step
+                int sidx = symbols[rng() % symbols.size()];
+                stp.chordIndex = sidx;
+                stp.alchemySymbolId = sidx;
+                // Choose voices: prefer chord's suggested size if available
+                if (randomUsePreferredVoices) {
+                    int mapped = symbolToChordMapping[sidx];
+                    if (mapped >= 0 && mapped < (int)currentChordPack.chords.size()) {
+                        int pv = currentChordPack.chords[mapped].preferredVoices;
+                        stp.voiceCount = clamp(pv, 1, stx::transmutation::MAX_VOICES);
+                    } else {
+                        stp.voiceCount = voiceDist(rng);
+                    }
+                } else {
+                    stp.voiceCount = voiceDist(rng);
+                }
+                // If this is sequence B and we are in Harmony mode, optionally limit voices to 1–2
+                if (&seq == &sequenceB && ((int)params[SEQ_B_MODE_PARAM].getValue()) == 1 && harmonyLimitVoices) {
+                    stp.voiceCount = 1 + (rng() % 2); // 1 or 2
+                }
+                anyChord = true;
+            }
+            seq.steps[i] = stp;
+        }
+        // Ensure at least one playable chord and step 0 is chord for immediate output
+        if (!anyChord || seq.steps[0].chordIndex < 0) {
+            int sidx = symbols[rng() % symbols.size()];
+            seq.steps[0].chordIndex = sidx;
+            seq.steps[0].alchemySymbolId = sidx;
+            int mapped = symbolToChordMapping[sidx];
+            int pv = (mapped >= 0 && mapped < (int)currentChordPack.chords.size()) ? currentChordPack.chords[mapped].preferredVoices : 3;
+            seq.steps[0].voiceCount = clamp(pv, 1, stx::transmutation::MAX_VOICES);
+        }
+        // Keep playhead in bounds
+        if (seq.currentStep >= len) seq.currentStep = 0;
+    }
+
+    // Integrate with Rack's default "Randomize" menu item
+    void onRandomize() override {
+        randomizeSequence(sequenceA);
+        randomizeSequence(sequenceB);
+    }
+    
+    void onReset() override {
+        // Called by the "Initialize" context menu button. Restore module to default state.
+        // 1) Clear and reset sequences
+        initializeSequences();
+
+        // 2) Reset UI/edit state
+        editModeA = false;
+        editModeB = false;
+        selectedSymbol = -1;
+        displayChordName.clear();
+        displaySymbolId = -999;
+        symbolPreviewTimer = 0.f;
+        for (int i = 0; i < 12; ++i) buttonPressAnim[i] = 0.f;
+
+        // 3) Reset engine/state flags
+        sequenceA.running = false;
+        sequenceB.running = false;
+        enableCvSlew = false;
+        cvSlewMs = 3.0f;
+        stablePolyChannels = true;
+        forceSixPoly = false;
+        gateMode = GATE_SUSTAIN;
+        gatePulseMs = 8.0f;
+        oneVoiceRandomNote = false;
+        randomizeChordVoicing = false;
+        grooveEnabled = false;
+        grooveAmount = 0.0f;
+        groovePreset = GROOVE_NONE;
+        gridSteps = 32;
+
+        // 4) Reset randomization options
+        randomAllPack = true;
+        randomAllLengths = true;
+        randomAllSteps = true;
+        randomAllBpm = false;
+        randomAllMultiplier = false;
+        randomUsePreferredVoices = true;
+        randomRestProb = 0.12f;
+        randomTieProb = 0.10f;
+        randomChordProb = 0.60f;
+
+        // 5) Reset parameters to defaults (mirrors constructor defaults)
+        params[INTERNAL_CLOCK_PARAM].setValue(120.f);
+        params[BPM_MULTIPLIER_PARAM].setValue(0.f);
+        params[SEQ_B_MODE_PARAM].setValue(0.f);
+        params[SCREEN_STYLE_PARAM].setValue(1.f); // Spooky on by default
+        params[CHORD_DENSITY_PARAM].setValue(0.60f);
+        params[REST_PROB_PARAM].setValue(0.12f);
+        params[TIE_PROB_PARAM].setValue(0.10f);
+
+        // 6) Reset chord pack and symbol mappings
+        symbolToChordMapping.fill(-1);
+        for (int i = 0; i < 12; ++i) buttonToSymbolMapping[i] = i;
+        loadDefaultChordPack();
+
+        // 7) Reassert poly handshakes for downstream modules
+        reassertPolyA = true; reassertPolyB = true;
+        oneShotExactPolyA = true; oneShotExactPolyB = true;
+        forceChordUpdateA = true; forceChordUpdateB = true;
     }
     
     // Persist settings
@@ -999,9 +1810,84 @@ struct Transmutation : Module,
         json_object_set_new(rootJ, "gridSteps", json_integer(gridSteps));
         json_object_set_new(rootJ, "enableCvSlew", json_boolean(enableCvSlew));
         json_object_set_new(rootJ, "cvSlewMs", json_real(cvSlewMs));
+        json_object_set_new(rootJ, "stablePolyChannels", json_boolean(stablePolyChannels));
+        json_object_set_new(rootJ, "grooveEnabled", json_boolean(grooveEnabled));
+        json_object_set_new(rootJ, "grooveAmount", json_real(grooveAmount));
+        json_object_set_new(rootJ, "groovePreset", json_integer((int)groovePreset));
+        json_object_set_new(rootJ, "randomRestProb", json_real(randomRestProb));
+        json_object_set_new(rootJ, "randomTieProb", json_real(randomTieProb));
+        json_object_set_new(rootJ, "randomUsePreferredVoices", json_boolean(randomUsePreferredVoices));
+        json_object_set_new(rootJ, "randomChordProb", json_real(randomChordProb));
+        json_object_set_new(rootJ, "randomAllPack", json_boolean(randomAllPack));
+        json_object_set_new(rootJ, "randomAllLengths", json_boolean(randomAllLengths));
+        json_object_set_new(rootJ, "randomAllSteps", json_boolean(randomAllSteps));
+        json_object_set_new(rootJ, "randomAllBpm", json_boolean(randomAllBpm));
+        json_object_set_new(rootJ, "randomAllMultiplier", json_boolean(randomAllMultiplier));
         json_object_set_new(rootJ, "forceSixPoly", json_boolean(forceSixPoly));
         json_object_set_new(rootJ, "gateMode", json_integer((int)gateMode));
         json_object_set_new(rootJ, "gatePulseMs", json_real(gatePulseMs));
+        json_object_set_new(rootJ, "oneVoiceRandomNote", json_boolean(oneVoiceRandomNote));
+        json_object_set_new(rootJ, "randomizeChordVoicing", json_boolean(randomizeChordVoicing));
+        json_object_set_new(rootJ, "harmonyLimitVoices", json_boolean(harmonyLimitVoices));
+        
+        // Save display options
+        json_object_set_new(rootJ, "doubleOccupancyMode", json_boolean(doubleOccupancyMode));
+        
+        // Save current chord pack
+        json_t* chordPackJ = json_object();
+        json_object_set_new(chordPackJ, "name", json_string(currentChordPack.name.c_str()));
+        json_object_set_new(chordPackJ, "key", json_string(currentChordPack.key.c_str()));
+        json_object_set_new(chordPackJ, "description", json_string(currentChordPack.description.c_str()));
+        json_t* chordsJ = json_array();
+        for (const auto& chord : currentChordPack.chords) {
+            json_t* chordJ = json_object();
+            json_object_set_new(chordJ, "name", json_string(chord.name.c_str()));
+            json_object_set_new(chordJ, "preferredVoices", json_integer(chord.preferredVoices));
+            json_object_set_new(chordJ, "category", json_string(chord.category.c_str()));
+            json_t* intervalsJ = json_array();
+            for (float interval : chord.intervals) {
+                json_array_append_new(intervalsJ, json_real(interval));
+            }
+            json_object_set_new(chordJ, "intervals", intervalsJ);
+            json_array_append_new(chordsJ, chordJ);
+        }
+        json_object_set_new(chordPackJ, "chords", chordsJ);
+        json_object_set_new(rootJ, "currentChordPack", chordPackJ);
+        
+        // Save sequence A content
+        json_t* seqAJ = json_object();
+        json_object_set_new(seqAJ, "length", json_integer(sequenceA.length));
+        json_object_set_new(seqAJ, "currentStep", json_integer(sequenceA.currentStep));
+        json_object_set_new(seqAJ, "running", json_boolean(sequenceA.running));
+        json_t* stepsAJ = json_array();
+        for (int i = 0; i < sequenceA.length; i++) {
+            json_t* stepJ = json_object();
+            json_object_set_new(stepJ, "chordIndex", json_integer(sequenceA.steps[i].chordIndex));
+            json_object_set_new(stepJ, "voiceCount", json_integer(sequenceA.steps[i].voiceCount));
+            json_object_set_new(stepJ, "alchemySymbolId", json_integer(sequenceA.steps[i].alchemySymbolId));
+            json_array_append_new(stepsAJ, stepJ);
+        }
+        json_object_set_new(seqAJ, "steps", stepsAJ);
+        json_object_set_new(rootJ, "sequenceA", seqAJ);
+        
+        // Save sequence B content
+        json_t* seqBJ = json_object();
+        json_object_set_new(seqBJ, "length", json_integer(sequenceB.length));
+        json_object_set_new(seqBJ, "currentStep", json_integer(sequenceB.currentStep));
+        json_object_set_new(seqBJ, "running", json_boolean(sequenceB.running));
+        json_t* stepsBJ = json_array();
+        for (int i = 0; i < sequenceB.length; i++) {
+            json_t* stepJ = json_object();
+            json_object_set_new(stepJ, "chordIndex", json_integer(sequenceB.steps[i].chordIndex));
+            json_object_set_new(stepJ, "voiceCount", json_integer(sequenceB.steps[i].voiceCount));
+            json_object_set_new(stepJ, "alchemySymbolId", json_integer(sequenceB.steps[i].alchemySymbolId));
+            json_array_append_new(stepsBJ, stepJ);
+        }
+        json_object_set_new(seqBJ, "steps", stepsBJ);
+        json_object_set_new(rootJ, "sequenceB", seqBJ);
+        
+        // Note: Symbol mappings are NOT saved - they're randomized on each load
+        
         return rootJ;
     }
     
@@ -1017,6 +1903,38 @@ struct Transmutation : Module,
         if (json_t* vSlew = json_object_get(rootJ, "cvSlewMs")) {
             if (json_is_number(vSlew)) cvSlewMs = (float)json_number_value(vSlew);
         }
+        if (json_t* spc = json_object_get(rootJ, "stablePolyChannels")) {
+            stablePolyChannels = json_boolean_value(spc);
+        }
+        if (json_t* ge = json_object_get(rootJ, "grooveEnabled")) {
+            grooveEnabled = json_boolean_value(ge);
+        }
+        if (json_t* ga = json_object_get(rootJ, "grooveAmount")) {
+            if (json_is_number(ga)) grooveAmount = (float)json_number_value(ga);
+        }
+        if (json_t* gp = json_object_get(rootJ, "groovePreset")) {
+            if (json_is_integer(gp)) groovePreset = (GroovePreset)json_integer_value(gp);
+        }
+        if (json_t* rrp = json_object_get(rootJ, "randomRestProb")) {
+            if (json_is_number(rrp)) randomRestProb = (float)json_number_value(rrp);
+            params[REST_PROB_PARAM].setValue(rack::math::clamp(randomRestProb, 0.f, 1.f));
+        }
+        if (json_t* rtp = json_object_get(rootJ, "randomTieProb")) {
+            if (json_is_number(rtp)) randomTieProb = (float)json_number_value(rtp);
+            params[TIE_PROB_PARAM].setValue(rack::math::clamp(randomTieProb, 0.f, 1.f));
+        }
+        if (json_t* rpv = json_object_get(rootJ, "randomUsePreferredVoices")) {
+            randomUsePreferredVoices = json_boolean_value(rpv);
+        }
+        if (json_t* rcp = json_object_get(rootJ, "randomChordProb")) {
+            if (json_is_number(rcp)) randomChordProb = (float)json_number_value(rcp);
+            params[CHORD_DENSITY_PARAM].setValue(rack::math::clamp(randomChordProb, 0.f, 1.f));
+        }
+        if (json_t* rap = json_object_get(rootJ, "randomAllPack")) { randomAllPack = json_boolean_value(rap); }
+        if (json_t* ral = json_object_get(rootJ, "randomAllLengths")) { randomAllLengths = json_boolean_value(ral); }
+        if (json_t* ras = json_object_get(rootJ, "randomAllSteps")) { randomAllSteps = json_boolean_value(ras); }
+        if (json_t* rab = json_object_get(rootJ, "randomAllBpm")) { randomAllBpm = json_boolean_value(rab); }
+        if (json_t* ram = json_object_get(rootJ, "randomAllMultiplier")) { randomAllMultiplier = json_boolean_value(ram); }
         if (json_t* f6 = json_object_get(rootJ, "forceSixPoly")) {
             forceSixPoly = json_boolean_value(f6);
         }
@@ -1025,6 +1943,137 @@ struct Transmutation : Module,
         }
         if (json_t* gp = json_object_get(rootJ, "gatePulseMs")) {
             if (json_is_number(gp)) gatePulseMs = (float)json_number_value(gp);
+        }
+        if (json_t* ov = json_object_get(rootJ, "oneVoiceRandomNote")) {
+            oneVoiceRandomNote = json_boolean_value(ov);
+        }
+        if (json_t* rv = json_object_get(rootJ, "randomizeChordVoicing")) {
+            randomizeChordVoicing = json_boolean_value(rv);
+        }
+        if (json_t* hlv = json_object_get(rootJ, "harmonyLimitVoices")) {
+            harmonyLimitVoices = json_boolean_value(hlv);
+        }
+        
+        // Load display options
+        if (json_t* dom = json_object_get(rootJ, "doubleOccupancyMode")) {
+            doubleOccupancyMode = json_boolean_value(dom);
+        }
+        
+        // Load chord pack
+        if (json_t* cpJ = json_object_get(rootJ, "currentChordPack")) {
+            currentChordPack.chords.clear();
+            if (json_t* nameJ = json_object_get(cpJ, "name")) {
+                if (json_is_string(nameJ)) currentChordPack.name = json_string_value(nameJ);
+            }
+            if (json_t* keyJ = json_object_get(cpJ, "key")) {
+                if (json_is_string(keyJ)) currentChordPack.key = json_string_value(keyJ);
+            }
+            if (json_t* descJ = json_object_get(cpJ, "description")) {
+                if (json_is_string(descJ)) currentChordPack.description = json_string_value(descJ);
+            }
+            if (json_t* chordsJ = json_object_get(cpJ, "chords")) {
+                if (json_is_array(chordsJ)) {
+                    size_t index;
+                    json_t* chordJ;
+                    json_array_foreach(chordsJ, index, chordJ) {
+                        ChordData chord{};
+                        if (json_t* cnJ = json_object_get(chordJ, "name")) {
+                            if (json_is_string(cnJ)) chord.name = json_string_value(cnJ);
+                        }
+                        if (json_t* pvJ = json_object_get(chordJ, "preferredVoices")) {
+                            if (json_is_integer(pvJ)) chord.preferredVoices = (int)json_integer_value(pvJ);
+                        }
+                        if (json_t* catJ = json_object_get(chordJ, "category")) {
+                            if (json_is_string(catJ)) chord.category = json_string_value(catJ);
+                        }
+                        if (json_t* intJ = json_object_get(chordJ, "intervals")) {
+                            if (json_is_array(intJ)) {
+                                size_t intIndex;
+                                json_t* intervalJ;
+                                json_array_foreach(intJ, intIndex, intervalJ) {
+                                    if (json_is_number(intervalJ)) {
+                                        chord.intervals.push_back((float)json_number_value(intervalJ));
+                                    }
+                                }
+                            }
+                        }
+                        currentChordPack.chords.push_back(chord);
+                    }
+                }
+            }
+        }
+        
+        // Load sequence A
+        if (json_t* seqAJ = json_object_get(rootJ, "sequenceA")) {
+            if (json_t* lenJ = json_object_get(seqAJ, "length")) {
+                if (json_is_integer(lenJ)) {
+                    int len = (int)json_integer_value(lenJ);
+                    if (len >= 1 && len <= 64) sequenceA.length = len;
+                }
+            }
+            if (json_t* curJ = json_object_get(seqAJ, "currentStep")) {
+                if (json_is_integer(curJ)) sequenceA.currentStep = (int)json_integer_value(curJ);
+            }
+            if (json_t* runJ = json_object_get(seqAJ, "running")) {
+                sequenceA.running = json_boolean_value(runJ);
+            }
+            if (json_t* stepsJ = json_object_get(seqAJ, "steps")) {
+                if (json_is_array(stepsJ)) {
+                    size_t index;
+                    json_t* stepJ;
+                    json_array_foreach(stepsJ, index, stepJ) {
+                        if (index >= 64) break;
+                        if (json_t* ciJ = json_object_get(stepJ, "chordIndex")) {
+                            if (json_is_integer(ciJ)) sequenceA.steps[index].chordIndex = (int)json_integer_value(ciJ);
+                        }
+                        if (json_t* vcJ = json_object_get(stepJ, "voiceCount")) {
+                            if (json_is_integer(vcJ)) sequenceA.steps[index].voiceCount = (int)json_integer_value(vcJ);
+                        }
+                        if (json_t* asiJ = json_object_get(stepJ, "alchemySymbolId")) {
+                            if (json_is_integer(asiJ)) sequenceA.steps[index].alchemySymbolId = (int)json_integer_value(asiJ);
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Load sequence B
+        if (json_t* seqBJ = json_object_get(rootJ, "sequenceB")) {
+            if (json_t* lenJ = json_object_get(seqBJ, "length")) {
+                if (json_is_integer(lenJ)) {
+                    int len = (int)json_integer_value(lenJ);
+                    if (len >= 1 && len <= 64) sequenceB.length = len;
+                }
+            }
+            if (json_t* curJ = json_object_get(seqBJ, "currentStep")) {
+                if (json_is_integer(curJ)) sequenceB.currentStep = (int)json_integer_value(curJ);
+            }
+            if (json_t* runJ = json_object_get(seqBJ, "running")) {
+                sequenceB.running = json_boolean_value(runJ);
+            }
+            if (json_t* stepsJ = json_object_get(seqBJ, "steps")) {
+                if (json_is_array(stepsJ)) {
+                    size_t index;
+                    json_t* stepJ;
+                    json_array_foreach(stepsJ, index, stepJ) {
+                        if (index >= 64) break;
+                        if (json_t* ciJ = json_object_get(stepJ, "chordIndex")) {
+                            if (json_is_integer(ciJ)) sequenceB.steps[index].chordIndex = (int)json_integer_value(ciJ);
+                        }
+                        if (json_t* vcJ = json_object_get(stepJ, "voiceCount")) {
+                            if (json_is_integer(vcJ)) sequenceB.steps[index].voiceCount = (int)json_integer_value(vcJ);
+                        }
+                        if (json_t* asiJ = json_object_get(stepJ, "alchemySymbolId")) {
+                            if (json_is_integer(asiJ)) sequenceB.steps[index].alchemySymbolId = (int)json_integer_value(asiJ);
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Randomize symbol mappings after loading chord pack; keep placed symbols unchanged
+        if (!currentChordPack.chords.empty()) {
+            randomizeSymbolAssignment(false);
         }
     }
 };
@@ -2307,72 +3356,185 @@ struct TransmutationWidget : ModuleWidget {
         Transmutation* module = dynamic_cast<Transmutation*>(this->module);
         if (!module) return;
 
-        // Steps grid density
-        menu->addChild(new MenuSeparator);
-        menu->addChild(createMenuLabel("Steps Grid"));
         auto check = [](bool on){ return on ? "✓" : ""; };
-        menu->addChild(createMenuItem("16 steps", check(module->gridSteps == 16), [module]() {
-            module->gridSteps = 16;
-        }));
-        menu->addChild(createMenuItem("32 steps", check(module->gridSteps == 32), [module]() {
-            module->gridSteps = 32;
-        }));
-        menu->addChild(createMenuItem("64 steps", check(module->gridSteps == 64), [module]() {
-            module->gridSteps = 64;
+
+        // Steps Grid submenu
+        menu->addChild(new MenuSeparator);
+        menu->addChild(createSubmenuItem("Steps Grid", "", [module, check](Menu* sub) {
+            sub->addChild(createMenuItem("16 steps", check(module->gridSteps == 16), [module]() {
+                module->gridSteps = 16;
+            }));
+            sub->addChild(createMenuItem("32 steps", check(module->gridSteps == 32), [module]() {
+                module->gridSteps = 32;
+            }));
+            sub->addChild(createMenuItem("64 steps", check(module->gridSteps == 64), [module]() {
+                module->gridSteps = 64;
+            }));
         }));
 
-        // Display mode options
-        menu->addChild(new MenuSeparator);
-        menu->addChild(createMenuLabel("Display Mode"));
-        menu->addChild(createMenuItem("Spooky TV Effect", check(module->params[Transmutation::SCREEN_STYLE_PARAM].getValue() > 0.5f), [module]() {
-            float v = module->params[Transmutation::SCREEN_STYLE_PARAM].getValue();
-            module->params[Transmutation::SCREEN_STYLE_PARAM].setValue(v > 0.5f ? 0.f : 1.f);
+        // Display submenu
+        menu->addChild(createSubmenuItem("Display", "", [module, check](Menu* sub) {
+            sub->addChild(createMenuLabel("Display Mode"));
+            sub->addChild(createMenuItem("Spooky TV Effect", check(module->params[Transmutation::SCREEN_STYLE_PARAM].getValue() > 0.5f), [module]() {
+                float v = module->params[Transmutation::SCREEN_STYLE_PARAM].getValue();
+                module->params[Transmutation::SCREEN_STYLE_PARAM].setValue(v > 0.5f ? 0.f : 1.f);
+            }));
+            sub->addChild(new MenuSeparator);
+            sub->addChild(createMenuLabel("Step Occupancy"));
+            sub->addChild(createMenuItem("Single (blended)", check(!module->doubleOccupancyMode), [module]() {
+                module->doubleOccupancyMode = false;
+            }));
+            sub->addChild(createMenuItem("Double (split)", check(module->doubleOccupancyMode), [module]() {
+                module->doubleOccupancyMode = true;
+            }));
         }));
 
-        // Occupancy display options
-        menu->addChild(new MenuSeparator);
-        menu->addChild(createMenuLabel("Step Occupancy"));
-        menu->addChild(createMenuItem("Single (blended)", check(!module->doubleOccupancyMode), [module]() {
-            module->doubleOccupancyMode = false;
-        }));
-        menu->addChild(createMenuItem("Double (split)", check(module->doubleOccupancyMode), [module]() {
-            module->doubleOccupancyMode = true;
-        }));
-
-        // Output shaping options
-        menu->addChild(new MenuSeparator);
-        menu->addChild(createMenuLabel("Output Shaping"));
-        menu->addChild(createMenuItem("CV Slew", check(module->enableCvSlew), [module]() {
-            module->enableCvSlew = !module->enableCvSlew;
-        }));
-        menu->addChild(createMenuItem("Force 6-voice Polyphony", check(module->forceSixPoly), [module]() {
-            module->forceSixPoly = !module->forceSixPoly;
-        }));
-        menu->addChild(createSubmenuItem("Gate Mode", "", [module, check](Menu* sub){
-            sub->addChild(createMenuItem("Sustain", check(module->gateMode == Transmutation::GATE_SUSTAIN), [module]() { module->gateMode = Transmutation::GATE_SUSTAIN; }));
-            sub->addChild(createMenuItem("Pulse", check(module->gateMode == Transmutation::GATE_PULSE), [module]() { module->gateMode = Transmutation::GATE_PULSE; }));
-        }));
-        menu->addChild(createSubmenuItem("Pulse Width (ms)", "", [module, check](Menu* sub){
-            const float opts[] = {2.f, 5.f, 8.f, 10.f, 20.f, 50.f};
-            for (float v : opts) {
-                std::string label = std::to_string((int)v);
-                sub->addChild(createMenuItem(label, check(fabsf(module->gatePulseMs - v) < 0.5f), [module, v]() {
-                    module->gatePulseMs = v;
+        // Pattern operations submenu
+        menu->addChild(createSubmenuItem("Pattern Ops", "", [module](Menu* sub){
+            sub->addChild(createSubmenuItem("Clear", "", [module](Menu* clearSub){
+                clearSub->addChild(createMenuItem("Clear A", "", [module]() { module->clearSequence(module->sequenceA); }));
+                clearSub->addChild(createMenuItem("Clear B", "", [module]() { module->clearSequence(module->sequenceB); }));
+                clearSub->addChild(createMenuItem("Clear All", "", [module]() { 
+                    module->clearSequence(module->sequenceA); 
+                    module->clearSequence(module->sequenceB); 
                 }));
-            }
-        }));
-        menu->addChild(createSubmenuItem("CV Slew (ms)", "", [module, check](Menu* sub){
-            const float opts[] = {0.f, 1.f, 2.f, 3.f, 5.f, 10.f};
-            for (float v : opts) {
-                std::string label = std::to_string((int)v);
-                sub->addChild(createMenuItem(label, check(fabsf(module->cvSlewMs - v) < 0.5f), [module, v]() {
-                    module->cvSlewMs = v;
-                }));
-            }
+            }));
+            sub->addChild(createSubmenuItem("Shift A", "", [module](Menu* shiftSub){
+                shiftSub->addChild(createMenuItem("Left",  "", [module]() { module->shiftSequence(module->sequenceA, -1); }));
+                shiftSub->addChild(createMenuItem("Right", "", [module]() { module->shiftSequence(module->sequenceA, +1); }));
+            }));
+            sub->addChild(createSubmenuItem("Shift B", "", [module](Menu* shiftSub){
+                shiftSub->addChild(createMenuItem("Left",  "", [module]() { module->shiftSequence(module->sequenceB, -1); }));
+                shiftSub->addChild(createMenuItem("Right", "", [module]() { module->shiftSequence(module->sequenceB, +1); }));
+            }));
+            sub->addChild(createSubmenuItem("Copy / Swap", "", [module](Menu* copySub){
+                copySub->addChild(createMenuItem("Copy A → B (with length)", "", [module]() { module->copySequence(module->sequenceA, module->sequenceB, true); }));
+                copySub->addChild(createMenuItem("Copy B → A (with length)", "", [module]() { module->copySequence(module->sequenceB, module->sequenceA, true); }));
+                copySub->addChild(createMenuItem("Swap A ↔ B (contents)", "", [module]() { module->swapSequencesContent(module->sequenceA, module->sequenceB); }));
+            }));
         }));
 
-        // Chord packs submenu
+        // Output shaping submenu
+        menu->addChild(createSubmenuItem("Output Shaping", "", [module, check](Menu* sub) {
+            sub->addChild(createMenuItem("CV Slew", check(module->enableCvSlew), [module]() {
+                module->enableCvSlew = !module->enableCvSlew;
+            }));
+            sub->addChild(createMenuItem("Stable Poly Channels", check(module->stablePolyChannels), [module]() {
+                module->stablePolyChannels = !module->stablePolyChannels;
+            }));
+            sub->addChild(createMenuItem("Force 6-voice Polyphony", check(module->forceSixPoly), [module]() {
+                module->forceSixPoly = !module->forceSixPoly;
+            }));
+            sub->addChild(createSubmenuItem("Gate Mode", "", [module, check](Menu* gateSub){
+                gateSub->addChild(createMenuItem("Sustain", check(module->gateMode == Transmutation::GATE_SUSTAIN), [module]() { module->gateMode = Transmutation::GATE_SUSTAIN; }));
+                gateSub->addChild(createMenuItem("Pulse", check(module->gateMode == Transmutation::GATE_PULSE), [module]() { module->gateMode = Transmutation::GATE_PULSE; }));
+            }));
+        }));
+        
+        // Placement / Voicing submenu
+        menu->addChild(createSubmenuItem("Placement / Voicing", "", [module, check](Menu* sub) {
+            sub->addChild(createSubmenuItem("1-Voice Placement", "", [module, check](Menu* voiceSub){
+                voiceSub->addChild(createMenuItem("First chord tone", check(!module->oneVoiceRandomNote), [module]() {
+                    module->oneVoiceRandomNote = false;
+                }));
+                voiceSub->addChild(createMenuItem("Random chord tone", check(module->oneVoiceRandomNote), [module]() {
+                    module->oneVoiceRandomNote = true;
+                }));
+            }));
+            sub->addChild(createMenuItem("Randomize multi-voice voicing", check(module->randomizeChordVoicing), [module]() {
+                module->randomizeChordVoicing = !module->randomizeChordVoicing;
+            }));
+            sub->addChild(createMenuItem("Harmony: limit to 1–2 voices", check(module->harmonyLimitVoices), [module]() {
+                module->harmonyLimitVoices = !module->harmonyLimitVoices;
+            }));
+        }));
+
+        // Advanced submenu
+        menu->addChild(createSubmenuItem("Advanced", "", [module, check](Menu* adv){
+            adv->addChild(createSubmenuItem("Pulse Width (ms)", "", [module, check](Menu* pulseSub){
+                const float opts[] = {2.f, 5.f, 8.f, 10.f, 20.f, 50.f};
+                for (float v : opts) {
+                    std::string label = std::to_string((int)v);
+                    pulseSub->addChild(createMenuItem(label, check(fabsf(module->gatePulseMs - v) < 0.5f), [module, v]() {
+                        module->gatePulseMs = v;
+                    }));
+                }
+            }));
+            adv->addChild(createSubmenuItem("CV Slew (ms)", "", [module, check](Menu* slewSub){
+                const float opts[] = {0.f, 1.f, 2.f, 3.f, 5.f, 10.f};
+                for (float v : opts) {
+                    std::string label = std::to_string((int)v);
+                    slewSub->addChild(createMenuItem(label, check(fabsf(module->cvSlewMs - v) < 0.5f), [module, v]() {
+                        module->cvSlewMs = v;
+                    }));
+                }
+            }));
+        }));
+
+        // Randomization submenu
         menu->addChild(new MenuSeparator);
+        menu->addChild(createSubmenuItem("Randomize Everything", "", [module, check](Menu* randMenu) {
+            randMenu->addChild(createMenuLabel("Randomization Options"));
+            randMenu->addChild(createMenuItem("Pack", check(module->randomAllPack), [module]() {
+                module->randomAllPack = !module->randomAllPack;
+            }));
+            randMenu->addChild(createMenuItem("Sequence Lengths", check(module->randomAllLengths), [module]() {
+                module->randomAllLengths = !module->randomAllLengths;
+            }));
+            randMenu->addChild(createMenuItem("Step Content", check(module->randomAllSteps), [module]() {
+                module->randomAllSteps = !module->randomAllSteps;
+            }));
+            randMenu->addChild(createMenuItem("BPM", check(module->randomAllBpm), [module]() {
+                module->randomAllBpm = !module->randomAllBpm;
+            }));
+            randMenu->addChild(createMenuItem("Clock Multiplier", check(module->randomAllMultiplier), [module]() {
+                module->randomAllMultiplier = !module->randomAllMultiplier;
+            }));
+            randMenu->addChild(new MenuSeparator);
+            randMenu->addChild(createMenuItem("Use Preferred Voice Counts", check(module->randomUsePreferredVoices), [module]() {
+                module->randomUsePreferredVoices = !module->randomUsePreferredVoices;
+            }));
+            
+            // Sliders for chord density, rest, and tie probabilities (Impromptu pattern)
+            randMenu->addChild(new MenuSeparator);
+            struct ProbQuantity : Quantity {
+                float* value = nullptr;
+                float def = 0.f;
+                std::string label;
+                ProbQuantity(float* ref, const char* lab, float d) { value = ref; label = lab; def = d; }
+                void setValue(float v) override { *value = rack::math::clamp(v, 0.f, 1.f); }
+                float getValue() override { return *value; }
+                float getMinValue() override { return 0.f; }
+                float getMaxValue() override { return 1.f; }
+                float getDefaultValue() override { return def; }
+                float getDisplayValue() override { return getValue() * 100.f; }
+                void setDisplayValue(float v) override { setValue(v / 100.f); }
+                std::string getLabel() override { return label; }
+                std::string getUnit() override { return "%"; }
+            };
+            struct ProbSlider : ui::Slider {
+                ProbSlider(float* ref, const char* label, float def) {
+                    quantity = new ProbQuantity(ref, label, def);
+                }
+                ~ProbSlider() override { delete quantity; }
+            };
+            auto addProbSlider = [&](Menu* m, const char* label, float& ref, float def) {
+                m->addChild(createMenuLabel(label));
+                auto* s = new ProbSlider(&ref, label, def);
+                s->box.size.x = 200.0f;
+                m->addChild(s);
+            };
+            addProbSlider(randMenu, "Chord Density", module->randomChordProb, 0.60f);
+            addProbSlider(randMenu, "Rest Probability", module->randomRestProb, 0.12f);
+            addProbSlider(randMenu, "Tie Probability", module->randomTieProb, 0.10f);
+            
+            randMenu->addChild(new MenuSeparator);
+            randMenu->addChild(createMenuItem("⚡ Randomize Now!", "", [module]() {
+                module->randomizeEverything();
+            }));
+        }));
+
+        // Chord packs submenu (reverted to key-based organization)
         menu->addChild(createSubmenuItem("Chord Packs", "", [module](Menu* chordMenu) {
             // Helper to get a friendly display name from a JSON pack, falling back to filename stem
             auto packDisplayName = [](const std::string& packPath, const std::string& fallbackStem) {
@@ -2409,10 +3571,20 @@ struct TransmutationWidget : ModuleWidget {
             std::string rightText = (module->currentChordPack.name == "Basic Major") ? "✓" : "";
             chordMenu->addChild(createMenuItem("Basic Major", rightText, [module]() {
                 module->loadDefaultChordPack();
-                module->randomizeSymbolAssignment();
                 module->displayChordName = "Basic Major";
                 module->displaySymbolId = -999; // text-only preview
                 module->symbolPreviewTimer = 1.0f;
+            }));
+
+            // Random chord pack helpers
+            chordMenu->addChild(createMenuItem("Random Pack (Safe)", "", [module]() {
+                module->randomizePackSafe();
+            }));
+            chordMenu->addChild(createMenuItem("Random Pack", "", [module]() {
+                if (!module->randomizeChordPack()) {
+                    // Fallback to default if none found
+                    module->loadDefaultChordPack();
+                }
             }));
 
             if (!system::isDirectory(chordPackDir)) {
@@ -2478,12 +3650,11 @@ struct TransmutationWidget : ModuleWidget {
 
                         keySubmenu->addChild(createMenuItem(displayName, check, [module, packPath, displayName]() {
                             if (!module) return;
-                            if (module->loadChordPackFromFile(packPath)) {
-                                module->randomizeSymbolAssignment();
-                                module->displayChordName = displayName;
-                                module->displaySymbolId = -999; // text-only preview
-                                module->symbolPreviewTimer = 1.0f;
-                                INFO("Loaded chord pack: %s", displayName.c_str());
+                        if (module->loadChordPackFromFile(packPath)) {
+                            module->displayChordName = displayName;
+                            module->displaySymbolId = -999; // text-only preview
+                            module->symbolPreviewTimer = 1.0f;
+                            INFO("Loaded chord pack: %s", displayName.c_str());
                             } else {
                                 module->displayChordName = "LOAD ERROR";
                                 module->displaySymbolId = -999;
