@@ -38,6 +38,23 @@ struct AlchemicalSymbolWidget : Widget {
     void onButton(const event::Button& e) override;
 };
 
+// Rest/Tie momentary buttons styled like alchemical buttons, with playhead glow
+struct RestTieMomentary : app::SvgSwitch {
+    stx::transmutation::TransmutationView* view = nullptr;
+    bool isRest = true; // true = REST, false = TIE
+
+    RestTieMomentary() {
+        momentary = true;
+        if (shadow) shadow->visible = false;
+        box.size = Vec(18.f, 18.f);
+    }
+
+    void setView(stx::transmutation::TransmutationView* v) { view = v; }
+    void setIsRest(bool rest) { isRest = rest; }
+
+    void draw(const DrawArgs& args) override;
+};
+
 // High-Resolution Matrix Widget - now consumes view/controller
 struct HighResMatrixWidget : Widget {
     stx::transmutation::TransmutationView* view = nullptr;

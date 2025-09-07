@@ -239,6 +239,186 @@ struct ShapetakerVintageMomentary : app::SvgSwitch {
     }
 };
 
+// Alchemical-styled momentary buttons for REST/TIE to match symbol buttons
+struct ShapetakerRestMomentary : app::SvgSwitch {
+    ShapetakerRestMomentary() {
+        momentary = true;
+        if (shadow) shadow->visible = false;
+        box.size = Vec(18.f, 18.f);
+    }
+    void draw(const DrawArgs& args) override {
+        // Background — match AlchemicalSymbolWidget normal state and bevels
+        nvgBeginPath(args.vg);
+        nvgRoundedRect(args.vg, 0, 0, box.size.x, box.size.y, 3);
+        nvgFillColor(args.vg, nvgRGBA(40, 40, 40, 100));
+        nvgFill(args.vg);
+        nvgStrokeColor(args.vg, nvgRGBA(100, 100, 100, 150));
+        nvgStrokeWidth(args.vg, 1.0f);
+        nvgStroke(args.vg);
+
+        // Inner shadow ring
+        float inset = 1.0f;
+        float rOuter = 3.0f;
+        float rInner = std::max(0.0f, rOuter - 1.0f);
+        NVGpaint innerShadow = nvgBoxGradient(
+            args.vg,
+            inset, inset,
+            box.size.x - inset * 2.0f,
+            box.size.y - inset * 2.0f,
+            rInner, 3.5f,
+            nvgRGBA(0, 0, 0, 50), nvgRGBA(0, 0, 0, 0)
+        );
+        nvgBeginPath(args.vg);
+        nvgRoundedRect(args.vg, inset - 0.5f, inset - 0.5f, box.size.x - (inset - 0.5f) * 2.0f, box.size.y - (inset - 0.5f) * 2.0f, rInner + 0.5f);
+        nvgRoundedRect(args.vg, inset + 0.8f, inset + 0.8f, box.size.x - (inset + 0.8f) * 2.0f, box.size.y - (inset + 0.8f) * 2.0f, std::max(0.0f, rInner - 0.8f));
+        nvgPathWinding(args.vg, NVG_HOLE);
+        nvgFillPaint(args.vg, innerShadow);
+        nvgFill(args.vg);
+
+        // Top highlight
+        nvgSave(args.vg);
+        nvgScissor(args.vg, 0, 0, box.size.x, std::min(6.0f, box.size.y));
+        NVGpaint topHi = nvgLinearGradient(args.vg, 0, 0, 0, 6.0f, nvgRGBA(255, 255, 255, 28), nvgRGBA(255, 255, 255, 0));
+        nvgBeginPath(args.vg);
+        nvgRoundedRect(args.vg, inset - 0.5f, inset - 0.5f, box.size.x - (inset - 0.5f) * 2.0f, box.size.y - (inset - 0.5f) * 2.0f, rInner + 0.5f);
+        nvgRoundedRect(args.vg, inset + 0.8f, inset + 0.8f, box.size.x - (inset + 0.8f) * 2.0f, box.size.y - (inset + 0.8f) * 2.0f, std::max(0.0f, rInner - 0.8f));
+        nvgPathWinding(args.vg, NVG_HOLE);
+        nvgFillPaint(args.vg, topHi);
+        nvgFill(args.vg);
+        nvgRestore(args.vg);
+
+        // Side highlights
+        nvgBeginPath(args.vg);
+        nvgRoundedRect(args.vg, inset - 0.5f, inset - 0.5f, box.size.x - (inset - 0.5f) * 2.0f, box.size.y - (inset - 0.5f) * 2.0f, rInner + 0.5f);
+        nvgRoundedRect(args.vg, inset + 0.8f, inset + 0.8f, box.size.x - (inset + 0.8f) * 2.0f, box.size.y - (inset + 0.8f) * 2.0f, std::max(0.0f, rInner - 0.8f));
+        nvgPathWinding(args.vg, NVG_HOLE);
+        NVGpaint leftHi = nvgLinearGradient(args.vg, inset - 0.5f, 0, inset + 4.5f, 0, nvgRGBA(255, 255, 255, 18), nvgRGBA(255, 255, 255, 0));
+        nvgFillPaint(args.vg, leftHi);
+        nvgFill(args.vg);
+        nvgBeginPath(args.vg);
+        nvgRoundedRect(args.vg, inset - 0.5f, inset - 0.5f, box.size.x - (inset - 0.5f) * 2.0f, box.size.y - (inset - 0.5f) * 2.0f, rInner + 0.5f);
+        nvgRoundedRect(args.vg, inset + 0.8f, inset + 0.8f, box.size.x - (inset + 0.8f) * 2.0f, box.size.y - (inset + 0.8f) * 2.0f, std::max(0.0f, rInner - 0.8f));
+        nvgPathWinding(args.vg, NVG_HOLE);
+        NVGpaint rightHi = nvgLinearGradient(args.vg, box.size.x - (inset - 0.5f), 0, box.size.x - (inset + 4.5f), 0, nvgRGBA(255, 255, 255, 12), nvgRGBA(255, 255, 255, 0));
+        nvgFillPaint(args.vg, rightHi);
+        nvgFill(args.vg);
+
+        // Draw REST glyph in vintage ink
+        NVGcolor ink = nvgRGBA(232, 224, 200, 230);
+        float cx = box.size.x * 0.5f;
+        float cy = box.size.y * 0.5f;
+        float w = std::min(box.size.x, box.size.y) * 0.60f;
+        nvgBeginPath(args.vg);
+        nvgMoveTo(args.vg, cx - w * 0.5f, cy);
+        nvgLineTo(args.vg, cx + w * 0.5f, cy);
+        nvgStrokeColor(args.vg, ink);
+        nvgLineCap(args.vg, NVG_ROUND);
+        nvgStrokeWidth(args.vg, rack::clamp(w * 0.10f, 1.0f, 2.0f));
+        nvgStroke(args.vg);
+
+        // Pressed overlay for feedback
+        bool pressed = false;
+        if (getParamQuantity()) pressed = getParamQuantity()->getValue() > 0.5f;
+        if (pressed) {
+            nvgSave(args.vg);
+            nvgBeginPath(args.vg);
+            nvgRoundedRect(args.vg, 0, 0, box.size.x, box.size.y, 3);
+            nvgFillColor(args.vg, nvgRGBA(0, 0, 0, 40));
+            nvgFill(args.vg);
+            nvgRestore(args.vg);
+        }
+    }
+};
+
+struct ShapetakerTieMomentary : app::SvgSwitch {
+    ShapetakerTieMomentary() {
+        momentary = true;
+        if (shadow) shadow->visible = false;
+        box.size = Vec(18.f, 18.f);
+    }
+    void draw(const DrawArgs& args) override {
+        // Background — match AlchemicalSymbolWidget normal state and bevels
+        nvgBeginPath(args.vg);
+        nvgRoundedRect(args.vg, 0, 0, box.size.x, box.size.y, 3);
+        nvgFillColor(args.vg, nvgRGBA(40, 40, 40, 100));
+        nvgFill(args.vg);
+        nvgStrokeColor(args.vg, nvgRGBA(100, 100, 100, 150));
+        nvgStrokeWidth(args.vg, 1.0f);
+        nvgStroke(args.vg);
+
+        // Inner shadow ring
+        float inset = 1.0f;
+        float rOuter = 3.0f;
+        float rInner = std::max(0.0f, rOuter - 1.0f);
+        NVGpaint innerShadow = nvgBoxGradient(
+            args.vg,
+            inset, inset,
+            box.size.x - inset * 2.0f,
+            box.size.y - inset * 2.0f,
+            rInner, 3.5f,
+            nvgRGBA(0, 0, 0, 50), nvgRGBA(0, 0, 0, 0)
+        );
+        nvgBeginPath(args.vg);
+        nvgRoundedRect(args.vg, inset - 0.5f, inset - 0.5f, box.size.x - (inset - 0.5f) * 2.0f, box.size.y - (inset - 0.5f) * 2.0f, rInner + 0.5f);
+        nvgRoundedRect(args.vg, inset + 0.8f, inset + 0.8f, box.size.x - (inset + 0.8f) * 2.0f, box.size.y - (inset + 0.8f) * 2.0f, std::max(0.0f, rInner - 0.8f));
+        nvgPathWinding(args.vg, NVG_HOLE);
+        nvgFillPaint(args.vg, innerShadow);
+        nvgFill(args.vg);
+
+        // Top highlight
+        nvgSave(args.vg);
+        nvgScissor(args.vg, 0, 0, box.size.x, std::min(6.0f, box.size.y));
+        NVGpaint topHi = nvgLinearGradient(args.vg, 0, 0, 0, 6.0f, nvgRGBA(255, 255, 255, 28), nvgRGBA(255, 255, 255, 0));
+        nvgBeginPath(args.vg);
+        nvgRoundedRect(args.vg, inset - 0.5f, inset - 0.5f, box.size.x - (inset - 0.5f) * 2.0f, box.size.y - (inset - 0.5f) * 2.0f, rInner + 0.5f);
+        nvgRoundedRect(args.vg, inset + 0.8f, inset + 0.8f, box.size.x - (inset + 0.8f) * 2.0f, box.size.y - (inset + 0.8f) * 2.0f, std::max(0.0f, rInner - 0.8f));
+        nvgPathWinding(args.vg, NVG_HOLE);
+        nvgFillPaint(args.vg, topHi);
+        nvgFill(args.vg);
+        nvgRestore(args.vg);
+
+        // Side highlights
+        nvgBeginPath(args.vg);
+        nvgRoundedRect(args.vg, inset - 0.5f, inset - 0.5f, box.size.x - (inset - 0.5f) * 2.0f, box.size.y - (inset - 0.5f) * 2.0f, rInner + 0.5f);
+        nvgRoundedRect(args.vg, inset + 0.8f, inset + 0.8f, box.size.x - (inset + 0.8f) * 2.0f, box.size.y - (inset + 0.8f) * 2.0f, std::max(0.0f, rInner - 0.8f));
+        nvgPathWinding(args.vg, NVG_HOLE);
+        NVGpaint leftHi = nvgLinearGradient(args.vg, inset - 0.5f, 0, inset + 4.5f, 0, nvgRGBA(255, 255, 255, 18), nvgRGBA(255, 255, 255, 0));
+        nvgFillPaint(args.vg, leftHi);
+        nvgFill(args.vg);
+        nvgBeginPath(args.vg);
+        nvgRoundedRect(args.vg, inset - 0.5f, inset - 0.5f, box.size.x - (inset - 0.5f) * 2.0f, box.size.y - (inset - 0.5f) * 2.0f, rInner + 0.5f);
+        nvgRoundedRect(args.vg, inset + 0.8f, inset + 0.8f, box.size.x - (inset + 0.8f) * 2.0f, box.size.y - (inset + 0.8f) * 2.0f, std::max(0.0f, rInner - 0.8f));
+        nvgPathWinding(args.vg, NVG_HOLE);
+        NVGpaint rightHi = nvgLinearGradient(args.vg, box.size.x - (inset - 0.5f), 0, box.size.x - (inset + 4.5f), 0, nvgRGBA(255, 255, 255, 12), nvgRGBA(255, 255, 255, 0));
+        nvgFillPaint(args.vg, rightHi);
+        nvgFill(args.vg);
+
+        // Draw TIE glyph (lower arc) in vintage ink
+        NVGcolor ink = nvgRGBA(232, 224, 200, 230);
+        float cx = box.size.x * 0.5f;
+        float cy = box.size.y * 0.52f;
+        float r = std::min(box.size.x, box.size.y) * 0.32f;
+        nvgBeginPath(args.vg);
+        nvgArc(args.vg, cx, cy, r, M_PI * 1.15f, M_PI * 1.85f, NVG_CW);
+        nvgStrokeColor(args.vg, ink);
+        nvgLineCap(args.vg, NVG_ROUND);
+        nvgStrokeWidth(args.vg, rack::clamp(r * 0.28f, 1.0f, 2.0f));
+        nvgStroke(args.vg);
+
+        // Pressed overlay for feedback
+        bool pressed = false;
+        if (getParamQuantity()) pressed = getParamQuantity()->getValue() > 0.5f;
+        if (pressed) {
+            nvgSave(args.vg);
+            nvgBeginPath(args.vg);
+            nvgRoundedRect(args.vg, 0, 0, box.size.x, box.size.y, 3);
+            nvgFillColor(args.vg, nvgRGBA(0, 0, 0, 40));
+            nvgFill(args.vg);
+            nvgRestore(args.vg);
+        }
+    }
+};
+
 struct ShapetakerChickenHeadSelector : app::SvgSwitch {
     ShapetakerChickenHeadSelector() {
         addFrame(Svg::load(asset::plugin(pluginInstance, "res/switches/st_chicken_head_selector_0.svg")));

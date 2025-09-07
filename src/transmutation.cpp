@@ -87,6 +87,8 @@ struct Transmutation : Module,
         STOP_A_INPUT,
         START_B_INPUT,
         STOP_B_INPUT,
+        LENGTH_A_CV_INPUT,
+        LENGTH_B_CV_INPUT,
         INPUTS_LEN
     };
 
@@ -162,7 +164,7 @@ struct Transmutation : Module,
     float symbolPreviewTimer = 0.0f;
     static constexpr float SYMBOL_PREVIEW_DURATION = 0.50f; // Show for 500ms
     bool spookyTvMode = true; // Toggle for spooky TV effect vs clean display (backed by SCREEN_STYLE_PARAM)
-    bool doubleOccupancyMode = false; // Visual split mode for step circles
+    // Display occupancy mode control removed; UI auto-splits per step when both A and B occupy it
     // Sticky UI params that must not be altered by randomization
     int stickySeqBMode = 0;
     float stickyScreenStyle = 1.f;
@@ -179,13 +181,9 @@ struct Transmutation : Module,
     double engineTimeSec = 0.0; // running wallclock for scheduling
 
     // Output shaping / gate driving
-    // Small CV slew per voice (optional)
-    dsp::SlewLimiter cvSlewA[stx::transmutation::MAX_VOICES];
-    dsp::SlewLimiter cvSlewB[stx::transmutation::MAX_VOICES];
+    // (CV slew removed)
 
     // Tunables
-    bool enableCvSlew = false; // Disabled by default - slewing is bad for polyphonic chords
-    float cvSlewMs = 3.0f;        // per-step pitch slew to soften discontinuities
     bool stablePolyChannels = true; // Keep poly channel count stable across steps to avoid gate/channel drops
 
     // Groove engine
@@ -193,6 +191,8 @@ struct Transmutation : Module,
     float grooveAmount = 0.0f; // 0..1
     enum GroovePreset { GROOVE_NONE = 0, GROOVE_SWING8 = 1, GROOVE_SWING16 = 2, GROOVE_SHUFFLE16 = 3, GROOVE_REGGAETON = 4 };
     GroovePreset groovePreset = GROOVE_NONE;
+
+    // (Ratchet feature removed)
 
     // Built-in 16-step offset tables (fraction of step period, clamped >= 0)
     // Values in [0..0.5) recommended. Amount scales these.
@@ -375,10 +375,7 @@ struct Transmutation : Module,
     dsp::PulseGenerator gatePulsesA[stx::transmutation::MAX_VOICES];
     dsp::PulseGenerator gatePulsesB[stx::transmutation::MAX_VOICES];
 
-    // Placement / voicing
-    bool oneVoiceRandomNote = false;     // when a step is 1-voice, select a random chord tone instead of the first
-    bool randomizeChordVoicing = false;  // when multi-voice, randomize target notes ordering per placement
-    bool harmonyLimitVoices = true;      // in Harmony mode, limit B to 1–2 voices (sparser counterpoint)
+    // (Placement / Voicing options removed)
     int lastStepA = -1;
     int lastStepB = -1;
 
@@ -516,6 +513,9 @@ struct Transmutation : Module,
         configInput(STOP_A_INPUT, "Stop A Trigger");
         configInput(START_B_INPUT, "Start B Trigger");
         configInput(STOP_B_INPUT, "Stop B Trigger");
+        // Length CVs (0-10V maps to 1..gridSteps)
+        configInput(LENGTH_A_CV_INPUT, "Length A CV");
+        configInput(LENGTH_B_CV_INPUT, "Length B CV");
 
         // Outputs
         configOutput(CV_A_OUTPUT, "CV A (Polyphonic)");
@@ -554,13 +554,7 @@ struct Transmutation : Module,
 
         // Randomization floats are controlled directly by context menu sliders
 
-        // Configure slew limiters with current sample rate
-        if (enableCvSlew) {
-            for (int i = 0; i < 6; ++i) {
-                cvSlewA[i].setRiseFall(cvSlewMs / 1000.f, cvSlewMs / 1000.f);
-                cvSlewB[i].setRiseFall(cvSlewMs / 1000.f, cvSlewMs / 1000.f);
-            }
-        }
+        // (CV slew removed)
         // Keep sequence length knobs bounded by current grid size
         {
             float maxLen = (float)gridSteps;
@@ -610,9 +604,21 @@ struct Transmutation : Module,
             // This is play mode - explicitly do nothing as this is a valid state
         }
 
-        // Update sequence lengths from parameters (clamped to gridSteps)
-        sequenceA.length = clamp((int)params[LENGTH_A_PARAM].getValue(), 1, gridSteps);
-        sequenceB.length = clamp((int)params[LENGTH_B_PARAM].getValue(), 1, gridSteps);
+        // Update sequence lengths from knob or CV (0-10V → 1..gridSteps)
+        auto cvToLen = [&](float v)->int {
+            float lenf = rescale(clamp(v, 0.f, 10.f), 0.f, 10.f, 1.f, (float)gridSteps);
+            return clamp((int)std::round(lenf), 1, gridSteps);
+        };
+        if (inputs[LENGTH_A_CV_INPUT].isConnected()) {
+            sequenceA.length = cvToLen(inputs[LENGTH_A_CV_INPUT].getVoltage());
+        } else {
+            sequenceA.length = clamp((int)params[LENGTH_A_PARAM].getValue(), 1, gridSteps);
+        }
+        if (inputs[LENGTH_B_CV_INPUT].isConnected()) {
+            sequenceB.length = cvToLen(inputs[LENGTH_B_CV_INPUT].getVoltage());
+        } else {
+            sequenceB.length = clamp((int)params[LENGTH_B_PARAM].getValue(), 1, gridSteps);
+        }
 
         // Handle sequence controls
         if (startATrigger.process(params[START_A_PARAM].getValue())) {
@@ -851,7 +857,6 @@ struct Transmutation : Module,
     std::string getDisplayChordName() const override { return displayChordName; }
     float getSymbolPreviewTimer() const override { return symbolPreviewTimer; }
     bool getSpookyTvMode() const override { return spookyTvMode; }
-    bool isDoubleOccupancy() const override { return doubleOccupancyMode; }
 
     // Symbol button support
     int getSelectedSymbol() const override { return selectedSymbol; }
@@ -942,10 +947,6 @@ struct Transmutation : Module,
 
         std::vector<float> targetNotes;
         stx::poly::buildTargetsFromIntervals(chord.intervals, voiceCount, /*harmony*/ false, targetNotes);
-        if (randomizeChordVoicing && voiceCount > 1) {
-            std::mt19937 rng(rack::random::u32());
-            std::shuffle(targetNotes.begin(), targetNotes.end(), rng);
-        }
         std::vector<float> assigned(6, 0.0f);
         for (int v = 0; v < voiceCount && v < 6; ++v) assigned[v] = targetNotes[v % targetNotes.size()];
 
@@ -956,11 +957,8 @@ struct Transmutation : Module,
         for (int v = 0; v < totalCh; ++v) {
             if (v < voiceCount) {
                 float noteCV = assigned[v];
-                float smoothed = enableCvSlew ? ((cvOutputId == CV_A_OUTPUT) ? cvSlewA[v].process(args.sampleTime, noteCV)
-                                                                               : cvSlewB[v].process(args.sampleTime, noteCV))
-                                              : noteCV;
-                outputs[cvOutputId].setVoltage(smoothed, v);
-                if (cvOutputId == CV_A_OUTPUT) lastCvA[v] = smoothed; else lastCvB[v] = smoothed;
+                outputs[cvOutputId].setVoltage(noteCV, v);
+                if (cvOutputId == CV_A_OUTPUT) lastCvA[v] = noteCV; else lastCvB[v] = noteCV;
             } else {
                 float held = (cvOutputId == CV_A_OUTPUT) ? lastCvA[v] : lastCvB[v];
                 outputs[cvOutputId].setVoltage(held, v);
@@ -990,7 +988,6 @@ struct Transmutation : Module,
         // Get clock source (external overrides internal)
         bool useExternalClock = inputs[clockInputId].isConnected();
         bool clockTrigger = false;
-
         if (useExternalClock) {
             if (clockInputId == CLOCK_A_INPUT) {
                 clockTrigger = clockATrigger.process(inputs[clockInputId].getVoltage());
@@ -1050,6 +1047,7 @@ struct Transmutation : Module,
 
         // Resolve effective step (follows TIEs). Output or clear.
         const SequenceStep* eff = resolveEffectiveStep(seq, seq.currentStep);
+        // Output normally (no ratchet retriggers)
         if (eff) outputChord(args, *eff, cvOutputId, gateOutputId, stepChanged);
         else stableClearOutputs(cvOutputId, gateOutputId);
     }
@@ -1217,28 +1215,11 @@ struct Transmutation : Module,
 
         const ChordData& chordA = currentChordPack.chords[mappedIndexA];
         int reqVoices = std::min(stepB.voiceCount, stx::transmutation::MAX_VOICES);
-        if (harmonyLimitVoices) reqVoices = rack::math::clamp(reqVoices, 1, 2);
         int voiceCount = forceSixPoly ? stx::transmutation::MAX_VOICES : reqVoices;
 
         // Build targets and assign
         std::vector<float> targetNotes;
-        int baseVoices = stepB.voiceCount; // requested on B side
-        if (baseVoices == 1 && oneVoiceRandomNote) {
-            // pick a random chord tone
-            if (!chordA.intervals.empty()) {
-                int idx = (int)std::floor(rack::random::uniform() * chordA.intervals.size());
-                idx = rack::clamp(idx, 0, (int)chordA.intervals.size() - 1);
-                stx::poly::buildTargetsFromIntervals({ chordA.intervals[idx] }, 1, /*harmony*/ true, targetNotes);
-            } else {
-                stx::poly::buildTargetsFromIntervals(chordA.intervals, voiceCount, /*harmony*/ true, targetNotes);
-            }
-        } else {
-            stx::poly::buildTargetsFromIntervals(chordA.intervals, voiceCount, /*harmony*/ true, targetNotes);
-            if (randomizeChordVoicing && voiceCount > 1) {
-                std::mt19937 rng(rack::random::u32());
-                std::shuffle(targetNotes.begin(), targetNotes.end(), rng);
-            }
-        }
+        stx::poly::buildTargetsFromIntervals(chordA.intervals, voiceCount, /*harmony*/ true, targetNotes);
         // SIMPLE DIRECT ASSIGNMENT - NO MORE assignNearest!
         std::vector<float> assigned(6, 0.0f);  // Always 6 elements, but only fill voiceCount
         if (!targetNotes.empty()) {
@@ -1260,13 +1241,8 @@ struct Transmutation : Module,
         for (int voice = 0; voice < totalCh; voice++) {
             if (voice < voiceCount) {
                 float noteCV = assigned[voice];
-                float smoothed = noteCV;
-                if (enableCvSlew) {
-                    smoothed = (cvOutputId == CV_A_OUTPUT) ? cvSlewA[voice].process(args.sampleTime, noteCV)
-                                                           : cvSlewB[voice].process(args.sampleTime, noteCV);
-                }
-                outputs[cvOutputId].setVoltage(smoothed, voice);
-                if (cvOutputId == CV_A_OUTPUT) lastCvA[voice] = smoothed; else lastCvB[voice] = smoothed;
+                outputs[cvOutputId].setVoltage(noteCV, voice);
+                if (cvOutputId == CV_A_OUTPUT) lastCvA[voice] = noteCV; else lastCvB[voice] = noteCV;
             } else {
                 // Hold last CV for inactive channels to avoid pitch jumps
                 float held = (cvOutputId == CV_A_OUTPUT) ? lastCvA[voice] : lastCvB[voice];
@@ -1299,23 +1275,7 @@ struct Transmutation : Module,
 
         // Build targets and assign
         std::vector<float> targetNotes;
-        int baseVoices = step.voiceCount; // requested on the step
-        if (baseVoices == 1 && oneVoiceRandomNote) {
-            // pick a random chord tone
-            if (!chord.intervals.empty()) {
-                int idx = (int)std::floor(rack::random::uniform() * chord.intervals.size());
-                idx = rack::clamp(idx, 0, (int)chord.intervals.size() - 1);
-                stx::poly::buildTargetsFromIntervals({ chord.intervals[idx] }, 1, /*harmony*/ false, targetNotes);
-            } else {
-                stx::poly::buildTargetsFromIntervals(chord.intervals, voiceCount, /*harmony*/ false, targetNotes);
-            }
-        } else {
-            stx::poly::buildTargetsFromIntervals(chord.intervals, voiceCount, /*harmony*/ false, targetNotes);
-            if (randomizeChordVoicing && voiceCount > 1) {
-                std::mt19937 rng(rack::random::u32());
-                std::shuffle(targetNotes.begin(), targetNotes.end(), rng);
-            }
-        }
+        stx::poly::buildTargetsFromIntervals(chord.intervals, voiceCount, /*harmony*/ false, targetNotes);
         // SIMPLE DIRECT ASSIGNMENT - NO MORE assignNearest!
         std::vector<float> assigned(6, 0.0f);  // Always 6 elements, but only fill voiceCount
         if (!targetNotes.empty()) {
@@ -1338,13 +1298,8 @@ struct Transmutation : Module,
         for (int voice = 0; voice < totalCh2; voice++) {
             if (voice < voiceCount) {
                 float noteCV = assigned[voice];
-                float smoothed = noteCV;
-                if (enableCvSlew) {
-                    smoothed = (cvOutputId == CV_A_OUTPUT) ? cvSlewA[voice].process(args.sampleTime, noteCV)
-                                                           : cvSlewB[voice].process(args.sampleTime, noteCV);
-                }
-                outputs[cvOutputId].setVoltage(smoothed, voice);
-                if (cvOutputId == CV_A_OUTPUT) lastCvA[voice] = smoothed; else lastCvB[voice] = smoothed;
+                outputs[cvOutputId].setVoltage(noteCV, voice);
+                if (cvOutputId == CV_A_OUTPUT) lastCvA[voice] = noteCV; else lastCvB[voice] = noteCV;
             } else {
                 float held = (cvOutputId == CV_A_OUTPUT) ? lastCvA[voice] : lastCvB[voice];
                 outputs[cvOutputId].setVoltage(held, voice);
@@ -1914,10 +1869,6 @@ struct Transmutation : Module,
                 } else {
                     stp.voiceCount = voiceDist(rng);
                 }
-                // If this is sequence B and we are in Harmony mode, optionally limit voices to 1–2
-                if (&seq == &sequenceB && ((int)params[SEQ_B_MODE_PARAM].getValue()) == 1 && harmonyLimitVoices) {
-                    stp.voiceCount = 1 + (rng() % 2); // 1 or 2
-                }
                 anyChord = true;
             }
             seq.steps[i] = stp;
@@ -1961,14 +1912,12 @@ struct Transmutation : Module,
         // 3) Reset engine/state flags
         sequenceA.running = false;
         sequenceB.running = false;
-        enableCvSlew = false;
-        cvSlewMs = 3.0f;
+        // (CV slew removed)
         stablePolyChannels = true;
         forceSixPoly = false;
         gateMode = GATE_SUSTAIN;
         gatePulseMs = 8.0f;
-        oneVoiceRandomNote = false;
-        randomizeChordVoicing = false;
+        // (Placement / Voicing options removed)
         grooveEnabled = false;
         grooveAmount = 0.0f;
         groovePreset = GROOVE_NONE;
@@ -2010,8 +1959,7 @@ struct Transmutation : Module,
     json_t* dataToJson() override {
         json_t* rootJ = json_object();
         json_object_set_new(rootJ, "gridSteps", json_integer(gridSteps));
-        json_object_set_new(rootJ, "enableCvSlew", json_boolean(enableCvSlew));
-        json_object_set_new(rootJ, "cvSlewMs", json_real(cvSlewMs));
+        // (CV slew removed)
         json_object_set_new(rootJ, "stablePolyChannels", json_boolean(stablePolyChannels));
         json_object_set_new(rootJ, "grooveEnabled", json_boolean(grooveEnabled));
         json_object_set_new(rootJ, "grooveAmount", json_real(grooveAmount));
@@ -2028,12 +1976,9 @@ struct Transmutation : Module,
         json_object_set_new(rootJ, "forceSixPoly", json_boolean(forceSixPoly));
         json_object_set_new(rootJ, "gateMode", json_integer((int)gateMode));
         json_object_set_new(rootJ, "gatePulseMs", json_real(gatePulseMs));
-        json_object_set_new(rootJ, "oneVoiceRandomNote", json_boolean(oneVoiceRandomNote));
-        json_object_set_new(rootJ, "randomizeChordVoicing", json_boolean(randomizeChordVoicing));
-        json_object_set_new(rootJ, "harmonyLimitVoices", json_boolean(harmonyLimitVoices));
+        // (Placement / Voicing options removed)
 
         // Save display options
-        json_object_set_new(rootJ, "doubleOccupancyMode", json_boolean(doubleOccupancyMode));
 
         // Save current chord pack
         json_t* chordPackJ = json_object();
@@ -2099,12 +2044,7 @@ struct Transmutation : Module,
             int v = (int)json_integer_value(gJ);
             if (v == 16 || v == 32 || v == 64) gridSteps = v;
         }
-        if (json_t* eSlew = json_object_get(rootJ, "enableCvSlew")) {
-            enableCvSlew = json_boolean_value(eSlew);
-        }
-        if (json_t* vSlew = json_object_get(rootJ, "cvSlewMs")) {
-            if (json_is_number(vSlew)) cvSlewMs = (float)json_number_value(vSlew);
-        }
+        // (CV slew removed)
         if (json_t* spc = json_object_get(rootJ, "stablePolyChannels")) {
             stablePolyChannels = json_boolean_value(spc);
         }
@@ -2146,20 +2086,9 @@ struct Transmutation : Module,
         if (json_t* gp = json_object_get(rootJ, "gatePulseMs")) {
             if (json_is_number(gp)) gatePulseMs = (float)json_number_value(gp);
         }
-        if (json_t* ov = json_object_get(rootJ, "oneVoiceRandomNote")) {
-            oneVoiceRandomNote = json_boolean_value(ov);
-        }
-        if (json_t* rv = json_object_get(rootJ, "randomizeChordVoicing")) {
-            randomizeChordVoicing = json_boolean_value(rv);
-        }
-        if (json_t* hlv = json_object_get(rootJ, "harmonyLimitVoices")) {
-            harmonyLimitVoices = json_boolean_value(hlv);
-        }
+        // (Placement / Voicing options removed)
 
         // Load display options
-        if (json_t* dom = json_object_get(rootJ, "doubleOccupancyMode")) {
-            doubleOccupancyMode = json_boolean_value(dom);
-        }
 
         // Load chord pack
         if (json_t* cpJ = json_object_get(rootJ, "currentChordPack")) {
@@ -2320,25 +2249,17 @@ struct TransmutationWidget : ModuleWidget {
             }));
         }));
 
-        // Display submenu
+        // Display submenu (Spooky TV only; occupancy auto-splits per step in UI)
         menu->addChild(createSubmenuItem("Display", "", [module, check](Menu* sub) {
             sub->addChild(createMenuLabel("Display Mode"));
             sub->addChild(createMenuItem("Spooky TV Effect", check(module->params[Transmutation::SCREEN_STYLE_PARAM].getValue() > 0.5f), [module]() {
                 float v = module->params[Transmutation::SCREEN_STYLE_PARAM].getValue();
                 module->params[Transmutation::SCREEN_STYLE_PARAM].setValue(v > 0.5f ? 0.f : 1.f);
             }));
-            sub->addChild(new MenuSeparator);
-            sub->addChild(createMenuLabel("Step Occupancy"));
-            sub->addChild(createMenuItem("Single (blended)", check(!module->doubleOccupancyMode), [module]() {
-                module->doubleOccupancyMode = false;
-            }));
-            sub->addChild(createMenuItem("Double (split)", check(module->doubleOccupancyMode), [module]() {
-                module->doubleOccupancyMode = true;
-            }));
         }));
 
         // Pattern operations submenu
-        menu->addChild(createSubmenuItem("Pattern Ops", "", [module](Menu* sub){
+        menu->addChild(createSubmenuItem("Pattern Operations", "", [module](Menu* sub){
             sub->addChild(createSubmenuItem("Clear", "", [module](Menu* clearSub){
                 clearSub->addChild(createMenuItem("Clear A", "", [module]() { module->clearSequence(module->sequenceA); }));
                 clearSub->addChild(createMenuItem("Clear B", "", [module]() { module->clearSequence(module->sequenceB); }));
@@ -2364,9 +2285,7 @@ struct TransmutationWidget : ModuleWidget {
 
         // Output shaping submenu
         menu->addChild(createSubmenuItem("Output Shaping", "", [module, check](Menu* sub) {
-            sub->addChild(createMenuItem("CV Slew", check(module->enableCvSlew), [module]() {
-                module->enableCvSlew = !module->enableCvSlew;
-            }));
+            // (CV Slew removed)
             sub->addChild(createMenuItem("Stable Poly Channels", check(module->stablePolyChannels), [module]() {
                 module->stablePolyChannels = !module->stablePolyChannels;
             }));
@@ -2379,44 +2298,35 @@ struct TransmutationWidget : ModuleWidget {
             }));
         }));
 
-        // Placement / Voicing submenu
-        menu->addChild(createSubmenuItem("Placement / Voicing", "", [module, check](Menu* sub) {
-            sub->addChild(createSubmenuItem("1-Voice Placement", "", [module, check](Menu* voiceSub){
-                voiceSub->addChild(createMenuItem("First chord tone", check(!module->oneVoiceRandomNote), [module]() {
-                    module->oneVoiceRandomNote = false;
-                }));
-                voiceSub->addChild(createMenuItem("Random chord tone", check(module->oneVoiceRandomNote), [module]() {
-                    module->oneVoiceRandomNote = true;
-                }));
-            }));
-            sub->addChild(createMenuItem("Randomize multi-voice voicing", check(module->randomizeChordVoicing), [module]() {
-                module->randomizeChordVoicing = !module->randomizeChordVoicing;
-            }));
-            sub->addChild(createMenuItem("Harmony: limit to 1–2 voices", check(module->harmonyLimitVoices), [module]() {
-                module->harmonyLimitVoices = !module->harmonyLimitVoices;
-            }));
-        }));
+        // (Placement / Voicing submenu removed)
 
         // Advanced submenu
-        menu->addChild(createSubmenuItem("Advanced", "", [module, check](Menu* adv){
-            adv->addChild(createSubmenuItem("Pulse Width (ms)", "", [module, check](Menu* pulseSub){
-                const float opts[] = {2.f, 5.f, 8.f, 10.f, 20.f, 50.f};
-                for (float v : opts) {
-                    std::string label = std::to_string((int)v);
-                    pulseSub->addChild(createMenuItem(label, check(fabsf(module->gatePulseMs - v) < 0.5f), [module, v]() {
-                        module->gatePulseMs = v;
-                    }));
+        menu->addChild(createSubmenuItem("Advanced", "", [module](Menu* adv){
+            // Pulse width slider (1..100 ms)
+            adv->addChild(createMenuLabel("Pulse Width (ms)"));
+            struct PulseWidthQuantity : Quantity {
+                Transmutation* m;
+                explicit PulseWidthQuantity(Transmutation* mod) : m(mod) {}
+                void setValue(float v) override {
+                    int iv = rack::math::clamp((int)std::round(v), 1, 100);
+                    m->gatePulseMs = (float)iv;
                 }
-            }));
-            adv->addChild(createSubmenuItem("CV Slew (ms)", "", [module, check](Menu* slewSub){
-                const float opts[] = {0.f, 1.f, 2.f, 3.f, 5.f, 10.f};
-                for (float v : opts) {
-                    std::string label = std::to_string((int)v);
-                    slewSub->addChild(createMenuItem(label, check(fabsf(module->cvSlewMs - v) < 0.5f), [module, v]() {
-                        module->cvSlewMs = v;
-                    }));
+                float getValue() override { return (float)rack::math::clamp((int)std::round(m->gatePulseMs), 1, 100); }
+                float getMinValue() override { return 1.f; }
+                float getMaxValue() override { return 100.f; }
+                float getDefaultValue() override { return 8.f; }
+                std::string getLabel() override { return "Pulse Width"; }
+                std::string getUnit() override { return "ms"; }
+            };
+            struct PulseWidthSlider : ui::Slider {
+                explicit PulseWidthSlider(Transmutation* m) {
+                    quantity = new PulseWidthQuantity(m);
                 }
-            }));
+                ~PulseWidthSlider() override { delete quantity; }
+            };
+            auto* pw = new PulseWidthSlider(module);
+            pw->box.size.x = 200.f;
+            adv->addChild(pw);
         }));
 
         // Randomization submenu
@@ -2443,7 +2353,7 @@ struct TransmutationWidget : ModuleWidget {
                 module->randomUsePreferredVoices = !module->randomUsePreferredVoices;
             }));
             randMenu->addChild(createMenuLabel("Step Symbol Source"));
-            randMenu->addChild(createMenuItem("Use 12 Button Symbols", "✓", [module]() {
+            randMenu->addChild(createMenuItem("Use 12 Button Symbols", "✓", []() {
                 // Always use 12 visible symbols on randomization (requested behavior)
             }));
 
@@ -2726,14 +2636,15 @@ struct TransmutationWidget : ModuleWidget {
                 return mm2px(Vec(cx, cy));
             };
             // Sequence A
-            addParam(createParamCentered<ShapetakerKnobMedium>(pos("seq_a_length", 15.950587f, 37.849998f), module, Transmutation::LENGTH_A_PARAM));
+            // Upsize length knobs from Medium to Large for better ergonomics
+            addParam(createParamCentered<ShapetakerKnobLarge>(pos("seq_a_length", 15.950587f, 37.849998f), module, Transmutation::LENGTH_A_PARAM));
             addParam(createParamCentered<ShapetakerKnobMedium>(pos("main_bpm", 15.950588f, 18.322521f), module, Transmutation::INTERNAL_CLOCK_PARAM));
             addParam(createParamCentered<ShapetakerKnobOscilloscopeSmall>(pos("clk_mult_select", 34.340317f, 18.322521f), module, Transmutation::BPM_MULTIPLIER_PARAM));
             addMomentaryScaled(pos("a_play_btn", 22.586929f, 67.512939f), Transmutation::START_A_PARAM);
             addMomentaryScaled(pos("a_stop_btn", 22.784245f, 75.573959f), Transmutation::STOP_A_PARAM);
             addMomentaryScaled(pos("a_reset_btn", 22.784245f, 83.509323f), Transmutation::RESET_A_PARAM);
             // Sequence B
-            addParam(createParamCentered<ShapetakerKnobMedium>(pos("seq_b_length", 115.02555f, 37.849998f), module, Transmutation::LENGTH_B_PARAM));
+            addParam(createParamCentered<ShapetakerKnobLarge>(pos("seq_b_length", 115.02555f, 37.849998f), module, Transmutation::LENGTH_B_PARAM));
             addMomentaryScaled(pos("b_play_btn", 108.43727f, 67.450111f), Transmutation::START_B_PARAM);
             addMomentaryScaled(pos("b_stop_btn", 108.43727f, 75.511131f), Transmutation::STOP_B_PARAM);
             addMomentaryScaled(pos("b_reset_btn", 108.43728f, 83.446495f), Transmutation::RESET_B_PARAM);
@@ -2755,6 +2666,8 @@ struct TransmutationWidget : ModuleWidget {
             addInput(createInputCentered<ShapetakerBNCPort>(cpos("a_reset_cv", 7.5470452f, 83.509323f), module, Transmutation::RESET_A_INPUT));
             addInput(createInputCentered<ShapetakerBNCPort>(cpos("a_play_cv", 7.5470452f, 67.512939f), module, Transmutation::START_A_INPUT));
             addInput(createInputCentered<ShapetakerBNCPort>(cpos("a_stop_cv", 7.5470452f, 75.511131f), module, Transmutation::STOP_A_INPUT));
+            // Length A CV near length knob (present in SVG as seq_a_length_cv)
+            addInput(createInputCentered<ShapetakerBNCPort>(cpos("seq_a_length_cv", 28.0f, 49.0f), module, Transmutation::LENGTH_A_CV_INPUT));
             addOutput(createOutputCentered<ShapetakerBNCPort>(cpos("a_cv_out", 15.950586f, 105.7832f), module, Transmutation::CV_A_OUTPUT));
             addOutput(createOutputCentered<ShapetakerBNCPort>(cpos("a_gate_out", 15.950586f, 115.73187f), module, Transmutation::GATE_A_OUTPUT));
             // B side
@@ -2762,6 +2675,8 @@ struct TransmutationWidget : ModuleWidget {
             addInput(createInputCentered<ShapetakerBNCPort>(cpos("b_reset_cv", 123.6797f, 83.509323f), module, Transmutation::RESET_B_INPUT));
             addInput(createInputCentered<ShapetakerBNCPort>(cpos("b_play_cv", 123.6797f, 67.512939f), module, Transmutation::START_B_INPUT));
             addInput(createInputCentered<ShapetakerBNCPort>(cpos("b_stop_cv", 123.6797f, 75.511131f), module, Transmutation::STOP_B_INPUT));
+            // Length B CV near length knob (present in SVG as seq_b_length_cv)
+            addInput(createInputCentered<ShapetakerBNCPort>(cpos("seq_b_length_cv", 127.0f, 49.0f), module, Transmutation::LENGTH_B_CV_INPUT));
             addOutput(createOutputCentered<ShapetakerBNCPort>(cpos("b_cv_out", 115.02555f, 105.7832f), module, Transmutation::CV_B_OUTPUT));
             addOutput(createOutputCentered<ShapetakerBNCPort>(cpos("b_gate_out", 115.02555f, 115.73187f), module, Transmutation::GATE_B_OUTPUT));
         }
@@ -2792,16 +2707,59 @@ struct TransmutationWidget : ModuleWidget {
             addChild(symbolWidget);
         }
 
-        // Rest and Tie buttons from SVG ids rest_btn/tie_btn (cx, cy)
+        // Rest and Tie buttons from SVG ids rest_btn/tie_button
+        // Use alchemical-styled momentaries to match symbol buttons
         {
             std::string tr = findTagForId("rest_btn");
+            if (tr.empty()) tr = findTagForId("rest_button");
             std::string tt = findTagForId("tie_btn");
-            float rx = getAttr(tr, "cx", 15.950587f);
-            float ry = getAttr(tr, "cy", 53.27956f);
-            float tx = getAttr(tt, "cx", 115.02555f);
-            float ty = getAttr(tt, "cy", 53.27956f);
-            addMomentaryScaled(mm2px(Vec(rx, ry)), Transmutation::REST_PARAM);
-            addMomentaryScaled(mm2px(Vec(tx, ty)), Transmutation::TIE_PARAM);
+            if (tt.empty()) tt = findTagForId("tie_button");
+            // Compute centers; support either <circle> (cx,cy) or <rect> with x,y,width,height
+            auto centerFromTag = [&](const std::string& tag, float defx, float defy) -> Vec {
+                if (tag.find("<rect") != std::string::npos) {
+                    float rx = getAttr(tag, "x", defx);
+                    float ry = getAttr(tag, "y", defy);
+                    float rw = getAttr(tag, "width", 0.0f);
+                    float rh = getAttr(tag, "height", 0.0f);
+                    return Vec(rx + rw * 0.5f, ry + rh * 0.5f);
+                }
+                float cx = getAttr(tag, "cx", defx);
+                float cy = getAttr(tag, "cy", defy);
+                return Vec(cx, cy);
+            };
+            Vec restMM = centerFromTag(tr, 15.950587f, 53.27956f);
+            Vec tieMM  = centerFromTag(tt, 115.02555f, 53.27956f);
+
+            // Match size of alchemical symbol buttons by reading a reference rect (alchem_1)
+            float refWmm = 6.0f, refHmm = 6.0f; // sensible defaults in mm
+            {
+                std::string ref = findTagForId("alchem_1");
+                if (!ref.empty()) {
+                    refWmm = getAttr(ref, "width", refWmm);
+                    refHmm = getAttr(ref, "height", refHmm);
+                } else {
+                    // Fallback to REST rect dims if available
+                    refWmm = getAttr(tr, "width", refWmm);
+                    refHmm = getAttr(tr, "height", refHmm);
+                }
+            }
+            const float symbolScale = 1.22f; // same scale used for alchemical buttons
+            float targetWmm = refWmm * symbolScale;
+            float targetHmm = refHmm * symbolScale;
+
+            auto* restW = createParamCentered<RestTieMomentary>(mm2px(restMM), module, Transmutation::REST_PARAM);
+            auto* tieW  = createParamCentered<RestTieMomentary>(mm2px(tieMM), module, Transmutation::TIE_PARAM);
+            restW->setView(static_cast<stx::transmutation::TransmutationView*>(module));
+            restW->setIsRest(true);
+            tieW->setView(static_cast<stx::transmutation::TransmutationView*>(module));
+            tieW->setIsRest(false);
+            // Apply exact size match and recenter on their SVG-defined centers
+            restW->box.size = mm2px(Vec(targetWmm, targetHmm));
+            restW->box.pos  = mm2px(restMM).minus(restW->box.size.div(2.0f));
+            tieW->box.size  = mm2px(Vec(targetWmm, targetHmm));
+            tieW->box.pos   = mm2px(tieMM).minus(tieW->box.size.div(2.0f));
+            addParam(restW);
+            addParam(tieW);
         }
 
         // Running lights from SVG ids seq_a_led/seq_b_led (cx, cy)

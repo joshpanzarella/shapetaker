@@ -461,8 +461,8 @@ void HighResMatrixWidget::drawMatrix(const DrawArgs& args) {
             bool playheadA = (view->isSeqARunning() && view->getSeqACurrentStep() == stepIndex) || (view->isEditModeA() && inA && view->getSeqACurrentStep() == stepIndex);
             bool playheadB = (view->isSeqBRunning() && view->getSeqBCurrentStep() == stepIndex) || (view->isEditModeB() && inB && view->getSeqBCurrentStep() == stepIndex);
 
-            // Original cell sizes
-            float radiusFactor = 0.42f; if (gs == 32) radiusFactor = 0.44f; else if (gs == 16) radiusFactor = 0.48f;
+            // Unified cell circle size across grid modes; slightly larger for a touch less space
+            float radiusFactor = 0.46f;
             float cellRadius = std::min(cellWidth, cellHeight) * radiusFactor;
 
             // Auto-split when both sequencers occupy the step; otherwise single/blended
@@ -492,16 +492,18 @@ void HighResMatrixWidget::drawMatrix(const DrawArgs& args) {
                 }
                 nvgFill(args.vg);
             } else {
-                // Double occupancy: neutral base + vertical separator
+                // Double occupancy: darker neutral base + subtle separator for higher contrast
                 nvgBeginPath(args.vg);
                 nvgCircle(args.vg, cellCenter.x, cellCenter.y, cellRadius);
-                nvgFillColor(args.vg, nvgRGBA(25,25,30,220));
+                // Darken the base so the active arcs "light up" more clearly
+                nvgFillColor(args.vg, nvgRGBA(14,14,18,235));
                 nvgFill(args.vg);
 
+                // Softer separator
                 nvgBeginPath(args.vg);
                 nvgMoveTo(args.vg, cellCenter.x, cellCenter.y - cellRadius * 0.80f);
                 nvgLineTo(args.vg, cellCenter.x, cellCenter.y + cellRadius * 0.80f);
-                nvgStrokeColor(args.vg, nvgRGBA(110,110,120,90));
+                nvgStrokeColor(args.vg, nvgRGBA(100,100,110,70));
                 nvgStrokeWidth(args.vg, 1.0f);
                 nvgStroke(args.vg);
             }
@@ -515,23 +517,30 @@ void HighResMatrixWidget::drawMatrix(const DrawArgs& args) {
                 nvgStrokeWidth(args.vg, width);
                 nvgStroke(args.vg);
             };
-            NVGcolor colA = nvgRGBA(0,255,180,220);
-            NVGcolor colB = nvgRGBA(180,0,255,220);
+            // Dimmer inactive arcs; brighter active arcs with subtle glow
+            NVGcolor colAInactive = nvgRGBA(0,180,120,130);
+            NVGcolor colBInactive = nvgRGBA(120,0,180,130);
+            NVGcolor colAActive   = nvgRGBA(0,255,190,255);
+            NVGcolor colBActive   = nvgRGBA(190,0,255,255);
+            NVGcolor colAActiveGlow = nvgRGBA(0,255,200,70);
+            NVGcolor colBActiveGlow = nvgRGBA(200,0,255,70);
+
             if (doubleOcc && hasA && hasB) {
-                strokeArc(true,  colA, playheadA ? 3.0f : 2.0f);
-                strokeArc(false, colB, playheadB ? 3.0f : 2.0f);
-            } else if (doubleOcc && hasA) {
-                nvgBeginPath(args.vg);
-                nvgCircle(args.vg, cellCenter.x, cellCenter.y, cellRadius);
-                nvgStrokeColor(args.vg, colA);
-                nvgStrokeWidth(args.vg, playheadA ? 3.0f : 2.0f);
-                nvgStroke(args.vg);
-            } else if (doubleOcc && hasB) {
-                nvgBeginPath(args.vg);
-                nvgCircle(args.vg, cellCenter.x, cellCenter.y, cellRadius);
-                nvgStrokeColor(args.vg, colB);
-                nvgStrokeWidth(args.vg, playheadB ? 3.0f : 2.0f);
-                nvgStroke(args.vg);
+                // A side
+                if (playheadA) {
+                    // Glow underlay then bright stroke
+                    strokeArc(true,  colAActiveGlow, 5.0f);
+                    strokeArc(true,  colAActive,     3.6f);
+                } else {
+                    strokeArc(true,  colAInactive,   1.6f);
+                }
+                // B side
+                if (playheadB) {
+                    strokeArc(false, colBActiveGlow, 5.0f);
+                    strokeArc(false, colBActive,     3.6f);
+                } else {
+                    strokeArc(false, colBInactive,   1.6f);
+                }
             }
 
             // Alchemical symbols (vintage off-white) and REST/TIE glyphs styled like symbols
@@ -928,7 +937,8 @@ void HighResMatrixWidget::drawAlchemicalSymbol(const DrawArgs& args, Vec pos, in
     float cellH = box.size.y / rows;
     float minDim = std::min(cellW, cellH);
     // Match cell circle radius computation used in drawMatrix()
-    float radiusFactor = (gs == 32) ? 0.44f : (gs == 16) ? 0.48f : 0.42f;
+    // Match unified circle sizing used in drawMatrix
+    float radiusFactor = 0.46f;
     float circleR = minDim * radiusFactor;
     // Target the symbol to occupy a safe portion of the inner circle to avoid voice dots
     float symbolRadius = circleR * 0.58f * scale; // allow caller to shrink for double occupancy
@@ -941,7 +951,8 @@ void HighResMatrixWidget::drawVoiceCount(const DrawArgs& args, Vec pos, int voic
     int cols = 8, rows = 8; int gs = view ? view->getGridSteps() : 64;
     if (gs == 16) { cols = rows = 4; } else if (gs == 32) { cols = rows = 6; }
     float cellWidth = box.size.x / cols; float cellHeight = box.size.y / rows;
-    float radiusFactor = (gs == 32) ? 0.44f : (gs == 16) ? 0.48f : 0.42f;
+    // Match unified circle sizing used in drawMatrix
+    float radiusFactor = 0.46f;
     float circleR = std::min(cellWidth, cellHeight) * radiusFactor;
     // Slightly smaller dots so they don't collide with the symbol
     float dotR = (gs == 16) ? 2.2f : (gs == 32) ? 1.8f : 1.5f;
@@ -1181,4 +1192,143 @@ void AlchemicalSymbolWidget::onButton(const event::Button& e) {
         e.consume(this);
     }
     Widget::onButton(e);
+}
+
+// ---- RestTieMomentary implementation ----
+
+void RestTieMomentary::draw(const DrawArgs& args) {
+    // Determine playhead active states based on current chord indices
+    bool playA = false, playB = false;
+    if (view) {
+        int target = isRest ? -1 : -2;
+        if (view->isSeqARunning() && view->getCurrentChordIndex(true) == target)
+            playA = true;
+        if (view->isSeqBRunning() && view->getCurrentChordIndex(false) == target)
+            playB = true;
+    }
+
+    // Draw button background styled like alchemical symbols
+    nvgBeginPath(args.vg);
+    nvgRoundedRect(args.vg, 0, 0, box.size.x, box.size.y, 3);
+
+    if (playA && playB) {
+        nvgFillColor(args.vg, nvgRGBA(90, 127, 217, 200));
+        nvgFill(args.vg);
+        nvgStrokeColor(args.vg, nvgRGBA(90, 127, 217, 255));
+        nvgStrokeWidth(args.vg, 2.0f);
+        nvgStroke(args.vg);
+    } else if (playA) {
+        nvgFillColor(args.vg, nvgRGBA(0, 255, 180, 200));
+        nvgFill(args.vg);
+        nvgStrokeColor(args.vg, nvgRGBA(0, 255, 180, 255));
+        nvgStrokeWidth(args.vg, 2.0f);
+        nvgStroke(args.vg);
+    } else if (playB) {
+        nvgFillColor(args.vg, nvgRGBA(180, 0, 255, 200));
+        nvgFill(args.vg);
+        nvgStrokeColor(args.vg, nvgRGBA(180, 0, 255, 255));
+        nvgStrokeWidth(args.vg, 2.0f);
+        nvgStroke(args.vg);
+    } else {
+        nvgFillColor(args.vg, nvgRGBA(40, 40, 40, 100));
+        nvgFill(args.vg);
+        nvgStrokeColor(args.vg, nvgRGBA(100, 100, 100, 150));
+        nvgStrokeWidth(args.vg, 1.0f);
+        nvgStroke(args.vg);
+    }
+
+    // Inner shadow and highlights for depth
+    float inset = 1.0f; float rOuter = 3.0f; float rInner = std::max(0.0f, rOuter - 1.0f);
+    NVGpaint innerShadow = nvgBoxGradient(
+        args.vg,
+        inset, inset,
+        box.size.x - inset * 2.0f,
+        box.size.y - inset * 2.0f,
+        rInner, 3.5f,
+        nvgRGBA(0, 0, 0, 50), nvgRGBA(0, 0, 0, 0)
+    );
+    nvgBeginPath(args.vg);
+    nvgRoundedRect(args.vg, inset - 0.5f, inset - 0.5f, box.size.x - (inset - 0.5f) * 2.0f, box.size.y - (inset - 0.5f) * 2.0f, rInner + 0.5f);
+    nvgRoundedRect(args.vg, inset + 0.8f, inset + 0.8f, box.size.x - (inset + 0.8f) * 2.0f, box.size.y - (inset + 0.8f) * 2.0f, std::max(0.0f, rInner - 0.8f));
+    nvgPathWinding(args.vg, NVG_HOLE);
+    nvgFillPaint(args.vg, innerShadow);
+    nvgFill(args.vg);
+
+    nvgSave(args.vg);
+    nvgScissor(args.vg, 0, 0, box.size.x, std::min(6.0f, box.size.y));
+    NVGpaint topHi = nvgLinearGradient(args.vg, 0, 0, 0, 6.0f, nvgRGBA(255, 255, 255, 28), nvgRGBA(255, 255, 255, 0));
+    nvgBeginPath(args.vg);
+    nvgRoundedRect(args.vg, inset - 0.5f, inset - 0.5f, box.size.x - (inset - 0.5f) * 2.0f, box.size.y - (inset - 0.5f) * 2.0f, rInner + 0.5f);
+    nvgRoundedRect(args.vg, inset + 0.8f, inset + 0.8f, box.size.x - (inset + 0.8f) * 2.0f, box.size.y - (inset + 0.8f) * 2.0f, std::max(0.0f, rInner - 0.8f));
+    nvgPathWinding(args.vg, NVG_HOLE);
+    nvgFillPaint(args.vg, topHi);
+    nvgFill(args.vg);
+    nvgRestore(args.vg);
+
+    // Side highlights
+    nvgBeginPath(args.vg);
+    nvgRoundedRect(args.vg, inset - 0.5f, inset - 0.5f, box.size.x - (inset - 0.5f) * 2.0f, box.size.y - (inset - 0.5f) * 2.0f, rInner + 0.5f);
+    nvgRoundedRect(args.vg, inset + 0.8f, inset + 0.8f, box.size.x - (inset + 0.8f) * 2.0f, box.size.y - (inset + 0.8f) * 2.0f, std::max(0.0f, rInner - 0.8f));
+    nvgPathWinding(args.vg, NVG_HOLE);
+    NVGpaint leftHi = nvgLinearGradient(args.vg, inset - 0.5f, 0, inset + 4.5f, 0, nvgRGBA(255, 255, 255, 18), nvgRGBA(255, 255, 255, 0));
+    nvgFillPaint(args.vg, leftHi);
+    nvgFill(args.vg);
+    nvgBeginPath(args.vg);
+    nvgRoundedRect(args.vg, inset - 0.5f, inset - 0.5f, box.size.x - (inset - 0.5f) * 2.0f, box.size.y - (inset - 0.5f) * 2.0f, rInner + 0.5f);
+    nvgRoundedRect(args.vg, inset + 0.8f, inset + 0.8f, box.size.x - (inset + 0.8f) * 2.0f, box.size.y - (inset + 0.8f) * 2.0f, std::max(0.0f, rInner - 0.8f));
+    nvgPathWinding(args.vg, NVG_HOLE);
+    NVGpaint rightHi = nvgLinearGradient(args.vg, box.size.x - (inset - 0.5f), 0, box.size.x - (inset + 4.5f), 0, nvgRGBA(255, 255, 255, 12), nvgRGBA(255, 255, 255, 0));
+    nvgFillPaint(args.vg, rightHi);
+    nvgFill(args.vg);
+
+    // Vintage glyph (REST line or TIE arc)
+    NVGcolor ink = nvgRGBA(232, 224, 200, 230);
+    if (isRest) {
+        float cx = box.size.x * 0.5f;
+        float cy = box.size.y * 0.5f;
+        float w = std::min(box.size.x, box.size.y) * 0.60f;
+        nvgBeginPath(args.vg);
+        nvgMoveTo(args.vg, cx - w * 0.5f, cy);
+        nvgLineTo(args.vg, cx + w * 0.5f, cy);
+        nvgStrokeColor(args.vg, ink);
+        nvgLineCap(args.vg, NVG_ROUND);
+        nvgStrokeWidth(args.vg, rack::clamp(w * 0.10f, 1.0f, 2.0f));
+        nvgStroke(args.vg);
+    } else {
+        float cx = box.size.x * 0.5f;
+        float cy = box.size.y * 0.52f;
+        float r = std::min(box.size.x, box.size.y) * 0.32f;
+        nvgBeginPath(args.vg);
+        nvgArc(args.vg, cx, cy, r, M_PI * 1.15f, M_PI * 1.85f, NVG_CW);
+        nvgStrokeColor(args.vg, ink);
+        nvgLineCap(args.vg, NVG_ROUND);
+        nvgStrokeWidth(args.vg, rack::clamp(r * 0.28f, 1.0f, 2.0f));
+        nvgStroke(args.vg);
+    }
+
+    // Additive outer glow when active
+    if (playA || playB) {
+        nvgSave(args.vg);
+        nvgGlobalCompositeOperation(args.vg, NVG_LIGHTER);
+        NVGcolor glow = playA && playB ? nvgRGBA(90,127,217,90) : playA ? nvgRGBA(0,255,180,90) : nvgRGBA(180,0,255,90);
+        nvgBeginPath(args.vg);
+        nvgRoundedRect(args.vg, -1.0f, -1.0f, box.size.x + 2.0f, box.size.y + 2.0f, 4);
+        nvgStrokeColor(args.vg, glow);
+        nvgStrokeWidth(args.vg, 1.6f);
+        nvgStroke(args.vg);
+        nvgGlobalCompositeOperation(args.vg, NVG_SOURCE_OVER);
+        nvgRestore(args.vg);
+    }
+
+    // Pressed overlay for feedback
+    bool pressed = false;
+    if (getParamQuantity()) pressed = getParamQuantity()->getValue() > 0.5f;
+    if (pressed) {
+        nvgSave(args.vg);
+        nvgBeginPath(args.vg);
+        nvgRoundedRect(args.vg, 0, 0, box.size.x, box.size.y, 3);
+        nvgFillColor(args.vg, nvgRGBA(0, 0, 0, 40));
+        nvgFill(args.vg);
+        nvgRestore(args.vg);
+    }
 }
