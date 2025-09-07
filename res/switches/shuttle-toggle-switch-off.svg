@@ -1105,7 +1105,7 @@
        id="ellipse80" />
   </g>
   <!-- Larger center switch assembly -->
-  <g id="assemblyScaleOff" transform="translate(100,108) scale(1.12) translate(-100,-108)">
+  <g id="assemblyScaleOff" transform="translate(100,100) scale(1.12) translate(-100,-100) translate(0,-8)">
   <rect
      x="70"
      y="78"
