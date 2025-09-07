@@ -1084,7 +1084,7 @@
     </g>
     <!-- RIGHT LED indicator (OFF when switch is OFF) - at edge -->
     <g
-       transform="translate(169.68681,129.7)"
+       transform="translate(173.68681,129.7)"
        id="g80"
        style="display:inline">
       <circle
@@ -1132,7 +1132,7 @@
          id="ellipse80" />
     </g>
     <!-- Larger center switch assembly -->
-    <g id="assemblyScaleOn" transform="translate(130,130) scale(1.12) translate(-130,-130) translate(0,-8)">
+    <g id="assemblyScaleOn" transform="translate(130,130) scale(1.18) translate(-130,-130) translate(0,-8)">
     <rect
        x="100"
        y="108"

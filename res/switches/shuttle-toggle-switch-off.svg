@@ -1009,7 +1009,7 @@
      style="display:inline">FIELD 1</text>
   <!-- LEFT LED indicator (ON when switch is OFF - purple glow) - at edge -->
   <g
-     transform="translate(60.05,99.899999)"
+     transform="translate(56.05,99.899999)"
      id="g75"
      style="display:inline">
     <circle
@@ -1058,7 +1058,7 @@
   </g>
   <!-- RIGHT LED indicator (OFF when switch is OFF) - at edge -->
   <g
-     transform="translate(139.68681,99.7)"
+     transform="translate(143.68681,99.7)"
      id="g80"
      style="display:inline">
     <circle
@@ -1105,7 +1105,7 @@
        id="ellipse80" />
   </g>
   <!-- Larger center switch assembly -->
-  <g id="assemblyScaleOff" transform="translate(100,100) scale(1.12) translate(-100,-100) translate(0,-8)">
+  <g id="assemblyScaleOff" transform="translate(100,100) scale(1.18) translate(-100,-100) translate(0,-8)">
   <rect
      x="70"
      y="78"
