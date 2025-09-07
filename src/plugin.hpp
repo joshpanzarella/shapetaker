@@ -419,18 +419,7 @@ struct ShapetakerTieMomentary : app::SvgSwitch {
     }
 };
 
-struct ShapetakerChickenHeadSelector : app::SvgSwitch {
-    ShapetakerChickenHeadSelector() {
-        addFrame(Svg::load(asset::plugin(pluginInstance, "res/switches/st_chicken_head_selector_0.svg")));
-        addFrame(Svg::load(asset::plugin(pluginInstance, "res/switches/st_chicken_head_selector_1.svg")));
-        addFrame(Svg::load(asset::plugin(pluginInstance, "res/switches/st_chicken_head_selector_2.svg")));
-        addFrame(Svg::load(asset::plugin(pluginInstance, "res/switches/st_chicken_head_selector_3.svg")));
-        addFrame(Svg::load(asset::plugin(pluginInstance, "res/switches/st_chicken_head_selector_4.svg")));
-        addFrame(Svg::load(asset::plugin(pluginInstance, "res/switches/st_chicken_head_selector_5.svg")));
-        // Ensure smooth operation for 6 positions (0-5)
-        box.size = Vec(35, 35);
-    }
-};
+// Legacy chicken-head selector removed; use ShapetakerVintageSelector instead
 
 struct ShapetakerVintageSelector : app::SvgSwitch {
     ShapetakerVintageSelector() {
