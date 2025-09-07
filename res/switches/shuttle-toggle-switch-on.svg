@@ -5,31 +5,9 @@
    viewBox="0 0 200 200"
    version="1.1"
    id="svg106"
-   sodipodi:docname="shuttle-toggle-switch-on.svg"
-   inkscape:version="1.4.2 (ebf0e940, 2025-05-08)"
-   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
-   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
    xmlns:xlink="http://www.w3.org/1999/xlink"
    xmlns="http://www.w3.org/2000/svg"
    xmlns:svg="http://www.w3.org/2000/svg">
-  <sodipodi:namedview
-     id="namedview1"
-     pagecolor="#505050"
-     bordercolor="#eeeeee"
-     borderopacity="1"
-     inkscape:showpageshadow="0"
-     inkscape:pageopacity="0"
-     inkscape:pagecheckerboard="0"
-     inkscape:deskcolor="#505050"
-     inkscape:zoom="2.7479469"
-     inkscape:cx="119.36184"
-     inkscape:cy="160.48345"
-     inkscape:window-width="1800"
-     inkscape:window-height="1097"
-     inkscape:window-x="0"
-     inkscape:window-y="44"
-     inkscape:window-maximized="1"
-     inkscape:current-layer="svg106" />
   <!-- Define gradients and effects -->
   <defs
      id="defs48">
@@ -745,793 +723,792 @@
        x2="31.060175"
        y2="-25.96637" />
   </defs>
-  <g id="alignFrame" transform="translate(-30,-30)">
-  <!-- Smaller main panel -->
-  <!-- Outer bevel shadow -->
-  <rect
-     x="79"
-     y="79"
-     width="102"
-     height="102"
-     rx="3"
-     ry="3"
-     fill="#0a0c0e"
-     opacity="0.8"
-     id="rect48" />
-  <!-- Main plate -->
-  <rect
-     x="80"
-     y="80"
-     width="100"
-     height="100"
-     rx="3"
-     ry="3"
-     fill="url(#plateGradient)"
-     filter="url(#multiShadow)"
-     id="rect49"
-     style="fill:url(#plateGradient)" />
-  <!-- Inner bevel highlight -->
-  <rect
-     x="82"
-     y="82"
-     width="96"
-     height="96"
-     rx="2"
-     ry="2"
-     fill="none"
-     stroke="url(#bevelHighlight)"
-     stroke-width="0.8"
-     opacity="0.5"
-     id="rect50"
-     style="stroke:url(#bevelHighlight)" />
-  <!-- Bottom bevel shadow -->
-  <rect
-     x="83"
-     y="83"
-     width="94"
-     height="94"
-     rx="2"
-     ry="2"
-     fill="none"
-     stroke="url(#bevelShadow)"
-     stroke-width="0.8"
-     opacity="0.5"
-     id="rect51"
-     style="stroke:url(#bevelShadow)" />
-  <!-- Corner screws -->
-  <!-- Top left -->
   <g
-     transform="translate(89.716668,89.366667)"
-     id="g55">
-    <circle
-       r="6"
+     id="alignFrame"
+     transform="translate(-30,-30)">
+    <!-- Smaller main panel -->
+    <!-- Outer bevel shadow -->
+    <rect
+       x="79"
+       y="79"
+       width="102"
+       height="102"
+       rx="3"
+       ry="3"
        fill="#0a0c0e"
-       opacity="0.6"
-       id="circle51"
-       cx="0"
-       cy="0"
-       style="display:inline;fill:#313145;fill-opacity:1" />
-    <circle
-       r="5"
-       fill="url(#screwGradient)"
-       filter="url(#multiShadow)"
-       id="circle52"
-       style="display:inline;fill:url(#radialGradient107)"
-       cx="0"
-       cy="0" />
-    <circle
-       r="4"
-       fill="url(#screwRecess)"
-       id="circle53"
-       style="display:inline;fill:url(#radialGradient108)"
-       cx="0"
-       cy="0" />
-    <rect
-       x="-0.40000001"
-       y="-3"
-       width="0.80000001"
-       height="6"
-       fill="#050607"
-       id="rect53" />
-    <rect
-       x="-3"
-       y="-0.40000001"
-       width="6"
-       height="0.80000001"
-       fill="#050607"
-       id="rect54"
-       style="display:inline;fill:#02060a;fill-opacity:1" />
-    <circle
-       r="4.5"
-       fill="none"
-       stroke="#7a7e86"
-       stroke-width="0.2"
-       opacity="0.6"
-       id="circle54"
-       cx="0"
-       cy="0"
-       style="display:inline" />
-    <circle
-       r="3.5"
-       fill="none"
-       stroke="#1a1c20"
-       stroke-width="0.2"
        opacity="0.8"
-       id="circle55"
-       cx="0"
-       cy="0"
-       style="display:inline;stroke:#4f555f;stroke-opacity:1" />
-  </g>
-  <g
-     transform="translate(90.416672,168.9)"
-     id="g55-6">
-    <circle
-       r="6"
-       fill="#0a0c0e"
-       opacity="0.6"
-       id="circle51-0"
-       cx="0"
-       cy="0" />
-    <circle
-       r="5"
-       fill="url(#screwGradient)"
+       id="rect48" />
+    <!-- Main plate -->
+    <rect
+       x="80"
+       y="80"
+       width="100"
+       height="100"
+       rx="3"
+       ry="3"
+       fill="url(#plateGradient)"
        filter="url(#multiShadow)"
-       id="circle52-4"
-       cx="0"
-       cy="0"
-       style="display:inline;fill:url(#screwGradient-8);filter:url(#multiShadow-0)" />
-    <circle
-       r="4"
-       fill="url(#screwRecess)"
-       id="circle53-0"
-       cx="0"
-       cy="0"
-       style="display:inline;fill:url(#screwRecess-0)" />
+       id="rect49"
+       style="fill:url(#plateGradient)" />
+    <!-- Inner bevel highlight -->
     <rect
-       x="-0.40000001"
-       y="-3"
-       width="0.80000001"
-       height="6"
-       fill="#050607"
-       id="rect53-9"
-       style="display:inline" />
+       x="82"
+       y="82"
+       width="96"
+       height="96"
+       rx="2"
+       ry="2"
+       fill="none"
+       stroke="url(#bevelHighlight)"
+       stroke-width="0.8"
+       opacity="0.5"
+       id="rect50"
+       style="stroke:url(#bevelHighlight)" />
+    <!-- Bottom bevel shadow -->
     <rect
-       x="-3"
-       y="-0.40000001"
-       width="6"
-       height="0.80000001"
-       fill="#050607"
-       id="rect54-2" />
-    <circle
-       r="4.5"
+       x="83"
+       y="83"
+       width="94"
+       height="94"
+       rx="2"
+       ry="2"
        fill="none"
-       stroke="#7a7e86"
-       stroke-width="0.2"
-       opacity="0.6"
-       id="circle54-4"
-       cx="0"
-       cy="0" />
-    <circle
-       r="3.5"
-       fill="none"
-       stroke="#1a1c20"
-       stroke-width="0.2"
-       opacity="0.8"
-       id="circle55-9"
-       cx="0"
-       cy="0" />
-  </g>
-  <g
-     transform="translate(169.68681,168.9)"
-     id="g55-6-8">
-    <circle
-       r="6"
-       fill="#0a0c0e"
-       opacity="0.6"
-       id="circle51-0-1"
-       cx="0"
-       cy="0" />
-    <circle
-       r="5"
-       fill="url(#screwGradient)"
-       filter="url(#multiShadow)"
-       id="circle52-4-0"
-       cx="0"
-       cy="0"
-       style="fill:url(#screwGradient-8-9);filter:url(#multiShadow-0-0)" />
-    <circle
-       r="4"
-       fill="url(#screwRecess)"
-       id="circle53-0-3"
-       cx="0"
-       cy="0"
-       style="display:inline;fill:url(#screwRecess-0-8)" />
+       stroke="url(#bevelShadow)"
+       stroke-width="0.8"
+       opacity="0.5"
+       id="rect51"
+       style="stroke:url(#bevelShadow)" />
+    <!-- Corner screws -->
+    <!-- Top left -->
+    <g
+       transform="translate(89.716668,89.366667)"
+       id="g55">
+      <circle
+         r="6"
+         fill="#0a0c0e"
+         opacity="0.6"
+         id="circle51"
+         cx="0"
+         cy="0"
+         style="display:inline;fill:#313145;fill-opacity:1" />
+      <circle
+         r="5"
+         fill="url(#screwGradient)"
+         filter="url(#multiShadow)"
+         id="circle52"
+         style="display:inline;fill:url(#radialGradient107)"
+         cx="0"
+         cy="0" />
+      <circle
+         r="4"
+         fill="url(#screwRecess)"
+         id="circle53"
+         style="display:inline;fill:url(#radialGradient108)"
+         cx="0"
+         cy="0" />
+      <rect
+         x="-0.40000001"
+         y="-3"
+         width="0.80000001"
+         height="6"
+         fill="#050607"
+         id="rect53" />
+      <rect
+         x="-3"
+         y="-0.40000001"
+         width="6"
+         height="0.80000001"
+         fill="#050607"
+         id="rect54"
+         style="display:inline;fill:#02060a;fill-opacity:1" />
+      <circle
+         r="4.5"
+         fill="none"
+         stroke="#7a7e86"
+         stroke-width="0.2"
+         opacity="0.6"
+         id="circle54"
+         cx="0"
+         cy="0"
+         style="display:inline" />
+      <circle
+         r="3.5"
+         fill="none"
+         stroke="#1a1c20"
+         stroke-width="0.2"
+         opacity="0.8"
+         id="circle55"
+         cx="0"
+         cy="0"
+         style="display:inline;stroke:#4f555f;stroke-opacity:1" />
+    </g>
+    <g
+       transform="translate(90.416672,168.9)"
+       id="g55-6">
+      <circle
+         r="6"
+         fill="#0a0c0e"
+         opacity="0.6"
+         id="circle51-0"
+         cx="0"
+         cy="0" />
+      <circle
+         r="5"
+         fill="url(#screwGradient)"
+         filter="url(#multiShadow)"
+         id="circle52-4"
+         cx="0"
+         cy="0"
+         style="display:inline;fill:url(#screwGradient-8);filter:url(#multiShadow-0)" />
+      <circle
+         r="4"
+         fill="url(#screwRecess)"
+         id="circle53-0"
+         cx="0"
+         cy="0"
+         style="display:inline;fill:url(#screwRecess-0)" />
+      <rect
+         x="-0.40000001"
+         y="-3"
+         width="0.80000001"
+         height="6"
+         fill="#050607"
+         id="rect53-9"
+         style="display:inline" />
+      <rect
+         x="-3"
+         y="-0.40000001"
+         width="6"
+         height="0.80000001"
+         fill="#050607"
+         id="rect54-2" />
+      <circle
+         r="4.5"
+         fill="none"
+         stroke="#7a7e86"
+         stroke-width="0.2"
+         opacity="0.6"
+         id="circle54-4"
+         cx="0"
+         cy="0" />
+      <circle
+         r="3.5"
+         fill="none"
+         stroke="#1a1c20"
+         stroke-width="0.2"
+         opacity="0.8"
+         id="circle55-9"
+         cx="0"
+         cy="0" />
+    </g>
+    <g
+       transform="translate(169.68681,168.9)"
+       id="g55-6-8">
+      <circle
+         r="6"
+         fill="#0a0c0e"
+         opacity="0.6"
+         id="circle51-0-1"
+         cx="0"
+         cy="0" />
+      <circle
+         r="5"
+         fill="url(#screwGradient)"
+         filter="url(#multiShadow)"
+         id="circle52-4-0"
+         cx="0"
+         cy="0"
+         style="fill:url(#screwGradient-8-9);filter:url(#multiShadow-0-0)" />
+      <circle
+         r="4"
+         fill="url(#screwRecess)"
+         id="circle53-0-3"
+         cx="0"
+         cy="0"
+         style="display:inline;fill:url(#screwRecess-0-8)" />
+      <rect
+         x="-0.40000001"
+         y="-3"
+         width="0.80000001"
+         height="6"
+         fill="#050607"
+         id="rect53-9-1" />
+      <rect
+         x="-3"
+         y="-0.40000001"
+         width="6"
+         height="0.80000001"
+         fill="#050607"
+         id="rect54-2-1" />
+      <circle
+         r="4.5"
+         fill="none"
+         stroke="#7a7e86"
+         stroke-width="0.2"
+         opacity="0.6"
+         id="circle54-4-5"
+         cx="0"
+         cy="0" />
+      <circle
+         r="3.5"
+         fill="none"
+         stroke="#1a1c20"
+         stroke-width="0.2"
+         opacity="0.8"
+         id="circle55-9-0"
+         cx="0"
+         cy="0" />
+    </g>
+    <!-- Top right -->
+    <g
+       transform="translate(169.60348,89.366667)"
+       id="g60"
+       style="display:inline">
+      <circle
+         r="6"
+         fill="#0a0c0e"
+         opacity="0.6"
+         id="circle56"
+         cx="0"
+         cy="0" />
+      <circle
+         r="5"
+         fill="url(#screwGradient)"
+         filter="url(#multiShadow)"
+         id="circle57"
+         style="fill:url(#radialGradient109)"
+         cx="0"
+         cy="0" />
+      <circle
+         r="4"
+         fill="url(#screwRecess)"
+         id="circle58"
+         style="display:inline;fill:url(#radialGradient110)"
+         cx="0"
+         cy="0" />
+      <rect
+         x="-0.40000001"
+         y="-3"
+         width="0.80000001"
+         height="6"
+         fill="#050607"
+         id="rect58" />
+      <rect
+         x="-3"
+         y="-0.40000001"
+         width="6"
+         height="0.80000001"
+         fill="#050607"
+         id="rect59" />
+      <circle
+         r="4.5"
+         fill="none"
+         stroke="#7a7e86"
+         stroke-width="0.2"
+         opacity="0.6"
+         id="circle59"
+         cx="0"
+         cy="0"
+         style="display:inline" />
+      <circle
+         r="3.5"
+         fill="none"
+         stroke="#1a1c20"
+         stroke-width="0.2"
+         opacity="0.8"
+         id="circle60"
+         cx="0"
+         cy="0"
+         style="display:inline" />
+    </g>
+    <!-- Bottom left -->
+    <!-- Bottom right -->
+    <!-- Text labels -->
+    <text
+       x="130"
+       y="114"
+       font-family="Arial, sans-serif"
+       font-size="7px"
+       font-weight="400"
+       letter-spacing="0.3"
+       text-anchor="middle"
+       fill="#7a7e86"
+       id="text71">FIELD 1</text>
+    <!-- LEFT LED indicator (ON when switch is OFF - purple glow) - at edge -->
+    <g
+       transform="translate(90.050001,129.9)"
+       id="g75">
+      <circle
+         r="5"
+         fill="#0a0c0e"
+         opacity="0.7"
+         id="circle71"
+         cx="0"
+         cy="0" />
+      <circle
+         r="4.5"
+         fill="#2a2d32"
+         filter="url(#multiShadow)"
+         id="circle72"
+         cx="0"
+         cy="0" />
+      <circle
+         r="3.5"
+         fill="#1a1c20"
+         id="circle73"
+         cx="0"
+         cy="0" />
+      <circle
+         r="3"
+         fill="#0a0c0e"
+         id="circle74"
+         cx="0"
+         cy="0" />
+      <!-- LED is OFF with subtle glow (switch is ON) -->
+      <circle
+         r="2.5"
+         fill="url(#ledOff)"
+         filter="url(#ledGlow)"
+         id="circle75"
+         style="fill:url(#ledOff)"
+         cx="0"
+         cy="0" />
+      <ellipse
+         cx="-0.5"
+         cy="-1"
+         rx="1"
+         ry="0.69999999"
+         fill="#ffffff"
+         opacity="0.1"
+         id="ellipse75" />
+    </g>
+    <!-- RIGHT LED indicator (OFF when switch is OFF) - at edge -->
+    <g
+       transform="translate(169.68681,129.7)"
+       id="g80"
+       style="display:inline">
+      <circle
+         r="5"
+         fill="#0a0c0e"
+         opacity="0.7"
+         id="circle76"
+         cx="0"
+         cy="0" />
+      <circle
+         r="4.5"
+         fill="#2a2d32"
+         filter="url(#multiShadow)"
+         id="circle77"
+         cx="0"
+         cy="0" />
+      <circle
+         r="3.5"
+         fill="#1a1c20"
+         id="circle78"
+         cx="0"
+         cy="0" />
+      <circle
+         r="3"
+         fill="#0a0c0e"
+         id="circle79"
+         cx="0"
+         cy="0" />
+      <!-- LED is ON with teal glow (switch is ON) -->
+      <circle
+         r="2.5"
+         fill="url(#ledTealOn)"
+         filter="url(#ledGlow)"
+         id="circle80"
+         style="fill:url(#ledTealOn)"
+         cx="0"
+         cy="0" />
+      <ellipse
+         cx="-0.5"
+         cy="-1"
+         rx="1"
+         ry="0.69999999"
+         fill="#ffffff"
+         opacity="0.3"
+         id="ellipse80" />
+    </g>
+    <!-- Larger center switch assembly -->
+    <g id="assemblyScaleOn" transform="translate(130,138) scale(1.12) translate(-130,-138)">
     <rect
-       x="-0.40000001"
-       y="-3"
-       width="0.80000001"
-       height="6"
-       fill="#050607"
-       id="rect53-9-1" />
-    <rect
-       x="-3"
-       y="-0.40000001"
-       width="6"
-       height="0.80000001"
-       fill="#050607"
-       id="rect54-2-1" />
+       x="100"
+       y="108"
+       width="60"
+       height="60"
+       rx="4"
+       ry="4"
+       fill="url(#recessGradient)"
+       filter="url(#deepRecess)"
+       id="rect81"
+       style="fill:url(#recessGradient)" />
     <circle
-       r="4.5"
-       fill="none"
-       stroke="#7a7e86"
-       stroke-width="0.2"
-       opacity="0.6"
-       id="circle54-4-5"
-       cx="0"
-       cy="0" />
-    <circle
-       r="3.5"
-       fill="none"
-       stroke="#1a1c20"
-       stroke-width="0.2"
-       opacity="0.8"
-       id="circle55-9-0"
-       cx="0"
-       cy="0" />
-  </g>
-  <!-- Top right -->
-  <g
-     transform="translate(169.60348,89.366667)"
-     id="g60"
-     style="display:inline">
-    <circle
-       r="6"
-       fill="#0a0c0e"
-       opacity="0.6"
-       id="circle56"
-       cx="0"
-       cy="0" />
-    <circle
-       r="5"
-       fill="url(#screwGradient)"
-       filter="url(#multiShadow)"
-       id="circle57"
-       style="fill:url(#radialGradient109)"
-       cx="0"
-       cy="0" />
-    <circle
-       r="4"
-       fill="url(#screwRecess)"
-       id="circle58"
-       style="display:inline;fill:url(#radialGradient110)"
-       cx="0"
-       cy="0" />
-    <rect
-       x="-0.40000001"
-       y="-3"
-       width="0.80000001"
-       height="6"
-       fill="#050607"
-       id="rect58" />
-    <rect
-       x="-3"
-       y="-0.40000001"
-       width="6"
-       height="0.80000001"
-       fill="#050607"
-       id="rect59" />
-    <circle
-       r="4.5"
-       fill="none"
-       stroke="#7a7e86"
-       stroke-width="0.2"
-       opacity="0.6"
-       id="circle59"
-       cx="0"
-       cy="0"
-       style="display:inline" />
-    <circle
-       r="3.5"
-       fill="none"
-       stroke="#1a1c20"
-       stroke-width="0.2"
-       opacity="0.8"
-       id="circle60"
-       cx="0"
-       cy="0"
-       style="display:inline" />
-  </g>
-  <!-- Bottom left -->
-  <!-- Bottom right -->
-  <!-- Text labels -->
-  <text
-     x="130"
-     y="114"
-     font-family="Arial, sans-serif"
-     font-size="7px"
-     font-weight="400"
-     letter-spacing="0.3"
-     text-anchor="middle"
-     fill="#7a7e86"
-     id="text71">FIELD 1</text>
-  <!-- LEFT LED indicator (ON when switch is OFF - purple glow) - at edge -->
-  <g
-     transform="translate(90.050001,129.9)"
-     id="g75">
-    <circle
-       r="5"
-       fill="#0a0c0e"
-       opacity="0.7"
-       id="circle71"
-       cx="0"
-       cy="0" />
-    <circle
-       r="4.5"
-       fill="#2a2d32"
-       filter="url(#multiShadow)"
-       id="circle72"
-       cx="0"
-       cy="0" />
-    <circle
-       r="3.5"
+       r="26"
        fill="#1a1c20"
-       id="circle73"
-       cx="0"
-       cy="0" />
+       id="circle81"
+       cx="130"
+       cy="138"
+       style="display:inline" />
     <circle
-       r="3"
-       fill="#0a0c0e"
-       id="circle74"
-       cx="0"
-       cy="0" />
-    <!-- LED is OFF with subtle glow (switch is ON) -->
+       r="24"
+       fill="#2a2d32"
+       stroke="#1a1c20"
+       stroke-width="0.5"
+       id="circle82"
+       cx="130"
+       cy="138"
+       style="display:inline" />
     <circle
-       r="2.5"
-       fill="url(#ledOff)"
-       filter="url(#ledGlow)"
-       id="circle75"
-       style="fill:url(#ledOff)"
-       cx="0"
-       cy="0" />
+       r="22"
+       fill="#3a3d44"
+       stroke="#2a2d32"
+       stroke-width="0.5"
+       id="circle83"
+       cx="130"
+       cy="138"
+       style="display:inline" />
+    <circle
+       r="20"
+       fill="none"
+       stroke="#2a2d32"
+       stroke-width="0.3"
+       stroke-dasharray="1.5, 0.5"
+       opacity="0.7"
+       id="circle84"
+       cx="130"
+       cy="138"
+       style="display:inline" />
+    <circle
+       r="18"
+       fill="none"
+       stroke="#2a2d32"
+       stroke-width="0.3"
+       stroke-dasharray="1.5, 0.5"
+       opacity="0.5"
+       id="circle85"
+       cx="130"
+       cy="138"
+       style="display:inline" />
+    <circle
+       r="16"
+       fill="#2a2d32"
+       opacity="0.5"
+       id="circle86"
+       cx="131"
+       cy="139"
+       style="display:inline" />
+    <circle
+       r="15"
+       fill="url(#purpleButton)"
+       filter="url(#multiShadow)"
+       id="circle87"
+       style="display:inline;fill:url(#purpleButton)"
+       cx="130"
+       cy="138" />
+    <circle
+       r="14.5"
+       fill="none"
+       stroke="#9b88ff"
+       stroke-width="0.3"
+       opacity="0.4"
+       id="circle88"
+       cx="130"
+       cy="138" />
     <ellipse
-       cx="-0.5"
-       cy="-1"
+       fill="#050607"
+       id="circle93-5"
+       cx="130"
+       cy="137.99989"
+       style="display:inline;fill:#9e91d2;fill-opacity:1;stroke-width:1.06096"
+       rx="3.4912536"
+       ry="2.9017529" />
+    <circle
+       r="13"
+       fill="none"
+       stroke="#5a4bc7"
+       stroke-width="0.5"
+       opacity="0.5"
+       id="circle89"
+       cx="130"
+       cy="138"
+       style="display:inline" />
+    <circle
+       r="11"
+       fill="none"
+       stroke="#3d3490"
+       stroke-width="0.5"
+       opacity="0.6"
+       id="circle90"
+       cx="130"
+       cy="138"
+       style="display:inline" />
+    <ellipse
+       fill="#1a1c20"
+       id="circle91"
+       cx="129.99994"
+       cy="137.73955"
+       style="display:inline;opacity:0.264192;fill:#7a72cd;fill-opacity:1;stroke-width:1.30233"
+       rx="5.4674439"
+       ry="4.9634066" />
+    <ellipse
+       fill="#0a0c0e"
+       id="circle92"
+       cx="129.99994"
+       cy="137.93584"
+       style="display:inline;fill:#9b88ff;fill-opacity:1;stroke-width:1.2366"
+       rx="4.611094"
+       ry="4.0624542" />
+    <ellipse
+       fill="#050607"
+       id="circle93"
+       cx="130"
+       cy="138.26926"
+       style="display:inline;fill:#aa9bec;fill-opacity:1;stroke-width:1.2366"
+       rx="3.9523661"
+       ry="3.4821036" />
+    <ellipse
+       cx="106"
+       cy="139"
+       rx="5"
+       ry="24"
+       fill="#0a0c0e"
+       opacity="0.4"
+       id="ellipse93"
+       style="display:inline" />
+    <path
+       d="m 79,86 c -2,-2 -6,-2 -8,0 l -0.5,4 v 36 l 0.5,4 c 2,2 6,2 8,0 l 0.5,-4 V 90 Z"
+       fill="url(#guardGradient)"
+       filter="url(#multiShadow)"
+       id="path93"
+       style="display:inline;fill:url(#linearGradient106)"
+       transform="matrix(1,0,0,1.2588235,29.883335,1.9823512)" />
+    <rect
+       x="103.88333"
+       y="112.75882"
+       width="2"
+       height="50.35294"
+       fill="#3a3d44"
+       opacity="0.4"
+       id="rect93"
+       style="fill:#6c727d;fill-opacity:1;stroke-width:1.12197" />
+    <line
+       x1="102.88333"
+       y1="114.01765"
+       x2="102.88333"
+       y2="161.85294"
+       stroke="#dadde4"
+       stroke-width="0.448789"
+       opacity="0.6"
+       id="line93" />
+    <line
+       x1="106.88333"
+       y1="114.01765"
+       x2="106.88333"
+       y2="161.85294"
+       stroke="#5a5e66"
+       stroke-width="0.448789"
+       opacity="0.5"
+       id="line94"
+       style="stroke:#878d98;stroke-opacity:1" />
+    <ellipse
+       cx="103.38333"
+       cy="127.86471"
        rx="1"
-       ry="0.69999999"
+       ry="5.0352941"
        fill="#ffffff"
        opacity="0.1"
-       id="ellipse75" />
-  </g>
-  <!-- RIGHT LED indicator (OFF when switch is OFF) - at edge -->
-  <g
-     transform="translate(169.68681,129.7)"
-     id="g80"
-     style="display:inline">
-    <circle
-       r="5"
-       fill="#0a0c0e"
-       opacity="0.7"
-       id="circle76"
-       cx="0"
-       cy="0" />
-    <circle
-       r="4.5"
-       fill="#2a2d32"
+       id="ellipse94"
+       style="display:inline;stroke-width:1.12197" />
+    <path
+       d="m 79,86 c -2,-2 -6,-2 -8,0 l -0.5,4 v 36 l 0.5,4 c 2,2 6,2 8,0 l 0.5,-4 V 90 Z"
+       fill="url(#guardGradient)"
        filter="url(#multiShadow)"
-       id="circle77"
-       cx="0"
-       cy="0" />
-    <circle
-       r="3.5"
-       fill="#1a1c20"
-       id="circle78"
-       cx="0"
-       cy="0" />
-    <circle
-       r="3"
-       fill="#0a0c0e"
-       id="circle79"
-       cx="0"
-       cy="0" />
-    <!-- LED is ON with teal glow (switch is ON) -->
-    <circle
-       r="2.5"
-       fill="url(#ledTealOn)"
-       filter="url(#ledGlow)"
-       id="circle80"
-       style="fill:url(#ledTealOn)"
-       cx="0"
-       cy="0" />
+       id="path93-4"
+       style="display:inline;fill:url(#linearGradient110);filter:url(#multiShadow-5)"
+       transform="matrix(1,0,0,1.2588235,79.827879,1.8929732)" />
+    <rect
+       x="153.82788"
+       y="112.66944"
+       width="2"
+       height="50.35294"
+       fill="#3a3d44"
+       opacity="0.4"
+       id="rect93-3"
+       style="fill:#6c727d;fill-opacity:1;stroke-width:1.12197" />
+    <line
+       x1="152.82788"
+       y1="113.92827"
+       x2="152.82788"
+       y2="161.76357"
+       stroke="#dadde4"
+       stroke-width="0.448789"
+       opacity="0.6"
+       id="line93-4" />
+    <line
+       x1="156.82788"
+       y1="113.92827"
+       x2="156.82788"
+       y2="161.76357"
+       stroke="#5a5e66"
+       stroke-width="0.448789"
+       opacity="0.5"
+       id="line94-3"
+       style="stroke:#878d98;stroke-opacity:1" />
     <ellipse
-       cx="-0.5"
-       cy="-1"
+       cx="153.25"
+       cy="128.1647"
        rx="1"
-       ry="0.69999999"
+       ry="5.0352941"
        fill="#ffffff"
-       opacity="0.3"
-       id="ellipse80" />
+       opacity="0.1"
+       id="ellipse94-1"
+       style="display:inline;stroke-width:1.12197" />
+    <rect
+       x="127.02039"
+       y="121.70952"
+       width="6.5872769"
+       height="18.024628"
+       fill="#4a4e56"
+       opacity="0.8"
+       id="rect96"
+       style="opacity:1;fill:#ada0e7;fill-opacity:1;stroke-width:1.68135" />
+    <rect
+       x="128.68254"
+       y="113.48097"
+       width="2.6349108"
+       height="16.249817"
+       fill="#6a6e76"
+       id="rect97"
+       style="fill:#a3a3e4;fill-opacity:1;stroke-width:1.2366" />
+    <rect
+       x="129.91879"
+       y="122.87022"
+       width="0.39523664"
+       height="13.928414"
+       fill="#8a8e96"
+       opacity="0.6"
+       id="rect98"
+       style="stroke-width:1.2366" />
+    <rect
+       x="120.26929"
+       y="109.29099"
+       width="20"
+       height="8"
+       rx="1"
+       ry="1"
+       fill="#0a0c0e"
+       opacity="0.4"
+       id="rect99" />
+    <rect
+       x="90"
+       y="122"
+       width="20"
+       height="9"
+       rx="0.80000001"
+       ry="0.80000001"
+       fill="url(#flatMetalGradient)"
+       filter="url(#multiShadow)"
+       id="rect100"
+       style="display:inline;fill:url(#flatMetalGradient)"
+       transform="matrix(1.1594579,0,0,1.9521529,14.430867,-128.28639)" />
+    <rect
+       x="118.72604"
+       y="109.87627"
+       width="23.301226"
+       height="17.569382"
+       rx="0.61317807"
+       ry="1.0980864"
+       fill="none"
+       stroke="#dadde4"
+       stroke-width="0.328223"
+       opacity="0.4"
+       id="rect101" />
+    <g
+       opacity="0.6"
+       id="g104"
+       transform="matrix(1.1249998,0,0,1.1425651,130.17666,102.12059)">
+      <line
+         x1="-8"
+         y1="16"
+         x2="8"
+         y2="16"
+         stroke="#5a5e66"
+         stroke-width="0.5"
+         id="line101" />
+      <line
+         x1="-8"
+         y1="17.5"
+         x2="8"
+         y2="17.5"
+         stroke="#5a5e66"
+         stroke-width="0.5"
+         id="line102" />
+      <line
+         x1="-8"
+         y1="19"
+         x2="8"
+         y2="19"
+         stroke="#5a5e66"
+         stroke-width="0.5"
+         id="line103" />
+      <line
+         x1="-8"
+         y1="20.5"
+         x2="8"
+         y2="20.5"
+         stroke="#5a5e66"
+         stroke-width="0.5"
+         id="line104" />
+    </g>
+    <g
+       opacity="0.6"
+       id="g104-2"
+       transform="matrix(1.1249998,0,0,1.1425651,130.17666,95.195078)">
+      <line
+         x1="-8"
+         y1="16"
+         x2="8"
+         y2="16"
+         stroke="#5a5e66"
+         stroke-width="0.5"
+         id="line101-5" />
+      <line
+         x1="-8"
+         y1="17.5"
+         x2="8"
+         y2="17.5"
+         stroke="#5a5e66"
+         stroke-width="0.5"
+         id="line102-6" />
+      <line
+         x1="-8"
+         y1="19"
+         x2="8"
+         y2="19"
+         stroke="#5a5e66"
+         stroke-width="0.5"
+         id="line103-7" />
+      <line
+         x1="-8"
+         y1="20.5"
+         x2="8"
+         y2="20.5"
+         stroke="#5a5e66"
+         stroke-width="0.5"
+         id="line104-2" />
+    </g>
+    <rect
+       x="121.17666"
+       y="111.27673"
+       width="18"
+       height="0.45702603"
+       fill="#cacdd4"
+       opacity="0.5"
+       id="rect104"
+       style="stroke-width:1.06891" />
+    </g>
+    <!-- Field 2 text moved lower -->
   </g>
-  <!-- Larger center switch assembly -->
-  <rect
-     x="100"
-     y="108"
-     width="60"
-     height="60"
-     rx="4"
-     ry="4"
-     fill="url(#recessGradient)"
-     filter="url(#deepRecess)"
-     id="rect81"
-     style="fill:url(#recessGradient)" />
-  <circle
-     r="26"
-     fill="#1a1c20"
-     id="circle81"
-     cx="130"
-     cy="138"
-     style="display:inline" />
-  <circle
-     r="24"
-     fill="#2a2d32"
-     stroke="#1a1c20"
-     stroke-width="0.5"
-     id="circle82"
-     cx="130"
-     cy="138"
-     style="display:inline" />
-  <circle
-     r="22"
-     fill="#3a3d44"
-     stroke="#2a2d32"
-     stroke-width="0.5"
-     id="circle83"
-     cx="130"
-     cy="138"
-     style="display:inline" />
-  <circle
-     r="20"
-     fill="none"
-     stroke="#2a2d32"
-     stroke-width="0.3"
-     stroke-dasharray="1.5, 0.5"
-     opacity="0.7"
-     id="circle84"
-     cx="130"
-     cy="138"
-     style="display:inline" />
-  <circle
-     r="18"
-     fill="none"
-     stroke="#2a2d32"
-     stroke-width="0.3"
-     stroke-dasharray="1.5, 0.5"
-     opacity="0.5"
-     id="circle85"
-     cx="130"
-     cy="138"
-     style="display:inline" />
-  <circle
-     r="16"
-     fill="#2a2d32"
-     opacity="0.5"
-     id="circle86"
-     cx="131"
-     cy="139"
-     style="display:inline" />
-  <circle
-     r="15"
-     fill="url(#purpleButton)"
-     filter="url(#multiShadow)"
-     id="circle87"
-     style="display:inline;fill:url(#purpleButton)"
-     cx="130"
-     cy="138" />
-  <circle
-     r="14.5"
-     fill="none"
-     stroke="#9b88ff"
-     stroke-width="0.3"
-     opacity="0.4"
-     id="circle88"
-     cx="130"
-     cy="138" />
-  <ellipse
-     fill="#050607"
-     id="circle93-5"
-     cx="130"
-     cy="137.99989"
-     style="display:inline;fill:#9e91d2;fill-opacity:1;stroke-width:1.06096"
-     rx="3.4912536"
-     ry="2.9017529" />
-  <circle
-     r="13"
-     fill="none"
-     stroke="#5a4bc7"
-     stroke-width="0.5"
-     opacity="0.5"
-     id="circle89"
-     cx="130"
-     cy="138"
-     style="display:inline" />
-  <circle
-     r="11"
-     fill="none"
-     stroke="#3d3490"
-     stroke-width="0.5"
-     opacity="0.6"
-     id="circle90"
-     cx="130"
-     cy="138"
-     style="display:inline" />
-  <ellipse
-     fill="#1a1c20"
-     id="circle91"
-     cx="129.99994"
-     cy="137.73955"
-     style="display:inline;opacity:0.264192;fill:#7a72cd;fill-opacity:1;stroke-width:1.30233"
-     rx="5.4674439"
-     ry="4.9634066" />
-  <ellipse
-     fill="#0a0c0e"
-     id="circle92"
-     cx="129.99994"
-     cy="137.93584"
-     style="display:inline;fill:#9b88ff;fill-opacity:1;stroke-width:1.2366"
-     rx="4.611094"
-     ry="4.0624542" />
-  <ellipse
-     fill="#050607"
-     id="circle93"
-     cx="130"
-     cy="138.26926"
-     style="display:inline;fill:#aa9bec;fill-opacity:1;stroke-width:1.2366"
-     rx="3.9523661"
-     ry="3.4821036" />
-  <ellipse
-     cx="106"
-     cy="139"
-     rx="5"
-     ry="24"
-     fill="#0a0c0e"
-     opacity="0.4"
-     id="ellipse93"
-     style="display:inline" />
-  <path
-     d="m 79,86 c -2,-2 -6,-2 -8,0 l -0.5,4 v 36 l 0.5,4 c 2,2 6,2 8,0 l 0.5,-4 V 90 Z"
-     fill="url(#guardGradient)"
-     filter="url(#multiShadow)"
-     id="path93"
-     style="display:inline;fill:url(#linearGradient106)"
-     transform="matrix(1,0,0,1.2588235,29.883335,1.9823512)" />
-  <rect
-     x="103.88333"
-     y="112.75882"
-     width="2"
-     height="50.35294"
-     fill="#3a3d44"
-     opacity="0.4"
-     id="rect93"
-     style="fill:#6c727d;fill-opacity:1;stroke-width:1.12197" />
-  <line
-     x1="102.88333"
-     y1="114.01765"
-     x2="102.88333"
-     y2="161.85294"
-     stroke="#dadde4"
-     stroke-width="0.448789"
-     opacity="0.6"
-     id="line93" />
-  <line
-     x1="106.88333"
-     y1="114.01765"
-     x2="106.88333"
-     y2="161.85294"
-     stroke="#5a5e66"
-     stroke-width="0.448789"
-     opacity="0.5"
-     id="line94"
-     style="stroke:#878d98;stroke-opacity:1" />
-  <ellipse
-     cx="103.38333"
-     cy="127.86471"
-     rx="1"
-     ry="5.0352941"
-     fill="#ffffff"
-     opacity="0.1"
-     id="ellipse94"
-     style="display:inline;stroke-width:1.12197" />
-  <path
-     d="m 79,86 c -2,-2 -6,-2 -8,0 l -0.5,4 v 36 l 0.5,4 c 2,2 6,2 8,0 l 0.5,-4 V 90 Z"
-     fill="url(#guardGradient)"
-     filter="url(#multiShadow)"
-     id="path93-4"
-     style="display:inline;fill:url(#linearGradient110);filter:url(#multiShadow-5)"
-     transform="matrix(1,0,0,1.2588235,79.827879,1.8929732)" />
-  <rect
-     x="153.82788"
-     y="112.66944"
-     width="2"
-     height="50.35294"
-     fill="#3a3d44"
-     opacity="0.4"
-     id="rect93-3"
-     style="fill:#6c727d;fill-opacity:1;stroke-width:1.12197" />
-  <line
-     x1="152.82788"
-     y1="113.92827"
-     x2="152.82788"
-     y2="161.76357"
-     stroke="#dadde4"
-     stroke-width="0.448789"
-     opacity="0.6"
-     id="line93-4" />
-  <line
-     x1="156.82788"
-     y1="113.92827"
-     x2="156.82788"
-     y2="161.76357"
-     stroke="#5a5e66"
-     stroke-width="0.448789"
-     opacity="0.5"
-     id="line94-3"
-     style="stroke:#878d98;stroke-opacity:1" />
-  <ellipse
-     cx="153.25"
-     cy="128.1647"
-     rx="1"
-     ry="5.0352941"
-     fill="#ffffff"
-     opacity="0.1"
-     id="ellipse94-1"
-     style="display:inline;stroke-width:1.12197" />
-  <rect
-     x="127.02039"
-     y="121.70952"
-     width="6.5872769"
-     height="18.024628"
-     fill="#4a4e56"
-     opacity="0.8"
-     id="rect96"
-     style="opacity:1;fill:#ada0e7;fill-opacity:1;stroke-width:1.68135" />
-  <rect
-     x="128.68254"
-     y="113.48097"
-     width="2.6349108"
-     height="16.249817"
-     fill="#6a6e76"
-     id="rect97"
-     style="fill:#a3a3e4;fill-opacity:1;stroke-width:1.2366" />
-  <rect
-     x="129.91879"
-     y="122.87022"
-     width="0.39523664"
-     height="13.928414"
-     fill="#8a8e96"
-     opacity="0.6"
-     id="rect98"
-     style="stroke-width:1.2366" />
-  <rect
-     x="120.3"
-     y="106.01803"
-     width="20"
-     height="8"
-     rx="1"
-     ry="1"
-     fill="#0a0c0e"
-     opacity="0.4"
-     id="rect99" />
-  <rect
-     x="90"
-     y="122"
-     width="20"
-     height="9"
-     rx="0.80000001"
-     ry="0.80000001"
-     fill="url(#flatMetalGradient)"
-     filter="url(#multiShadow)"
-     id="rect100"
-     style="display:inline;fill:url(#flatMetalGradient)"
-     transform="matrix(1.1594579,0,0,1.9521529,14.554211,-131.43165)" />
-  <rect
-     x="118.75676"
-     y="106.6033"
-     width="23.301226"
-     height="17.569382"
-     rx="0.61317807"
-     ry="1.0980864"
-     fill="none"
-     stroke="#dadde4"
-     stroke-width="0.328223"
-     opacity="0.4"
-     id="rect101" />
-  <g
-     opacity="0.6"
-     id="g104"
-     transform="matrix(1.1249998,0,0,1.1425651,130.3,98.975332)">
-    <line
-       x1="-8"
-       y1="16"
-       x2="8"
-       y2="16"
-       stroke="#5a5e66"
-       stroke-width="0.5"
-       id="line101" />
-    <line
-       x1="-8"
-       y1="17.5"
-       x2="8"
-       y2="17.5"
-       stroke="#5a5e66"
-       stroke-width="0.5"
-       id="line102" />
-    <line
-       x1="-8"
-       y1="19"
-       x2="8"
-       y2="19"
-       stroke="#5a5e66"
-       stroke-width="0.5"
-       id="line103" />
-    <line
-       x1="-8"
-       y1="20.5"
-       x2="8"
-       y2="20.5"
-       stroke="#5a5e66"
-       stroke-width="0.5"
-       id="line104" />
-  </g>
-  <g
-     opacity="0.6"
-     id="g104-2"
-     transform="matrix(1.1249998,0,0,1.1425651,130.3,92.049818)">
-    <line
-       x1="-8"
-       y1="16"
-       x2="8"
-       y2="16"
-       stroke="#5a5e66"
-       stroke-width="0.5"
-       id="line101-5" />
-    <line
-       x1="-8"
-       y1="17.5"
-       x2="8"
-       y2="17.5"
-       stroke="#5a5e66"
-       stroke-width="0.5"
-       id="line102-6" />
-    <line
-       x1="-8"
-       y1="19"
-       x2="8"
-       y2="19"
-       stroke="#5a5e66"
-       stroke-width="0.5"
-       id="line103-7" />
-    <line
-       x1="-8"
-       y1="20.5"
-       x2="8"
-       y2="20.5"
-       stroke="#5a5e66"
-       stroke-width="0.5"
-       id="line104-2" />
-  </g>
-  <rect
-     x="121.3"
-     y="108.13146"
-     width="18"
-     height="0.45702603"
-     fill="#cacdd4"
-     opacity="0.5"
-     id="rect104"
-     style="stroke-width:1.06891" />
-  <!-- Field 2 text moved lower -->
-  <path
-     d="m 106.40126,95.449223 q -0.80395,0 -1.51858,-0.1431 -0.69676,-0.12879 -1.26846,-0.357751 -0.55383,-0.228961 -0.9826,-0.529472 -0.41091,-0.30051 -0.66103,-0.643952 l 1.69723,-1.001703 q 0.44664,0.472231 1.21486,0.787053 0.78609,0.30051 1.80443,0.30051 1.12553,0 1.76869,-0.343441 0.66103,-0.357751 0.75036,-0.887223 0.0893,-0.486541 -0.23225,-0.829982 -0.30372,-0.343441 -1.10767,-0.629642 l -2.30466,-0.858603 q -1.48285,-0.543782 -2.07241,-1.273595 -0.58957,-0.744121 -0.41091,-1.731515 0.10719,-0.615332 0.5181,-1.130494 0.41091,-0.529472 1.0362,-0.901533 0.64317,-0.386371 1.50072,-0.601022 0.85755,-0.214651 1.85802,-0.214651 1.12553,0 1.91162,0.286201 0.80395,0.286201 1.28632,0.744123 0.50024,0.443611 0.6789,1.030323 0.19652,0.572402 0.0893,1.144804 h -2.00096 q 0.0357,-0.17172 -0.0536,-0.443611 -0.0715,-0.286201 -0.32158,-0.543782 -0.23225,-0.271891 -0.69676,-0.457922 -0.4645,-0.20034 -1.17913,-0.20034 -1.05407,0 -1.73296,0.372061 -0.66103,0.357751 -0.75036,0.915843 -0.0893,0.500851 0.23226,0.829982 0.32158,0.314822 1.0362,0.572402 l 2.3404,0.887224 q 1.48284,0.543781 2.09027,1.273594 0.6253,0.729812 0.42878,1.760135 -0.1072,0.701193 -0.5717,1.230664 -0.44664,0.529472 -1.12554,0.887224 -0.67889,0.343441 -1.51857,0.515162 -0.82182,0.186029 -1.73297,0.186029 z m 11.86134,-0.22896 0.53596,-3.03373 -2.67984,-7.484155 h 2.19747 l 1.84016,5.237478 3.68032,-5.237478 h 2.16174 l -5.25249,7.484155 -0.53597,3.03373 z m 21.3837,-10.517885 h 2.05454 l -1.82229,10.446335 -0.23225,0.08586 -7.8966,-6.983303 -1.21486,6.968993 h -2.05454 l 1.84015,-10.446335 0.19652,-0.07155 7.91447,6.968993 z m 8.48476,5.266098 q -0.14293,0.815673 0.10715,1.516864 0.25012,0.701193 0.80396,1.216355 0.55383,0.515162 1.37565,0.815672 0.82182,0.286201 1.8223,0.286201 0.96474,0 1.85801,-0.314821 0.91115,-0.314821 1.67937,-0.829982 l 1.1434,1.144803 q -1.01834,0.729812 -2.32253,1.159114 -1.28633,0.414992 -2.73344,0.414992 -1.42924,0 -2.59051,-0.414992 -1.1434,-0.429302 -1.92948,-1.159114 -0.78609,-0.729812 -1.14341,-1.717205 -0.33944,-0.987394 -0.12505,-2.117887 0.19652,-1.144804 0.87541,-2.132197 0.69676,-1.001704 1.73297,-1.731516 1.0362,-0.729813 2.34039,-1.144804 1.30419,-0.414991 2.75131,-0.414991 1.44711,0 2.57265,0.429301 1.14339,0.414992 1.91161,1.144804 l -1.55431,1.144804 q -0.55383,-0.500852 -1.35779,-0.815673 -0.80394,-0.314821 -1.76869,-0.314821 -1.03621,0 -1.96522,0.300511 -0.929,0.286201 -1.66149,0.801362 -0.7325,0.515162 -1.21487,1.216355 -0.46451,0.701192 -0.60743,1.516865 z"
-     id="text117"
-     style="font-style:oblique;font-weight:bold;font-size:15.9893px;font-family:'Liber Grotesque Family';-inkscape-font-specification:'Liber Grotesque Family, Bold Oblique';letter-spacing:2.68493px;word-spacing:1.77205px;direction:rtl;fill:#ffffff;fill-rule:evenodd;stroke:#646b74;stroke-width:0"
-     aria-label="SYNC" />
-</g>
 </svg>

@@ -706,7 +706,8 @@
      ry="3"
      fill="#0a0c0e"
      opacity="0.8"
-     id="rect48" />
+     id="rect48"
+     style="display:inline" />
   <!-- Main plate -->
   <rect
      x="50"
@@ -730,7 +731,8 @@
      stroke="url(#bevelHighlight)"
      stroke-width="0.8"
      opacity="0.5"
-     id="rect50" />
+     id="rect50"
+     style="display:inline" />
   <!-- Bottom bevel shadow -->
   <rect
      x="53"
@@ -743,12 +745,14 @@
      stroke="url(#bevelShadow)"
      stroke-width="0.8"
      opacity="0.5"
-     id="rect51" />
+     id="rect51"
+     style="display:inline" />
   <!-- Corner screws -->
   <!-- Top left -->
   <g
      transform="translate(59.716667,59.366666)"
-     id="g55">
+     id="g55"
+     style="display:inline">
     <circle
        r="6"
        fill="#0a0c0e"
@@ -810,7 +814,8 @@
   </g>
   <g
      transform="translate(60.416671,138.9)"
-     id="g55-6">
+     id="g55-6"
+     style="display:inline">
     <circle
        r="6"
        fill="#0a0c0e"
@@ -869,7 +874,8 @@
   </g>
   <g
      transform="translate(139.68681,138.9)"
-     id="g55-6-8">
+     id="g55-6-8"
+     style="display:inline">
     <circle
        r="6"
        fill="#0a0c0e"
@@ -994,16 +1000,18 @@
      x="100"
      y="84"
      font-family="Arial, sans-serif"
-     font-size="7"
+     font-size="7px"
      font-weight="400"
      letter-spacing="0.3"
      text-anchor="middle"
      fill="#7a7e86"
-     id="text71">FIELD 1</text>
+     id="text71"
+     style="display:inline">FIELD 1</text>
   <!-- LEFT LED indicator (ON when switch is OFF - purple glow) - at edge -->
   <g
      transform="translate(60.05,99.899999)"
-     id="g75">
+     id="g75"
+     style="display:inline">
     <circle
        r="5"
        fill="#0a0c0e"
@@ -1097,6 +1105,7 @@
        id="ellipse80" />
   </g>
   <!-- Larger center switch assembly -->
+  <g id="assemblyScaleOff" transform="translate(100,108) scale(1.12) translate(-100,-108)">
   <rect
      x="70"
      y="78"
@@ -1107,7 +1116,7 @@
      fill="url(#recessGradient)"
      filter="url(#deepRecess)"
      id="rect81"
-     style="fill:url(#recessGradient)" />
+     style="display:inline;fill:url(#recessGradient)" />
   <circle
      r="26"
      fill="#1a1c20"
@@ -1179,7 +1188,8 @@
      opacity="0.4"
      id="circle88"
      cx="100"
-     cy="108" />
+     cy="108"
+     style="display:inline" />
   <circle
      r="13"
      fill="none"
@@ -1256,7 +1266,7 @@
      fill="#3a3d44"
      opacity="0.4"
      id="rect93"
-     style="stroke-width:1.12197;fill:#6c727d;fill-opacity:1" />
+     style="display:inline;fill:#6c727d;fill-opacity:1;stroke-width:1.12197" />
   <line
      x1="72.883331"
      y1="84.017647"
@@ -1265,7 +1275,8 @@
      stroke="#dadde4"
      stroke-width="0.448789"
      opacity="0.6"
-     id="line93" />
+     id="line93"
+     style="display:inline" />
   <line
      x1="76.883331"
      y1="84.017647"
@@ -1275,7 +1286,7 @@
      stroke-width="0.448789"
      opacity="0.5"
      id="line94"
-     style="stroke:#878d98;stroke-opacity:1" />
+     style="display:inline;stroke:#878d98;stroke-opacity:1" />
   <ellipse
      cx="73.383331"
      cy="97.864708"
@@ -1300,7 +1311,7 @@
      fill="#3a3d44"
      opacity="0.4"
      id="rect93-3"
-     style="stroke-width:1.12197;fill:#6c727d;fill-opacity:1" />
+     style="display:inline;fill:#6c727d;fill-opacity:1;stroke-width:1.12197" />
   <line
      x1="122.82787"
      y1="83.928268"
@@ -1309,7 +1320,8 @@
      stroke="#dadde4"
      stroke-width="0.448789"
      opacity="0.6"
-     id="line93-4" />
+     id="line93-4"
+     style="display:inline" />
   <line
      x1="126.82787"
      y1="83.928268"
@@ -1319,7 +1331,7 @@
      stroke-width="0.448789"
      opacity="0.5"
      id="line94-3"
-     style="stroke:#878d98;stroke-opacity:1" />
+     style="display:inline;stroke:#878d98;stroke-opacity:1" />
   <ellipse
      cx="123.25"
      cy="98.164703"
@@ -1337,7 +1349,7 @@
      fill="#4a4e56"
      opacity="0.8"
      id="rect96"
-     style="opacity:1;fill:#ada0e7;fill-opacity:1;stroke-width:1.59643" />
+     style="display:inline;opacity:1;fill:#ada0e7;fill-opacity:1;stroke-width:1.59643" />
   <rect
      x="98.682541"
      y="108.26925"
@@ -1345,7 +1357,7 @@
      height="16.249817"
      fill="#6a6e76"
      id="rect97"
-     style="fill:#a3a3e4;fill-opacity:1;stroke-width:1.2366" />
+     style="display:inline;fill:#a3a3e4;fill-opacity:1;stroke-width:1.2366" />
   <rect
      x="99.604759"
      y="109.42995"
@@ -1354,7 +1366,7 @@
      fill="#8a8e96"
      opacity="0.6"
      id="rect98"
-     style="stroke-width:1.2366" />
+     style="display:inline;stroke-width:1.2366" />
   <rect
      x="90.5"
      y="123.5"
@@ -1364,7 +1376,8 @@
      ry="1"
      fill="#0a0c0e"
      opacity="0.4"
-     id="rect99" />
+     id="rect99"
+     style="display:inline" />
   <rect
      x="90"
      y="122"
@@ -1388,11 +1401,13 @@
      stroke="#dadde4"
      stroke-width="0.328223"
      opacity="0.4"
-     id="rect101" />
+     id="rect101"
+     style="display:inline" />
   <g
      opacity="0.6"
      id="g104"
-     transform="matrix(1.1249998,0,0,1.1425651,100,104.71896)">
+     transform="matrix(1.1249998,0,0,1.1425651,100,104.71896)"
+     style="display:inline">
     <line
        x1="-8"
        y1="16"
@@ -1429,7 +1444,8 @@
   <g
      opacity="0.6"
      id="g104-2"
-     transform="matrix(1.1249998,0,0,1.1425651,99.999997,97.793446)">
+     transform="matrix(1.1249998,0,0,1.1425651,99.999997,97.793446)"
+     style="display:inline">
     <line
        x1="-8"
        y1="16"
@@ -1471,7 +1487,7 @@
      fill="#cacdd4"
      opacity="0.5"
      id="rect104"
-     style="stroke-width:1.06891" />
+     style="display:inline;stroke-width:1.06891" />
   <ellipse
      cx="99"
      cy="125.9668"
@@ -1481,11 +1497,6 @@
      opacity="0.3"
      id="ellipse104"
      style="display:inline;stroke-width:1.70437" />
+  </g>
   <!-- Field 2 text moved lower -->
-  <path
-     d="m 68.79506,78.370048 q -0.719519,0 -1.359091,-0.159893 -0.623582,-0.143903 -1.13524,-0.399732 -0.495668,-0.255829 -0.879412,-0.591604 -0.367753,-0.335775 -0.591604,-0.719519 l 1.518984,-1.119251 q 0.399732,0.527647 1.087272,0.879412 0.703529,0.335775 1.61492,0.335775 1.007325,0 1.58294,-0.383743 0.591604,-0.399733 0.671551,-0.991337 0.07995,-0.543636 -0.207861,-0.927379 -0.271818,-0.383743 -0.991337,-0.703529 L 68.043563,72.62989 q -1.327112,-0.607594 -1.854759,-1.423048 -0.527647,-0.831443 -0.367754,-1.934705 0.09594,-0.68754 0.46369,-1.263155 0.367754,-0.591604 0.927379,-1.007326 0.575615,-0.431711 1.343101,-0.67155 0.767487,-0.23984 1.662887,-0.23984 1.007326,0 1.710855,0.319786 0.719519,0.319786 1.15123,0.831444 0.4477,0.495668 0.607593,1.151229 0.175883,0.639572 0.07995,1.279144 H 71.97693 q 0.03198,-0.191871 -0.04797,-0.495668 -0.06396,-0.319786 -0.287807,-0.607593 -0.207861,-0.303797 -0.623583,-0.511658 -0.415721,-0.22385 -1.055293,-0.22385 -0.943369,0 -1.550962,0.415722 -0.591605,0.399732 -0.671551,1.023315 -0.07995,0.559625 0.207861,0.927379 0.287807,0.351765 0.927379,0.639572 l 2.094598,0.991337 q 1.327112,0.607593 1.870749,1.423048 0.559625,0.815454 0.383743,1.966683 -0.09594,0.783476 -0.511658,1.37508 -0.399732,0.591604 -1.007326,0.991337 -0.607593,0.383743 -1.35909,0.575615 -0.735508,0.20786 -1.550962,0.20786 z m 10.615617,-0.255828 0.479679,-3.389732 -2.398395,-8.362404 h 1.966684 l 1.646898,5.852084 3.293795,-5.852084 h 1.934706 L 81.633189,74.724488 81.15351,78.11422 Z M 98.548593,66.362084 h 1.838767 l -1.630907,11.672189 -0.20786,0.09594 -7.067271,-7.802778 -1.087272,7.786789 h -1.83877 l 1.646898,-11.672189 0.175882,-0.07995 7.08326,7.786789 z m 7.593657,5.884063 q -0.12792,0.91139 0.0959,1.694865 0.22385,0.783476 0.71952,1.359091 0.49567,0.575615 1.23118,0.91139 0.73551,0.319786 1.63091,0.319786 0.86342,0 1.66288,-0.351765 0.81546,-0.351764 1.503,-0.927379 l 1.02331,1.279144 q -0.91139,0.815454 -2.07861,1.295133 -1.15123,0.46369 -2.44636,0.46369 -1.27914,0 -2.31845,-0.46369 -1.02331,-0.479679 -1.72684,-1.295133 -0.70353,-0.815454 -1.02332,-1.918716 -0.30379,-1.103262 -0.11192,-2.366416 0.17588,-1.279144 0.78347,-2.382406 0.62359,-1.119251 1.55097,-1.934705 0.92737,-0.815455 2.09459,-1.279144 1.16722,-0.46369 2.46236,-0.46369 1.29513,0 2.30246,0.479679 1.02331,0.46369 1.71085,1.279144 l -1.39107,1.279144 q -0.49567,-0.559626 -1.21519,-0.91139 -0.71951,-0.351765 -1.58294,-0.351765 -0.92738,0 -1.75882,0.335776 -0.83144,0.319786 -1.487,0.8954 -0.65557,0.575615 -1.08728,1.359091 -0.41572,0.783476 -0.54363,1.694866 z"
-     id="text117"
-     style="font-style:oblique;font-weight:bold;font-size:15.9893px;font-family:'Liber Grotesque Family';-inkscape-font-specification:'Liber Grotesque Family, Bold Oblique';letter-spacing:2.68493px;word-spacing:1.77205px;direction:rtl;fill:#ffffff;fill-rule:evenodd;stroke:#646b74;stroke-width:0"
-     transform="scale(1.1173478,0.89497648)"
-     aria-label="SYNC" />
 </svg>
