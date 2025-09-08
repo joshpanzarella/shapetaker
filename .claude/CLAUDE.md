@@ -25,15 +25,23 @@ shapetaker/
 │   │   ├── filters.hpp    # Filter utilities 
 │   │   ├── envelopes.hpp  # Envelope generators
 │   │   ├── oscillators.hpp# Oscillator helpers
+│   │   ├── delays.hpp     # Delay and chorus effects (NEW)
 │   │   └── audio.hpp      # Audio processing utilities
 │   ├── graphics/          # Graphics Utilities
-│   │   ├── drawing.hpp    # Drawing functions
+│   │   ├── drawing.hpp    # Drawing function declarations
+│   │   ├── drawing.cpp    # Drawing implementations (40 alchemical symbols) (NEW)
 │   │   ├── lighting.hpp   # RGB lighting helpers
 │   │   └── effects.hpp    # Visual effects
-│   ├── ui/                # UI Utilities
+│   ├── ui/                # UI Utilities (EXPANDED)
 │   │   ├── widgets.hpp    # Custom widget library
-│   │   └── helpers.hpp    # UI helper functions
-│   ├── transmutation/     # Transmutation module components (NEW)
+│   │   ├── helpers.hpp    # UI helper functions
+│   │   ├── theme.hpp      # Visual theme management system (NEW)
+│   │   └── layout.hpp     # Layout and positioning utilities (NEW)
+│   ├── voice/             # Voice Management Utilities (NEW)
+│   │   └── PolyOut.hpp    # Polyphonic voice assignment and chord building
+│   ├── involution/        # Involution module components (NEW)
+│   │   └── dsp.hpp        # Module-specific DSP (chaos, cross-feedback, stereo)
+│   ├── transmutation/     # Transmutation module components
 │   │   ├── view.hpp       # Read-only interface for UI widgets
 │   │   ├── ui.hpp/.cpp    # UI classes and widgets
 │   │   ├── engine.hpp/.cpp# Sequencer engine helpers
@@ -513,7 +521,128 @@ shapetaker/
 │   └── [existing module files]
 ```
 
-### DSP Utilities (src/dsp/)
+### UI Utilities (src/ui/) - NEW SYSTEM
+
+#### Theme Management (theme.hpp) ✅
+**ThemeManager class** - Comprehensive visual theme system for consistent styling:
+
+**Brand Colors System:**
+- `BrandColors::TEAL` (#00FFB4) - Primary channel A color
+- `BrandColors::PURPLE` (#B400FF) - Primary channel B color  
+- `BrandColors::CYAN_MAGENTA` - Mixed state color for dual channel operations
+- `BrandColors::GOLD`, `SILVER` - Supporting accent colors
+- RGB conversion helpers: `tealRGB()`, `purpleRGB()`
+
+**Light Theme System:**
+- `getChiaroscuroColor()` - Teal → bright blue-purple → dark purple progression
+- `getVUColor()` - Standard VU meter coloring (green → yellow → red)
+- `getMatrixColor()` - LED matrix states with proper brightness and animation
+- Matrix states: `EMPTY`, `SEQUENCE_A`, `SEQUENCE_B`, `BOTH`, `PLAYHEAD_A/B`, `EDIT_MODE`
+- `setRGBLight()` - Direct RGB light control for modules
+
+**Screen Effects:**
+- `drawCRTBackground()` - Retro CRT display with grid lines
+- `drawPhosphorGlow()` - Phosphor glow effects for vintage displays  
+- `drawSpookyTVEffect()` - Transmutation's spooky TV mode with static and scanlines
+
+**Panel Colors:**
+- Background colors: `BACKGROUND_DARK`, `BACKGROUND_MEDIUM`, `BACKGROUND_LIGHT`
+- Text colors: `TEXT_PRIMARY`, `TEXT_SECONDARY`, `TEXT_ACCENT`
+- Control colors: `KNOB_DARK`, `KNOB_LIGHT` with consistent styling
+
+**Widget Styling:**
+- `JewelLED` configuration for LED jewel appearance (glow, rings, highlights)
+- `Controls` styling for buttons and knobs
+- Consistent visual hierarchy and professional appearance
+
+#### Layout System (layout.hpp) ✅
+**LayoutHelper class** - Professional layout and positioning system:
+
+**SVG Panel Integration:**
+- `PanelSVGParser` - Parse SVG files to extract element positions by ID
+- `centerPx()`, `centerMm()` - Get element centers from SVG coordinates
+- `rectMm()` - Extract rectangle dimensions for screen areas
+- Automatic mm2px conversion with VCV Rack standards
+
+**Standard Measurements:**
+- `ModuleWidth` enum - All standard HP sizes (4HP to 42HP)  
+- `hp2px()` conversion with proper scaling
+- `Spacing` constants: `TIGHT`, `NORMAL`, `WIDE`, `SECTION`
+
+**Layout Systems:**
+- `GridLayout` - Multi-column grid positioning for complex modules
+- `ColumnLayout` - Single-column vertical parameter layout
+- `RowLayout` - Horizontal parameter arrangement
+- `IOPanelLayout` - Standard I/O port positioning (bottom panel, side panels)
+
+**Control Grouping:**
+- `KnobCVPair` - Knob with CV input positioning
+- `ParamAttenuverterPair` - Parameter with attenuverter layout
+- `StereoPair` - Left/Right input/output positioning
+
+**Module Layout Patterns:**
+- `DualChannel` - Standard dual-channel layout (like Chiaroscuro)
+- `SingleChannel` - Single-column layout (like Fatebinder)  
+- `SequencerLayout` - Matrix-based sequencer layout (like Transmutation)
+- Consistent spacing and professional appearance
+
+### Voice Management (src/voice/) - NEW SYSTEM
+
+#### Polyphonic Voice Assignment (PolyOut.hpp) ✅
+**stx::poly namespace** - Lightweight polyphonic voice management utilities:
+
+**Chord Building:**
+- `buildTargetsFromIntervals()` - Convert semitone intervals to V/oct chord voicings
+- Automatic ascending order arrangement relative to chord root
+- Harmony mode: +1 octave with fifth intervals on odd voices for wider voicing
+- Supports variable voice counts with intelligent chord cycling
+
+**Voice Assignment:**
+- `assignNearest()` - Optimal voice allocation to minimize pitch jumps
+- 6-voice polyphonic output with octave wrapping for smooth transitions
+- Voice continuity: assigns closest available octave to previous CV value
+- Supports both direct assignment and voice-optimized allocation
+
+**Usage Pattern:**
+```cpp
+std::vector<float> intervals = {0, 4, 7, 11}; // Major 7th chord
+std::vector<float> targets;
+stx::poly::buildTargetsFromIntervals(intervals, 4, false, targets);
+stx::poly::assignNearest(targets, lastCV, voiceCount, outputCV);
+```
+
+### Module-Specific DSP (src/[module]/) - NEW SYSTEM
+
+#### Involution DSP Components (src/involution/dsp.hpp) ✅
+**shapetaker::involution namespace** - Specialized DSP for dual morphing filters:
+
+**ChaosGenerator class:**
+- Multi-harmonic chaotic LFO for filter modulation
+- Phase-locked chaos generation with rate and amount control
+- Smoothed output to prevent audio artifacts
+
+**CrossFeedback class:**
+- Dual-filter cross-feedback processor with soft limiting
+- Prevents feedback runaway with tanh saturation
+- Memory-based feedback with configurable amount
+
+**StereoProcessor class:**
+- Stereo width manipulation (narrow to wide stereo imaging)
+- Stereo rotation effects using matrix transformations
+- Mathematical precision for professional stereo effects
+
+### DSP Utilities (src/dsp/) - EXPANDED
+
+#### Delay Effects (delays.hpp) ✅ - NEW
+**ChorusEffect class:**
+- LFO-modulated delay line for classic chorus effects
+- Configurable delay time, depth, and LFO rate
+- Sample rate adaptive with automatic buffer management
+- Clean chorus sound with minimal artifacts
+
+**Other Delay Classes:**
+- Additional delay-based effects for future modules
+- Modular design for easy integration
 
 #### Polyphony Management (polyphony.hpp) ✅
 **PolyphonicProcessor class** - Unified polyphonic voice management:
@@ -613,9 +742,14 @@ Both classes moved from standalone headers to organized `shapetaker::dsp` namesp
 - **oscillators.hpp**: `OscillatorHelper` (phase management, basic waveforms)
 - **audio.hpp**: `AudioProcessor` (crossfade, soft clipping, DC blocking)
 
-### Graphics Utilities (src/graphics/)
-- **drawing.hpp**: Symbol rendering, voice count dots, visual effects
-- **lighting.hpp**: `LightingHelper` with Chiaroscuro color progressions, VU meter colors
+### Graphics Utilities (src/graphics/) - EXPANDED
+- **drawing.hpp**: Symbol rendering declarations, voice count dots, visual effects
+- **drawing.cpp**: Complete implementation of 40 alchemical symbols (NEW)
+  - All 40 symbols fully implemented with precise vector graphics
+  - Symbol range 0-39: Sol, Luna, Mercury, Venus, Mars, Jupiter, Saturn, Fire, Water, Air, Earth, and 29 additional occult/alchemical symbols
+  - Optimized drawing routines with proper scaling and stroke width control
+  - Used by Transmutation module for visual chord representation
+- **lighting.hpp**: `LightingHelper` with Chiaroscuro color progressions, VU meter colors  
 - **effects.hpp**: Visual effect implementations
 
 ### UI Utilities (src/ui/)
@@ -656,27 +790,38 @@ namespace shapetaker {
 - **Type safety**: Template-based voice arrays prevent common indexing errors
 - **Semantic clarity**: `configGain()` vs generic `configParam()` makes intent clear
 
-### Refactoring Progress (2025-01-09)
+### Refactoring Progress (2025-09-08) 
 ✅ **Polyphony Management Utilities** - Complete with demonstration
-✅ **Parameter Configuration Helpers** - Complete with demonstration  
-🟨 **Decompose Large Modules** - In Progress
-⏳ **Extract Common Widgets** - Pending
-⏳ **Layout & Positioning Utilities** - Pending
-⏳ **Visual Theme Management** - Pending
+✅ **Parameter Configuration Helpers** - Complete with demonstration
+✅ **UI Theme Management System** - Complete comprehensive theme system 
+✅ **Layout & Positioning Utilities** - Complete SVG-based layout system
+✅ **Graphics Implementation** - Complete 40-symbol alchemical drawing system
+✅ **Voice Management System** - Complete polyphonic voice assignment utilities
+✅ **Module-Specific DSP Architecture** - Involution DSP components implemented
+✅ **Delay Effects System** - Chorus and delay effects added to DSP utilities
+🟨 **Decompose Large Modules** - Transmutation complete, other large modules pending
+⏳ **Extract Common Widgets** - Theme system provides foundation, widget extraction pending
 
 ### Usage Guidelines for Future Development
 1. **New Modules**: Use `ParameterHelper` for all parameter configuration
 2. **Polyphonic Processing**: Use `PolyphonicProcessor` and `VoiceArray<T>`
-3. **Before Implementing**: Check if utilities already provide the functionality
-4. **Common Patterns**: Add new utilities rather than duplicating code
-5. **C++11 Compatibility**: All utilities maintain VCV Rack's C++11 requirement
+3. **UI Layout**: Use `LayoutHelper` and `PanelSVGParser` for SVG-based positioning
+4. **Visual Styling**: Use `ThemeManager` for consistent colors and visual effects
+5. **Voice Assignment**: Use `stx::poly` utilities for polyphonic chord building
+6. **Module-Specific DSP**: Create dedicated module directories for complex DSP components
+7. **Before Implementing**: Check if utilities already provide the functionality
+8. **Common Patterns**: Add new utilities rather than duplicating code
+9. **C++11 Compatibility**: All utilities maintain VCV Rack's C++11 requirement
 
 ### Future Utility Enhancements
-- **Delay line utilities**: Common delay/echo implementations
-- **Modulation utilities**: LFO and modulation source helpers  
-- **Sequencer utilities**: Common sequencer pattern implementations
+- ✅ **Delay line utilities**: Implemented in `src/dsp/delays.hpp` with chorus effects
+- ✅ **UI Theme utilities**: Complete theme management system implemented
+- ✅ **Layout utilities**: SVG-based positioning system implemented
+- **Modulation utilities**: LFO and modulation source helpers (partially implemented)
+- **Sequencer utilities**: Common sequencer pattern implementations  
 - **SIMD optimizations**: Vectorized processing for performance
 - **Unit testing framework**: Comprehensive testing of utility functions
+- **Widget library expansion**: Extract more common widget patterns from existing modules
 
 ## Notes for AI Assistants
 
@@ -703,11 +848,15 @@ namespace shapetaker {
 - **Testable Architecture**: Core logic can be tested independently of UI components
 
 ### Utility System (IMPORTANT)
-- **Organized by Function**: DSP utilities in `src/dsp/`, graphics in `src/graphics/`, UI in `src/ui/`
+- **Organized by Function**: DSP utilities in `src/dsp/`, graphics in `src/graphics/`, UI in `src/ui/`, voice management in `src/voice/`
 - **Automatic Inclusion**: All utilities available via `#include "utilities.hpp"` (already in plugin.hpp)
 - **Namespace**: Access utilities through `shapetaker::` (e.g., `shapetaker::ParameterHelper::configGain()`)
 - **Parameter Configuration**: ALWAYS use `ParameterHelper` for new parameters instead of raw `configParam()`
 - **Polyphonic Processing**: Use `PolyphonicProcessor` and `VoiceArray<T>` instead of manual voice management
+- **UI Layout**: Use `LayoutHelper::PanelSVGParser` for SVG-based control positioning
+- **Visual Styling**: Use `ThemeManager` for consistent colors and visual effects across modules
+- **Voice Management**: Use `stx::poly` utilities for chord building and polyphonic voice assignment
+- **Graphics**: Use `drawAlchemicalSymbol()` for symbol rendering (40 symbols implemented)
 - **Before Implementing**: Check if utilities already provide the functionality - avoid code duplication
 
 ### Common Patterns
@@ -721,10 +870,25 @@ shapetaker::PolyphonicProcessor polyProcessor;
 shapetaker::VoiceArray<MyDSPClass> voices;
 int channels = polyProcessor.updateChannels(input, {output});
 
+// UI Layout with SVG (USE THIS):
+shapetaker::ui::LayoutHelper::PanelSVGParser parser(asset::plugin(pluginInstance, "res/panels/MyPanel.svg"));
+Vec knobPos = parser.centerPx("knob1", 10.0f, 25.0f); // fallback if ID not found
+
+// Theme Colors (USE THIS):
+shapetaker::ui::ThemeManager::BrandColors::tealRGB(); // Channel A color
+shapetaker::ui::ThemeManager::LightTheme::setRGBLight(this, LIGHT_ID, color);
+
+// Voice Assignment (USE THIS):
+std::vector<float> intervals = {0, 4, 7, 11}; // Chord intervals
+std::vector<float> targets;
+stx::poly::buildTargetsFromIntervals(intervals, voiceCount, harmonyMode, targets);
+stx::poly::assignNearest(targets, lastCV, voiceCount, outputCV);
+
 // Legacy Approach (AVOID):
 configParam(GAIN_PARAM, 0.0f, 1.0f, 0.0f, "Gain", "%", 0.0f, 100.0f);
 static const int MAX_VOICES = 6;
 MyDSPClass voices[MAX_VOICES];
+addChild(createWidget<Knob>(mm2px(Vec(x, y)))); // Without SVG positioning
 ```
 
 ### Refactoring Guidelines
@@ -735,14 +899,19 @@ MyDSPClass voices[MAX_VOICES];
 - **Backward Compatibility**: Maintained through namespace aliases during transition
 
 ### Current Refactoring Status
-- ✅ **Functional Organization**: DSP/Graphics/UI separation complete  
+- ✅ **Functional Organization**: DSP/Graphics/UI/Voice separation complete  
 - ✅ **Polyphony Utilities**: `PolyphonicProcessor`, `VoiceArray<T>` implemented & demonstrated
 - ✅ **Parameter Helpers**: Complete standardized parameter configuration system
 - ✅ **Effects Migration**: SidechainDetector, DistortionEngine moved to organized structure
 - ✅ **Transmutation Modular Architecture**: View/controller interfaces implemented with complete component separation
+- ✅ **UI Theme System**: Complete visual theme management with brand colors and consistent styling
+- ✅ **Layout Utilities**: SVG-based positioning system with panel parsing capabilities
+- ✅ **Graphics System**: Complete 40-symbol alchemical drawing implementation
+- ✅ **Voice Management**: Polyphonic voice assignment utilities for chord building
+- ✅ **Module-Specific DSP**: Involution DSP components demonstrate modular architecture pattern
+- ✅ **Delay Effects**: Chorus and delay effects added to DSP utilities
 - 🟨 **Module Decomposition**: Transmutation complete, other large modules pending
-- ⏳ **Widget Extraction**: Common widget base classes pending
-- ⏳ **Layout Utilities**: Positioning and spacing helpers pending
+- ⏳ **Widget Extraction**: Theme system provides foundation, common widget base classes pending
 
 ### Quality Standards
 - **Type Safety**: Use templates and strong typing (VoiceArray vs raw arrays)
