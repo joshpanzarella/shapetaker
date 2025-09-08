@@ -1036,7 +1036,7 @@
        id="text71">FIELD 1</text>
     <!-- LEFT LED indicator (ON when switch is OFF - purple glow) - at edge -->
     <g
-       transform="translate(90.050001,129.9)"
+       transform="translate(110,175)"
        id="g75">
       <circle
          r="5"
