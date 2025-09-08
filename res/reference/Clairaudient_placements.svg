@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg width="60.96mm" height="128.5mm" viewBox="0 0 60.96 128.5" version="1.1" xmlns="http://www.w3.org/2000/svg">
+  <!-- Simple outline and center markers for Clairaudient controls -->
+  <defs>
+    <style type="text/css"><![CDATA[
+      .center { fill: none; stroke: #ff0000; stroke-width: 0.2; }
+      .label { fill: #808080; font-size: 2.2px; font-family: Arial, sans-serif; }
+      .guide { stroke: #cccccc; stroke-width: 0.2; }
+    ]]></style>
+  </defs>
+
+  <!-- Panel border guides (optional) -->
+  <rect x="0.5" y="0.5" width="59.96" height="127.5" fill="none" class="guide"/>
+
+  <!-- Oscilloscope screen center -->
+  <circle id="oscope_screen" class="center" cx="30.480001" cy="20.781843" r="1.2"/>
+  <text class="label" x="31.8" y="21.5">oscope_screen</text>
+
+  <!-- Frequency knobs -->
+  <circle id="freq_o1" class="center" cx="12.39288" cy="28.178133" r="1.2"/>
+  <text class="label" x="13.8" y="28.9">freq_o1</text>
+  <circle id="freq_o2" class="center" cx="49.135624" cy="28.178133" r="1.2"/>
+  <text class="label" x="50.5" y="28.9">freq_o2</text>
+
+  <!-- Sync switches -->
+  <circle id="sync_o1" class="center" cx="26.167959" cy="47.738434" r="1.0"/>
+  <text class="label" x="27.5" y="48.4">sync_o1</text>
+  <circle id="sync_o2" class="center" cx="35.155243" cy="47.738434" r="1.0"/>
+  <text class="label" x="36.5" y="48.4">sync_o2</text>
+
+  <!-- Fine knobs -->
+  <circle id="fine_o1" class="center" cx="15.0233" cy="45.038658" r="1.0"/>
+  <text class="label" x="16.3" y="45.7">fine_o1</text>
+  <circle id="fine_o2" class="center" cx="45.0233" cy="45.038658" r="1.0"/>
+  <text class="label" x="46.3" y="45.7">fine_o2</text>
+
+  <!-- Fine attenuverters -->
+  <circle id="fine_atten_o1" class="center" cx="15.034473" cy="58.820183" r="1.0"/>
+  <text class="label" x="16.3" y="59.5">fine_atten_o1</text>
+  <circle id="fine_atten_o2" class="center" cx="45.034473" cy="58.820183" r="1.0"/>
+  <text class="label" x="46.3" y="59.5">fine_atten_o2</text>
+
+  <!-- Crossfade knob + attenuverters -->
+  <circle id="x_fade_knob" class="center" cx="30.48" cy="64.107727" r="1.0"/>
+  <text class="label" x="31.8" y="64.8">x_fade_knob</text>
+  <circle id="x_fade_atten" class="center" cx="30.48" cy="83.021637" r="1.0"/>
+  <text class="label" x="31.8" y="83.7">x_fade_atten</text>
+
+  <!-- Shape knobs + attenuverters -->
+  <circle id="sh_knob_o1" class="center" cx="10.240995" cy="74.654305" r="1.0"/>
+  <text class="label" x="11.6" y="75.3">sh_knob_o1</text>
+  <circle id="sh_knob_o2" class="center" cx="50.719231" cy="74.654305" r="1.0"/>
+  <text class="label" x="52.0" y="75.3">sh_knob_o2</text>
+  <circle id="sh_cv_o1" class="center" cx="15.034473" cy="86.433929" r="1.0"/>
+  <text class="label" x="16.3" y="87.1">sh_cv_o1</text>
+  <circle id="sh_cv_o2" class="center" cx="44.581718" cy="86.433929" r="1.0"/>
+  <text class="label" x="45.9" y="87.1">sh_cv_o2</text>
+
+  <!-- Inputs (row 1) -->
+  <circle id="v_oct_o1" class="center" cx="8.721756" cy="99.862808" r="0.9"/>
+  <text class="label" x="10.1" y="100.5">v_oct_o1</text>
+  <circle id="fine_cv_o1" class="center" cx="21.777" cy="99.862808" r="0.9"/>
+  <text class="label" x="23.1" y="100.5">fine_cv_o1</text>
+  <circle id="shape_o1" class="center" cx="34.832245" cy="99.862808" r="0.9"/>
+  <text class="label" x="36.2" y="100.5">shape_o1</text>
+  <circle id="x_fade_cv" class="center" cx="47.887489" cy="99.862808" r="0.9"/>
+  <text class="label" x="49.2" y="100.5">x_fade_cv</text>
+
+  <!-- Inputs/Outputs (row 2) -->
+  <circle id="v_out_o1" class="center" cx="8.721756" cy="113.38142" r="0.9"/>
+  <text class="label" x="10.1" y="114.0">v_out_o1</text>
+  <circle id="fine_cv_o2" class="center" cx="21.112274" cy="113.38142" r="0.9"/>
+  <text class="label" x="22.5" y="114.0">fine_cv_o2</text>
+  <circle id="shape_o2" class="center" cx="33.502792" cy="113.38142" r="0.9"/>
+  <text class="label" x="34.9" y="114.0">shape_o2</text>
+  <circle id="output_l" class="center" cx="45.893311" cy="113.38142" r="0.9"/>
+  <text class="label" x="47.3" y="114.0">output_l</text>
+  <circle id="output_r" class="center" cx="53.724667" cy="113.38142" r="0.9"/>
+  <text class="label" x="55.1" y="114.0">output_r</text>
+</svg>

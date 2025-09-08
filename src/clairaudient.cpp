@@ -1,41 +1,9 @@
 #include "plugin.hpp"
+#include "transmutation/ui.hpp" // for PanelPatinaOverlay (shared vintage overlay)
 #include <cmath>
 #include <atomic>
 
-// Small teal hexagon widget for attenuverter visual distinction
-struct HexagonWidget : Widget {
-    NVGcolor color = nvgRGBA(64, 224, 208, 255);
-    
-    void draw(const DrawArgs& args) override {
-        nvgBeginPath(args.vg);
-        
-        // Draw hexagon centered in the widget box
-        float cx = box.size.x / 2.0f;
-        float cy = box.size.y / 2.0f;
-        float radius = std::min(box.size.x, box.size.y) / 2.0f * 0.8f;
-        
-        for (int i = 0; i < 6; i++) {
-            float angle = i * M_PI / 3.0f;
-            float x = cx + radius * cosf(angle);
-            float y = cy + radius * sinf(angle);
-            
-            if (i == 0) {
-                nvgMoveTo(args.vg, x, y);
-            } else {
-                nvgLineTo(args.vg, x, y);
-            }
-        }
-        nvgClosePath(args.vg);
-        
-        nvgFillColor(args.vg, color);
-        nvgFill(args.vg);
-        
-        // Optional stroke for better visibility
-        nvgStrokeColor(args.vg, nvgRGBA(32, 112, 104, 255)); // Darker teal
-        nvgStrokeWidth(args.vg, 0.5f);
-        nvgStroke(args.vg);
-    }
-};
+// (Removed: decorative HexagonWidget overlays)
 
 
 struct ClairaudientModule : Module, IOscilloscopeSource {
@@ -397,116 +365,155 @@ private:
 };
 
 struct ClairaudientWidget : ModuleWidget {
+    // Draw panel background texture to match Transmutation
+    void draw(const DrawArgs& args) override {
+        std::shared_ptr<Image> bg = APP->window->loadImage(asset::plugin(pluginInstance, "res/panels/vcv-panel-background.png"));
+        if (bg) {
+            NVGpaint paint = nvgImagePattern(args.vg, 0.f, 0.f, box.size.x, box.size.y, 0.f, bg->handle, 1.0f);
+            nvgBeginPath(args.vg);
+            nvgRect(args.vg, 0.f, 0.f, box.size.x, box.size.y);
+            nvgFillPaint(args.vg, paint);
+            nvgFill(args.vg);
+        }
+        ModuleWidget::draw(args);
+    }
+
     ClairaudientWidget(ClairaudientModule* module) {
         setModule(module);
         setPanel(createPanel(asset::plugin(pluginInstance, "res/panels/Clairaudient.svg")));
 
-        addChild(createWidget<ScrewSilver>(Vec(RACK_GRID_WIDTH, 0)));
-        addChild(createWidget<ScrewSilver>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, 0)));
-        addChild(createWidget<ScrewSilver>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
-        addChild(createWidget<ScrewSilver>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
+        addChild(createWidget<ScrewBlack>(Vec(RACK_GRID_WIDTH, 0)));
+        addChild(createWidget<ScrewBlack>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, 0)));
+        addChild(createWidget<ScrewBlack>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
+        addChild(createWidget<ScrewBlack>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
-        // OSC X (left side) - Frequency controls
-        addParam(createParamCentered<ShapetakerKnobOscilloscopeLarge>(mm2px(Vec(10.075688, 31.045906)), module, ClairaudientModule::FREQ1_PARAM));
-        
-        // OSC Y (right side) - Frequency controls  
-        addParam(createParamCentered<ShapetakerKnobOscilloscopeLarge>(mm2px(Vec(50.588146, 31.045906)), module, ClairaudientModule::FREQ2_PARAM));
-        
-        // Sync switches
-        addParam(createParamCentered<ShapetakerOscilloscopeSwitch>(mm2px(Vec(26.167959, 47.738434)), module, ClairaudientModule::SYNC1_PARAM));
-        addParam(createParamCentered<ShapetakerOscilloscopeSwitch>(mm2px(Vec(35.155243, 47.738434)), module, ClairaudientModule::SYNC2_PARAM));
-        
-        // Fine tune controls
-        addParam(createParamCentered<ShapetakerKnobOscilloscopeMedium>(mm2px(Vec(15.0233, 45.038658)), module, ClairaudientModule::FINE1_PARAM));
-        addParam(createParamCentered<ShapetakerKnobOscilloscopeMedium>(mm2px(Vec(45.0233, 45.038658)), module, ClairaudientModule::FINE2_PARAM));
-        
-        // Fine tune attenuverters
-        addParam(createParamCentered<ShapetakerAttenuverterOscilloscope>(mm2px(Vec(15.034473, 58.820183)), module, ClairaudientModule::FINE1_ATTEN_PARAM));
-        addParam(createParamCentered<ShapetakerAttenuverterOscilloscope>(mm2px(Vec(45.034473, 58.820183)), module, ClairaudientModule::FINE2_ATTEN_PARAM));
-        
-        // Teal hexagon indicators for fine tune attenuverters
+        // Read positions from panel SVG by id, like Transmutation
+        auto svgPath = asset::plugin(pluginInstance, "res/panels/Clairaudient.svg");
+        std::string svg;
         {
-            NVGcolor tealColor = nvgRGBA(64, 224, 208, 255); // Teal color
-            HexagonWidget* hex1 = new HexagonWidget();
-            hex1->box.pos = mm2px(Vec(15.034473 - 1.5, 58.820183 - 1.5));
-            hex1->box.size = mm2px(Vec(3, 3));
-            hex1->color = tealColor;
-            addChild(hex1);
-            
-            HexagonWidget* hex2 = new HexagonWidget();
-            hex2->box.pos = mm2px(Vec(45.034473 - 1.5, 58.820183 - 1.5));
-            hex2->box.size = mm2px(Vec(3, 3));
-            hex2->color = tealColor;
-            addChild(hex2);
+            std::ifstream f(svgPath);
+            if (f) { std::stringstream ss; ss << f.rdbuf(); svg = ss.str(); }
         }
+        auto findTagForId = [&](const std::string& id) -> std::string {
+            if (svg.empty()) return "";
+            std::string needle = "id=\"" + id + "\"";
+            size_t pos = svg.find(needle);
+            if (pos == std::string::npos) return "";
+            size_t start = svg.rfind('<', pos);
+            size_t end = svg.find('>', pos);
+            if (start == std::string::npos || end == std::string::npos || end <= start) return "";
+            return svg.substr(start, end - start + 1);
+        };
+        auto getAttr = [&](const std::string& tag, const std::string& key, float defVal) -> float {
+            if (tag.empty()) return defVal;
+            std::string k = key + "=\"";
+            size_t p = tag.find(k);
+            if (p == std::string::npos) return defVal;
+            p += k.size();
+            size_t q = tag.find('"', p);
+            if (q == std::string::npos) return defVal;
+            try { return std::stof(tag.substr(p, q - p)); } catch (...) { return defVal; }
+        };
+        auto centerFromId = [&](const std::string& id, float defx, float defy) -> Vec {
+            std::string tag = findTagForId(id);
+            if (tag.find("<rect") != std::string::npos) {
+                float x = getAttr(tag, "x", defx);
+                float y = getAttr(tag, "y", defy);
+                float w = getAttr(tag, "width", 0.f);
+                float h = getAttr(tag, "height", 0.f);
+                return Vec(x + w * 0.5f, y + h * 0.5f);
+            }
+            float cx = getAttr(tag, "cx", defx);
+            float cy = getAttr(tag, "cy", defy);
+            return Vec(cx, cy);
+        };
+
+        // OSC X/Y large frequency knobs
+        addParam(createParamCentered<ShapetakerKnobOscilloscopeLarge>(mm2px(centerFromId("freq_o1", 10.075688f, 31.045906f)), module, ClairaudientModule::FREQ1_PARAM));
+        addParam(createParamCentered<ShapetakerKnobOscilloscopeLarge>(mm2px(centerFromId("freq_o2", 50.588146f, 31.045906f)), module, ClairaudientModule::FREQ2_PARAM));
+
+        // Sync switches (slightly larger than default)
+        {
+            Vec pos1 = mm2px(centerFromId("sync_o1", 26.167959f, 47.738434f));
+            auto* sw1 = createParamCentered<ShapetakerOscilloscopeSwitch>(pos1, module, ClairaudientModule::SYNC1_PARAM);
+            // Scale up ~15% and keep centered
+            Vec c1 = sw1->box.pos.plus(sw1->box.size.div(2.f));
+            sw1->box.size = sw1->box.size.mult(1.15f);
+            sw1->box.pos = c1.minus(sw1->box.size.div(2.f));
+            addParam(sw1);
+
+            Vec pos2 = mm2px(centerFromId("sync_o2", 35.155243f, 47.738434f));
+            auto* sw2 = createParamCentered<ShapetakerOscilloscopeSwitch>(pos2, module, ClairaudientModule::SYNC2_PARAM);
+            Vec c2 = sw2->box.pos.plus(sw2->box.size.div(2.f));
+            sw2->box.size = sw2->box.size.mult(1.15f);
+            sw2->box.pos = c2.minus(sw2->box.size.div(2.f));
+            addParam(sw2);
+        }
+
+        // Fine tune controls
+        addParam(createParamCentered<ShapetakerKnobOscilloscopeMedium>(mm2px(centerFromId("fine_o1", 15.0233f, 45.038658f)), module, ClairaudientModule::FINE1_PARAM));
+        addParam(createParamCentered<ShapetakerKnobOscilloscopeMedium>(mm2px(centerFromId("fine_o2", 45.0233f, 45.038658f)), module, ClairaudientModule::FINE2_PARAM));
+
+        // Fine tune attenuverters
+        addParam(createParamCentered<ShapetakerAttenuverterOscilloscope>(mm2px(centerFromId("fine_atten_o1", 15.034473f, 58.820183f)), module, ClairaudientModule::FINE1_ATTEN_PARAM));
+        addParam(createParamCentered<ShapetakerAttenuverterOscilloscope>(mm2px(centerFromId("fine_atten_o2", 45.034473f, 58.820183f)), module, ClairaudientModule::FINE2_ATTEN_PARAM));
+        
+        // (Removed decorative teal hexagon indicators for fine attenuverters)
         
         
         // Crossfade control (center)
-        addParam(createParamCentered<ShapetakerKnobOscilloscopeLarge>(mm2px(Vec(30.48, 64.107727)), module, ClairaudientModule::XFADE_PARAM));
+        addParam(createParamCentered<ShapetakerKnobOscilloscopeLarge>(mm2px(centerFromId("x_fade_knob", 30.48f, 64.107727f)), module, ClairaudientModule::XFADE_PARAM));
         
         // Crossfade attenuverter (center)
-        addParam(createParamCentered<ShapetakerAttenuverterOscilloscope>(mm2px(Vec(30.48, 83.021637)), module, ClairaudientModule::XFADE_ATTEN_PARAM));
+        addParam(createParamCentered<ShapetakerAttenuverterOscilloscope>(mm2px(centerFromId("x_fade_atten", 30.48f, 83.021637f)), module, ClairaudientModule::XFADE_ATTEN_PARAM));
         
-        // Teal hexagon indicator for crossfade attenuverter
-        {
-            NVGcolor tealColor = nvgRGBA(64, 224, 208, 255); // Teal color
-            HexagonWidget* hex = new HexagonWidget();
-            hex->box.pos = mm2px(Vec(30.48 - 1.5, 83.021637 - 1.5));
-            hex->box.size = mm2px(Vec(3, 3));
-            hex->color = tealColor;
-            addChild(hex);
-        }
+        // (Removed decorative teal hexagon indicator for crossfade attenuverters)
         
         
         // Shape controls
-        addParam(createParamCentered<ShapetakerKnobOscilloscopeLarge>(mm2px(Vec(10.240995, 74.654305)), module, ClairaudientModule::SHAPE1_PARAM));
-        addParam(createParamCentered<ShapetakerKnobOscilloscopeLarge>(mm2px(Vec(50.719231, 74.654305)), module, ClairaudientModule::SHAPE2_PARAM));
+        addParam(createParamCentered<ShapetakerKnobOscilloscopeLarge>(mm2px(centerFromId("sh_knob_o1", 10.240995f, 74.654305f)), module, ClairaudientModule::SHAPE1_PARAM));
+        addParam(createParamCentered<ShapetakerKnobOscilloscopeLarge>(mm2px(centerFromId("sh_knob_o2", 50.719231f, 74.654305f)), module, ClairaudientModule::SHAPE2_PARAM));
         
         // Shape attenuverters
-        addParam(createParamCentered<ShapetakerAttenuverterOscilloscope>(mm2px(Vec(15.034473, 86.433929)), module, ClairaudientModule::SHAPE1_ATTEN_PARAM));
-        addParam(createParamCentered<ShapetakerAttenuverterOscilloscope>(mm2px(Vec(44.581718, 86.433929)), module, ClairaudientModule::SHAPE2_ATTEN_PARAM));
+        addParam(createParamCentered<ShapetakerAttenuverterOscilloscope>(mm2px(centerFromId("sh_cv_o1", 15.034473f, 86.433929f)), module, ClairaudientModule::SHAPE1_ATTEN_PARAM));
+        addParam(createParamCentered<ShapetakerAttenuverterOscilloscope>(mm2px(centerFromId("sh_cv_o2", 44.581718f, 86.433929f)), module, ClairaudientModule::SHAPE2_ATTEN_PARAM));
         
-        // Teal hexagon indicators for shape attenuverters
-        {
-            NVGcolor tealColor = nvgRGBA(64, 224, 208, 255); // Teal color
-            HexagonWidget* hex1 = new HexagonWidget();
-            hex1->box.pos = mm2px(Vec(15.034473 - 1.5, 86.433929 - 1.5));
-            hex1->box.size = mm2px(Vec(3, 3));
-            hex1->color = tealColor;
-            addChild(hex1);
-            
-            HexagonWidget* hex2 = new HexagonWidget();
-            hex2->box.pos = mm2px(Vec(44.581718 - 1.5, 86.433929 - 1.5));
-            hex2->box.size = mm2px(Vec(3, 3));
-            hex2->color = tealColor;
-            addChild(hex2);
-        }
+        // (Removed decorative teal hexagon indicators for shape attenuverters)
         
 
         // Vintage oscilloscope display showing real-time waveform (circular)
         // The module itself is the source for the oscilloscope data
         if (module) {
             VintageOscilloscopeWidget* oscope = new VintageOscilloscopeWidget(module);
-            // Position based on the yellow circle in the SVG
-            oscope->box.pos = mm2px(Vec(30.563007 - 10, 28.92709 - 15)); // Center on oscilloscope screen position, moved up
-            oscope->box.size = mm2px(Vec(20, 20)); // Smaller size for better fit
+            Vec scr = centerFromId("oscope_screen", 30.480001f, 20.781843f);
+            // Increase oscilloscope screen radius (size) a bit more
+            constexpr float OSCOPE_SIZE_MM = 26.f; // was 24mm previously
+            Vec sizeMM = Vec(OSCOPE_SIZE_MM, OSCOPE_SIZE_MM);
+            Vec topLeft = mm2px(scr).minus(mm2px(sizeMM).div(2.f));
+            oscope->box.pos = topLeft;
+            oscope->box.size = mm2px(sizeMM);
             addChild(oscope);
         }
 
         // Input row 1: V/OCT and CV inputs - BNC connectors based on SVG positions
-        addInput(createInputCentered<ShapetakerBNCPort>(mm2px(Vec(8.721756, 99.862808)), module, ClairaudientModule::VOCT1_INPUT));
-        addInput(createInputCentered<ShapetakerBNCPort>(mm2px(Vec(21.777, 99.862808)), module, ClairaudientModule::FINE1_CV_INPUT));
-        addInput(createInputCentered<ShapetakerBNCPort>(mm2px(Vec(34.832245, 99.862808)), module, ClairaudientModule::SHAPE1_CV_INPUT));
-        addInput(createInputCentered<ShapetakerBNCPort>(mm2px(Vec(47.887489, 99.862808)), module, ClairaudientModule::XFADE_CV_INPUT));
+        addInput(createInputCentered<ShapetakerBNCPort>(mm2px(centerFromId("v_oct_o1", 8.721756f, 99.862808f)), module, ClairaudientModule::VOCT1_INPUT));
+        addInput(createInputCentered<ShapetakerBNCPort>(mm2px(centerFromId("fine_cv_o1", 21.777f, 99.862808f)), module, ClairaudientModule::FINE1_CV_INPUT));
+        addInput(createInputCentered<ShapetakerBNCPort>(mm2px(centerFromId("shape_o1", 34.832245f, 99.862808f)), module, ClairaudientModule::SHAPE1_CV_INPUT));
+        addInput(createInputCentered<ShapetakerBNCPort>(mm2px(centerFromId("x_fade_cv", 47.887489f, 99.862808f)), module, ClairaudientModule::XFADE_CV_INPUT));
 
         // Input row 2: Second oscillator and output - BNC connectors  
-        addInput(createInputCentered<ShapetakerBNCPort>(mm2px(Vec(8.721756, 113.38142)), module, ClairaudientModule::VOCT2_INPUT));
-        addInput(createInputCentered<ShapetakerBNCPort>(mm2px(Vec(21.112274, 113.38142)), module, ClairaudientModule::FINE2_CV_INPUT));
-        addInput(createInputCentered<ShapetakerBNCPort>(mm2px(Vec(33.502792, 113.38142)), module, ClairaudientModule::SHAPE2_CV_INPUT));
+        addInput(createInputCentered<ShapetakerBNCPort>(mm2px(centerFromId("v_out_o1", 8.721756f, 113.38142f)), module, ClairaudientModule::VOCT2_INPUT));
+        addInput(createInputCentered<ShapetakerBNCPort>(mm2px(centerFromId("fine_cv_o2", 21.112274f, 113.38142f)), module, ClairaudientModule::FINE2_CV_INPUT));
+        addInput(createInputCentered<ShapetakerBNCPort>(mm2px(centerFromId("shape_o2", 33.502792f, 113.38142f)), module, ClairaudientModule::SHAPE2_CV_INPUT));
         
         // Outputs - BNC connectors for consistent vintage look
-        addOutput(createOutputCentered<ShapetakerBNCPort>(mm2px(Vec(45.893311, 113.38142)), module, ClairaudientModule::LEFT_OUTPUT));
-        addOutput(createOutputCentered<ShapetakerBNCPort>(mm2px(Vec(53.724667, 113.38142)), module, ClairaudientModule::RIGHT_OUTPUT));
+        addOutput(createOutputCentered<ShapetakerBNCPort>(mm2px(centerFromId("output_l", 45.893311f, 113.38142f)), module, ClairaudientModule::LEFT_OUTPUT));
+        addOutput(createOutputCentered<ShapetakerBNCPort>(mm2px(centerFromId("output_r", 53.724667f, 113.38142f)), module, ClairaudientModule::RIGHT_OUTPUT));
+
+        // Subtle patina overlay to match Transmutation
+        auto overlay = new PanelPatinaOverlay();
+        overlay->box = Rect(Vec(0, 0), box.size);
+        addChild(overlay);
     }
 };
 

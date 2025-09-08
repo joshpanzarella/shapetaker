@@ -170,20 +170,26 @@ struct ShapetakerOscilloscopeSwitch : app::SvgSwitch {
         addFrame(Svg::load(asset::plugin(pluginInstance, "res/switches/shuttle-toggle-switch-on.svg")));
         // Disable the shadow by setting it to transparent
         shadow->visible = false;
-        // Scale down the switch by factor of 4
-        box.size = Vec(25, 25);
+        // Target widget box size (draw is dynamically scaled to fit)
+        // Increased default size for better ergonomics/visibility
+        box.size = Vec(36.f, 36.f);
     }
     
     void draw(const DrawArgs& args) override {
         nvgSave(args.vg);
-        // Scale down by factor of 4 (0.25x) and center it
-        nvgScale(args.vg, 0.25f, 0.25f);
-        // Adjust position to center the scaled graphics
-        nvgTranslate(args.vg, -37.5f, -37.5f);
+        // Scale SVG frames (200x200) to fit our current box and center them
+        const float svgSize = 200.f;
+        float s = std::min(box.size.x, box.size.y) / svgSize;
+        float tx = (box.size.x - svgSize * s) * 0.5f;
+        float ty = (box.size.y - svgSize * s) * 0.5f;
+        nvgTranslate(args.vg, tx, ty);
+        nvgScale(args.vg, s, s);
         SvgSwitch::draw(args);
         nvgRestore(args.vg);
     }
 };
+
+// Note: LED glow for shuttle switches lives in the SVGs themselves (panel LEDs).
 
 struct ShapetakerBNCPort : app::SvgPort {
     ShapetakerBNCPort() {

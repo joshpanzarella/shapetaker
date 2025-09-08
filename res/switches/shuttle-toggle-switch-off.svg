@@ -1009,7 +1009,7 @@
      style="display:inline">FIELD 1</text>
   <!-- LEFT LED indicator (ON when switch is OFF - purple glow) - at edge -->
   <g
-     transform="translate(80,139)"
+     transform="translate(85,139)"
      id="g75"
      style="display:inline">
     <circle
@@ -1058,7 +1058,7 @@
   </g>
   <!-- RIGHT LED indicator (OFF when switch is OFF) - at edge -->
   <g
-     transform="translate(120,139)"
+     transform="translate(115,139)"
      id="g80"
      style="display:inline">
     <circle
