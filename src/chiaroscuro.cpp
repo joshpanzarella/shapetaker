@@ -9,7 +9,7 @@
 // Custom textured jewel LED with layered opacity effects
 struct TexturedJewelLED : ModuleLightWidget {
     TexturedJewelLED() {
-        box.size = Vec(30, 30);
+        box.size = Vec(25, 25);
         
         // Try to load the jewel SVG, fallback to simple shape if it fails
         widget::SvgWidget* sw = new widget::SvgWidget;
@@ -17,6 +17,8 @@ struct TexturedJewelLED : ModuleLightWidget {
         
         if (svg) {
             sw->setSvg(svg);
+            // Center the SVG within the widget box
+            sw->box.pos = Vec((box.size.x - sw->box.size.x) * 0.5f, (box.size.y - sw->box.size.y) * 0.5f);
             addChild(sw);
         }
         
@@ -54,82 +56,82 @@ struct TexturedJewelLED : ModuleLightWidget {
                 // Save current transform
                 nvgSave(args.vg);
                 
-                // Layer 1: Large outer glow with gradient
-                NVGpaint outerGlow = nvgRadialGradient(args.vg, cx, cy, 8.0f, 16.0f,
+                // Layer 1: Large outer glow with gradient (scaled down)
+                NVGpaint outerGlow = nvgRadialGradient(args.vg, cx, cy, 6.5f, 13.5f,
                     nvgRGBAf(r, g, b, 0.6f * maxBrightness), nvgRGBAf(r, g, b, 0.0f));
                 nvgBeginPath(args.vg);
-                nvgCircle(args.vg, cx, cy, 16.0f);
+                nvgCircle(args.vg, cx, cy, 13.5f);
                 nvgFillPaint(args.vg, outerGlow);
                 nvgFill(args.vg);
                 
-                // Layer 2: Medium ring with stronger color saturation
-                NVGpaint mediumRing = nvgRadialGradient(args.vg, cx, cy, 4.0f, 11.0f,
+                // Layer 2: Medium ring with stronger color saturation (scaled down)
+                NVGpaint mediumRing = nvgRadialGradient(args.vg, cx, cy, 3.5f, 9.5f,
                     nvgRGBAf(r * 1.2f, g * 1.2f, b * 1.2f, 0.9f * maxBrightness), 
                     nvgRGBAf(r, g, b, 0.3f * maxBrightness));
                 nvgBeginPath(args.vg);
-                nvgCircle(args.vg, cx, cy, 11.0f);
+                nvgCircle(args.vg, cx, cy, 9.5f);
                 nvgFillPaint(args.vg, mediumRing);
                 nvgFill(args.vg);
                 
-                // Layer 3: Inner core with high contrast
-                NVGpaint innerCore = nvgRadialGradient(args.vg, cx, cy, 2.0f, 7.0f,
+                // Layer 3: Inner core with high contrast (scaled down)
+                NVGpaint innerCore = nvgRadialGradient(args.vg, cx, cy, 1.5f, 6.0f,
                     nvgRGBAf(fminf(r * 1.5f, 1.0f), fminf(g * 1.5f, 1.0f), fminf(b * 1.5f, 1.0f), 1.0f), 
                     nvgRGBAf(r, g, b, 0.7f));
                 nvgBeginPath(args.vg);
-                nvgCircle(args.vg, cx, cy, 7.0f);
+                nvgCircle(args.vg, cx, cy, 6.0f);
                 nvgFillPaint(args.vg, innerCore);
                 nvgFill(args.vg);
                 
-                // Layer 4: Bright center hotspot
+                // Layer 4: Bright center hotspot (scaled down)
                 nvgBeginPath(args.vg);
-                nvgCircle(args.vg, cx, cy, 3.5f);
+                nvgCircle(args.vg, cx, cy, 3.0f);
                 nvgFillColor(args.vg, nvgRGBAf(fminf(r * 2.0f, 1.0f), fminf(g * 2.0f, 1.0f), fminf(b * 2.0f, 1.0f), 1.0f));
                 nvgFill(args.vg);
                 
-                // Layer 5: Multiple highlight spots for faceted jewel effect
+                // Layer 5: Multiple highlight spots for faceted jewel effect (scaled down)
                 float highlightIntensity = 0.9f * maxBrightness;
                 
-                // Main highlight (upper left)
+                // Main highlight (upper left) - scaled down
                 nvgBeginPath(args.vg);
-                nvgCircle(args.vg, cx - 3.0f, cy - 3.0f, 2.0f);
+                nvgCircle(args.vg, cx - 2.5f, cy - 2.5f, 1.7f);
                 nvgFillColor(args.vg, nvgRGBAf(1.0f, 1.0f, 1.0f, highlightIntensity));
                 nvgFill(args.vg);
                 
-                // Secondary highlight (right side)
+                // Secondary highlight (right side) - scaled down
                 nvgBeginPath(args.vg);
-                nvgCircle(args.vg, cx + 2.5f, cy - 1.0f, 1.2f);
+                nvgCircle(args.vg, cx + 2.0f, cy - 0.8f, 1.0f);
                 nvgFillColor(args.vg, nvgRGBAf(1.0f, 1.0f, 1.0f, highlightIntensity * 0.6f));
                 nvgFill(args.vg);
                 
-                // Tiny sparkle highlights
+                // Tiny sparkle highlights - scaled down
                 nvgBeginPath(args.vg);
-                nvgCircle(args.vg, cx - 1.0f, cy + 2.0f, 0.7f);
+                nvgCircle(args.vg, cx - 0.8f, cy + 1.7f, 0.6f);
                 nvgFillColor(args.vg, nvgRGBAf(1.0f, 1.0f, 1.0f, highlightIntensity * 0.8f));
                 nvgFill(args.vg);
                 
-                // Layer 6: Dark rim for definition
+                // Layer 6: Dark rim for definition (scaled down)
                 nvgBeginPath(args.vg);
-                nvgCircle(args.vg, cx, cy, 14.0f);
+                nvgCircle(args.vg, cx, cy, 12.0f);
                 nvgStrokeColor(args.vg, nvgRGBAf(0.2f, 0.2f, 0.2f, 0.8f));
-                nvgStrokeWidth(args.vg, 0.8f);
+                nvgStrokeWidth(args.vg, 0.7f);
                 nvgStroke(args.vg);
                 
                 nvgRestore(args.vg);
             } else {
-                // Draw subtle base jewel when off
+                // Draw subtle base jewel when off (scaled down)
                 nvgBeginPath(args.vg);
-                nvgCircle(args.vg, cx, cy, 14.0f);
+                nvgCircle(args.vg, cx, cy, 12.0f);
                 nvgFillColor(args.vg, nvgRGBA(60, 60, 70, 255));
                 nvgFill(args.vg);
                 
                 nvgBeginPath(args.vg);
-                nvgCircle(args.vg, cx, cy, 11.0f);
+                nvgCircle(args.vg, cx, cy, 9.5f);
                 nvgFillColor(args.vg, nvgRGBA(30, 30, 35, 255));
                 nvgFill(args.vg);
                 
-                // Subtle highlight even when off
+                // Subtle highlight even when off (scaled down)
                 nvgBeginPath(args.vg);
-                nvgCircle(args.vg, cx - 2.0f, cy - 2.0f, 1.5f);
+                nvgCircle(args.vg, cx - 1.7f, cy - 1.7f, 1.3f);
                 nvgFillColor(args.vg, nvgRGBA(120, 120, 140, 100));
                 nvgFill(args.vg);
             }
@@ -147,13 +149,15 @@ struct TexturedJewelLED : ModuleLightWidget {
 struct Chiaroscuro : Module {
     enum ParamIds {
         VCA_PARAM,
-        VCA_ATT_PARAM,
         TYPE_PARAM,
+        DIST_PARAM,        // New: Distortion knob (dist-knob)
+        DIST_ATT_PARAM,    // New: Distortion attenuverter
         DRIVE_PARAM,
+        DRIVE_ATT_PARAM,   // New: Drive attenuverter  
         MIX_PARAM,
+        MIX_ATT_PARAM,     // New: Mix attenuverter
         LINK_PARAM,
         RESPONSE_PARAM,    // Linear/Exponential response switch
-        MANUAL_DIST_PARAM, // Manual distortion amount
         NUM_PARAMS
     };
 
@@ -163,6 +167,7 @@ struct Chiaroscuro : Module {
         VCA_CV_INPUT,
         SIDECHAIN_INPUT,
         TYPE_CV_INPUT,
+        DIST_CV_INPUT,     // CV input for distortion amount
         DRIVE_CV_INPUT,
         MIX_CV_INPUT,
         NUM_INPUTS
@@ -178,6 +183,9 @@ struct Chiaroscuro : Module {
         DIST_LED_R,
         DIST_LED_G,
         DIST_LED_B,
+        JEWEL_LED_R,       // New: Jewel LED for distortion amount indication
+        JEWEL_LED_G,
+        JEWEL_LED_B,
         VU_L_LED,
         VU_R_LED,
         NUM_LIGHTS
@@ -196,19 +204,22 @@ struct Chiaroscuro : Module {
         config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
         
         shapetaker::ParameterHelper::configGain(this, VCA_PARAM, "VCA Gain");
-        shapetaker::ParameterHelper::configAttenuverter(this, VCA_ATT_PARAM, "VCA CV Attenuverter");
         shapetaker::ParameterHelper::configDiscrete(this, TYPE_PARAM, "Distortion Type", 0, 5, 0);
+        shapetaker::ParameterHelper::configGain(this, DIST_PARAM, "Distortion Amount");
+        shapetaker::ParameterHelper::configAttenuverter(this, DIST_ATT_PARAM, "Distortion CV Attenuverter");
         shapetaker::ParameterHelper::configDrive(this, DRIVE_PARAM);
+        shapetaker::ParameterHelper::configAttenuverter(this, DRIVE_ATT_PARAM, "Drive CV Attenuverter");
         shapetaker::ParameterHelper::configMix(this, MIX_PARAM);
+        shapetaker::ParameterHelper::configAttenuverter(this, MIX_ATT_PARAM, "Mix CV Attenuverter");
         shapetaker::ParameterHelper::configToggle(this, LINK_PARAM, "Link L/R Channels");
         shapetaker::ParameterHelper::configToggle(this, RESPONSE_PARAM, "VCA Response: Linear/Exponential");
-        shapetaker::ParameterHelper::configGain(this, MANUAL_DIST_PARAM, "Manual Distortion", 0.0025f);
         
         shapetaker::ParameterHelper::configAudioInput(this, AUDIO_L_INPUT, "Audio Left");
         shapetaker::ParameterHelper::configAudioInput(this, AUDIO_R_INPUT, "Audio Right");
         shapetaker::ParameterHelper::configCVInput(this, VCA_CV_INPUT, "VCA Control Voltage");
         shapetaker::ParameterHelper::configAudioInput(this, SIDECHAIN_INPUT, "Sidechain Detector");
         shapetaker::ParameterHelper::configCVInput(this, TYPE_CV_INPUT, "Distortion Type CV");
+        shapetaker::ParameterHelper::configCVInput(this, DIST_CV_INPUT, "Distortion Amount CV");
         shapetaker::ParameterHelper::configCVInput(this, DRIVE_CV_INPUT, "Drive Amount CV");
         shapetaker::ParameterHelper::configCVInput(this, MIX_CV_INPUT, "Mix Control CV");
         
@@ -252,27 +263,49 @@ struct Chiaroscuro : Module {
         // Global parameters (shared across all voices)
         float drive = params[DRIVE_PARAM].getValue();
         if (inputs[DRIVE_CV_INPUT].isConnected()) {
-            drive += inputs[DRIVE_CV_INPUT].getVoltage() * 0.1f;
+            float cv_amount = params[DRIVE_ATT_PARAM].getValue();
+            drive += inputs[DRIVE_CV_INPUT].getVoltage() * cv_amount * 0.1f;
         }
         drive = clamp(drive, 0.0f, 1.0f);
         
         float mix = params[MIX_PARAM].getValue();
         if (inputs[MIX_CV_INPUT].isConnected()) {
-            mix += inputs[MIX_CV_INPUT].getVoltage() * 0.1f;
+            float cv_amount = params[MIX_ATT_PARAM].getValue();
+            mix += inputs[MIX_CV_INPUT].getVoltage() * cv_amount * 0.1f;
         }
         mix = clamp(mix, 0.0f, 1.0f);
         
         int distortion_type = (int)params[TYPE_PARAM].getValue();
         if (inputs[TYPE_CV_INPUT].isConnected()) {
             float cv = inputs[TYPE_CV_INPUT].getVoltage() * 0.1f;
-            distortion_type = (int)(cv * 6.0f);
+            distortion_type = (int)(params[TYPE_PARAM].getValue() + cv * 6.0f);
         }
         distortion_type = clamp(distortion_type, 0, 5);
         
-        // Calculate distortion amount - manual knob + optional sidechain envelope
-        float manual_dist = params[MANUAL_DIST_PARAM].getValue();
+        // Calculate distortion amount - main dist knob + CV + optional sidechain envelope
+        float dist_amount = params[DIST_PARAM].getValue();
+        if (inputs[DIST_CV_INPUT].isConnected()) {
+            float cv_amount = params[DIST_ATT_PARAM].getValue();
+            dist_amount += inputs[DIST_CV_INPUT].getVoltage() * cv_amount * 0.1f;
+        }
+        dist_amount = clamp(dist_amount, 0.0f, 1.0f);
         float sidechain_contribution = inputs[SIDECHAIN_INPUT].isConnected() ? sc_env : 0.0f;
-        float combined_distortion = clamp(manual_dist + sidechain_contribution, 0.0f, 1.0f);
+        float combined_distortion = clamp(dist_amount + sidechain_contribution, 0.0f, 1.0f);
+        
+        // Enhanced jewel LED with drive and mix effects - restored original brightness
+        // Base red intensity from distortion amount (core effect)
+        float red_intensity = combined_distortion; // Restored to full brightness
+        
+        // Drive adds green component - creates yellow/orange tint when combined with red
+        float green_intensity = drive * 0.8f; // Restored to 0.8
+        
+        // Mix adds blue component - creates purple/magenta when combined with red
+        float blue_intensity = mix * 0.6f; // Restored to 0.6
+        
+        // Apply full intensity scaling for maximum visual impact
+        lights[JEWEL_LED_R].setBrightness(red_intensity);
+        lights[JEWEL_LED_G].setBrightness(green_intensity);
+        lights[JEWEL_LED_B].setBrightness(blue_intensity);
         
         // Apply smoothing to the combined distortion to prevent clicks
         float smoothed_distortion = distortion_slew.process(args.sampleTime, combined_distortion);
@@ -317,8 +350,7 @@ struct Chiaroscuro : Module {
             if (inputs[VCA_CV_INPUT].isConnected()) {
                 float cv = inputs[VCA_CV_INPUT].getPolyVoltage(ch) * 0.1f; // 10V -> 1.0f
                 cv = clamp(cv, -1.0f, 1.0f);
-                float cv_mod = cv * params[VCA_ATT_PARAM].getValue(); // Full range when attenuverter at 100%
-                vca_gain += cv_mod;
+                vca_gain += cv; // Direct CV control without attenuverter
             }
             
             vca_gain = clamp(vca_gain, 0.0f, 2.0f);
@@ -387,6 +419,19 @@ struct Chiaroscuro : Module {
 };
 
 struct ChiaroscuroWidget : ModuleWidget {
+    // Draw panel background texture to match other modules
+    void draw(const DrawArgs& args) override {
+        std::shared_ptr<Image> bg = APP->window->loadImage(asset::plugin(pluginInstance, "res/panels/vcv-panel-background.png"));
+        if (bg) {
+            NVGpaint paint = nvgImagePattern(args.vg, 0.f, 0.f, box.size.x, box.size.y, 0.f, bg->handle, 1.0f);
+            nvgBeginPath(args.vg);
+            nvgRect(args.vg, 0.f, 0.f, box.size.x, box.size.y);
+            nvgFillPaint(args.vg, paint);
+            nvgFill(args.vg);
+        }
+        ModuleWidget::draw(args);
+    }
+
     ChiaroscuroWidget(Chiaroscuro* module) {
         setModule(module);
         setPanel(APP->window->loadSvg(asset::plugin(pluginInstance, "res/panels/Chiaroscuro.svg")));
@@ -396,68 +441,100 @@ struct ChiaroscuroWidget : ModuleWidget {
         addChild(createWidget<ScrewSilver>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
         addChild(createWidget<ScrewSilver>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
         
-        // Audio I/O - BNC connectors for vintage oscilloscope look
-        addInput(createInputCentered<ShapetakerBNCPort>(Vec(29.17642, 341.98523), module, Chiaroscuro::AUDIO_L_INPUT));
-        addInput(createInputCentered<ShapetakerBNCPort>(Vec(73.836395, 341.98523), module, Chiaroscuro::AUDIO_R_INPUT));
-        addOutput(createOutputCentered<ShapetakerBNCPort>(Vec(100.33237, 341.98523), module, Chiaroscuro::AUDIO_L_OUTPUT));
-        addOutput(createOutputCentered<ShapetakerBNCPort>(Vec(153.73065, 341.98523), module, Chiaroscuro::AUDIO_R_OUTPUT));
+        // Audio I/O - BNC connectors for vintage oscilloscope look - updated positions from panel
+        addInput(createInputCentered<ShapetakerBNCPort>(mm2px(Vec(7.5756826, 115.80798)), module, Chiaroscuro::AUDIO_L_INPUT));
+        addInput(createInputCentered<ShapetakerBNCPort>(mm2px(Vec(22.049751, 115.80798)), module, Chiaroscuro::AUDIO_R_INPUT));
+        addOutput(createOutputCentered<ShapetakerBNCPort>(mm2px(Vec(36.523819, 115.80798)), module, Chiaroscuro::AUDIO_L_OUTPUT));
+        addOutput(createOutputCentered<ShapetakerBNCPort>(mm2px(Vec(50.997887, 115.80798)), module, Chiaroscuro::AUDIO_R_OUTPUT));
         
         // Main VCA knob - red circle "vca_gain"
-        addParam(createParamCentered<ShapetakerKnobOscilloscopeXLarge>(Vec(134.39859, 235.87756), module, Chiaroscuro::VCA_PARAM));
+        // VCA knob - position updated from panel: cx="42.967007" cy="101.61994"
+        addParam(createParamCentered<ShapetakerKnobOscilloscopeXLarge>(mm2px(Vec(42.967007, 101.61994)), module, Chiaroscuro::VCA_PARAM));
         
-        // VCA CV input - green circle "vca_cv"
-        addInput(createInputCentered<ShapetakerBNCPort>(Vec(111.31203, 288.73596), module, Chiaroscuro::VCA_CV_INPUT));
+        // VCA CV input - updated position from panel: cx="22.049751" cy="101.61994"
+        addInput(createInputCentered<ShapetakerBNCPort>(mm2px(Vec(22.049751, 101.61994)), module, Chiaroscuro::VCA_CV_INPUT));
         
-        // VCA attenuverter - yellow circle "attenu_vca"
-        addParam(createParamCentered<ShapetakerAttenuverterOscilloscope>(Vec(153.73065, 278.37918), module, Chiaroscuro::VCA_ATT_PARAM));
+        // Linear/Exponential response switch - centered on yellow rectangle: x="5.9992962" y="42.221786"
+        float left_switch_center_x = 5.9992962 + 9.4644022/2;
+        float left_switch_center_y = 42.221786 + 8.9940262/2;
+        auto* leftSwitch = createParamCentered<ShapetakerOscilloscopeSwitch>(mm2px(Vec(left_switch_center_x, left_switch_center_y)), module, Chiaroscuro::RESPONSE_PARAM);
+        Vec leftCenter = leftSwitch->box.pos.plus(leftSwitch->box.size.div(2.f));
+        leftSwitch->box.size = Vec(70.0f, 65.0f);
+        leftSwitch->box.pos = leftCenter.minus(leftSwitch->box.size.div(2.f));
+        addParam(leftSwitch);
         
-        // Linear/Exponential response switch - yellow circle "lin_exp_switch" (updated position, currently hidden in SVG)
-        addParam(createParamCentered<ShapetakerOscilloscopeSwitch>(Vec(91.794441, 63.786713), module, Chiaroscuro::RESPONSE_PARAM));
+        // Link switch - centered on yellow rectangle: x="25.967707" y="42.221786"
+        float right_switch_center_x = 25.967707 + 9.4644022/2;
+        float right_switch_center_y = 42.221786 + 8.9940262/2;
+        auto* rightSwitch = createParamCentered<ShapetakerOscilloscopeSwitch>(mm2px(Vec(right_switch_center_x, right_switch_center_y)), module, Chiaroscuro::LINK_PARAM);
+        Vec rightCenter = rightSwitch->box.pos.plus(rightSwitch->box.size.div(2.f));
+        rightSwitch->box.size = Vec(70.0f, 65.0f);
+        rightSwitch->box.pos = rightCenter.minus(rightSwitch->box.size.div(2.f));
+        addParam(rightSwitch);
         
-        // Link switch - yellow circle "link_switch" (updated position, currently hidden in SVG)
-        addParam(createParamCentered<ShapetakerOscilloscopeSwitch>(Vec(92.406746, 112.10049), module, Chiaroscuro::LINK_PARAM));
+        // Sidechain input - updated position from panel: cx="7.5756826" cy="101.61994"
+        addInput(createInputCentered<ShapetakerBNCPort>(mm2px(Vec(7.5756826, 101.61994)), module, Chiaroscuro::SIDECHAIN_INPUT));
         
-        // Sidechain input - green circle "sidechain_in"
-        addInput(createInputCentered<ShapetakerBNCPort>(Vec(29.17642, 175.29152), module, Chiaroscuro::SIDECHAIN_INPUT));
         
-        // Manual distortion knob - red circle "dist_amount"
-        addParam(createParamCentered<ShapetakerKnobOscilloscopeMedium>(Vec(73.836395, 175.29152), module, Chiaroscuro::MANUAL_DIST_PARAM));
+        // Distortion type selector dial - updated position from panel: cx="49.862827" cy="46.7188"
+        addParam(createParamCentered<ShapetakerVintageSelector>(mm2px(Vec(49.862827, 46.7188)), module, Chiaroscuro::TYPE_PARAM));
         
-        // Distortion type selector - red circle "distortion_type_select"
-        addParam(createParamCentered<ShapetakerVintageSelector>(Vec(117.15861, 184.57472), module, Chiaroscuro::TYPE_PARAM));
+        // Distortion type CV input - near the selector: cx="50.280388" cy="60.808102"
+        addInput(createInputCentered<ShapetakerBNCPort>(mm2px(Vec(50.280388, 60.808102)), module, Chiaroscuro::TYPE_CV_INPUT));
         
-        // Type CV input - green circle "type_cv"
-        addInput(createInputCentered<ShapetakerBNCPort>(Vec(153.94666, 184.57472), module, Chiaroscuro::TYPE_CV_INPUT));
+        // NEW: Distortion knob - position from panel: cx="7.5756826" cy="60.808102"
+        addParam(createParamCentered<ShapetakerKnobOscilloscopeMedium>(mm2px(Vec(7.5756826, 60.808102)), module, Chiaroscuro::DIST_PARAM));
+        
+        // Distortion CV input - position from panel: cx="7.5756826" cy="87.4319"
+        addInput(createInputCentered<ShapetakerBNCPort>(mm2px(Vec(7.5756826, 87.4319)), module, Chiaroscuro::DIST_CV_INPUT));
         
         // Drive knob - red circle "drive_amount"
-        addParam(createParamCentered<ShapetakerKnobOscilloscopeMedium>(Vec(73.836395, 235.87756), module, Chiaroscuro::DRIVE_PARAM));
+        // Drive knob - updated position from panel: cx="22.049751" cy="60.808102"
+        addParam(createParamCentered<ShapetakerKnobOscilloscopeMedium>(mm2px(Vec(22.049751, 60.808102)), module, Chiaroscuro::DRIVE_PARAM));
         
-        // Drive CV input - green circle "drive_cv"
-        addInput(createInputCentered<ShapetakerBNCPort>(Vec(29.17642, 235.87756), module, Chiaroscuro::DRIVE_CV_INPUT));
+        // Drive CV input - updated position from panel: cx="22.049751" cy="87.4319"
+        addInput(createInputCentered<ShapetakerBNCPort>(mm2px(Vec(22.049751, 87.4319)), module, Chiaroscuro::DRIVE_CV_INPUT));
         
         // Mix knob - red circle "mix_amount"
-        addParam(createParamCentered<ShapetakerKnobOscilloscopeMedium>(Vec(73.836395, 288.9314), module, Chiaroscuro::MIX_PARAM));
+        // Mix knob - updated position from panel: cx="36.523819" cy="60.808102"
+        addParam(createParamCentered<ShapetakerKnobOscilloscopeMedium>(mm2px(Vec(36.523819, 60.808102)), module, Chiaroscuro::MIX_PARAM));
         
-        // Mix CV input - green circle "mix_cv"
-        addInput(createInputCentered<ShapetakerBNCPort>(Vec(29.17642, 288.9314), module, Chiaroscuro::MIX_CV_INPUT));
+        // NEW ATTENUVERTERS - updated positions under their respective knobs
+        // Distortion attenuverter - under distortion knob (dist-atten at cx="7.5756826" cy="74.2659")
+        addParam(createParamCentered<ShapetakerAttenuverterOscilloscope>(mm2px(Vec(7.5756826, 74.2659)), module, Chiaroscuro::DIST_ATT_PARAM));
+        
+        // Drive attenuverter - under drive knob (drive-atten cx="22.049751" cy="74.2659") 
+        addParam(createParamCentered<ShapetakerAttenuverterOscilloscope>(mm2px(Vec(22.049751, 74.2659)), module, Chiaroscuro::DRIVE_ATT_PARAM));
+        
+        // Mix attenuverter - under mix knob (id="mix-cntrl-cv" cx="36.523819" cy="74.2659")
+        addParam(createParamCentered<ShapetakerAttenuverterOscilloscope>(mm2px(Vec(36.523819, 74.2659)), module, Chiaroscuro::MIX_ATT_PARAM));
+        
+        // Mix CV input - updated position from panel: cx="36.523819" cy="87.4319"
+        addInput(createInputCentered<ShapetakerBNCPort>(mm2px(Vec(36.523819, 87.4319)), module, Chiaroscuro::MIX_CV_INPUT));
 
-        // Add VU meters using utility classes
-        auto* vu_meter_l = new shapetaker::VUMeterWidget(module, -1, Chiaroscuro::VU_L_LED, 
-            asset::plugin(pluginInstance, "res/meters/vu_meter_face_bordered.svg"),
-            asset::plugin(pluginInstance, "res/meters/vu_meter_needle.svg"));
-        vu_meter_l->box.pos = Vec(34.897591 - 25, 79.596138 - 25);
-        vu_meter_l->box.size = Vec(50, 50);
+        // Add vintage VU meters using single SVG file - updated positions from new panel
+        auto* vu_meter_l = new shapetaker::VintageVUMeterWidget(module, Chiaroscuro::VU_L_LED, 
+            asset::plugin(pluginInstance, "res/meters/vintage_vu.svg"));
+        // Panel coordinates: x="3.8985527" y="13.64045" width="24.23" height="21.729599" 
+        // Center the 80px widget in the panel rectangle: x + width/2 - widget_size_mm/2
+        float widget_size_mm = 80.0f / RACK_GRID_WIDTH * 5.08f; // Convert 80px to mm
+        float vu_l_center_x = 3.8985527 + 24.23/2;
+        float vu_l_center_y = 13.64045 + 21.729599/2;
+        vu_meter_l->box.pos = mm2px(Vec(vu_l_center_x - widget_size_mm/2, vu_l_center_y - widget_size_mm/2));
+        vu_meter_l->box.size = Vec(80, 80);
         addChild(vu_meter_l);
         
-        auto* vu_meter_r = new shapetaker::VUMeterWidget(module, -1, Chiaroscuro::VU_R_LED,
-            asset::plugin(pluginInstance, "res/meters/vu_meter_face_bordered.svg"), 
-            asset::plugin(pluginInstance, "res/meters/vu_meter_needle.svg"));
-        vu_meter_r->box.pos = Vec(125.15861 - 25, 79.596138 - 25);
-        vu_meter_r->box.size = Vec(50, 50);
+        auto* vu_meter_r = new shapetaker::VintageVUMeterWidget(module, Chiaroscuro::VU_R_LED,
+            asset::plugin(pluginInstance, "res/meters/vintage_vu.svg"));
+        // Panel coordinates: x="33.271664" y="13.64045" width="24.229599" height="21.729599"
+        float vu_r_center_x = 33.271664 + 24.229599/2;
+        float vu_r_center_y = 13.64045 + 21.729599/2;
+        vu_meter_r->box.pos = mm2px(Vec(vu_r_center_x - widget_size_mm/2, vu_r_center_y - widget_size_mm/2));
+        vu_meter_r->box.size = Vec(80, 80);
         addChild(vu_meter_r);
         
-        // Using large jewel LED from utilities
-        addChild(createLightCentered<shapetaker::LargeJewelLED>(Vec(52.037258, 203.7605), module, Chiaroscuro::DIST_LED_R));
+        // Jewel LED for distortion amount indication - centered on placeholder: cx="49.605007" cy="79.869637"
+        addChild(createLightCentered<TexturedJewelLED>(mm2px(Vec(49.605007, 79.869637)), module, Chiaroscuro::JEWEL_LED_R));
     }
 };
 
