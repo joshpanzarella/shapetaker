@@ -539,6 +539,56 @@ struct Involution : Module {
         lights[SHIMMER_LIGHT + 1].setBrightness(shimmer_green);
         lights[SHIMMER_LIGHT + 2].setBrightness(shimmer_blue);
     }
+    
+    // Integrate with Rack's default "Randomize" menu item
+    void onRandomize() override {
+        // Randomize filter parameters with musical ranges
+        std::mt19937 rng(rack::random::u32());
+        
+        // Cutoff frequencies - keep in musical range (100Hz to 8kHz)
+        std::uniform_real_distribution<float> cutoffDist(0.2f, 0.9f);
+        params[CUTOFF_A_PARAM].setValue(cutoffDist(rng));
+        params[CUTOFF_B_PARAM].setValue(cutoffDist(rng));
+        
+        // Resonance - moderate range to avoid harsh sounds
+        std::uniform_real_distribution<float> resDist(0.1f, 0.7f);
+        params[RESONANCE_A_PARAM].setValue(resDist(rng));
+        params[RESONANCE_B_PARAM].setValue(resDist(rng));
+        
+        // Highpass cutoff - lower range
+        std::uniform_real_distribution<float> hpDist(0.0f, 0.4f);
+        params[HIGHPASS_CUTOFF_PARAM].setValue(hpDist(rng));
+        
+        // Magical parameters - moderate amounts for musicality
+        std::uniform_real_distribution<float> magicDist(0.0f, 0.6f);
+        params[CROSS_FEEDBACK_PARAM].setValue(magicDist(rng));
+        params[CHAOS_AMOUNT_PARAM].setValue(magicDist(rng));
+        params[SHIMMER_AMOUNT_PARAM].setValue(magicDist(rng));
+        
+        // Rate parameters - varied but not too extreme
+        std::uniform_real_distribution<float> rateDist(0.2f, 0.8f);
+        params[CHAOS_RATE_PARAM].setValue(rateDist(rng));
+        params[SHIMMER_RATE_PARAM].setValue(rateDist(rng));
+        
+        // Filter morph - full range for variety
+        std::uniform_real_distribution<float> morphDist(0.0f, 1.0f);
+        params[FILTER_MORPH_PARAM].setValue(morphDist(rng));
+        
+        // Phaser parameters - moderate for musicality
+        std::uniform_real_distribution<float> phaserFreqDist(0.3f, 0.8f);
+        params[PHASER_FREQUENCY_PARAM].setValue(phaserFreqDist(rng));
+        
+        std::uniform_real_distribution<float> phaserFbDist(0.0f, 0.5f);
+        params[PHASER_FEEDBACK_PARAM].setValue(phaserFbDist(rng));
+        
+        std::uniform_real_distribution<float> phaserMixDist(0.2f, 0.8f);
+        params[PHASER_MIX_PARAM].setValue(phaserMixDist(rng));
+        
+        // Link switches - randomly enable/disable
+        std::uniform_int_distribution<int> linkDist(0, 1);
+        params[LINK_CUTOFF_PARAM].setValue((float)linkDist(rng));
+        params[LINK_RESONANCE_PARAM].setValue((float)linkDist(rng));
+    }
 };
 
 // Fractal Chaos Visualizer in vintage oscilloscope style
@@ -900,67 +950,79 @@ using SmallJewelLED = shapetaker::SmallJewelLED;
 struct InvolutionWidget : ModuleWidget {
     InvolutionWidget(Involution* module) {
         setModule(module);
-        setPanel(createPanel(asset::plugin(pluginInstance, "res/panels/Involution.svg")));
+        setPanel(APP->window->loadSvg(asset::plugin(pluginInstance, "res/panels/Involution.svg")));
 
-        addChild(createWidget<ScrewSilver>(Vec(RACK_GRID_WIDTH, 0)));
-        addChild(createWidget<ScrewSilver>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, 0)));
-        addChild(createWidget<ScrewSilver>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
-        addChild(createWidget<ScrewSilver>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
+        addChild(createWidget<ScrewBlack>(Vec(RACK_GRID_WIDTH, 0)));
+        addChild(createWidget<ScrewBlack>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, 0)));
+        addChild(createWidget<ScrewBlack>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
+        addChild(createWidget<ScrewBlack>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
-        // Main Filter Section (using custom Shapetaker controls and updated coordinates)
-        addParam(createParamCentered<ShapetakerKnobOscilloscopeXLarge>(Vec(55.066338, 76.52359), module, Involution::CUTOFF_A_PARAM));
-        addParam(createParamCentered<ShapetakerKnobOscilloscopeLarge>(Vec(143.7392, 76.52359), module, Involution::RESONANCE_A_PARAM));
-        addParam(createParamCentered<ShapetakerKnobOscilloscopeXLarge>(Vec(55.066338, 148.54836), module, Involution::CUTOFF_B_PARAM));
-        addParam(createParamCentered<ShapetakerKnobOscilloscopeLarge>(Vec(143.7392, 148.54836), module, Involution::RESONANCE_B_PARAM));
+        // Good spacing but need to move everything up
+        float scaleY = 128.5f / 380.0f * 1.1f; // Increased vertical spacing
+        float scaleX = 128.5f / 380.0f; // Base horizontal scale
+        float offsetY = -7.0f; // Move everything up by 7mm
         
-        // Link switches
-        addParam(createParamCentered<ShapetakerOscilloscopeSwitch>(Vec(206.13919, 76.14698), module, Involution::LINK_CUTOFF_PARAM));
-        addParam(createParamCentered<ShapetakerOscilloscopeSwitch>(Vec(206.13919, 148.54836), module, Involution::LINK_RESONANCE_PARAM));
+        auto scaledPos = [scaleX, scaleY, offsetY](float x, float y) {
+            return mm2px(Vec(x * scaleX, y * scaleY + offsetY));
+        };
         
-        // Character Controls (middle section)
-        addParam(createParamCentered<ShapetakerKnobOscilloscopeMedium>(Vec(55.066338, 206.57312), module, Involution::HIGHPASS_CUTOFF_PARAM));
-        addParam(createParamCentered<ShapetakerKnobOscilloscopeMedium>(Vec(228.13919, 111.54836), module, Involution::FILTER_MORPH_PARAM));
-        addParam(createParamCentered<ShapetakerKnobOscilloscopeMedium>(Vec(222.13919, 206.57312), module, Involution::CROSS_FEEDBACK_PARAM));
+        // Main Filter Section - updated coordinates from SVG
+        addParam(createParamCentered<ShapetakerKnobOscilloscopeXLarge>(scaledPos(82.759361, 88.798477), module, Involution::CUTOFF_A_PARAM));
+        addParam(createParamCentered<ShapetakerKnobOscilloscopeLarge>(scaledPos(44.566505, 145.97421), module, Involution::RESONANCE_A_PARAM));
+        addParam(createParamCentered<ShapetakerKnobOscilloscopeXLarge>(scaledPos(184.19188, 88.798477), module, Involution::CUTOFF_B_PARAM));
+        addParam(createParamCentered<ShapetakerKnobOscilloscopeLarge>(scaledPos(227.63936, 145.97421), module, Involution::RESONANCE_B_PARAM));
         
-        // Phaser Controls (right side)
-        addParam(createParamCentered<ShapetakerKnobOscilloscopeSmall>(Vec(139, 206.57312), module, Involution::PHASER_FREQUENCY_PARAM));
-        addParam(createParamCentered<ShapetakerKnobOscilloscopeSmall>(Vec(160, 206.57312), module, Involution::PHASER_FEEDBACK_PARAM));
-        addParam(createParamCentered<ShapetakerKnobOscilloscopeSmall>(Vec(181, 206.57312), module, Involution::PHASER_MIX_PARAM));
+        // Link switches - updated coordinates
+        addParam(createParamCentered<ShapetakerVintageToggleSwitch>(scaledPos(82.759361, 186.22154), module, Involution::LINK_CUTOFF_PARAM));
+        addParam(createParamCentered<ShapetakerVintageToggleSwitch>(scaledPos(188.19188, 186.22154), module, Involution::LINK_RESONANCE_PARAM));
         
-        // Special Effects with Lights
-        addParam(createParamCentered<ShapetakerKnobOscilloscopeMedium>(Vec(97.052765, 261.71121), module, Involution::CHAOS_AMOUNT_PARAM));
-        addParam(createParamCentered<ShapetakerKnobOscilloscopeSmall>(Vec(97.052765, 225.55661), module, Involution::CHAOS_RATE_PARAM));
-        addParam(createParamCentered<ShapetakerKnobOscilloscopeMedium>(Vec(191.69171, 261.71121), module, Involution::SHIMMER_AMOUNT_PARAM));
-        addParam(createParamCentered<ShapetakerKnobOscilloscopeSmall>(Vec(188.69171, 225.55661), module, Involution::SHIMMER_RATE_PARAM));
+        // Character Controls - updated coordinates
+        addParam(createParamCentered<ShapetakerKnobOscilloscopeMedium>(scaledPos(36.566505, 220.80296), module, Involution::HIGHPASS_CUTOFF_PARAM));
+        addParam(createParamCentered<ShapetakerKnobOscilloscopeMedium>(scaledPos(135.00017, 261.3844), module, Involution::FILTER_MORPH_PARAM));
+        addParam(createParamCentered<ShapetakerKnobOscilloscopeMedium>(scaledPos(236.98085, 220.80296), module, Involution::CROSS_FEEDBACK_PARAM));
         
-        // Chaos Visualizer - positioned in the center area
+        // Special Effects - updated coordinates
+        addParam(createParamCentered<ShapetakerKnobOscilloscopeMedium>(scaledPos(68.466965, 276.26712), module, Involution::CHAOS_AMOUNT_PARAM));
+        addParam(createParamCentered<ShapetakerKnobOscilloscopeSmall>(scaledPos(94.759361, 242.1763), module, Involution::CHAOS_RATE_PARAM));
+        addParam(createParamCentered<ShapetakerKnobOscilloscopeMedium>(scaledPos(200.53337, 276.26712), module, Involution::SHIMMER_AMOUNT_PARAM));
+        addParam(createParamCentered<ShapetakerKnobOscilloscopeSmall>(scaledPos(174.24098, 242.1763), module, Involution::SHIMMER_RATE_PARAM));
+        
+        // Chaos Visualizer - updated screen position
         ChaosVisualizer* chaosViz = new ChaosVisualizer(module);
-        chaosViz->box.pos = Vec(135 - 60, 165 - 50); // Center the bigger diamond screen
+        Vec screenPos = scaledPos(135.00017, 153.41862);
+        chaosViz->box.pos = Vec(screenPos.x - 60, screenPos.y - 50); // Center the diamond screen
         addChild(chaosViz);
         
-        // Effect lights (positioned below the knobs)
-        addChild(createLightCentered<SmallJewelLED>(Vec(97.052765, 289.63123), module, Involution::CHAOS_LIGHT));
-        addChild(createLightCentered<SmallJewelLED>(Vec(191.69171, 286.63123), module, Involution::SHIMMER_LIGHT));
+        // Effect lights - updated coordinates from SVG panel
+        addChild(createLightCentered<SmallJewelLED>(mm2px(Vec(23.0, 102.3)), module, Involution::CHAOS_LIGHT));
+        addChild(createLightCentered<SmallJewelLED>(mm2px(Vec(68.44, 102.3)), module, Involution::SHIMMER_LIGHT));
 
-        // CV inputs
-        addInput(createInputCentered<ShapetakerBNCPort>(Vec(101.40276, 76.52359), module, Involution::CUTOFF_A_CV_INPUT));
-        addInput(createInputCentered<ShapetakerBNCPort>(Vec(186.07562, 76.52359), module, Involution::RESONANCE_A_CV_INPUT));
-        addInput(createInputCentered<ShapetakerBNCPort>(Vec(101.40276, 148.54836), module, Involution::CUTOFF_B_CV_INPUT));
-        addInput(createInputCentered<ShapetakerBNCPort>(Vec(186.07562, 148.54836), module, Involution::RESONANCE_B_CV_INPUT));
-        addInput(createInputCentered<ShapetakerBNCPort>(Vec(55.066338, 261.71121), module, Involution::CHAOS_CV_INPUT));
-        addInput(createInputCentered<ShapetakerBNCPort>(Vec(222.13919, 261.71121), module, Involution::SHIMMER_CV_INPUT));
-        addInput(createInputCentered<ShapetakerBNCPort>(Vec(228.13919, 140), module, Involution::FILTER_MORPH_CV_INPUT));
-        
-        // Phaser CV inputs (below the knobs)
-        addInput(createInputCentered<ShapetakerBNCPort>(Vec(139, 230), module, Involution::PHASER_FREQUENCY_CV_INPUT));
-        addInput(createInputCentered<ShapetakerBNCPort>(Vec(160, 230), module, Involution::PHASER_FEEDBACK_CV_INPUT));
-        addInput(createInputCentered<ShapetakerBNCPort>(Vec(181, 230), module, Involution::PHASER_MIX_CV_INPUT));
+        // CV inputs - updated coordinates
+        addInput(createInputCentered<ShapetakerBNCPort>(scaledPos(82.759361, 124.92744), module, Involution::CUTOFF_A_CV_INPUT));
+        addInput(createInputCentered<ShapetakerBNCPort>(scaledPos(44.566505, 186.22154), module, Involution::RESONANCE_A_CV_INPUT));
+        addInput(createInputCentered<ShapetakerBNCPort>(scaledPos(184.19188, 124.92744), module, Involution::CUTOFF_B_CV_INPUT));
+        addInput(createInputCentered<ShapetakerBNCPort>(scaledPos(227.63936, 186.22154), module, Involution::RESONANCE_B_CV_INPUT));
+        addInput(createInputCentered<ShapetakerBNCPort>(scaledPos(34.040749, 276.26712), module, Involution::CHAOS_CV_INPUT));
+        addInput(createInputCentered<ShapetakerBNCPort>(scaledPos(230.98085, 276.26712), module, Involution::SHIMMER_CV_INPUT));
 
-        // Audio I/O
-        addInput(createInputCentered<ShapetakerBNCPort>(Vec(89.259193, 328.47842), module, Involution::AUDIO_A_INPUT));
-        addInput(createInputCentered<ShapetakerBNCPort>(Vec(47.189194, 328.47842), module, Involution::AUDIO_B_INPUT));
-        addOutput(createOutputCentered<ShapetakerBNCPort>(Vec(222.04919, 328.47842), module, Involution::AUDIO_A_OUTPUT));
-        addOutput(createOutputCentered<ShapetakerBNCPort>(Vec(179.97919, 328.47842), module, Involution::AUDIO_B_OUTPUT));
+        // Audio I/O - updated coordinates
+        addInput(createInputCentered<ShapetakerBNCPort>(scaledPos(88.759361, 340.15161), module, Involution::AUDIO_A_INPUT));
+        addInput(createInputCentered<ShapetakerBNCPort>(scaledPos(46.689362, 340.15161), module, Involution::AUDIO_B_INPUT));
+        addOutput(createOutputCentered<ShapetakerBNCPort>(scaledPos(221.54936, 340.15161), module, Involution::AUDIO_A_OUTPUT));
+        addOutput(createOutputCentered<ShapetakerBNCPort>(scaledPos(179.47935, 340.15161), module, Involution::AUDIO_B_OUTPUT));
+    }
+    
+    // Draw panel background texture to match other modules
+    void draw(const DrawArgs& args) override {
+        std::shared_ptr<Image> bg = APP->window->loadImage(asset::plugin(pluginInstance, "res/panels/vcv-panel-background.png"));
+        if (bg) {
+            NVGpaint paint = nvgImagePattern(args.vg, 0.f, 0.f, box.size.x, box.size.y, 0.f, bg->handle, 1.0f);
+            nvgBeginPath(args.vg);
+            nvgRect(args.vg, 0.f, 0.f, box.size.x, box.size.y);
+            nvgFillPaint(args.vg, paint);
+            nvgFill(args.vg);
+        }
+        ModuleWidget::draw(args);
     }
 };
 

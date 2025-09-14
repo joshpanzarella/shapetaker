@@ -28,7 +28,7 @@ protected:
         
         float cx = box.size.x * 0.5f;
         float cy = box.size.y * 0.5f;
-        float radius = SIZE * 0.5f;
+        float radius = 0.5f * std::min(box.size.x, box.size.y);
         
         // Layer 1: Large outer glow
         NVGpaint outerGlow = nvgRadialGradient(args.vg, cx, cy, radius * 0.5f, radius * 1.0f,
@@ -75,7 +75,7 @@ protected:
     void drawOffState(const DrawArgs& args) {
         float cx = box.size.x * 0.5f;
         float cy = box.size.y * 0.5f;
-        float radius = SIZE * 0.5f;
+        float radius = 0.5f * std::min(box.size.x, box.size.y);
         
         // Dark background
         nvgBeginPath(args.vg);
@@ -93,6 +93,7 @@ protected:
     
 public:
     JewelLEDBase() {
+        // Default; specific LEDs will set mm-based sizes in their constructors
         box.size = Vec(SIZE, SIZE);
     }
     
@@ -121,6 +122,8 @@ public:
         addBaseColor(nvgRGB(255, 0, 0));   // Red
         addBaseColor(nvgRGB(0, 255, 0));   // Green  
         addBaseColor(nvgRGB(0, 0, 255));   // Blue
+        // Hardware-friendly lens: 12 mm
+        box.size = mm2px(Vec(12.f, 12.f));
     }
 };
 
@@ -133,6 +136,8 @@ public:
         addBaseColor(nvgRGB(255, 0, 0));   // Red
         addBaseColor(nvgRGB(0, 255, 0));   // Green  
         addBaseColor(nvgRGB(0, 0, 255));   // Blue
+        // Hardware-friendly lens: 10 mm
+        box.size = mm2px(Vec(10.f, 10.f));
     }
 };
 
@@ -146,6 +151,8 @@ public:
         addBaseColor(nvgRGB(255, 0, 0));   // Red
         addBaseColor(nvgRGB(0, 255, 0));   // Green  
         addBaseColor(nvgRGB(0, 0, 255));   // Blue
+        // Hardware-friendly lens: 12 mm (matches large for prominent use)
+        box.size = mm2px(Vec(12.f, 12.f));
     }
 };
 
@@ -227,6 +234,66 @@ private:
         nvgLineTo(args.vg, 0, -box.size.y * 0.35f);
         nvgStrokeWidth(args.vg, 2.0f);
         nvgStrokeColor(args.vg, nvgRGB(220, 220, 220));
+        nvgStroke(args.vg);
+        
+        nvgRestore(args.vg);
+    }
+};
+
+// Vintage VU meter using a single SVG file with integrated meter and needle
+class VintageVUMeterWidget : public widget::Widget {
+private:
+    Module* module = nullptr;
+    int lightId = -1;
+    std::string svgPath;
+    
+public:
+    VintageVUMeterWidget(Module* m, int lId, const std::string& svg)
+        : module(m), lightId(lId), svgPath(svg) {
+        box.size = Vec(50, 50); // Default size
+    }
+    
+    void draw(const DrawArgs& args) override {
+        if (!module) return;
+        
+        // Draw the vintage VU meter SVG at full opacity
+        std::shared_ptr<window::Svg> svg = APP->window->loadSvg(svgPath);
+        if (svg && svg->handle) {
+            nvgSave(args.vg);
+            nvgScale(args.vg, box.size.x / svg->handle->width, box.size.y / svg->handle->height);
+            svgDraw(args.vg, svg->handle);
+            nvgRestore(args.vg);
+        }
+        
+        // Draw animated needle based on VU level
+        if (lightId >= 0 && lightId < (int)module->lights.size()) {
+            float level = module->lights[lightId].getBrightness();
+            drawVUNeedle(args, level);
+        }
+    }
+    
+private:
+    void drawVUNeedle(const DrawArgs& args, float level) {
+        // Map level (0.0-1.0) to needle angle
+        // Start closer to -20 position and sweep to +3 position (slightly right of center)
+        // This mimics typical VU meter range from -20dB to +3dB
+        float angle = rescale(level, 0.0f, 1.0f, -55.0f, 15.0f); // Fine-tuned 5 degrees left to perfectly align with -20 symbol
+        
+        Vec center = box.size.mult(0.5f);
+        // Pivot point at the semi-circle at bottom of meter screen (not the calibration circle)
+        Vec pivotPoint = Vec(center.x, box.size.y * 0.65f); // 65% down - at bottom of meter screen
+        float needleLength = box.size.y * 0.35f; // Length to reach the meter scale
+        
+        nvgSave(args.vg);
+        nvgTranslate(args.vg, pivotPoint.x, pivotPoint.y);
+        nvgRotate(args.vg, angle * M_PI / 180.0f);
+        
+        // Draw thin black needle from pivot point up to meter scale
+        nvgBeginPath(args.vg);
+        nvgMoveTo(args.vg, 0, 0); // Start at pivot (bottom of meter screen)
+        nvgLineTo(args.vg, 0, -needleLength); // Go up to meter scale
+        nvgStrokeWidth(args.vg, 1.0f); // Thinner needle
+        nvgStrokeColor(args.vg, nvgRGBA(0, 0, 0, 255)); // Black needle
         nvgStroke(args.vg);
         
         nvgRestore(args.vg);

@@ -126,7 +126,7 @@
          style="stop-color:#2a2d32;stop-opacity:1"
          id="stop17" />
     </radialGradient>
-    <!-- Purple button gradient -->
+    <!-- Dark teal button gradient -->
     <radialGradient
        id="purpleButton"
        cx="-5.9721443"
@@ -138,19 +138,19 @@
        gradientUnits="userSpaceOnUse">
       <stop
          offset="0%"
-         style="stop-color:#9b88ff;stop-opacity:1"
+         style="stop-color:#4d9999;stop-opacity:1"
          id="stop18" />
       <stop
          offset="30%"
-         style="stop-color:#7b68ee;stop-opacity:1"
+         style="stop-color:#337f7f;stop-opacity:1"
          id="stop19" />
       <stop
          offset="70%"
-         style="stop-color:#5a4bc7;stop-opacity:1"
+         style="stop-color:#266666;stop-opacity:1"
          id="stop20" />
       <stop
          offset="100%"
-         style="stop-color:#3d3490;stop-opacity:1"
+         style="stop-color:#1a4d4d;stop-opacity:1"
          id="stop21" />
     </radialGradient>
     <!-- Flat metal tip gradient -->
@@ -237,7 +237,7 @@
          style="stop-color:#0a0a0f;stop-opacity:1"
          id="stop35" />
     </radialGradient>
-    <!-- LED on state (purple to match button) -->
+    <!-- LED on state (dark teal to match button) -->
     <radialGradient
        id="ledPurpleOn"
        cx="5.9604645e-07"
@@ -248,15 +248,15 @@
        gradientUnits="userSpaceOnUse">
       <stop
          offset="0%"
-         style="stop-color:#9b88ff;stop-opacity:1"
+         style="stop-color:#4d9999;stop-opacity:1"
          id="stop36" />
       <stop
          offset="40%"
-         style="stop-color:#7b68ee;stop-opacity:1"
+         style="stop-color:#337f7f;stop-opacity:1"
          id="stop37" />
       <stop
          offset="100%"
-         style="stop-color:#5a4bc7;stop-opacity:1"
+         style="stop-color:#266666;stop-opacity:1"
          id="stop38" />
     </radialGradient>
     <!-- Center recess with more depth -->
@@ -1183,7 +1183,7 @@
   <circle
      r="14.5"
      fill="none"
-     stroke="#9b88ff"
+     stroke="#4d9999"
      stroke-width="0.3"
      opacity="0.4"
      id="circle88"
@@ -1193,7 +1193,7 @@
   <circle
      r="13"
      fill="none"
-     stroke="#5a4bc7"
+     stroke="#266666"
      stroke-width="0.5"
      opacity="0.5"
      id="circle89"
@@ -1203,7 +1203,7 @@
   <circle
      r="11"
      fill="none"
-     stroke="#3d3490"
+     stroke="#1a4d4d"
      stroke-width="0.5"
      opacity="0.6"
      id="circle90"
@@ -1215,7 +1215,7 @@
      id="circle91"
      cx="99.999939"
      cy="107.73955"
-     style="display:inline;opacity:0.264192;fill:#7a72cd;fill-opacity:1;stroke-width:1.30233"
+     style="display:inline;opacity:0.264192;fill:#336666;fill-opacity:1;stroke-width:1.30233"
      rx="5.4674439"
      ry="4.9634066" />
   <ellipse
@@ -1223,7 +1223,7 @@
      id="circle92"
      cx="99.999939"
      cy="107.93583"
-     style="display:inline;fill:#9b88ff;fill-opacity:1;stroke-width:1.2366"
+     style="display:inline;fill:#4d9999;fill-opacity:1;stroke-width:1.2366"
      rx="4.611094"
      ry="4.0624542" />
   <ellipse
@@ -1231,7 +1231,7 @@
      id="circle93"
      cx="100"
      cy="108.26925"
-     style="display:inline;fill:#aa9bec;fill-opacity:1;stroke-width:1.2366"
+     style="display:inline;fill:#5daaaa;fill-opacity:1;stroke-width:1.2366"
      rx="3.9523661"
      ry="3.4821036" />
   <ellipse
@@ -1239,7 +1239,7 @@
      id="circle93-5"
      cx="100"
      cy="109.21684"
-     style="display:inline;fill:#ada0e7;fill-opacity:1;stroke-width:1.06096"
+     style="display:inline;fill:#6dbbbb;fill-opacity:1;stroke-width:1.06096"
      rx="3.4912536"
      ry="2.9017529" />
   <ellipse
@@ -1349,7 +1349,7 @@
      fill="#4a4e56"
      opacity="0.8"
      id="rect96"
-     style="display:inline;opacity:1;fill:#ada0e7;fill-opacity:1;stroke-width:1.59643" />
+     style="display:inline;opacity:1;fill:#6dbbbb;fill-opacity:1;stroke-width:1.59643" />
   <rect
      x="98.682541"
      y="108.26925"
@@ -1357,7 +1357,7 @@
      height="16.249817"
      fill="#6a6e76"
      id="rect97"
-     style="display:inline;fill:#a3a3e4;fill-opacity:1;stroke-width:1.2366" />
+     style="display:inline;fill:#5daaaa;fill-opacity:1;stroke-width:1.2366" />
   <rect
      x="99.604759"
      y="109.42995"

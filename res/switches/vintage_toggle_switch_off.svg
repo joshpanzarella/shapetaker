@@ -1,0 +1,325 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg
+   width="22.592375"
+   height="32.0"
+   viewBox="0 0 22.592375 32.0"
+   version="1.1"
+   id="svg21"
+   sodipodi:docname="vintage_toggle_switch_off.svg"
+   inkscape:version="1.4.2 (ebf0e940, 2025-05-08)"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns:xlink="http://www.w3.org/1999/xlink"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <sodipodi:namedview
+     id="namedview21"
+     pagecolor="#505050"
+     bordercolor="#eeeeee"
+     borderopacity="1"
+     inkscape:showpageshadow="0"
+     inkscape:pageopacity="0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#505050"
+     inkscape:zoom="21.908543"
+     inkscape:cx="7.7367078"
+     inkscape:cy="16.500412"
+     inkscape:window-width="1800"
+     inkscape:window-height="1097"
+     inkscape:window-x="0"
+     inkscape:window-y="44"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="toggle" />
+  <!-- Gradients (place defs before usage for Rack compatibility) -->
+  <defs
+     id="defs16">
+    <!-- Washer (darkened steel) -->
+    <radialGradient
+       id="washerGrad"
+       cx="-5.7599998"
+       cy="-5.7599998"
+       r="20.16"
+       fx="-5.7599998"
+       fy="-5.7599998"
+       gradientUnits="userSpaceOnUse"
+       gradientTransform="scale(0.7844575)">
+      <stop
+         offset="0%"
+         stop-color="#444"
+         id="stop1" />
+      <stop
+         offset="100%"
+         stop-color="#111"
+         id="stop2" />
+    </radialGradient>
+    <!-- Inner recess -->
+    <radialGradient
+       id="bezelInner"
+       cx="2.2600005"
+       cy="4.5199995"
+       r="18.08"
+       fx="2.2600005"
+       fy="4.5199995"
+       gradientUnits="userSpaceOnUse">
+      <stop
+         offset="0%"
+         stop-color="#333"
+         id="stop3" />
+      <stop
+         offset="100%"
+         stop-color="#000"
+         id="stop4" />
+    </radialGradient>
+    <!-- Brass nut -->
+    <linearGradient
+       id="brassNut"
+       x1="-9.8077335"
+       y1="-9.8077335"
+       x2="9.8077335"
+       y2="9.8077335"
+       gradientTransform="scale(1.054595,0.94823127)"
+       gradientUnits="userSpaceOnUse">
+      <stop
+         offset="0%"
+         stop-color="#c9a34d"
+         id="stop5" />
+      <stop
+         offset="50%"
+         stop-color="#7a5a2a"
+         id="stop6" />
+      <stop
+         offset="100%"
+         stop-color="#3d2a12"
+         id="stop7" />
+    </linearGradient>
+    <!-- Bushing -->
+    <radialGradient
+       id="bushingGrad"
+       cx="0"
+       cy="-1.0399998"
+       r="6.2400002"
+       fx="0"
+       fy="-1.0399998"
+       gradientUnits="userSpaceOnUse">
+      <stop
+         offset="0%"
+         stop-color="#555"
+         id="stop8" />
+      <stop
+         offset="100%"
+         stop-color="#111"
+         id="stop9" />
+    </radialGradient>
+    <!-- Shaft -->
+    <linearGradient
+       id="shaftGrad"
+       x1="0"
+       y1="0"
+       x2="0"
+       y2="1">
+      <!-- Simpler darker silver; gradients moved to explicit shadow shapes -->
+      <stop
+         offset="0%"
+         stop-color="#d4d4d4"
+         id="stop10" />
+      <stop
+         offset="100%"
+         stop-color="#606060"
+         id="stop11" />
+    </linearGradient>
+    <!-- Tip (chrome look) -->
+    <linearGradient
+       id="tipGrad"
+       x1="0"
+       y1="0"
+       x2="0"
+       y2="1">
+      <stop
+         offset="0%"
+         stop-color="#fafafa"
+         id="stop12" />
+      <stop
+         offset="20%"
+         stop-color="#d7d7d7"
+         id="stop13" />
+      <stop
+         offset="50%"
+         stop-color="#7a7a7a"
+         id="stop14" />
+      <stop
+         offset="80%"
+         stop-color="#dcdcdc"
+         id="stop15" />
+      <stop
+         offset="100%"
+         stop-color="#ffffff"
+         id="stop16" />
+    </linearGradient>
+    <linearGradient
+       inkscape:collect="always"
+       xlink:href="#shaftGrad"
+       id="linearGradient21"
+       x1="-2.8456106"
+       y1="-8.7529545"
+       x2="-2.8456106"
+       y2="-3.061733"
+       gradientTransform="matrix(0.72040776,0,0,1.45903,0,0.22482471)"
+       gradientUnits="userSpaceOnUse" />
+    <linearGradient
+       inkscape:collect="always"
+       xlink:href="#shaftGrad"
+       id="linearGradient22"
+       x1="-3.05"
+       y1="-17.049999"
+       x2="-3.05"
+       y2="-10.95"
+       gradientUnits="userSpaceOnUse"
+       gradientTransform="translate(0,0.62943281)" />
+  </defs>
+  <!-- Shapetaker Toggle Switch - OFF (down, brass nut + dark washer) -->
+  <g
+     id="toggle"
+     transform="translate(11.296188,16.0)">
+    <!-- Outer washer (darkened steel) -->
+    <circle
+       fill="url(#washerGrad)"
+       stroke="#000000"
+       stroke-width="0.627566"
+       id="circle16"
+       cx="0"
+       cy="0"
+       style="fill:url(#washerGrad)"
+       r="10.982405" />
+    <!-- Inner recess (tighter, thinner ring) -->
+    <circle
+       r="7.8000002"
+       fill="url(#bezelInner)"
+       stroke="#000000"
+       stroke-opacity="0.5"
+       stroke-width="0.28"
+       id="circle17"
+       cx="0"
+       cy="0"
+       style="fill:url(#bezelInner)" />
+    <!-- Subtle inner lip highlight to integrate recess -->
+    <circle
+       cx="0"
+       cy="0"
+       r="8.1000004"
+       fill="none"
+       stroke="#666666"
+       stroke-width="0.18"
+       opacity="0.25"
+       id="circle11" />
+    <!-- Seating shadow under bushing to ground the assembly -->
+    <defs
+       id="defs18">
+      <radialGradient
+         id="seatShadow"
+         cx="0"
+         cy="0"
+         r="6.5999999"
+         gradientUnits="userSpaceOnUse">
+        <stop
+           offset="0%"
+           stop-color="#000"
+           stop-opacity="0.22"
+           id="stop17" />
+        <stop
+           offset="100%"
+           stop-color="#000"
+           stop-opacity="0"
+           id="stop18" />
+      </radialGradient>
+    </defs>
+    <circle
+       cx="0"
+       cy="0"
+       r="6.4000001"
+       fill="url(#seatShadow)"
+       opacity="0.65"
+       id="circle18"
+       style="fill:url(#seatShadow)" />
+    <!-- Brass hex nut -->
+    <polygon
+       points="10,0 5,9 -5,9 -10,0 -5,-9 5,-9 "
+       fill="url(#brassNut)"
+       stroke="#333322"
+       stroke-width="0.6"
+       id="polygon17"
+       style="fill:url(#brassNut)" />
+    <!-- Bushing -->
+    <circle
+       r="5"
+       fill="url(#bushingGrad)"
+       stroke="#000000"
+       stroke-width="0.4"
+       id="circle19"
+       cx="0"
+       cy="0"
+       style="fill:url(#bushingGrad)" />
+    <!-- Lever (OFF = down) -->
+    <g
+       id="lever"
+       transform="matrix(-1.158384,0,0,-1.158384,0,-5.3504474)">
+      <!-- Shaft (5% smaller in width/length) -->
+      <rect
+         x="-2.5"
+         y="-10.5"
+         width="5.0"
+         height="7.0"
+         rx="2.5"
+         fill="url(#shaftGrad)"
+         stroke="#333333"
+         stroke-width="0.307569"
+         id="rect18"
+         style="fill:url(#linearGradient21)" />
+      <!-- Central highlight for symmetric appearance -->
+      <rect
+         x="-0.3"
+         y="-10.2"
+         width="0.6"
+         height="6.4"
+         fill="#ffffff"
+         opacity="0.18"
+         id="rect19" />
+      <!-- Side shadow (more defined, directional) -->
+      <rect
+         x="1.2"
+         y="-10.2"
+         width="0.8"
+         height="6.4"
+         fill="#000000"
+         opacity="0.26"
+         id="stemShadow" />
+      <!-- Tip (silver, smaller and circular) -->
+      <circle
+         cx="0"
+         cy="-12"
+         fill="url(#shaftGrad)"
+         stroke="#333333"
+         stroke-width="0.5"
+         id="ellipse19"
+         style="fill:url(#linearGradient22)"
+         r="3.2" />
+      <!-- Tip highlight -->
+      <ellipse
+         cx="-1"
+         cy="-13"
+         rx="1.2"
+         ry="0.7"
+         fill="#ffffff"
+         opacity="0.2"
+         id="ellipse20" />
+      <!-- Tip underbelly shadow -->
+      <ellipse
+         cx="1"
+         cy="-11"
+         rx="1.5"
+         ry="0.8"
+         fill="#000000"
+         opacity="0.26"
+         id="ellipse21" />
+    </g>
+  </g>
+</svg>

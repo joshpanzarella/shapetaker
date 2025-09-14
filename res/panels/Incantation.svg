@@ -4,382 +4,249 @@
    height="128.5mm"
    viewBox="0 0 84 128.5"
    version="1.1"
-   xmlns="http://www.w3.org/2000/svg">
-  
-  <!-- Panel background -->
+   id="svg28"
+   xml:space="preserve"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+
+  <!-- Dark panel background -->
   <rect
      width="84"
      height="128.5"
-     x="0"
-     y="0"
      fill="#1a1a1a"
-     stroke="#333333"
-     stroke-width="0.1" />
-  
+     stroke="#0a0a0a"
+     stroke-width="0.5"
+     id="rect1"
+     x="0"
+     y="0" />
+
   <!-- Module title -->
+  <path
+     d="m 8.2921297,7.745968 h -0.525391 v 0.362304 h 0.506836 v 0.213868 h -0.506836 v 0.717773 H 7.5392001 v -1.507814 h 0.7529296 z m 0.774414,0.651366 0.466796,0.642579 h -0.278321 l -0.430663,-0.617188 h -0.04101 v 0.617188 H 8.5558017 V 7.5321 h 0.266601 q 0.298828,0 0.43164,0.112305 0.146484,0.125 0.146484,0.330078 0,0.160157 -0.0918,0.27539 -0.0918,0.115235 -0.242186,0.147461 z m -0.283203,-0.172851 h 0.07226 q 0.323242,0 0.323242,-0.24707 0,-0.231445 -0.314453,-0.231445 h -0.08105 z m 1.808594,-0.478515 h -0.604492 v 0.362304 h 0.586914 v 0.213868 h -0.586914 v 0.503906 h 0.604492 v 0.213867 H 9.7599017 V 7.5321 h 0.8320333 z m 1.833005,1.321288 h -0.286131 l -0.118164,-0.121093 q -0.188477,0.121093 -0.419921,0.121093 -0.299805,0 -0.532227,-0.203125 -0.252929,-0.223633 -0.252929,-0.571289 0,-0.34082 0.239257,-0.568359 0.232422,-0.220703 0.548828,-0.220703 0.28711,0 0.514649,0.19336 0.273437,0.23242 0.273437,0.606444 0,0.292969 -0.21582,0.520508 z m -0.625976,-0.624023 0.21875,0.217773 q 0.144531,-0.15039 0.144531,-0.37207 0,-0.243164 -0.161133,-0.407227 -0.161133,-0.164062 -0.40039,-0.164062 -0.242188,0 -0.398438,0.164062 -0.157227,0.163086 -0.157227,0.413086 0,0.244141 0.16211,0.399414 0.168945,0.160157 0.385742,0.160157 0.147461,0 0.266602,-0.06738 l -0.354494,-0.34375 z"
+     id="text5"
+     style="font-size:2px;font-family:Futura, 'Futura PT', 'Century Gothic', 'Avant Garde', sans-serif;text-anchor:middle;display:inline;fill:#e8e8e8;fill-opacity:1"
+     aria-label="FREQ" />
+
+  <!-- Main module title -->
   <text
      x="42"
-     y="8"
-     text-anchor="middle"
-     font-family="Arial, sans-serif"
-     font-size="3"
-     font-weight="bold"
-     fill="#cccccc">INCANTATION</text>
-  
-  <text
-     x="42"
-     y="12"
-     text-anchor="middle"
-     font-family="Arial, sans-serif"
-     font-size="1.5"
-     fill="#888888">ANIMATED FILTER BANK</text>
-  
-  <!-- Main Controls Section -->
-  <text
-     x="42"
-     y="20"
-     text-anchor="middle"
-     font-family="Arial, sans-serif"
-     font-size="1.8"
-     font-weight="bold"
-     fill="#cccccc">MAIN CONTROLS</text>
-  
-  <!-- Drive control -->
-  <circle
-     cx="20"
-     cy="25"
-     r="6"
-     fill="#000000"
-     stroke="#666666"
-     stroke-width="0.3"
-     opacity="0" />
-  <text
-     x="20"
-     y="36"
-     text-anchor="middle"
-     font-family="Arial, sans-serif"
-     font-size="1.2"
-     fill="#cccccc">DRIVE</text>
-  <circle
-     cx="10"
-     cy="25"
-     r="1.5"
-     fill="#00ff00"
-     opacity="0" />
-  
-  <!-- Mix control -->
-  <circle
-     cx="40"
-     cy="25"
-     r="6"
-     fill="#000000"
-     stroke="#666666"
-     stroke-width="0.3"
-     opacity="0" />
-  <text
-     x="40"
-     y="36"
-     text-anchor="middle"
-     font-family="Arial, sans-serif"
-     font-size="1.2"
-     fill="#cccccc">MIX</text>
-  
-  <!-- Output control -->
-  <circle
-     cx="60"
-     cy="25"
-     r="6"
-     fill="#000000"
-     stroke="#666666"
-     stroke-width="0.3"
-     opacity="0" />
-  <text
-     x="60"
-     y="36"
-     text-anchor="middle"
-     font-family="Arial, sans-serif"
-     font-size="1.2"
-     fill="#cccccc">OUTPUT</text>
-  
-  <!-- Animation Controls Section -->
-  <text
-     x="42"
-     y="43"
-     text-anchor="middle"
-     font-family="Arial, sans-serif"
-     font-size="1.8"
-     font-weight="bold"
-     fill="#cccccc">ANIMATION</text>
-  
-  <!-- Pattern control -->
-  <circle
-     cx="20"
-     cy="48"
-     r="5"
-     fill="#000000"
-     stroke="#666666"
-     stroke-width="0.3"
-     opacity="0" />
-  <text
-     x="20"
-     y="57"
-     text-anchor="middle"
-     font-family="Arial, sans-serif"
-     font-size="1"
-     fill="#cccccc">PATTERN</text>
-  <text
-     x="20"
-     y="59"
-     text-anchor="middle"
-     font-family="Arial, sans-serif"
-     font-size="0.8"
-     fill="#888888">1-12</text>
-  
-  <!-- Envelope control -->
-  <circle
-     cx="40"
-     cy="48"
-     r="5"
-     fill="#000000"
-     stroke="#666666"
-     stroke-width="0.3"
-     opacity="0" />
-  <text
-     x="40"
-     y="57"
-     text-anchor="middle"
-     font-family="Arial, sans-serif"
-     font-size="1"
-     fill="#cccccc">ENVELOPE</text>
-  <text
-     x="40"
-     y="59"
-     text-anchor="middle"
-     font-family="Arial, sans-serif"
-     font-size="0.8"
-     fill="#888888">SHAPE</text>
-  
-  <!-- Rate control -->
-  <circle
-     cx="60"
-     cy="48"
-     r="5"
-     fill="#000000"
-     stroke="#666666"
-     stroke-width="0.3"
-     opacity="0" />
-  <text
-     x="60"
-     y="57"
-     text-anchor="middle"
-     font-family="Arial, sans-serif"
-     font-size="1"
-     fill="#cccccc">RATE</text>
-  <circle
-     cx="75"
-     cy="48"
-     r="1.5"
-     fill="#ff0000"
-     opacity="0" />
-  
-  <!-- Filter Bank Section -->
-  <text
-     x="42"
-     y="68"
-     text-anchor="middle"
-     font-family="Arial, sans-serif"
-     font-size="1.8"
-     font-weight="bold"
-     fill="#cccccc">FILTER BANK</text>
-  
-  <!-- Filter frequency labels -->
-  <text
-     x="5"
-     y="72"
-     text-anchor="start"
-     font-family="Arial, sans-serif"
-     font-size="0.8"
-     fill="#888888">BASS: 110 160 240 350 525 775 1.2K 1.8K</text>
-  <text
-     x="5"
-     y="74.5"
-     text-anchor="start"
-     font-family="Arial, sans-serif"
-     font-size="0.8"
-     fill="#888888">MIDS: 200 300 450 675 1K 1.5K 2.2K 3.4K</text>
-  
-  <!-- Filter sliders -->
-  <g stroke="#333333" stroke-width="1" fill="none" opacity="0">
-    <line x1="15" y1="62" x2="15" y2="82" />
-    <line x1="23" y1="62" x2="23" y2="82" />
-    <line x1="31" y1="62" x2="31" y2="82" />
-    <line x1="39" y1="62" x2="39" y2="82" />
-    <line x1="47" y1="62" x2="47" y2="82" />
-    <line x1="55" y1="62" x2="55" y2="82" />
-    <line x1="63" y1="62" x2="63" y2="82" />
-    <line x1="71" y1="62" x2="71" y2="82" />
-  </g>
-  
-  <!-- Slider handles -->
-  <g fill="#666666" stroke="#999999" stroke-width="0.3" opacity="0">
-    <rect x="12.5" y="70" width="5" height="3" rx="1" />
-    <rect x="20.5" y="70" width="5" height="3" rx="1" />
-    <rect x="28.5" y="70" width="5" height="3" rx="1" />
-    <rect x="36.5" y="70" width="5" height="3" rx="1" />
-    <rect x="44.5" y="70" width="5" height="3" rx="1" />
-    <rect x="52.5" y="70" width="5" height="3" rx="1" />
-    <rect x="60.5" y="70" width="5" height="3" rx="1" />
-    <rect x="68.5" y="70" width="5" height="3" rx="1" />
-  </g>
-  
-  <!-- Filter numbers -->
-  <g fill="#cccccc" font-family="Arial, sans-serif" font-size="1.2" text-anchor="middle">
-    <text x="15" y="87">1</text>
-    <text x="23" y="87">2</text>
-    <text x="31" y="87">3</text>
-    <text x="39" y="87">4</text>
-    <text x="47" y="87">5</text>
-    <text x="55" y="87">6</text>
-    <text x="63" y="87">7</text>
-    <text x="71" y="87">8</text>
-  </g>
-  
-  <!-- Switches Section -->
+     y="10"
+     id="module-title"
+     style="font-size:6px;font-family:Arial,sans-serif;font-weight:bold;text-anchor:middle;fill:#e8e0c8"
+     >INCANTATION</text>
+
+  <!-- Subtitle -->
   <text
      x="30"
-     y="93"
+     y="14"
+     id="module-subtitle"
+     style="font-size:2.2px;font-family:Arial,sans-serif;text-anchor:middle;fill:#a8a098"
+     >ANIMATED FILTER BANK</text>
+
+  <!-- Top controls row -->
+  <g id="top_controls">
+    <!-- Drive knob -->
+    <circle cx="25" cy="20" r="4.5" fill="#1a1a1a" stroke="#666666" stroke-width="0.4" id="drive_param" />
+    <circle cx="25" cy="20" r="1.5" fill="#333333" stroke="none" />
+    <text x="25" y="28" text-anchor="middle" font-family="Arial, sans-serif" font-size="1.2" fill="#cccccc">DRIVE</text>
+    
+    <!-- Mix knob -->
+    <circle cx="45" cy="20" r="4.5" fill="#1a1a1a" stroke="#666666" stroke-width="0.4" id="mix_param" />
+    <circle cx="45" cy="20" r="1.5" fill="#333333" stroke="none" />
+    <text x="45" y="28" text-anchor="middle" font-family="Arial, sans-serif" font-size="1.2" fill="#cccccc">MIX</text>
+    
+    <!-- Output knob -->
+    <circle cx="65" cy="20" r="4.5" fill="#1a1a1a" stroke="#666666" stroke-width="0.4" id="output_param" />
+    <circle cx="65" cy="20" r="1.5" fill="#333333" stroke="none" />
+    <text x="65" y="28" text-anchor="middle" font-family="Arial, sans-serif" font-size="1.2" fill="#cccccc">OUTPUT</text>
+  </g>
+
+  <!-- Second controls row -->
+  <g id="second_controls">
+    <!-- Pattern selector (12-position) -->
+    <circle cx="25" cy="35" r="4.5" fill="#1a1a1a" stroke="#666666" stroke-width="0.4" id="pattern_param" />
+    <circle cx="25" cy="35" r="1.5" fill="#333333" stroke="none" />
+    <text x="25" y="43" text-anchor="middle" font-family="Arial, sans-serif" font-size="1.2" fill="#cccccc">PATTERN</text>
+    
+    <!-- Envelope knob -->
+    <circle cx="45" cy="35" r="4.5" fill="#1a1a1a" stroke="#666666" stroke-width="0.4" id="envelope_param" />
+    <circle cx="45" cy="35" r="1.5" fill="#333333" stroke="none" />
+    <text x="45" y="43" text-anchor="middle" font-family="Arial, sans-serif" font-size="1.2" fill="#cccccc">ENV</text>
+    
+    <!-- Rate knob -->
+    <circle cx="65" cy="35" r="4.5" fill="#1a1a1a" stroke="#666666" stroke-width="0.4" id="rate_param" />
+    <circle cx="65" cy="35" r="1.5" fill="#333333" stroke="none" />
+    <text x="65" y="43" text-anchor="middle" font-family="Arial, sans-serif" font-size="1.2" fill="#cccccc">RATE</text>
+  </g>
+
+  <!-- Preset buttons -->
+  <g id="preset_buttons">
+    <rect x="22" y="46" width="6" height="4" rx="1" fill="#2a2a2a" stroke="#666666" stroke-width="0.3" id="preset_zero_param" />
+    <text x="25" y="48.5" text-anchor="middle" font-family="Arial, sans-serif" font-size="1" fill="#cccccc">0%</text>
+    
+    <rect x="32" y="46" width="6" height="4" rx="1" fill="#2a2a2a" stroke="#666666" stroke-width="0.3" id="preset_half_param" />
+    <text x="35" y="48.5" text-anchor="middle" font-family="Arial, sans-serif" font-size="1" fill="#cccccc">50%</text>
+    
+    <rect x="42" y="46" width="6" height="4" rx="1" fill="#2a2a2a" stroke="#666666" stroke-width="0.3" id="preset_full_param" />
+    <text x="45" y="48.5" text-anchor="middle" font-family="Arial, sans-serif" font-size="1" fill="#cccccc">100%</text>
+  </g>
+
+  <!-- Section divider -->
+  <line
+     x1="5"
+     y1="55"
+     x2="79"
+     y2="55"
+     stroke="#333333"
+     stroke-width="0.3"
+     id="line1" />
+
+  <!-- 8-Band Filter Matrix -->
+  <text
+     x="42"
+     y="59"
      text-anchor="middle"
      font-family="Arial, sans-serif"
-     font-size="1.5"
+     font-size="1.8"
      font-weight="bold"
-     fill="#cccccc">SWITCHES</text>
-  
-  <!-- FREQ switch -->
-  <rect
-     x="18"
-     y="94"
-     width="4"
-     height="8"
-     fill="#222222"
-     stroke="#666666"
+     fill="#e8e8e8">FILTER LEVELS</text>
+
+  <!-- Filter level sliders and CV inputs -->
+  <g id="filter_matrix">
+    <!-- Slider track backgrounds -->
+    <rect x="17" y="62" width="2" height="20" rx="1" fill="#0a0a0a" stroke="#666666" stroke-width="0.2" />
+    <rect x="26" y="62" width="2" height="20" rx="1" fill="#0a0a0a" stroke="#666666" stroke-width="0.2" />
+    <rect x="35" y="62" width="2" height="20" rx="1" fill="#0a0a0a" stroke="#666666" stroke-width="0.2" />
+    <rect x="44" y="62" width="2" height="20" rx="1" fill="#0a0a0a" stroke="#666666" stroke-width="0.2" />
+    <rect x="53" y="62" width="2" height="20" rx="1" fill="#0a0a0a" stroke="#666666" stroke-width="0.2" />
+    <rect x="62" y="62" width="2" height="20" rx="1" fill="#0a0a0a" stroke="#666666" stroke-width="0.2" />
+    <rect x="71" y="62" width="2" height="20" rx="1" fill="#0a0a0a" stroke="#666666" stroke-width="0.2" />
+    <rect x="80" y="62" width="2" height="20" rx="1" fill="#0a0a0a" stroke="#666666" stroke-width="0.2" />
+    
+    <!-- Slider handles (positioned at middle for now) -->
+    <rect x="16.5" y="71" width="3" height="2" rx="1" fill="#666666" stroke="#888888" stroke-width="0.2" id="filter_1_param" />
+    <rect x="25.5" y="71" width="3" height="2" rx="1" fill="#666666" stroke="#888888" stroke-width="0.2" id="filter_2_param" />
+    <rect x="34.5" y="71" width="3" height="2" rx="1" fill="#666666" stroke="#888888" stroke-width="0.2" id="filter_3_param" />
+    <rect x="43.5" y="71" width="3" height="2" rx="1" fill="#666666" stroke="#888888" stroke-width="0.2" id="filter_4_param" />
+    <rect x="52.5" y="71" width="3" height="2" rx="1" fill="#666666" stroke="#888888" stroke-width="0.2" id="filter_5_param" />
+    <rect x="61.5" y="71" width="3" height="2" rx="1" fill="#666666" stroke="#888888" stroke-width="0.2" id="filter_6_param" />
+    <rect x="70.5" y="71" width="3" height="2" rx="1" fill="#666666" stroke="#888888" stroke-width="0.2" id="filter_7_param" />
+    <rect x="79.5" y="71" width="3" height="2" rx="1" fill="#666666" stroke="#888888" stroke-width="0.2" id="filter_8_param" />
+    
+    <!-- Filter band labels -->
+    <text x="18" y="87" text-anchor="middle" font-family="Arial, sans-serif" font-size="1" fill="#cccccc">1</text>
+    <text x="27" y="87" text-anchor="middle" font-family="Arial, sans-serif" font-size="1" fill="#cccccc">2</text>
+    <text x="36" y="87" text-anchor="middle" font-family="Arial, sans-serif" font-size="1" fill="#cccccc">3</text>
+    <text x="45" y="87" text-anchor="middle" font-family="Arial, sans-serif" font-size="1" fill="#cccccc">4</text>
+    <text x="54" y="87" text-anchor="middle" font-family="Arial, sans-serif" font-size="1" fill="#cccccc">5</text>
+    <text x="63" y="87" text-anchor="middle" font-family="Arial, sans-serif" font-size="1" fill="#cccccc">6</text>
+    <text x="72" y="87" text-anchor="middle" font-family="Arial, sans-serif" font-size="1" fill="#cccccc">7</text>
+    <text x="81" y="87" text-anchor="middle" font-family="Arial, sans-serif" font-size="1" fill="#cccccc">8</text>
+    
+    <!-- CV input jacks -->
+    <circle cx="18" cy="90" r="2.5" fill="#0a0a0a" stroke="#666666" stroke-width="0.3" id="filter_1_cv_input" />
+    <circle cx="27" cy="90" r="2.5" fill="#0a0a0a" stroke="#666666" stroke-width="0.3" id="filter_2_cv_input" />
+    <circle cx="36" cy="90" r="2.5" fill="#0a0a0a" stroke="#666666" stroke-width="0.3" id="filter_3_cv_input" />
+    <circle cx="45" cy="90" r="2.5" fill="#0a0a0a" stroke="#666666" stroke-width="0.3" id="filter_4_cv_input" />
+    <circle cx="54" cy="90" r="2.5" fill="#0a0a0a" stroke="#666666" stroke-width="0.3" id="filter_5_cv_input" />
+    <circle cx="63" cy="90" r="2.5" fill="#0a0a0a" stroke="#666666" stroke-width="0.3" id="filter_6_cv_input" />
+    <circle cx="72" cy="90" r="2.5" fill="#0a0a0a" stroke="#666666" stroke-width="0.3" id="filter_7_cv_input" />
+    <circle cx="81" cy="90" r="2.5" fill="#0a0a0a" stroke="#666666" stroke-width="0.3" id="filter_8_cv_input" />
+  </g>
+
+  <!-- CV Bypass switch -->
+  <g id="cv_bypass">
+    <rect x="5" y="73" width="6" height="4" rx="2" fill="#2a2a2a" stroke="#666666" stroke-width="0.3" id="cv_bypass_switch_param" />
+    <text x="8" y="75.5" text-anchor="middle" font-family="Arial, sans-serif" font-size="0.8" fill="#cccccc">BYP</text>
+    <text x="8" y="81" text-anchor="middle" font-family="Arial, sans-serif" font-size="1" fill="#cccccc">CV</text>
+  </g>
+
+  <!-- Section divider -->
+  <line
+     x1="5"
+     y1="97"
+     x2="79"
+     y2="97"
+     stroke="#333333"
      stroke-width="0.3"
-     rx="1"
-     opacity="0" />
-  <rect
-     x="19"
-     y="96"
-     width="2"
-     height="3"
-     fill="#888888"
-     rx="0.5"
-     opacity="0" />
-  <text
-     x="20"
-     y="105"
-     text-anchor="middle"
-     font-family="Arial, sans-serif"
-     font-size="1"
-     fill="#cccccc">FREQ</text>
-  <text
-     x="15"
-     y="107.5"
-     text-anchor="middle"
-     font-family="Arial, sans-serif"
-     font-size="0.8"
-     fill="#888888">BASS</text>
-  <text
-     x="25"
-     y="107.5"
-     text-anchor="middle"
-     font-family="Arial, sans-serif"
-     font-size="0.8"
-     fill="#888888">MIDS</text>
-  
-  <!-- LFO switch -->
-  <rect
-     x="38"
-     y="94"
-     width="4"
-     height="8"
-     fill="#222222"
-     stroke="#666666"
+     id="line2" />
+
+  <!-- Mode switches -->
+  <g id="mode_switches">
+    <!-- Bass/Mids switch -->
+    <rect x="17" y="98" width="6" height="4" rx="2" fill="#2a2a2a" stroke="#666666" stroke-width="0.3" id="freq_switch_param" />
+    <text x="20" y="100.5" text-anchor="middle" font-family="Arial, sans-serif" font-size="0.8" fill="#cccccc">BASS</text>
+    <text x="20" y="105" text-anchor="middle" font-family="Arial, sans-serif" font-size="0.8" fill="#cccccc">MIDS</text>
+    
+    <!-- LFO switch -->
+    <rect x="37" y="98" width="6" height="4" rx="2" fill="#2a2a2a" stroke="#666666" stroke-width="0.3" id="lfo_switch_param" />
+    <text x="40" y="100.5" text-anchor="middle" font-family="Arial, sans-serif" font-size="0.8" fill="#cccccc">LFO</text>
+    
+    <!-- Q Factor switch -->
+    <rect x="57" y="98" width="6" height="4" rx="2" fill="#2a2a2a" stroke="#666666" stroke-width="0.3" id="q_factor_switch_param" />
+    <text x="60" y="100.5" text-anchor="middle" font-family="Arial, sans-serif" font-size="0.8" fill="#cccccc">Q</text>
+  </g>
+
+  <!-- Section divider -->
+  <line
+     x1="5"
+     y1="108"
+     x2="79"
+     y2="108"
+     stroke="#333333"
      stroke-width="0.3"
-     rx="1"
-     opacity="0" />
-  <rect
-     x="39"
-     y="99"
-     width="2"
-     height="3"
-     fill="#888888"
-     rx="0.5"
-     opacity="0" />
-  <text
-     x="40"
-     y="105"
-     text-anchor="middle"
-     font-family="Arial, sans-serif"
-     font-size="1"
-     fill="#cccccc">LFO</text>
-  <text
-     x="35"
-     y="107.5"
-     text-anchor="middle"
-     font-family="Arial, sans-serif"
-     font-size="0.8"
-     fill="#888888">OFF</text>
-  <text
-     x="45"
-     y="107.5"
-     text-anchor="middle"
-     font-family="Arial, sans-serif"
-     font-size="0.8"
-     fill="#888888">ON</text>
-  
+     id="line3" />
+
   <!-- I/O Section -->
   <text
      x="42"
-     y="113"
+     y="112"
      text-anchor="middle"
      font-family="Arial, sans-serif"
-     font-size="1.5"
+     font-size="1.8"
      font-weight="bold"
-     fill="#cccccc">INPUTS &amp; OUTPUTS</text>
-  
-  <!-- Input jacks -->
-  <circle cx="15" cy="117" r="3" fill="#000000" stroke="#666666" stroke-width="0.4" opacity="0" />
-  <text x="15" y="123" text-anchor="middle" font-family="Arial, sans-serif" font-size="0.7" fill="#cccccc">AUDIO</text>
-  
-  <circle cx="25" cy="117" r="2.5" fill="#000000" stroke="#666666" stroke-width="0.4" opacity="0" />
-  <text x="25" y="123" text-anchor="middle" font-family="Arial, sans-serif" font-size="0.7" fill="#cccccc">ENV</text>
-  
-  <circle cx="35" cy="117" r="2.5" fill="#000000" stroke="#666666" stroke-width="0.4" opacity="0" />
-  <text x="35" y="123" text-anchor="middle" font-family="Arial, sans-serif" font-size="0.7" fill="#cccccc">RATE</text>
-  
-  <circle cx="45" cy="117" r="2.5" fill="#000000" stroke="#666666" stroke-width="0.4" opacity="0" />
-  <text x="45" y="123" text-anchor="middle" font-family="Arial, sans-serif" font-size="0.7" fill="#cccccc">LFO</text>
-  
-  <circle cx="55" cy="117" r="2.5" fill="#000000" stroke="#666666" stroke-width="0.4" opacity="0" />
-  <text x="55" y="123" text-anchor="middle" font-family="Arial, sans-serif" font-size="0.7" fill="#cccccc">MIX</text>
-  
-  <circle cx="65" cy="117" r="2.5" fill="#000000" stroke="#666666" stroke-width="0.4" opacity="0" />
-  <text x="65" y="123" text-anchor="middle" font-family="Arial, sans-serif" font-size="0.7" fill="#cccccc">TAP</text>
-  
-  <!-- Output jacks -->
-  <circle cx="15" cy="127" r="3" fill="#000000" stroke="#ff6600" stroke-width="0.4" opacity="0" />
-  <text x="15" y="132" text-anchor="middle" font-family="Arial, sans-serif" font-size="0.7" fill="#cccccc">L/MONO</text>
-  
-  <circle cx="25" cy="127" r="3" fill="#000000" stroke="#ff6600" stroke-width="0.4" opacity="0" />
-  <text x="25" y="132" text-anchor="middle" font-family="Arial, sans-serif" font-size="0.7" fill="#cccccc">RIGHT</text>
-  
-  <!-- Panel border -->
-  <rect
-     x="0.5"
-     y="0.5"
-     width="83"
-     height="127.5"
-     fill="none"
-     stroke="#444444"
-     stroke-width="0.3" />
-  
+     fill="#e8e8e8">AUDIO &amp; CV</text>
+
+  <!-- First I/O row -->
+  <g id="io_row1">
+    <!-- Audio L input -->
+    <circle cx="10" cy="115" r="2.5" fill="#0a0a0a" stroke="#666666" stroke-width="0.3" id="audio_left_input" />
+    <text x="10" y="121" text-anchor="middle" font-family="Arial, sans-serif" font-size="0.8" fill="#cccccc">L IN</text>
+    
+    <!-- Audio R input -->
+    <circle cx="20" cy="115" r="2.5" fill="#0a0a0a" stroke="#666666" stroke-width="0.3" id="audio_right_input" />
+    <text x="20" y="121" text-anchor="middle" font-family="Arial, sans-serif" font-size="0.8" fill="#cccccc">R IN</text>
+    
+    <!-- Envelope CV -->
+    <circle cx="35" cy="115" r="2.5" fill="#0a0a0a" stroke="#666666" stroke-width="0.3" id="envelope_cv_input" />
+    <text x="35" y="121" text-anchor="middle" font-family="Arial, sans-serif" font-size="0.8" fill="#cccccc">ENV</text>
+    
+    <!-- Rate CV -->
+    <circle cx="50" cy="115" r="2.5" fill="#0a0a0a" stroke="#666666" stroke-width="0.3" id="rate_cv_input" />
+    <text x="50" y="121" text-anchor="middle" font-family="Arial, sans-serif" font-size="0.8" fill="#cccccc">RATE</text>
+    
+    <!-- LFO Sweep CV -->
+    <circle cx="65" cy="115" r="2.5" fill="#0a0a0a" stroke="#666666" stroke-width="0.3" id="lfo_sweep_cv_input" />
+    <text x="65" y="121" text-anchor="middle" font-family="Arial, sans-serif" font-size="0.8" fill="#cccccc">LFO</text>
+  </g>
+
+  <!-- Second I/O row -->
+  <g id="io_row2">
+    <!-- Mix CV input -->
+    <circle cx="10" cy="125" r="2.5" fill="#0a0a0a" stroke="#666666" stroke-width="0.3" id="mix_cv_input" />
+    <text x="10" y="131" text-anchor="middle" font-family="Arial, sans-serif" font-size="0.8" fill="#cccccc">MIX</text>
+    
+    <!-- Tap/Step input -->
+    <circle cx="25" cy="125" r="2.5" fill="#0a0a0a" stroke="#666666" stroke-width="0.3" id="tap_step_input" />
+    <text x="25" y="131" text-anchor="middle" font-family="Arial, sans-serif" font-size="0.8" fill="#cccccc">TAP</text>
+    
+    <!-- Left/Mono output -->
+    <circle cx="50" cy="125" r="2.5" fill="#0a0a0a" stroke="#ff6666" stroke-width="0.3" id="left_mono_output" />
+    <text x="50" y="131" text-anchor="middle" font-family="Arial, sans-serif" font-size="0.8" fill="#cccccc">L/M</text>
+    
+    <!-- Right output -->
+    <circle cx="65" cy="125" r="2.5" fill="#0a0a0a" stroke="#ff6666" stroke-width="0.3" id="right_output" />
+    <text x="65" y="131" text-anchor="middle" font-family="Arial, sans-serif" font-size="0.8" fill="#cccccc">R</text>
+  </g>
+
 </svg>

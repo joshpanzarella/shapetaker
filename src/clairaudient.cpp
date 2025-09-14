@@ -541,19 +541,19 @@ struct ClairaudientWidget : ModuleWidget {
         }
 
         // Input row 1: V oscillator V/OCT and CV inputs - BNC connectors
-        addInput(createInputCentered<ShapetakerBNCPort>(mm2px(centerFromId("v_oct_v", 19.023623f, 105.77721f)), module, ClairaudientModule::VOCT1_INPUT));
-        addInput(createInputCentered<ShapetakerBNCPort>(mm2px(centerFromId("fine_cv_v", 33.648426f, 105.77721f)), module, ClairaudientModule::FINE1_CV_INPUT));
-        addInput(createInputCentered<ShapetakerBNCPort>(mm2px(centerFromId("shape_cv_v", 48.139999f, 105.77721f)), module, ClairaudientModule::SHAPE1_CV_INPUT));
+        addInput(createInputCentered<ShapetakerBNCPort>(mm2px(centerFromId("v_oct_v", 23.762346f, 105.77721f)), module, ClairaudientModule::VOCT1_INPUT));
+        addInput(createInputCentered<ShapetakerBNCPort>(mm2px(centerFromId("fine_cv_v", 38.386749f, 105.77721f)), module, ClairaudientModule::FINE1_CV_INPUT));
+        addInput(createInputCentered<ShapetakerBNCPort>(mm2px(centerFromId("shape_cv_v", 52.878323f, 105.77721f)), module, ClairaudientModule::SHAPE1_CV_INPUT));
         addInput(createInputCentered<ShapetakerBNCPort>(mm2px(centerFromId("x_fade_cv", 40.639999f, 90.126892f)), module, ClairaudientModule::XFADE_CV_INPUT));
 
-        // Input row 2: Z oscillator and outputs - BNC connectors  
-        addInput(createInputCentered<ShapetakerBNCPort>(mm2px(centerFromId("v_out_z", 19.023623f, 119.04238f)), module, ClairaudientModule::VOCT2_INPUT));
-        addInput(createInputCentered<ShapetakerBNCPort>(mm2px(centerFromId("fine_cv_z", 33.648426f, 119.04238f)), module, ClairaudientModule::FINE2_CV_INPUT));
-        addInput(createInputCentered<ShapetakerBNCPort>(mm2px(centerFromId("shape_cv_z", 48.139999f, 119.04238f)), module, ClairaudientModule::SHAPE2_CV_INPUT));
-        
+        // Input row 2: Z oscillator and outputs - BNC connectors
+        addInput(createInputCentered<ShapetakerBNCPort>(mm2px(centerFromId("v_out_z", 23.76195f, 118.09399f)), module, ClairaudientModule::VOCT2_INPUT));
+        addInput(createInputCentered<ShapetakerBNCPort>(mm2px(centerFromId("fine_cv_z", 38.386749f, 118.09399f)), module, ClairaudientModule::FINE2_CV_INPUT));
+        addInput(createInputCentered<ShapetakerBNCPort>(mm2px(centerFromId("shape_cv_z", 52.878323f, 118.09399f)), module, ClairaudientModule::SHAPE2_CV_INPUT));
+
         // Stereo outputs - BNC connectors for consistent vintage look
-        addOutput(createOutputCentered<ShapetakerBNCPort>(mm2px(centerFromId("output_l", 62.631577f, 105.77721f)), module, ClairaudientModule::LEFT_OUTPUT));
-        addOutput(createOutputCentered<ShapetakerBNCPort>(mm2px(centerFromId("output_r", 62.631577f, 119.04238f)), module, ClairaudientModule::RIGHT_OUTPUT));
+        addOutput(createOutputCentered<ShapetakerBNCPort>(mm2px(centerFromId("output_l", 67.369896f, 105.77721f)), module, ClairaudientModule::LEFT_OUTPUT));
+        addOutput(createOutputCentered<ShapetakerBNCPort>(mm2px(centerFromId("output_r", 67.369896f, 117.72548f)), module, ClairaudientModule::RIGHT_OUTPUT));
 
         // Subtle patina overlay to match Transmutation
         auto overlay = new PanelPatinaOverlay();

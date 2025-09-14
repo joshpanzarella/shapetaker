@@ -77,24 +77,13 @@
     <!-- Plate bevel shadow -->
     <linearGradient
        id="bevelShadow"
-       x1="52.6"
-       y1="147.4"
-       x2="52.6"
-       y2="52.6"
-       gradientUnits="userSpaceOnUse"
-       gradientTransform="translate(30.000001,30.000001)">
-      <stop
-         offset="0%"
-         style="stop-color:#0a0c0e;stop-opacity:1"
-         id="stop8" />
-      <stop
-         offset="50%"
-         style="stop-color:#1a1c20;stop-opacity:0.5"
-         id="stop9" />
-      <stop
-         offset="100%"
-         style="stop-color:#2a2d32;stop-opacity:0"
-         id="stop10" />
+       x1="0%"
+       y1="100%"
+       x2="0%"
+       y2="0%">
+      <stop offset="0%"  style="stop-color:#0a0c0e;stop-opacity:1"  />
+      <stop offset="50%" style="stop-color:#1a1c20;stop-opacity:0.5" />
+      <stop offset="100%" style="stop-color:#2a2d32;stop-opacity:0" />
     </linearGradient>
     <!-- Screw gradient with more metallic shine -->
     <radialGradient
@@ -132,7 +121,7 @@
          style="stop-color:#2a2d32;stop-opacity:1"
          id="stop17" />
     </radialGradient>
-    <!-- Purple button gradient -->
+    <!-- Dark teal button gradient -->
     <radialGradient
        id="purpleButton"
        cx="-5.9721441"
@@ -144,19 +133,19 @@
        gradientUnits="userSpaceOnUse">
       <stop
          offset="0%"
-         style="stop-color:#9b88ff;stop-opacity:1"
+         style="stop-color:#4d9999;stop-opacity:1"
          id="stop18" />
       <stop
          offset="30%"
-         style="stop-color:#7b68ee;stop-opacity:1"
+         style="stop-color:#337f7f;stop-opacity:1"
          id="stop19" />
       <stop
          offset="70%"
-         style="stop-color:#5a4bc7;stop-opacity:1"
+         style="stop-color:#266666;stop-opacity:1"
          id="stop20" />
       <stop
          offset="100%"
-         style="stop-color:#3d3490;stop-opacity:1"
+         style="stop-color:#1a4d4d;stop-opacity:1"
          id="stop21" />
     </radialGradient>
     <!-- Flat metal tip gradient -->
@@ -243,7 +232,7 @@
          style="stop-color:#0a0a0f;stop-opacity:1"
          id="stop35" />
     </radialGradient>
-    <!-- LED on state (purple to match button) -->
+    <!-- LED on state (dark teal to match button) -->
     <radialGradient
        id="ledPurpleOn"
        cx="5.9604645e-07"
@@ -254,15 +243,15 @@
        gradientUnits="userSpaceOnUse">
       <stop
          offset="0%"
-         style="stop-color:#9b88ff;stop-opacity:1"
+         style="stop-color:#4d9999;stop-opacity:1"
          id="stop36" />
       <stop
          offset="40%"
-         style="stop-color:#7b68ee;stop-opacity:1"
+         style="stop-color:#337f7f;stop-opacity:1"
          id="stop37" />
       <stop
          offset="100%"
-         style="stop-color:#5a4bc7;stop-opacity:1"
+         style="stop-color:#266666;stop-opacity:1"
          id="stop38" />
     </radialGradient>
     <!-- LED on state (teal) -->
@@ -322,8 +311,8 @@
          stdDeviation="1"
          id="feGaussianBlur41" />
       <feOffset
-         dx="0.5"
-         dy="1"
+         dx="0.3"
+         dy="0.5"
          result="shadow1"
          id="feOffset41" />
       <feGaussianBlur
@@ -331,8 +320,8 @@
          stdDeviation="2"
          id="feGaussianBlur42" />
       <feOffset
-         dx="1"
-         dy="2"
+         dx="0.5"
+         dy="1"
          result="shadow2"
          id="feOffset42" />
       <feComponentTransfer
@@ -368,8 +357,8 @@
          stdDeviation="5"
          id="feGaussianBlur44" />
       <feOffset
-         dx="0"
-         dy="4"
+         dx="0.2"
+         dy="1"
          id="feOffset44" />
       <feComposite
          operator="out"
@@ -395,8 +384,8 @@
          stdDeviation="0.5"
          id="feGaussianBlur45" />
       <feOffset
-         dx="0"
-         dy="0.5"
+         dx="0.1"
+         dy="0.2"
          result="offsetblur"
          id="feOffset45" />
       <feFlood
@@ -483,8 +472,8 @@
          stdDeviation="1"
          id="feGaussianBlur41-4" />
       <feOffset
-         dx="0.5"
-         dy="1"
+         dx="0.3"
+         dy="0.5"
          result="shadow1"
          id="feOffset41-2" />
       <feGaussianBlur
@@ -492,8 +481,8 @@
          stdDeviation="2"
          id="feGaussianBlur42-3" />
       <feOffset
-         dx="1"
-         dy="2"
+         dx="0.5"
+         dy="1"
          result="shadow2"
          id="feOffset42-3" />
       <feComponentTransfer
@@ -575,8 +564,8 @@
          stdDeviation="1"
          id="feGaussianBlur41-4-1" />
       <feOffset
-         dx="0.5"
-         dy="1"
+         dx="0.3"
+         dy="0.5"
          result="shadow1"
          id="feOffset41-2-9" />
       <feGaussianBlur
@@ -584,8 +573,8 @@
          stdDeviation="2"
          id="feGaussianBlur42-3-8" />
       <feOffset
-         dx="1"
-         dy="2"
+         dx="0.5"
+         dy="1"
          result="shadow2"
          id="feOffset42-3-6" />
       <feComponentTransfer
@@ -679,8 +668,8 @@
          stdDeviation="1"
          id="feGaussianBlur41-5" />
       <feOffset
-         dx="0.5"
-         dy="1"
+         dx="0.3"
+         dy="0.5"
          result="shadow1"
          id="feOffset41-1" />
       <feGaussianBlur
@@ -688,8 +677,8 @@
          stdDeviation="2"
          id="feGaussianBlur42-1" />
       <feOffset
-         dx="1"
-         dy="2"
+         dx="0.5"
+         dy="1"
          result="shadow2"
          id="feOffset42-2" />
       <feComponentTransfer
@@ -1210,7 +1199,7 @@
     <circle
        r="14.5"
        fill="none"
-       stroke="#9b88ff"
+       stroke="#4d9999"
        stroke-width="0.3"
        opacity="0.4"
        id="circle88"
@@ -1227,7 +1216,7 @@
     <circle
        r="13"
        fill="none"
-       stroke="#5a4bc7"
+       stroke="#266666"
        stroke-width="0.5"
        opacity="0.5"
        id="circle89"
@@ -1257,7 +1246,7 @@
        id="circle92"
        cx="129.99994"
        cy="137.93584"
-       style="display:inline;fill:#9b88ff;fill-opacity:1;stroke-width:1.2366"
+       style="display:inline;fill:#4d9999;fill-opacity:1;stroke-width:1.2366"
        rx="4.611094"
        ry="4.0624542" />
     <ellipse
@@ -1373,7 +1362,7 @@
        fill="#4a4e56"
        opacity="0.8"
        id="rect96"
-       style="opacity:1;fill:#ada0e7;fill-opacity:1;stroke-width:1.68135" />
+       style="opacity:1;fill:#6dbbbb;fill-opacity:1;stroke-width:1.68135" />
     <rect
        x="128.68254"
        y="113.48097"
@@ -1381,7 +1370,7 @@
        height="16.249817"
        fill="#6a6e76"
        id="rect97"
-       style="fill:#a3a3e4;fill-opacity:1;stroke-width:1.2366" />
+       style="fill:#5daaaa;fill-opacity:1;stroke-width:1.2366" />
     <rect
        x="129.91879"
        y="122.87022"

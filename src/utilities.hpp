@@ -60,6 +60,7 @@ namespace shapetaker {
     using LargeJewelLED = ui::LargeJewelLED;
     using SmallJewelLED = ui::SmallJewelLED;
     using VUMeterWidget = ui::VUMeterWidget;
+    using VintageVUMeterWidget = ui::VintageVUMeterWidget;
     using VisualizerWidget = ui::VisualizerWidget;
     using ButtonHelper = ui::ButtonHelper;
     using CVHelper = ui::CVHelper;

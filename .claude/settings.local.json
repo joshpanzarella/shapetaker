@@ -35,7 +35,16 @@
       "WebFetch(domain:www.freepik.com)",
       "Bash(git restore:*)",
       "Bash(git switch:*)",
-      "Bash(rg:*)"
+      "Bash(rg:*)",
+      "Bash(xmllint:*)",
+      "WebFetch(domain:vcvrack.com)",
+      "WebFetch(domain:community.vcvrack.com)",
+      "WebFetch(domain:sdiy.info)",
+      "Bash(awk:*)",
+      "Bash(echo:*)",
+      "Bash(for id in v_oct_v fine_cv_v shape_cv_v x_fade_cv v_out_z fine_cv_z shape_cv_z output_l output_r)",
+      "Bash(do)",
+      "Bash(done)"
     ],
     "deny": [],
     "ask": []
