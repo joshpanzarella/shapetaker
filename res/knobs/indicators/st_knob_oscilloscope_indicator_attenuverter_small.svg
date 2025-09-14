@@ -1,0 +1,46 @@
+<svg width="10mm" height="10mm" viewBox="0 0 26 26" xmlns="http://www.w3.org/2000/svg">
+  <!-- Hexagonal drop shadow -->
+  <polygon points="13,4.0 22.1,8.8 22.1,18.2 13,23.0 3.9,18.2 3.9,8.8" fill="#000000" opacity="0.15" transform="translate(0.3,0.3)"/>
+  
+  <!-- Base hexagonal knob -->
+  <polygon points="13,3.5 22.6,8.5 22.6,18.5 13,23.5 3.4,18.5 3.4,8.5" fill="#2a2a2a"/>
+  
+  <!-- Simple gradient layers -->
+  <polygon points="13,4.0 22.1,8.8 22.1,18.2 13,23.0 3.9,18.2 3.9,8.8" fill="#3a3a3a" opacity="0.95"/>
+  <polygon points="13,4.5 21.6,9.1 21.6,17.9 13,22.5 4.4,17.9 4.4,9.1" fill="#404040" opacity="0.9"/>
+  <polygon points="13,5.0 21.1,9.4 21.1,17.6 13,22.0 4.9,17.6 4.9,9.4" fill="#464646" opacity="0.85"/>
+  <polygon points="13,5.5 20.6,9.7 20.6,17.3 13,21.5 5.4,17.3 5.4,9.7" fill="#4a4a4a" opacity="0.8"/>
+  
+  <!-- Single outer rim -->
+  <polygon points="13,3.2 23.0,8.2 23.0,18.8 13,23.8 3.0,18.8 3.0,8.2" fill="none" stroke="#5a5a5a" stroke-width="0.15" opacity="0.4"/>
+  
+  <!-- Subtle teal accent on one hexagon edge -->
+  <line x1="13" y1="3.2" x2="23.0" y2="8.2" stroke="#00a080" stroke-width="0.15" opacity="0.3"/>
+  
+  <!-- Hexagonal tick marks (smaller) -->
+  <g stroke="#ffffff" stroke-width="0.4" stroke-linecap="round" opacity="0.7">
+    <line x1="13" y1="4.5" x2="13" y2="5.5" transform="rotate(60 13 13)"/>
+    <line x1="13" y1="4.5" x2="13" y2="5.5" transform="rotate(120 13 13)"/>
+    <line x1="13" y1="4.5" x2="13" y2="5.5" transform="rotate(180 13 13)"/>
+    <line x1="13" y1="4.5" x2="13" y2="5.5" transform="rotate(240 13 13)"/>
+    <line x1="13" y1="4.5" x2="13" y2="5.5" transform="rotate(300 13 13)"/>
+  </g>
+  
+  <!-- Define gradient for highlight -->
+  <defs>
+    <radialGradient id="highlight" cx="0.3" cy="0.3" r="0.7">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.2"/>
+      <stop offset="70%" stop-color="#ffffff" stop-opacity="0.06"/>
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  
+  <!-- Subtle highlight -->
+  <polygon points="9,6 16,6 18,9 16,13 9,13 7,9" fill="url(#highlight)" transform="rotate(-15 12.5 9.5)"/>
+  
+  <!-- Center detent indicator (small teal dot) -->
+  <circle cx="13" cy="13" r="0.8" fill="#00ffcc" opacity="0.8"/>
+  
+  <!-- Main indicator pointer - thin white line -->
+  <line x1="13" y1="5.3" x2="13" y2="9.5" stroke="#ffffff" stroke-width="1.4" stroke-linecap="round"/>
+</svg>

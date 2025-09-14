@@ -1,0 +1,47 @@
+<svg width="12mm" height="12mm" viewBox="0 0 38 38" xmlns="http://www.w3.org/2000/svg">
+  <!-- Hexagonal drop shadow -->
+  <polygon points="19,5.5 32.6,12.8 32.6,27.2 19,34.5 5.4,27.2 5.4,12.8" fill="#000000" opacity="0.2" transform="translate(0.4,0.4)"/>
+  
+  <!-- Base hexagonal knob -->
+  <polygon points="19,4.8 33.2,12.4 33.2,27.6 19,35.2 4.8,27.6 4.8,12.4" fill="#2a2a2a"/>
+  
+  <!-- Simplified gradient layers -->
+  <polygon points="19,5.5 32.6,12.8 32.6,27.2 19,34.5 5.4,27.2 5.4,12.8" fill="#3a3a3a" opacity="0.95"/>
+  <polygon points="19,6.2 31.9,13.2 31.9,26.8 19,33.8 6.1,26.8 6.1,13.2" fill="#404040" opacity="0.9"/>
+  <polygon points="19,6.9 31.2,13.6 31.2,26.4 19,33.1 6.8,26.4 6.8,13.6" fill="#464646" opacity="0.85"/>
+  <polygon points="19,7.6 30.5,14.0 30.5,26.0 19,32.4 7.5,26.0 7.5,14.0" fill="#4a4a4a" opacity="0.8"/>
+  <polygon points="19,8.3 29.8,14.4 29.8,25.6 19,31.7 8.2,25.6 8.2,14.4" fill="#505050" opacity="0.75"/>
+  
+  <!-- Single outer rim -->
+  <polygon points="19,4.5 33.5,12.1 33.5,27.9 19,35.5 4.5,27.9 4.5,12.1" fill="none" stroke="#5a5a5a" stroke-width="0.2" opacity="0.4"/>
+  
+  <!-- Subtle teal accent on one hexagon edge -->
+  <line x1="19" y1="4.5" x2="33.5" y2="12.1" stroke="#00a080" stroke-width="0.2" opacity="0.3"/>
+  
+  <!-- Hexagonal tick marks -->
+  <g stroke="#ffffff" stroke-width="0.6" stroke-linecap="round" opacity="0.8">
+    <line x1="19" y1="5.9" x2="19" y2="7.4" transform="rotate(60 19 19)"/>
+    <line x1="19" y1="5.9" x2="19" y2="7.4" transform="rotate(120 19 19)"/>
+    <line x1="19" y1="5.9" x2="19" y2="7.4" transform="rotate(180 19 19)"/>
+    <line x1="19" y1="5.9" x2="19" y2="7.4" transform="rotate(240 19 19)"/>
+    <line x1="19" y1="5.9" x2="19" y2="7.4" transform="rotate(300 19 19)"/>
+  </g>
+  
+  <!-- Define gradient for highlight -->
+  <defs>
+    <radialGradient id="highlight" cx="0.3" cy="0.3" r="0.7">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.25"/>
+      <stop offset="70%" stop-color="#ffffff" stop-opacity="0.08"/>
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  
+  <!-- Natural highlight positioned at upper left for 3D effect -->
+  <polygon points="12,7 22,7 25,11.5 22,17 12,17 9,11.5" fill="url(#highlight)" transform="rotate(-15 16 12)"/>
+  
+  <!-- Center detent indicator (smaller teal dot at center) -->
+  <circle cx="19" cy="19" r="1.1" fill="#00ffcc" opacity="0.9"/>
+  
+  <!-- Main indicator pointer - clean white line from inside edge to center -->
+  <line x1="19" y1="6.6" x2="19" y2="13.5" stroke="#ffffff" stroke-width="2.2" stroke-linecap="round"/>
+</svg>

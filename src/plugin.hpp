@@ -19,6 +19,7 @@ extern Model* modelTransmutation;
 
 struct ShapetakerKnobLarge : app::SvgKnob {
     widget::SvgWidget* bg;
+    Vec nativeSize = Vec(100.f, 100.f);
     
     ShapetakerKnobLarge() {
         minAngle = -0.75 * M_PI;
@@ -27,19 +28,45 @@ struct ShapetakerKnobLarge : app::SvgKnob {
         // Use the oscilloscope indicator variant
         setSvg(Svg::load(asset::plugin(pluginInstance, "res/knobs/indicators/st_knob_oscilloscope_indicator_large.svg")));
         
-        // Add background as first child (will be drawn behind the rotating part)
+        // Add background into the framebuffer below the rotating SVG (matches VCV Fundamental pattern)
         bg = new widget::SvgWidget;
         bg->setSvg(Svg::load(asset::plugin(pluginInstance, "res/knobs/backgrounds/st_knob_large_bg_light.svg")));
-        addChild(bg);
-        
-        // Move the background to the back by reordering children
-        removeChild(bg);
-        children.insert(children.begin(), bg);
+        nativeSize = bg->box.size;
+        if (fb && tw) fb->addChildBelow(bg, tw);
+        // Target: Large = 24 mm
+        box.size = mm2px(Vec(24.f, 24.f));
+        // Configure Fundamental-style shadow, tightened to the knob face
+        if (shadow && sw) {
+            shadow->visible = true;
+            shadow->blurRadius = 0.f;
+            shadow->opacity = 0.15f;
+            Vec s = sw->box.size;
+            float f = 0.90f; // Large: face diameter ~56.5 of 63 viewBox
+            Vec shr = Vec(s.x * f, s.y * f);
+            shadow->box.size = shr;
+            shadow->box.pos = Vec((s.x - shr.x) * 0.5f,
+                                   (s.y - shr.y) * 0.5f + s.y * 0.10f);
+        }
+    }
+    void draw(const DrawArgs& args) override {
+        nvgSave(args.vg);
+        float svgW = std::max(1.f, nativeSize.x);
+        float svgH = std::max(1.f, nativeSize.y);
+        float sx = box.size.x / svgW;
+        float sy = box.size.y / svgH;
+        float s = std::min(sx, sy);
+        float tx = (box.size.x - svgW * s) * 0.5f;
+        float ty = (box.size.y - svgH * s) * 0.5f;
+        nvgTranslate(args.vg, tx, ty);
+        nvgScale(args.vg, s, s);
+        app::SvgKnob::draw(args);
+        nvgRestore(args.vg);
     }
 };
 
 struct ShapetakerKnobMedium : app::SvgKnob {
     widget::SvgWidget* bg;
+    Vec nativeSize = Vec(100.f, 100.f);
     
     ShapetakerKnobMedium() {
         minAngle = -0.75 * M_PI;
@@ -48,19 +75,45 @@ struct ShapetakerKnobMedium : app::SvgKnob {
         // Use the oscilloscope indicator variant
         setSvg(Svg::load(asset::plugin(pluginInstance, "res/knobs/indicators/st_knob_oscilloscope_indicator_medium.svg")));
         
-        // Add background as first child (will be drawn behind the rotating part)
+        // Add background into the framebuffer below the rotating SVG (matches VCV Fundamental pattern)
         bg = new widget::SvgWidget;
         bg->setSvg(Svg::load(asset::plugin(pluginInstance, "res/knobs/backgrounds/st_knob_medium_bg_light.svg")));
-        addChild(bg);
-        
-        // Move the background to the back by reordering children
-        removeChild(bg);
-        children.insert(children.begin(), bg);
+        nativeSize = bg->box.size;
+        if (fb && tw) fb->addChildBelow(bg, tw);
+        // Target: Medium = 20 mm
+        box.size = mm2px(Vec(20.f, 20.f));
+        // Configure Fundamental-style shadow, tightened to the knob face
+        if (shadow && sw) {
+            shadow->visible = true;
+            shadow->blurRadius = 0.f;
+            shadow->opacity = 0.15f;
+            Vec s = sw->box.size;
+            float f = 0.78f; // Medium: face diameter ~40.4 of 52 viewBox
+            Vec shr = Vec(s.x * f, s.y * f);
+            shadow->box.size = shr;
+            shadow->box.pos = Vec((s.x - shr.x) * 0.5f,
+                                   (s.y - shr.y) * 0.5f + s.y * 0.10f);
+        }
+    }
+    void draw(const DrawArgs& args) override {
+        nvgSave(args.vg);
+        float svgW = std::max(1.f, nativeSize.x);
+        float svgH = std::max(1.f, nativeSize.y);
+        float sx = box.size.x / svgW;
+        float sy = box.size.y / svgH;
+        float s = std::min(sx, sy);
+        float tx = (box.size.x - svgW * s) * 0.5f;
+        float ty = (box.size.y - svgH * s) * 0.5f;
+        nvgTranslate(args.vg, tx, ty);
+        nvgScale(args.vg, s, s);
+        app::SvgKnob::draw(args);
+        nvgRestore(args.vg);
     }
 };
 
 struct ShapetakerKnobOscilloscopeMedium : app::SvgKnob {
     widget::SvgWidget* bg;
+    Vec nativeSize = Vec(100.f, 100.f);
     
     ShapetakerKnobOscilloscopeMedium() {
         minAngle = -0.75 * M_PI;
@@ -69,19 +122,45 @@ struct ShapetakerKnobOscilloscopeMedium : app::SvgKnob {
         // Use the oscilloscope indicator as the rotating part
         setSvg(Svg::load(asset::plugin(pluginInstance, "res/knobs/indicators/st_knob_oscilloscope_indicator_medium.svg")));
         
-        // Add spherical background as first child
+        // Add spherical background into the framebuffer below the rotating SVG
         bg = new widget::SvgWidget;
         bg->setSvg(Svg::load(asset::plugin(pluginInstance, "res/knobs/backgrounds/st_knob_medium_bg_light.svg")));
-        addChild(bg);
-        
-        // Move the background to the back by reordering children
-        removeChild(bg);
-        children.insert(children.begin(), bg);
+        nativeSize = bg->box.size;
+        if (fb && tw) fb->addChildBelow(bg, tw);
+        // Target: Medium = 20 mm
+        box.size = mm2px(Vec(20.f, 20.f));
+        // Configure Fundamental-style shadow, tightened to the knob face
+        if (shadow && sw) {
+            shadow->visible = true;
+            shadow->blurRadius = 0.f;
+            shadow->opacity = 0.15f;
+            Vec s = sw->box.size;
+            float f = 0.78f; // Medium variant
+            Vec shr = Vec(s.x * f, s.y * f);
+            shadow->box.size = shr;
+            shadow->box.pos = Vec((s.x - shr.x) * 0.5f,
+                                   (s.y - shr.y) * 0.5f + s.y * 0.10f);
+        }
+    }
+    void draw(const DrawArgs& args) override {
+        nvgSave(args.vg);
+        float svgW = std::max(1.f, nativeSize.x);
+        float svgH = std::max(1.f, nativeSize.y);
+        float sx = box.size.x / svgW;
+        float sy = box.size.y / svgH;
+        float s = std::min(sx, sy);
+        float tx = (box.size.x - svgW * s) * 0.5f;
+        float ty = (box.size.y - svgH * s) * 0.5f;
+        nvgTranslate(args.vg, tx, ty);
+        nvgScale(args.vg, s, s);
+        app::SvgKnob::draw(args);
+        nvgRestore(args.vg);
     }
 };
 
 struct ShapetakerKnobOscilloscopeLarge : app::SvgKnob {
     widget::SvgWidget* bg;
+    Vec nativeSize = Vec(100.f, 100.f);
     
     ShapetakerKnobOscilloscopeLarge() {
         minAngle = -0.75 * M_PI;
@@ -90,19 +169,45 @@ struct ShapetakerKnobOscilloscopeLarge : app::SvgKnob {
         // Use the large oscilloscope indicator as the rotating part
         setSvg(Svg::load(asset::plugin(pluginInstance, "res/knobs/indicators/st_knob_oscilloscope_indicator_large.svg")));
         
-        // Add spherical background as first child
+        // Add spherical background into the framebuffer below the rotating SVG
         bg = new widget::SvgWidget;
         bg->setSvg(Svg::load(asset::plugin(pluginInstance, "res/knobs/backgrounds/st_knob_large_bg_light.svg")));
-        addChild(bg);
-        
-        // Move the background to the back by reordering children
-        removeChild(bg);
-        children.insert(children.begin(), bg);
+        nativeSize = bg->box.size;
+        if (fb && tw) fb->addChildBelow(bg, tw);
+        // Target: Large = 24 mm
+        box.size = mm2px(Vec(24.f, 24.f));
+        // Configure Fundamental-style shadow, tightened to the knob face
+        if (shadow && sw) {
+            shadow->visible = true;
+            shadow->blurRadius = 0.f;
+            shadow->opacity = 0.15f;
+            Vec s = sw->box.size;
+            float f = 0.90f;
+            Vec shr = Vec(s.x * f, s.y * f);
+            shadow->box.size = shr;
+            shadow->box.pos = Vec((s.x - shr.x) * 0.5f,
+                                   (s.y - shr.y) * 0.5f + s.y * 0.10f);
+        }
+    }
+    void draw(const DrawArgs& args) override {
+        nvgSave(args.vg);
+        float svgW = std::max(1.f, nativeSize.x);
+        float svgH = std::max(1.f, nativeSize.y);
+        float sx = box.size.x / svgW;
+        float sy = box.size.y / svgH;
+        float s = std::min(sx, sy);
+        float tx = (box.size.x - svgW * s) * 0.5f;
+        float ty = (box.size.y - svgH * s) * 0.5f;
+        nvgTranslate(args.vg, tx, ty);
+        nvgScale(args.vg, s, s);
+        app::SvgKnob::draw(args);
+        nvgRestore(args.vg);
     }
 };
 
 struct ShapetakerKnobOscilloscopeSmall : app::SvgKnob {
     widget::SvgWidget* bg;
+    Vec nativeSize = Vec(100.f, 100.f);
     
     ShapetakerKnobOscilloscopeSmall() {
         minAngle = -0.75 * M_PI;
@@ -111,19 +216,45 @@ struct ShapetakerKnobOscilloscopeSmall : app::SvgKnob {
         // Use the small oscilloscope indicator as the rotating part
         setSvg(Svg::load(asset::plugin(pluginInstance, "res/knobs/indicators/st_knob_oscilloscope_indicator_small.svg")));
         
-        // Add spherical background as first child
+        // Add spherical background into the framebuffer below the rotating SVG
         bg = new widget::SvgWidget;
         bg->setSvg(Svg::load(asset::plugin(pluginInstance, "res/knobs/backgrounds/st_knob_small_bg_light.svg")));
-        addChild(bg);
-        
-        // Move the background to the back by reordering children
-        removeChild(bg);
-        children.insert(children.begin(), bg);
+        nativeSize = bg->box.size;
+        if (fb && tw) fb->addChildBelow(bg, tw);
+        // Target: Small = 16 mm
+        box.size = mm2px(Vec(16.f, 16.f));
+        // Configure Fundamental-style shadow, tightened to the knob face
+        if (shadow && sw) {
+            shadow->visible = true;
+            shadow->blurRadius = 0.f;
+            shadow->opacity = 0.15f;
+            Vec s = sw->box.size;
+            float f = 0.80f; // Small: face diameter 24 of 30 viewBox
+            Vec shr = Vec(s.x * f, s.y * f);
+            shadow->box.size = shr;
+            shadow->box.pos = Vec((s.x - shr.x) * 0.5f,
+                                   (s.y - shr.y) * 0.5f + s.y * 0.10f);
+        }
+    }
+    void draw(const DrawArgs& args) override {
+        nvgSave(args.vg);
+        float svgW = std::max(1.f, nativeSize.x);
+        float svgH = std::max(1.f, nativeSize.y);
+        float sx = box.size.x / svgW;
+        float sy = box.size.y / svgH;
+        float s = std::min(sx, sy);
+        float tx = (box.size.x - svgW * s) * 0.5f;
+        float ty = (box.size.y - svgH * s) * 0.5f;
+        nvgTranslate(args.vg, tx, ty);
+        nvgScale(args.vg, s, s);
+        app::SvgKnob::draw(args);
+        nvgRestore(args.vg);
     }
 };
 
 struct ShapetakerKnobOscilloscopeXLarge : app::SvgKnob {
     widget::SvgWidget* bg;
+    Vec nativeSize = Vec(100.f, 100.f);
     
     ShapetakerKnobOscilloscopeXLarge() {
         minAngle = -0.75 * M_PI;
@@ -132,19 +263,45 @@ struct ShapetakerKnobOscilloscopeXLarge : app::SvgKnob {
         // Use the extra large oscilloscope indicator as the rotating part
         setSvg(Svg::load(asset::plugin(pluginInstance, "res/knobs/indicators/st_knob_oscilloscope_indicator_xlarge.svg")));
         
-        // Add spherical background as first child
+        // Add spherical background into the framebuffer below the rotating SVG
         bg = new widget::SvgWidget;
         bg->setSvg(Svg::load(asset::plugin(pluginInstance, "res/knobs/backgrounds/st_knob_xlarge_bg_light.svg")));
-        addChild(bg);
-        
-        // Move the background to the back by reordering children
-        removeChild(bg);
-        children.insert(children.begin(), bg);
+        nativeSize = bg->box.size;
+        if (fb && tw) fb->addChildBelow(bg, tw);
+        // Target: XLarge = 28 mm
+        box.size = mm2px(Vec(28.f, 28.f));
+        // Configure Fundamental-style shadow, tightened to the knob face
+        if (shadow && sw) {
+            shadow->visible = true;
+            shadow->blurRadius = 0.f;
+            shadow->opacity = 0.15f;
+            Vec s = sw->box.size;
+            float f = 0.92f; // XLarge: face diameter ~44 of 48 viewBox
+            Vec shr = Vec(s.x * f, s.y * f);
+            shadow->box.size = shr;
+            shadow->box.pos = Vec((s.x - shr.x) * 0.5f,
+                                   (s.y - shr.y) * 0.5f + s.y * 0.10f);
+        }
+    }
+    void draw(const DrawArgs& args) override {
+        nvgSave(args.vg);
+        float svgW = std::max(1.f, nativeSize.x);
+        float svgH = std::max(1.f, nativeSize.y);
+        float sx = box.size.x / svgW;
+        float sy = box.size.y / svgH;
+        float s = std::min(sx, sy);
+        float tx = (box.size.x - svgW * s) * 0.5f;
+        float ty = (box.size.y - svgH * s) * 0.5f;
+        nvgTranslate(args.vg, tx, ty);
+        nvgScale(args.vg, s, s);
+        app::SvgKnob::draw(args);
+        nvgRestore(args.vg);
     }
 };
 
 struct ShapetakerKnobOscilloscopeHuge : app::SvgKnob {
     widget::SvgWidget* bg;
+    Vec nativeSize = Vec(100.f, 100.f);
     
     ShapetakerKnobOscilloscopeHuge() {
         minAngle = -0.75 * M_PI;
@@ -153,14 +310,39 @@ struct ShapetakerKnobOscilloscopeHuge : app::SvgKnob {
         // Use the huge oscilloscope indicator as the rotating part
         setSvg(Svg::load(asset::plugin(pluginInstance, "res/knobs/indicators/st_knob_oscilloscope_indicator_huge.svg")));
         
-        // Add spherical background as first child
+        // Add spherical background into the framebuffer below the rotating SVG
         bg = new widget::SvgWidget;
         bg->setSvg(Svg::load(asset::plugin(pluginInstance, "res/knobs/backgrounds/st_knob_huge_bg_light.svg")));
-        addChild(bg);
-        
-        // Move the background to the back by reordering children
-        removeChild(bg);
-        children.insert(children.begin(), bg);
+        nativeSize = bg->box.size;
+        if (fb && tw) fb->addChildBelow(bg, tw);
+        // Target: Huge = 30 mm
+        box.size = mm2px(Vec(30.f, 30.f));
+        // Configure Fundamental-style shadow, tightened to the knob face
+        if (shadow && sw) {
+            shadow->visible = true;
+            shadow->blurRadius = 0.f;
+            shadow->opacity = 0.15f;
+            Vec s = sw->box.size;
+            float f = 0.93f; // Huge: face diameter ~54 of 58 viewBox
+            Vec shr = Vec(s.x * f, s.y * f);
+            shadow->box.size = shr;
+            shadow->box.pos = Vec((s.x - shr.x) * 0.5f,
+                                   (s.y - shr.y) * 0.5f + s.y * 0.10f);
+        }
+    }
+    void draw(const DrawArgs& args) override {
+        nvgSave(args.vg);
+        float svgW = std::max(1.f, nativeSize.x);
+        float svgH = std::max(1.f, nativeSize.y);
+        float sx = box.size.x / svgW;
+        float sy = box.size.y / svgH;
+        float s = std::min(sx, sy);
+        float tx = (box.size.x - svgW * s) * 0.5f;
+        float ty = (box.size.y - svgH * s) * 0.5f;
+        nvgTranslate(args.vg, tx, ty);
+        nvgScale(args.vg, s, s);
+        app::SvgKnob::draw(args);
+        nvgRestore(args.vg);
     }
 };
 
@@ -170,9 +352,8 @@ struct ShapetakerOscilloscopeSwitch : app::SvgSwitch {
         addFrame(Svg::load(asset::plugin(pluginInstance, "res/switches/shuttle-toggle-switch-on.svg")));
         // Disable the shadow by setting it to transparent
         shadow->visible = false;
-        // Target widget box size (draw is dynamically scaled to fit)
-        // Increased default size for better ergonomics/visibility
-        box.size = Vec(36.f, 36.f);
+        // Target widget box size (mm-driven) — approx previous 36px ≈ 9.5 mm
+        box.size = mm2px(Vec(9.5f, 9.5f));
     }
     
     void draw(const DrawArgs& args) override {
@@ -189,23 +370,118 @@ struct ShapetakerOscilloscopeSwitch : app::SvgSwitch {
     }
 };
 
+struct ShapetakerVintageToggleSwitch : app::SvgSwitch {
+    // Cache the native SVG size so we don't assume 40x80; this adapts if the SVG page size changes
+    Vec offSize = Vec(40.f, 80.f);
+    Vec onSize  = Vec(40.f, 80.f);
+    ShapetakerVintageToggleSwitch() {
+        // Load frames and capture intrinsic size from the OFF frame
+        auto offSvg = Svg::load(asset::plugin(pluginInstance, "res/switches/vintage_toggle_switch_off.svg"));
+        auto onSvg  = Svg::load(asset::plugin(pluginInstance, "res/switches/vintage_toggle_switch_on.svg"));
+        // Measure intrinsic sizes via a temporary SvgWidget (portable across SDK versions)
+        if (offSvg) {
+            widget::SvgWidget probe;
+            probe.setSvg(offSvg);
+            if (probe.box.size.x > 0.f && probe.box.size.y > 0.f)
+                offSize = probe.box.size;
+        }
+        if (onSvg) {
+            widget::SvgWidget probe;
+            probe.setSvg(onSvg);
+            if (probe.box.size.x > 0.f && probe.box.size.y > 0.f)
+                onSize = probe.box.size;
+        }
+        addFrame(offSvg);
+        addFrame(onSvg);
+        // House size in mm: another -5% from 8.55x17.1 → 8.1225 x 16.245 mm
+        box.size = mm2px(Vec(8.1225f, 16.245f));
+        if (shadow) shadow->visible = false;
+    }
+    void draw(const DrawArgs& args) override {
+        // Scale the native SVG frames to fit our current box while preserving aspect
+        // Use the intrinsic size of the current frame (OFF/ON)
+        int state = 0;
+        if (getParamQuantity()) state = (int) std::round(getParamQuantity()->getValue());
+        Vec ns = state == 0 ? offSize : onSize;
+        float svgW = std::max(1.f, ns.x);
+        float svgH = std::max(1.f, ns.y);
+        float sx = box.size.x / svgW;
+        float sy = box.size.y / svgH;
+        float s = std::min(sx, sy);
+        float tx = (box.size.x - svgW * s) * 0.5f;
+        float ty = (box.size.y - svgH * s) * 0.5f;
+        nvgSave(args.vg);
+        nvgTranslate(args.vg, tx, ty);
+        nvgScale(args.vg, s, s);
+        app::SvgSwitch::draw(args);
+        nvgRestore(args.vg);
+    }
+};
+
 // Note: LED glow for shuttle switches lives in the SVGs themselves (panel LEDs).
 
 struct ShapetakerBNCPort : app::SvgPort {
     ShapetakerBNCPort() {
         setSvg(Svg::load(asset::plugin(pluginInstance, "res/ports/st_bnc_connector.svg")));
+        // Reduce overall footprint by ~5% from 9.2 mm -> 8.7 mm OD so plugs cover the knurl
+        box.size = mm2px(Vec(8.7f, 8.7f));
+    }
+    void draw(const DrawArgs& args) override {
+        // Scale the SVG to fit the current box (SVG viewBox is 20x20)
+        const float svgSize = 20.f;
+        float s = std::min(box.size.x, box.size.y) / svgSize;
+        float tx = (box.size.x - svgSize * s) * 0.5f;
+        float ty = (box.size.y - svgSize * s) * 0.5f;
+        nvgSave(args.vg);
+        nvgTranslate(args.vg, tx, ty);
+        nvgScale(args.vg, s, s);
+        app::SvgPort::draw(args);
+        nvgRestore(args.vg);
     }
 };
 
 struct ShapetakerAttenuverterOscilloscope : app::SvgKnob {
+    Vec nativeSize = Vec(100.f, 100.f);
     ShapetakerAttenuverterOscilloscope() {
         minAngle = -0.75 * M_PI;
         maxAngle = 0.75 * M_PI;
         
         // The entire hexagonal knob (body + tick marks + indicator) rotates as one piece
-        setSvg(Svg::load(asset::plugin(pluginInstance, "res/knobs/indicators/st_knob_oscilloscope_indicator_attenuverter_large.svg")));
+        setSvg(Svg::load(asset::plugin(pluginInstance, "res/knobs/indicators/st_knob_oscilloscope_indicator_attenuverter_small.svg")));
+        // Measure intrinsic size via probe
+        widget::SvgWidget probe;
+        probe.setSvg(Svg::load(asset::plugin(pluginInstance, "res/knobs/indicators/st_knob_oscilloscope_indicator_attenuverter_small.svg")));
+        nativeSize = probe.box.size;
+        // Target: Attenuverter = 10 mm (closer to compact 4ms-style attenuverters)
+        box.size = mm2px(Vec(10.f, 10.f));
+        // Configure Fundamental-style shadow (no shrink; face matches SVG)
+        if (shadow && sw) {
+            shadow->visible = true;
+            shadow->blurRadius = 0.f;
+            shadow->opacity = 0.15f;
+            // Keep Rack's default 10% downward offset and full size
+            Vec s = sw->box.size;
+            shadow->box.size = s;
+            shadow->box.pos = Vec(0.f, s.y * 0.10f);
+        }
+    }
+    void draw(const DrawArgs& args) override {
+        nvgSave(args.vg);
+        float svgW = std::max(1.f, nativeSize.x);
+        float svgH = std::max(1.f, nativeSize.y);
+        float sx = box.size.x / svgW;
+        float sy = box.size.y / svgH;
+        float s = std::min(sx, sy);
+        float tx = (box.size.x - svgW * s) * 0.5f;
+        float ty = (box.size.y - svgH * s) * 0.5f;
+        nvgTranslate(args.vg, tx, ty);
+        nvgScale(args.vg, s, s);
+        app::SvgKnob::draw(args);
+        nvgRestore(args.vg);
     }
 };
+
+// Shadow behavior is now integrated into the base Shapetaker knob classes above.
 
 // Shapetaker vintage momentary button using a single SVG with a pressed overlay
 struct ShapetakerVintageMomentary : app::SvgSwitch {
@@ -216,8 +492,8 @@ struct ShapetakerVintageMomentary : app::SvgSwitch {
         addFrame(svgUp);
         addFrame(svgUp);
         if (shadow) shadow->visible = false;
-        // Target size ~18x18 to match previous layout
-        box.size = Vec(18.f, 18.f);
+        // 9 x 9 mm footprint (hardware-friendly)
+        box.size = mm2px(Vec(9.f, 9.f));
     }
     void draw(const DrawArgs& args) override {
         nvgSave(args.vg);
@@ -250,7 +526,8 @@ struct ShapetakerRestMomentary : app::SvgSwitch {
     ShapetakerRestMomentary() {
         momentary = true;
         if (shadow) shadow->visible = false;
-        box.size = Vec(18.f, 18.f);
+        // 9 x 9 mm footprint
+        box.size = mm2px(Vec(9.f, 9.f));
     }
     void draw(const DrawArgs& args) override {
         // Background — match AlchemicalSymbolWidget normal state and bevels
@@ -339,6 +616,9 @@ struct ShapetakerRestMomentary : app::SvgSwitch {
 struct ShapetakerTieMomentary : app::SvgSwitch {
     ShapetakerTieMomentary() {
         momentary = true;
+        if (shadow) shadow->visible = false;
+        // 9 x 9 mm footprint
+        box.size = mm2px(Vec(9.f, 9.f));
         if (shadow) shadow->visible = false;
         box.size = Vec(18.f, 18.f);
     }
@@ -435,8 +715,9 @@ struct ShapetakerVintageSelector : app::SvgSwitch {
         addFrame(Svg::load(asset::plugin(pluginInstance, "res/switches/st_vintage_selector_3.svg")));
         addFrame(Svg::load(asset::plugin(pluginInstance, "res/switches/st_vintage_selector_4.svg")));
         addFrame(Svg::load(asset::plugin(pluginInstance, "res/switches/st_vintage_selector_5.svg")));
-        // Vintage selector - same size as chicken head selector (35x35)
-        box.size = Vec(35, 35);
+        // Vintage selector — mm sizing. Previous 35px ≈ 9.3mm, use 9mm
+        box.size = mm2px(Vec(9.f, 9.f));
+        if (shadow) shadow->visible = false;
     }
 };
 
@@ -771,6 +1052,21 @@ struct VintageOscilloscopeWidget : widget::Widget {
     }
     
     void drawLayer(const DrawArgs& args, int layer) override {
+        // Layer 0: panel seating shadow (subtle drop beneath the circular screen)
+        if (layer == 0) {
+            NVGcontext* vg = args.vg;
+            float w = box.size.x;
+            float h = box.size.y;
+            float cx = w * 0.5f;
+            float cy = h * 0.5f + h * 0.10f; // slight downward bias like VCV knob shadows
+            float r  = std::min(w, h) * 0.48f; // hug the bezel edge
+            NVGpaint p = nvgRadialGradient(vg, cx, cy, r * 0.90f, r,
+                                           nvgRGBA(0, 0, 0, 36), nvgRGBA(0, 0, 0, 0));
+            nvgBeginPath(vg);
+            nvgRect(vg, 0, 0, w, h);
+            nvgFillPaint(vg, p);
+            nvgFill(vg);
+        }
         if (layer == 1) {
             NVGcontext* vg = args.vg;
             
@@ -934,5 +1230,6 @@ struct VintageOscilloscopeWidget : widget::Widget {
             
             nvgRestore(vg);
         }
+        Widget::drawLayer(args, layer);
     }
 };

@@ -5,14 +5,25 @@
 
 // (Removed: decorative HexagonWidget overlays)
 
+// Shadow behavior now lives in the base Shapetaker knob classes (plugin.hpp)
+
 
 struct ClairaudientModule : Module, IOscilloscopeSource {
     
-    // Quantize voltage to exact 12-tone musical notes
-    float quantizeToNote(float voltage) {
-        // Round to nearest semitone
-        float semitone = std::round(voltage * 12.0f) / 12.0f;
-        return semitone;
+    // Quantize voltage to discrete octave steps for oscillator V
+    float quantizeToOctave(float voltage) {
+        // Clamp to -2 to +2 octaves, then round to nearest octave
+        float clamped = clamp(voltage, -2.0f, 2.0f);
+        return std::round(clamped);
+    }
+
+    // Quantize to semitones within 4 octave range for oscillator Z
+    float quantizeToSemitone(float semitones) {
+        // Clamp to -24 to +24 semitones range (4 octaves)
+        float clamped = clamp(semitones, -24.0f, 24.0f);
+        // Round to nearest semitone and convert to voltage (octaves)
+        float quantizedSemitones = std::round(clamped);
+        return quantizedSemitones / 12.0f;
     }
     enum ParamId {
         FREQ1_PARAM,
@@ -90,31 +101,52 @@ struct ClairaudientModule : Module, IOscilloscopeSource {
     OnePoleFilter antiAliasFilterLeft[MAX_POLY_VOICES];
     OnePoleFilter antiAliasFilterRight[MAX_POLY_VOICES];
 
+    // Quantization mode settings
+    bool quantizeOscV = true;  // V oscillator quantized to octaves by default
+    bool quantizeOscZ = true;  // Z oscillator quantized to semitones by default
+
+    // Update parameter snapping based on quantization modes
+    void updateParameterSnapping() {
+        // V Oscillator snapping
+        getParamQuantity(FREQ1_PARAM)->snapEnabled = quantizeOscV;
+        getParamQuantity(FREQ1_PARAM)->smoothEnabled = !quantizeOscV;
+
+        // Z Oscillator snapping
+        getParamQuantity(FREQ2_PARAM)->snapEnabled = quantizeOscZ;
+        getParamQuantity(FREQ2_PARAM)->smoothEnabled = !quantizeOscZ;
+    }
+
     ClairaudientModule() {
         config(PARAMS_LEN, INPUTS_LEN, OUTPUTS_LEN, LIGHTS_LEN);
         
         // Frequency controls
-        configParam(FREQ1_PARAM, -2.f, 2.f, 0.f, "Pair 1 Frequency", "Hz", 2.f, 261.626f);
-        configParam(FREQ2_PARAM, -2.f, 2.f, 0.f, "Pair 2 Frequency", "Hz", 2.f, 261.626f);
-        
-        // FREQ1: No quantization (smooth octave range)
-        // FREQ2: Uses custom musical note quantization in process() function
+        // V oscillator snaps to whole octaves (5 total values: -2, -1, 0, +1, +2)
+        configParam(FREQ1_PARAM, -2.f, 2.f, 0.f, "V Oscillator Octave", " oct");
+
+        // Z oscillator snaps to semitones (49 total values: -24 to +24 semitones)
+        configParam(FREQ2_PARAM, -24.f, 24.f, 0.f, "Z Oscillator Semitone", " st");
+
+        // Initialize parameter snapping based on default quantization modes
+        updateParameterSnapping();
+
+        // FREQ1: Quantized to discrete octave steps (-2, -1, 0, +1, +2)
+        // FREQ2: Quantized to semitones within 4-octave range for musical intervals
         
         // Fine tune controls (±20 cents, centered at 0 for no detune)
-        configParam(FINE1_PARAM, -0.2f, 0.2f, 0.f, "Pair 1 Fine Tune", "cents", 0.f, 0.f, 100.f);
-        configParam(FINE2_PARAM, -0.2f, 0.2f, 0.f, "Pair 2 Fine Tune", "cents", 0.f, 0.f, 100.f);
+        configParam(FINE1_PARAM, -0.2f, 0.2f, 0.f, "V Fine Tune", "cents", 0.f, 0.f, 100.f);
+        configParam(FINE2_PARAM, -0.2f, 0.2f, 0.f, "Z Fine Tune", "cents", 0.f, 0.f, 100.f);
         
         // Fine tune CV attenuverters
-        configParam(FINE1_ATTEN_PARAM, -1.f, 1.f, 0.f, "Pair 1 Fine Tune CV Amount", "%", 0.f, 100.f);
-        configParam(FINE2_ATTEN_PARAM, -1.f, 1.f, 0.f, "Pair 2 Fine Tune CV Amount", "%", 0.f, 100.f);
+        configParam(FINE1_ATTEN_PARAM, -1.f, 1.f, 0.f, "V Fine Tune CV Amount", "%", 0.f, 100.f);
+        configParam(FINE2_ATTEN_PARAM, -1.f, 1.f, 0.f, "Z Fine Tune CV Amount", "%", 0.f, 100.f);
         
         // Shape morphing controls (default to 50% for proper sigmoid)
-        configParam(SHAPE1_PARAM, 0.f, 1.f, 0.5f, "Pair 1 Shape", "%", 0.f, 100.f);
-        configParam(SHAPE2_PARAM, 0.f, 1.f, 0.5f, "Pair 2 Shape", "%", 0.f, 100.f);
+        configParam(SHAPE1_PARAM, 0.f, 1.f, 0.5f, "V Shape", "%", 0.f, 100.f);
+        configParam(SHAPE2_PARAM, 0.f, 1.f, 0.5f, "Z Shape", "%", 0.f, 100.f);
         
         // Shape CV attenuverters
-        configParam(SHAPE1_ATTEN_PARAM, -1.f, 1.f, 0.f, "Pair 1 Shape CV Amount", "%", 0.f, 100.f);
-        configParam(SHAPE2_ATTEN_PARAM, -1.f, 1.f, 0.f, "Pair 2 Shape CV Amount", "%", 0.f, 100.f);
+        configParam(SHAPE1_ATTEN_PARAM, -1.f, 1.f, 0.f, "V Shape CV Amount", "%", 0.f, 100.f);
+        configParam(SHAPE2_ATTEN_PARAM, -1.f, 1.f, 0.f, "Z Shape CV Amount", "%", 0.f, 100.f);
         
         // Crossfade control (centered at 0.5)
         configParam(XFADE_PARAM, 0.f, 1.f, 0.5f, "Crossfade", "%", 0.f, 100.f);
@@ -123,21 +155,41 @@ struct ClairaudientModule : Module, IOscilloscopeSource {
         configParam(XFADE_ATTEN_PARAM, -1.f, 1.f, 0.f, "Crossfade CV Amount", "%", 0.f, 100.f);
         
         // Sync switches (default off for independent beating)
-        configSwitch(SYNC1_PARAM, 0.f, 1.f, 0.f, "Pair 1 Sync", {"Independent", "Synced"});
-        configSwitch(SYNC2_PARAM, 0.f, 1.f, 0.f, "Pair 2 Sync", {"Independent", "Synced"});
+        configSwitch(SYNC1_PARAM, 0.f, 1.f, 0.f, "V Sync", {"Independent", "Synced"});
+        configSwitch(SYNC2_PARAM, 0.f, 1.f, 0.f, "Z Sync", {"Independent", "Synced"});
         
         // Inputs
-        configInput(VOCT1_INPUT, "Pair 1 V/Oct");
-        configInput(VOCT2_INPUT, "Pair 2 V/Oct");
-        configInput(FINE1_CV_INPUT, "Pair 1 Fine Tune CV");
-        configInput(FINE2_CV_INPUT, "Pair 2 Fine Tune CV");
-        configInput(SHAPE1_CV_INPUT, "Pair 1 Shape CV");
-        configInput(SHAPE2_CV_INPUT, "Pair 2 Shape CV");
+        configInput(VOCT1_INPUT, "V Oscillator V/Oct");
+        configInput(VOCT2_INPUT, "Z Oscillator V/Oct");
+        configInput(FINE1_CV_INPUT, "V Fine Tune CV");
+        configInput(FINE2_CV_INPUT, "Z Fine Tune CV");
+        configInput(SHAPE1_CV_INPUT, "V Shape CV");
+        configInput(SHAPE2_CV_INPUT, "Z Shape CV");
         configInput(XFADE_CV_INPUT, "Crossfade CV");
         
         // Outputs
         configOutput(LEFT_OUTPUT, "Left");
         configOutput(RIGHT_OUTPUT, "Right");
+    }
+
+    json_t* dataToJson() override {
+        json_t* rootJ = json_object();
+        json_object_set_new(rootJ, "quantizeOscV", json_boolean(quantizeOscV));
+        json_object_set_new(rootJ, "quantizeOscZ", json_boolean(quantizeOscZ));
+        return rootJ;
+    }
+
+    void dataFromJson(json_t* rootJ) override {
+        json_t* quantizeVJ = json_object_get(rootJ, "quantizeOscV");
+        if (quantizeVJ)
+            quantizeOscV = json_boolean_value(quantizeVJ);
+
+        json_t* quantizeZJ = json_object_get(rootJ, "quantizeOscZ");
+        if (quantizeZJ)
+            quantizeOscZ = json_boolean_value(quantizeZJ);
+
+        // Update parameter snapping after loading settings
+        updateParameterSnapping();
     }
 
     void process(const ProcessArgs& args) override {
@@ -164,11 +216,14 @@ struct ClairaudientModule : Module, IOscilloscopeSource {
                             inputs[VOCT2_INPUT].getPolyVoltage(ch) : voct1;
             
             // Get parameters for this voice
-            float pitch1 = params[FREQ1_PARAM].getValue() + voct1;
-            
-            // Quantize FREQ2 to musical notes (semitones)
-            float rawPitch2 = params[FREQ2_PARAM].getValue() + voct2;
-            float pitch2 = quantizeToNote(rawPitch2);
+            // V Oscillator: Apply quantization if enabled
+            float rawPitch1 = params[FREQ1_PARAM].getValue() + voct1;
+            float pitch1 = quantizeOscV ? quantizeToOctave(rawPitch1) : rawPitch1;
+
+            // Z Oscillator: Apply quantization if enabled
+            float semitonesZ = params[FREQ2_PARAM].getValue(); // Already in semitone units
+            float rawPitch2 = semitonesZ / 12.0f + voct2; // Convert semitones to octaves and add V/Oct
+            float pitch2 = quantizeOscZ ? quantizeToSemitone(semitonesZ + voct2 * 12.0f) : rawPitch2;
             
             float fineTune1 = params[FINE1_PARAM].getValue();
             if (inputs[FINE1_CV_INPUT].isConnected()) {
@@ -428,66 +483,56 @@ struct ClairaudientWidget : ModuleWidget {
             return Vec(cx, cy);
         };
 
-        // OSC X/Y large frequency knobs
-        addParam(createParamCentered<ShapetakerKnobOscilloscopeLarge>(mm2px(centerFromId("freq_o1", 10.075688f, 31.045906f)), module, ClairaudientModule::FREQ1_PARAM));
-        addParam(createParamCentered<ShapetakerKnobOscilloscopeLarge>(mm2px(centerFromId("freq_o2", 50.588146f, 31.045906f)), module, ClairaudientModule::FREQ2_PARAM));
+        // V/Z oscillator large frequency knobs
+        addParam(createParamCentered<ShapetakerKnobOscilloscopeMedium>(mm2px(centerFromId("freq_v", 13.422475f, 25.464647f)), module, ClairaudientModule::FREQ1_PARAM));
+        addParam(createParamCentered<ShapetakerKnobOscilloscopeMedium>(mm2px(centerFromId("freq_z", 68.319061f, 25.695415f)), module, ClairaudientModule::FREQ2_PARAM));
 
-        // Sync switches (slightly larger than default)
+        // V/Z sync switches (vintage toggle)
         {
-            Vec pos1 = mm2px(centerFromId("sync_o1", 26.167959f, 47.738434f));
-            auto* sw1 = createParamCentered<ShapetakerOscilloscopeSwitch>(pos1, module, ClairaudientModule::SYNC1_PARAM);
-            // Scale up ~15% and keep centered
-            Vec c1 = sw1->box.pos.plus(sw1->box.size.div(2.f));
-            sw1->box.size = sw1->box.size.mult(1.15f);
-            sw1->box.pos = c1.minus(sw1->box.size.div(2.f));
+            Vec pos1 = mm2px(centerFromId("sync_v", 26.023623f, 66.637276f));
+            auto* sw1 = createParamCentered<ShapetakerVintageToggleSwitch>(pos1, module, ClairaudientModule::SYNC1_PARAM);
             addParam(sw1);
 
-            Vec pos2 = mm2px(centerFromId("sync_o2", 35.155243f, 47.738434f));
-            auto* sw2 = createParamCentered<ShapetakerOscilloscopeSwitch>(pos2, module, ClairaudientModule::SYNC2_PARAM);
-            Vec c2 = sw2->box.pos.plus(sw2->box.size.div(2.f));
-            sw2->box.size = sw2->box.size.mult(1.15f);
-            sw2->box.pos = c2.minus(sw2->box.size.div(2.f));
+            Vec pos2 = mm2px(centerFromId("sync_z", 55.676144f, 66.637276f));
+            auto* sw2 = createParamCentered<ShapetakerVintageToggleSwitch>(pos2, module, ClairaudientModule::SYNC2_PARAM);
             addParam(sw2);
         }
 
-        // Fine tune controls
-        addParam(createParamCentered<ShapetakerKnobOscilloscopeMedium>(mm2px(centerFromId("fine_o1", 15.0233f, 45.038658f)), module, ClairaudientModule::FINE1_PARAM));
-        addParam(createParamCentered<ShapetakerKnobOscilloscopeMedium>(mm2px(centerFromId("fine_o2", 45.0233f, 45.038658f)), module, ClairaudientModule::FINE2_PARAM));
+        // V/Z fine tune controls
+        addParam(createParamCentered<ShapetakerKnobOscilloscopeSmall>(mm2px(centerFromId("fine_v", 19.023623f, 45.841431f)), module, ClairaudientModule::FINE1_PARAM));
+        addParam(createParamCentered<ShapetakerKnobOscilloscopeSmall>(mm2px(centerFromId("fine_z", 62.717918f, 45.883205f)), module, ClairaudientModule::FINE2_PARAM));
 
-        // Fine tune attenuverters
-        addParam(createParamCentered<ShapetakerAttenuverterOscilloscope>(mm2px(centerFromId("fine_atten_o1", 15.034473f, 58.820183f)), module, ClairaudientModule::FINE1_ATTEN_PARAM));
-        addParam(createParamCentered<ShapetakerAttenuverterOscilloscope>(mm2px(centerFromId("fine_atten_o2", 45.034473f, 58.820183f)), module, ClairaudientModule::FINE2_ATTEN_PARAM));
+        // V/Z fine tune attenuverters
+        addParam(createParamCentered<ShapetakerAttenuverterOscilloscope>(mm2px(centerFromId("fine_atten_v", 12.023623f, 61.744068f)), module, ClairaudientModule::FINE1_ATTEN_PARAM));
+        addParam(createParamCentered<ShapetakerAttenuverterOscilloscope>(mm2px(centerFromId("fine_atten_z", 69.621849f, 61.744068f)), module, ClairaudientModule::FINE2_ATTEN_PARAM));
         
         // (Removed decorative teal hexagon indicators for fine attenuverters)
         
         
         // Crossfade control (center)
-        addParam(createParamCentered<ShapetakerKnobOscilloscopeLarge>(mm2px(centerFromId("x_fade_knob", 30.48f, 64.107727f)), module, ClairaudientModule::XFADE_PARAM));
-        
+        addParam(createParamCentered<ShapetakerKnobOscilloscopeMedium>(mm2px(centerFromId("x_fade_knob", 40.87077f, 57.091526f)), module, ClairaudientModule::XFADE_PARAM));
+
         // Crossfade attenuverter (center)
-        addParam(createParamCentered<ShapetakerAttenuverterOscilloscope>(mm2px(centerFromId("x_fade_atten", 30.48f, 83.021637f)), module, ClairaudientModule::XFADE_ATTEN_PARAM));
+        addParam(createParamCentered<ShapetakerAttenuverterOscilloscope>(mm2px(centerFromId("x_fade_atten", 40.639999f, 75.910126f)), module, ClairaudientModule::XFADE_ATTEN_PARAM));
         
         // (Removed decorative teal hexagon indicator for crossfade attenuverters)
         
         
-        // Shape controls
-        addParam(createParamCentered<ShapetakerKnobOscilloscopeLarge>(mm2px(centerFromId("sh_knob_o1", 10.240995f, 74.654305f)), module, ClairaudientModule::SHAPE1_PARAM));
-        addParam(createParamCentered<ShapetakerKnobOscilloscopeLarge>(mm2px(centerFromId("sh_knob_o2", 50.719231f, 74.654305f)), module, ClairaudientModule::SHAPE2_PARAM));
+        // V/Z shape controls
+        addParam(createParamCentered<ShapetakerKnobOscilloscopeSmall>(mm2px(centerFromId("sh_knob_v", 13.422475f, 79.825134f)), module, ClairaudientModule::SHAPE1_PARAM));
+        addParam(createParamCentered<ShapetakerKnobOscilloscopeSmall>(mm2px(centerFromId("sh_knob_z", 68.319061f, 79.825134f)), module, ClairaudientModule::SHAPE2_PARAM));
         
-        // Shape attenuverters
-        addParam(createParamCentered<ShapetakerAttenuverterOscilloscope>(mm2px(centerFromId("sh_cv_o1", 15.034473f, 86.433929f)), module, ClairaudientModule::SHAPE1_ATTEN_PARAM));
-        addParam(createParamCentered<ShapetakerAttenuverterOscilloscope>(mm2px(centerFromId("sh_cv_o2", 44.581718f, 86.433929f)), module, ClairaudientModule::SHAPE2_ATTEN_PARAM));
-        
-        // (Removed decorative teal hexagon indicators for shape attenuverters)
-        
+        // V/Z shape attenuverters
+        addParam(createParamCentered<ShapetakerAttenuverterOscilloscope>(mm2px(centerFromId("sh_cv_v", 22.421556f, 93.003937f)), module, ClairaudientModule::SHAPE1_ATTEN_PARAM));
+        addParam(createParamCentered<ShapetakerAttenuverterOscilloscope>(mm2px(centerFromId("sh_cv_z", 58.858444f, 93.003937f)), module, ClairaudientModule::SHAPE2_ATTEN_PARAM));
 
         // Vintage oscilloscope display showing real-time waveform (circular)
         // The module itself is the source for the oscilloscope data
         if (module) {
             VintageOscilloscopeWidget* oscope = new VintageOscilloscopeWidget(module);
-            Vec scr = centerFromId("oscope_screen", 30.480001f, 20.781843f);
-            // Increase oscilloscope screen radius (size) a bit more
-            constexpr float OSCOPE_SIZE_MM = 26.f; // was 24mm previously
+            Vec scr = centerFromId("oscope_screen", 40.87077f, 29.04454f);
+            // Increase oscilloscope screen size for better visibility
+            constexpr float OSCOPE_SIZE_MM = 32.f; // was 34mm previously
             Vec sizeMM = Vec(OSCOPE_SIZE_MM, OSCOPE_SIZE_MM);
             Vec topLeft = mm2px(scr).minus(mm2px(sizeMM).div(2.f));
             oscope->box.pos = topLeft;
@@ -495,25 +540,59 @@ struct ClairaudientWidget : ModuleWidget {
             addChild(oscope);
         }
 
-        // Input row 1: V/OCT and CV inputs - BNC connectors based on SVG positions
-        addInput(createInputCentered<ShapetakerBNCPort>(mm2px(centerFromId("v_oct_o1", 8.721756f, 99.862808f)), module, ClairaudientModule::VOCT1_INPUT));
-        addInput(createInputCentered<ShapetakerBNCPort>(mm2px(centerFromId("fine_cv_o1", 21.777f, 99.862808f)), module, ClairaudientModule::FINE1_CV_INPUT));
-        addInput(createInputCentered<ShapetakerBNCPort>(mm2px(centerFromId("shape_o1", 34.832245f, 99.862808f)), module, ClairaudientModule::SHAPE1_CV_INPUT));
-        addInput(createInputCentered<ShapetakerBNCPort>(mm2px(centerFromId("x_fade_cv", 47.887489f, 99.862808f)), module, ClairaudientModule::XFADE_CV_INPUT));
+        // Input row 1: V oscillator V/OCT and CV inputs - BNC connectors
+        addInput(createInputCentered<ShapetakerBNCPort>(mm2px(centerFromId("v_oct_v", 19.023623f, 105.77721f)), module, ClairaudientModule::VOCT1_INPUT));
+        addInput(createInputCentered<ShapetakerBNCPort>(mm2px(centerFromId("fine_cv_v", 33.648426f, 105.77721f)), module, ClairaudientModule::FINE1_CV_INPUT));
+        addInput(createInputCentered<ShapetakerBNCPort>(mm2px(centerFromId("shape_cv_v", 48.139999f, 105.77721f)), module, ClairaudientModule::SHAPE1_CV_INPUT));
+        addInput(createInputCentered<ShapetakerBNCPort>(mm2px(centerFromId("x_fade_cv", 40.639999f, 90.126892f)), module, ClairaudientModule::XFADE_CV_INPUT));
 
-        // Input row 2: Second oscillator and output - BNC connectors  
-        addInput(createInputCentered<ShapetakerBNCPort>(mm2px(centerFromId("v_out_o1", 8.721756f, 113.38142f)), module, ClairaudientModule::VOCT2_INPUT));
-        addInput(createInputCentered<ShapetakerBNCPort>(mm2px(centerFromId("fine_cv_o2", 21.112274f, 113.38142f)), module, ClairaudientModule::FINE2_CV_INPUT));
-        addInput(createInputCentered<ShapetakerBNCPort>(mm2px(centerFromId("shape_o2", 33.502792f, 113.38142f)), module, ClairaudientModule::SHAPE2_CV_INPUT));
+        // Input row 2: Z oscillator and outputs - BNC connectors  
+        addInput(createInputCentered<ShapetakerBNCPort>(mm2px(centerFromId("v_out_z", 19.023623f, 119.04238f)), module, ClairaudientModule::VOCT2_INPUT));
+        addInput(createInputCentered<ShapetakerBNCPort>(mm2px(centerFromId("fine_cv_z", 33.648426f, 119.04238f)), module, ClairaudientModule::FINE2_CV_INPUT));
+        addInput(createInputCentered<ShapetakerBNCPort>(mm2px(centerFromId("shape_cv_z", 48.139999f, 119.04238f)), module, ClairaudientModule::SHAPE2_CV_INPUT));
         
-        // Outputs - BNC connectors for consistent vintage look
-        addOutput(createOutputCentered<ShapetakerBNCPort>(mm2px(centerFromId("output_l", 45.893311f, 113.38142f)), module, ClairaudientModule::LEFT_OUTPUT));
-        addOutput(createOutputCentered<ShapetakerBNCPort>(mm2px(centerFromId("output_r", 53.724667f, 113.38142f)), module, ClairaudientModule::RIGHT_OUTPUT));
+        // Stereo outputs - BNC connectors for consistent vintage look
+        addOutput(createOutputCentered<ShapetakerBNCPort>(mm2px(centerFromId("output_l", 62.631577f, 105.77721f)), module, ClairaudientModule::LEFT_OUTPUT));
+        addOutput(createOutputCentered<ShapetakerBNCPort>(mm2px(centerFromId("output_r", 62.631577f, 119.04238f)), module, ClairaudientModule::RIGHT_OUTPUT));
 
         // Subtle patina overlay to match Transmutation
         auto overlay = new PanelPatinaOverlay();
         overlay->box = Rect(Vec(0, 0), box.size);
         addChild(overlay);
+    }
+
+    void appendContextMenu(Menu* menu) override {
+        ClairaudientModule* module = dynamic_cast<ClairaudientModule*>(this->module);
+        if (!module) return;
+
+        menu->addChild(new MenuSeparator);
+        menu->addChild(createMenuLabel("Settings"));
+
+        // V Oscillator quantization setting
+        struct VQuantizeItem : MenuItem {
+            ClairaudientModule* module;
+            void onAction(const event::Action& e) override {
+                module->quantizeOscV = !module->quantizeOscV;
+                module->updateParameterSnapping();
+            }
+        };
+        VQuantizeItem* vQuantizeItem = createMenuItem<VQuantizeItem>("V Oscillator Quantized");
+        vQuantizeItem->rightText = module->quantizeOscV ? "✓" : "";
+        vQuantizeItem->module = module;
+        menu->addChild(vQuantizeItem);
+
+        // Z Oscillator quantization setting
+        struct ZQuantizeItem : MenuItem {
+            ClairaudientModule* module;
+            void onAction(const event::Action& e) override {
+                module->quantizeOscZ = !module->quantizeOscZ;
+                module->updateParameterSnapping();
+            }
+        };
+        ZQuantizeItem* zQuantizeItem = createMenuItem<ZQuantizeItem>("Z Oscillator Quantized");
+        zQuantizeItem->rightText = module->quantizeOscZ ? "✓" : "";
+        zQuantizeItem->module = module;
+        menu->addChild(zQuantizeItem);
     }
 };
 
