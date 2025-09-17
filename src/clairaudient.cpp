@@ -77,6 +77,10 @@ struct ClairaudientModule : Module, IOscilloscopeSource {
     float noise1B[MAX_POLY_VOICES] = {};
     float noise2A[MAX_POLY_VOICES] = {};
     float noise2B[MAX_POLY_VOICES] = {};
+
+    // User-adjustable oscillator noise amount (0..1), exposed via context menu slider.
+    // Defaults to 0.0 (off). Controls both subtle phase jitter and added noise floor.
+    float oscNoiseAmount = 0.0f;
     
     // Simple one-pole low-pass filter for anti-aliasing
     // --- Oscilloscope Buffering ---
@@ -133,8 +137,8 @@ struct ClairaudientModule : Module, IOscilloscopeSource {
         // FREQ2: Quantized to semitones within 4-octave range for musical intervals
         
         // Fine tune controls (±20 cents, centered at 0 for no detune)
-        configParam(FINE1_PARAM, -0.2f, 0.2f, 0.f, "V Fine Tune", "cents", 0.f, 0.f, 100.f);
-        configParam(FINE2_PARAM, -0.2f, 0.2f, 0.f, "Z Fine Tune", "cents", 0.f, 0.f, 100.f);
+        configParam(FINE1_PARAM, -0.2f, 0.2f, 0.f, "V Fine Tune", "cents", 0.f, 100.f);
+        configParam(FINE2_PARAM, -0.2f, 0.2f, 0.f, "Z Fine Tune", "cents", 0.f, 100.f);
         
         // Fine tune CV attenuverters
         configParam(FINE1_ATTEN_PARAM, -1.f, 1.f, 0.f, "V Fine Tune CV Amount", "%", 0.f, 100.f);
@@ -176,6 +180,7 @@ struct ClairaudientModule : Module, IOscilloscopeSource {
         json_t* rootJ = json_object();
         json_object_set_new(rootJ, "quantizeOscV", json_boolean(quantizeOscV));
         json_object_set_new(rootJ, "quantizeOscZ", json_boolean(quantizeOscZ));
+        json_object_set_new(rootJ, "oscNoiseAmount", json_real(oscNoiseAmount));
         return rootJ;
     }
 
@@ -187,6 +192,10 @@ struct ClairaudientModule : Module, IOscilloscopeSource {
         json_t* quantizeZJ = json_object_get(rootJ, "quantizeOscZ");
         if (quantizeZJ)
             quantizeOscZ = json_boolean_value(quantizeZJ);
+
+        json_t* noiseJ = json_object_get(rootJ, "oscNoiseAmount");
+        if (noiseJ)
+            oscNoiseAmount = clamp((float)json_number_value(noiseJ), 0.f, 1.f);
 
         // Update parameter snapping after loading settings
         updateParameterSnapping();
@@ -261,6 +270,9 @@ struct ClairaudientModule : Module, IOscilloscopeSource {
                 xfade = clamp(xfade + inputs[XFADE_CV_INPUT].getPolyVoltage(ch) * cvAmount / 10.f, 0.f, 1.f);
             }
             
+            // Shape the user noise amount so the audible noise ramps up sooner
+            float shapedNoise = std::pow(clamp(oscNoiseAmount, 0.f, 1.f), 0.65f);
+
             for (int os = 0; os < oversample; os++) {
                 // Add organic frequency drift (very subtle) for this voice
                 updateOrganicDrift(ch, args.sampleTime * oversample);
@@ -280,11 +292,12 @@ struct ClairaudientModule : Module, IOscilloscopeSource {
                 float deltaPhase2A = freq2A / oversampleRate; // Master oscillator increment
                 float deltaPhase2B = freq2B / oversampleRate; // Slave runs at its own frequency
                 
-                // Add subtle phase noise for organic character
-                phase1A[ch] += deltaPhase1A + noise1A[ch] * 0.00001f;
-                phase1B[ch] += deltaPhase1B + noise1B[ch] * 0.00001f;
-                phase2A[ch] += deltaPhase2A + noise2A[ch] * 0.00001f;
-                phase2B[ch] += deltaPhase2B + noise2B[ch] * 0.00001f;
+                // Add subtle phase noise for organic character (scaled by shaped user amount)
+                const float noiseScale = 0.00005f * shapedNoise;
+                phase1A[ch] += deltaPhase1A + noise1A[ch] * noiseScale;
+                phase1B[ch] += deltaPhase1B + noise1B[ch] * noiseScale;
+                phase2A[ch] += deltaPhase2A + noise2A[ch] * noiseScale;
+                phase2B[ch] += deltaPhase2B + noise2B[ch] * noiseScale;
                 
                 if (phase1A[ch] >= 1.f) phase1A[ch] -= 1.f;
                 if (phase1B[ch] >= 1.f) phase1B[ch] -= 1.f;
@@ -320,6 +333,15 @@ struct ClairaudientModule : Module, IOscilloscopeSource {
             // Average the oversampled result for this voice
             float outL = std::tanh(finalLeft / oversample) * 5.f;
             float outR = std::tanh(finalRight / oversample) * 5.f;
+
+            // Add audible white noise floor scaled by user amount (post waveshaping, in volts)
+            if (shapedNoise > 0.f) {
+                const float NOISE_V_PEAK = 0.45f; // ~±0.45 V at 100%
+                float nL = (rack::random::uniform() - 0.5f) * 2.f * NOISE_V_PEAK * shapedNoise;
+                float nR = (rack::random::uniform() - 0.5f) * 2.f * NOISE_V_PEAK * shapedNoise;
+                outL += nL;
+                outR += nR;
+            }
 
             outputs[LEFT_OUTPUT].setVoltage(outL, ch);
             outputs[RIGHT_OUTPUT].setVoltage(outR, ch);
@@ -531,8 +553,8 @@ struct ClairaudientWidget : ModuleWidget {
         if (module) {
             VintageOscilloscopeWidget* oscope = new VintageOscilloscopeWidget(module);
             Vec scr = centerFromId("oscope_screen", 40.87077f, 29.04454f);
-            // Increase oscilloscope screen size for better visibility
-            constexpr float OSCOPE_SIZE_MM = 32.f; // was 34mm previously
+            // Increase oscilloscope screen size slightly (square to preserve CRT effect)
+            constexpr float OSCOPE_SIZE_MM = 33.f; // +1mm from previous 32
             Vec sizeMM = Vec(OSCOPE_SIZE_MM, OSCOPE_SIZE_MM);
             Vec topLeft = mm2px(scr).minus(mm2px(sizeMM).div(2.f));
             oscope->box.pos = topLeft;
@@ -593,6 +615,30 @@ struct ClairaudientWidget : ModuleWidget {
         zQuantizeItem->rightText = module->quantizeOscZ ? "✓" : "";
         zQuantizeItem->module = module;
         menu->addChild(zQuantizeItem);
+
+        // Oscillator noise amount slider (0..100%)
+        menu->addChild(new MenuSeparator);
+        menu->addChild(createMenuLabel("Oscillator Noise"));
+        struct NoiseQuantity : Quantity {
+            ClairaudientModule* m;
+            explicit NoiseQuantity(ClairaudientModule* mod) : m(mod) {}
+            void setValue(float v) override { m->oscNoiseAmount = clamp(v, 0.f, 1.f); }
+            float getValue() override { return m->oscNoiseAmount; }
+            float getMinValue() override { return 0.f; }
+            float getMaxValue() override { return 1.f; }
+            float getDefaultValue() override { return 0.f; }
+            float getDisplayValue() override { return getValue() * 100.f; }
+            void setDisplayValue(float v) override { setValue(v / 100.f); }
+            std::string getLabel() override { return "Noise"; }
+            std::string getUnit() override { return "%"; }
+        };
+        struct NoiseSlider : ui::Slider {
+            explicit NoiseSlider(ClairaudientModule* m) { quantity = new NoiseQuantity(m); }
+            ~NoiseSlider() override { delete quantity; }
+        };
+        auto* ns = new NoiseSlider(module);
+        ns->box.size.x = 200.f;
+        menu->addChild(ns);
     }
 };
 

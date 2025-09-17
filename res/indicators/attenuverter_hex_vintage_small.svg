@@ -1,0 +1,30 @@
+<svg width="14mm" height="14mm" viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg">
+  <!-- Vintage attenuverter ring for 10mm hex knob; subtle, hex-referenced -->
+  <g transform="translate(20,20)">
+    <!-- Faint hex outline to echo the knob geometry (point-up orientation) -->
+    <path d="M 0,-15 L 13,-7.5 L 13,7.5 L 0,15 L -13,7.5 L -13,-7.5 Z" fill="none" stroke="#e8e0c8" stroke-opacity="0.12" stroke-width="0.9"/>
+
+    <!-- Minor ticks at half-scale (-0.5, +0.5) to keep it clean -->
+    <g stroke="#e8e0c8" stroke-width="0.7" stroke-linecap="round" fill="none">
+      <line x1="0" y1="-11.5" x2="0" y2="-13.5"/>
+      <line x1="0" y1="11.5" x2="0" y2="13.5" transform="rotate(180)"/>
+      <line x1="0" y1="-11.5" x2="0" y2="-13.5" transform="rotate(-67.5)"/>
+      <line x1="0" y1="-11.5" x2="0" y2="-13.5" transform="rotate(67.5)"/>
+    </g>
+
+    <!-- Major ticks at -1, 0, +1 -->
+    <g stroke="#e8e0c8" stroke-width="1.1" stroke-linecap="round" fill="none">
+      <line x1="0" y1="-10.0" x2="0" y2="-14.0" transform="rotate(-135)"/>
+      <line x1="0" y1="-10.0" x2="0" y2="-14.5" transform="rotate(0)"/>
+      <line x1="0" y1="-10.0" x2="0" y2="-14.0" transform="rotate(135)"/>
+    </g>
+
+    <!-- Labels: -1, 0, +1 (compact) -->
+    <g fill="#e8e0c8" font-family="'Liber Grotesque Family', 'DIN Condensed', 'Arial Narrow', sans-serif" font-size="4" text-anchor="middle">
+      <text x="0" y="-15.2" transform="rotate(-135)">-1</text>
+      <text x="0" y="-15.6" transform="rotate(0)">0</text>
+      <text x="0" y="-15.2" transform="rotate(135)">+1</text>
+    </g>
+  </g>
+</svg>
+

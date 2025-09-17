@@ -1,0 +1,33 @@
+<svg width="24mm" height="24mm" viewBox="0 0 63 63" xmlns="http://www.w3.org/2000/svg">
+  <!-- Vintage-style octave scale for medium knob (5 positions: -2 -1 0 1 2) -->
+  <!-- Design notes:
+       - Matches Shapetaker panel text color (#e8e0c8)
+       - Clean, understated ticks and numerals inspired by vintage lab gear
+       - Calibrated across a ~300° arc (-150° .. +150°)
+       - Sized to align with 63×63 knob indicator assets -->
+
+  <!-- Inline styles for maximum compatibility with Rack's SVG loader and Inkscape -->
+
+  <g transform="translate(31.5,31.5)">
+    <!-- Guide arc tightened inward -->
+    <path d="M -21.5 -12.6 A 25 25 0 0 1 21.5 -12.6" fill="none" stroke="#e8e0c8" stroke-opacity="0.18" stroke-width="0.9"/>
+
+    <!-- Major ticks at -135, -67.5, 0, 67.5, 135 degrees (matches knob travel) -->
+    <g stroke="#e8e0c8" stroke-width="1.5" stroke-linecap="round" fill="none">
+      <line x1="0" y1="-18.0" x2="0" y2="-22.2" transform="rotate(-135)"/>
+      <line x1="0" y1="-18.0" x2="0" y2="-22.2" transform="rotate(-67.5)"/>
+      <line x1="0" y1="-18.0" x2="0" y2="-23.0" transform="rotate(0)"/>
+      <line x1="0" y1="-18.0" x2="0" y2="-22.2" transform="rotate(67.5)"/>
+      <line x1="0" y1="-18.0" x2="0" y2="-22.2" transform="rotate(135)"/>
+    </g>
+
+    <!-- Numerals smaller and closer to knob -->
+    <g fill="#e8e0c8" font-family="'Liber Grotesque Family', 'DIN Condensed', 'Arial Narrow', sans-serif" font-size="4.6" text-anchor="middle">
+      <text x="0" y="-22.8" transform="rotate(-135)">-2</text>
+      <text x="0" y="-22.8" transform="rotate(-67.5)">-1</text>
+      <text x="0" y="-22.8" transform="rotate(0)">0</text>
+      <text x="0" y="-22.8" transform="rotate(67.5)">1</text>
+      <text x="0" y="-22.8" transform="rotate(135)">2</text>
+    </g>
+  </g>
+</svg>

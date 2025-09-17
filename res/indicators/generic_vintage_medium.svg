@@ -1,0 +1,31 @@
+<svg width="24mm" height="24mm" viewBox="0 0 63 63" xmlns="http://www.w3.org/2000/svg">
+  <!-- Generic vintage indicator for medium knobs (no numbers) -->
+  <!-- Cream ink matches panel text (#e8e0c8). 270° travel (±135°). -->
+
+  <g transform="translate(31.5,31.5)">
+    <!-- Subtle guide arc -->
+    <path d="M -21.5 -12.6 A 25 25 0 0 1 21.5 -12.6" fill="none" stroke="#e8e0c8" stroke-opacity="0.16" stroke-width="0.9"/>
+
+    <!-- Minor ticks every 22.5° (short) -->
+    <g stroke="#e8e0c8" stroke-width="1.1" stroke-linecap="round" fill="none">
+      <line x1="0" y1="-19.0" x2="0" y2="-21.0" transform="rotate(-112.5)"/>
+      <line x1="0" y1="-19.0" x2="0" y2="-21.0" transform="rotate(-67.5)"/>
+      <line x1="0" y1="-19.0" x2="0" y2="-21.0" transform="rotate(-22.5)"/>
+      <line x1="0" y1="-19.0" x2="0" y2="-21.0" transform="rotate(22.5)"/>
+      <line x1="0" y1="-19.0" x2="0" y2="-21.0" transform="rotate(67.5)"/>
+      <line x1="0" y1="-19.0" x2="0" y2="-21.0" transform="rotate(112.5)"/>
+    </g>
+
+    <!-- Major ticks every 45° (long) -->
+    <g stroke="#e8e0c8" stroke-width="1.6" stroke-linecap="round" fill="none">
+      <line x1="0" y1="-18.0" x2="0" y2="-22.2" transform="rotate(-135)"/>
+      <line x1="0" y1="-18.0" x2="0" y2="-22.2" transform="rotate(-90)"/>
+      <line x1="0" y1="-18.0" x2="0" y2="-22.6" transform="rotate(-45)"/>
+      <line x1="0" y1="-18.0" x2="0" y2="-23.0" transform="rotate(0)"/>
+      <line x1="0" y1="-18.0" x2="0" y2="-22.6" transform="rotate(45)"/>
+      <line x1="0" y1="-18.0" x2="0" y2="-22.2" transform="rotate(90)"/>
+      <line x1="0" y1="-18.0" x2="0" y2="-22.2" transform="rotate(135)"/>
+    </g>
+  </g>
+</svg>
+
