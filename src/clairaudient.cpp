@@ -389,7 +389,7 @@ struct ClairaudientModule : Module, IOscilloscopeSource {
             }
 
             if (highCutEnabled) {
-                const float HIGH_CUT_HZ = 8000.f;
+                const float HIGH_CUT_HZ = 10000.f;
                 outL = highCutFilterLeft[ch].process(outL, HIGH_CUT_HZ, args.sampleRate);
                 outR = highCutFilterRight[ch].process(outR, HIGH_CUT_HZ, args.sampleRate);
             }
