@@ -61,6 +61,45 @@ public:
         }
         return phase;
     }
+
+    // Sigmoid-morphed saw with subtle organic coloration
+    static float organicSigmoidSaw(float phase, float shape, float freq, float sampleRate) {
+        shape = rack::math::clamp(shape, 0.f, 1.f);
+
+        // Linear sawtooth baseline
+        float linearSaw = 2.f * phase - 1.f;
+        if (shape < 0.001f) {
+            return std::tanh(linearSaw * 1.02f) * 0.98f;
+        }
+
+        float range = 3.f + shape * 5.f;
+        float sigmoidInput = (phase - 0.5f) * range * 2.f;
+
+        // Subtle harmonic bias tied to phase
+        float harmonicBias = std::sin(phase * 2.f * M_PI * 3.f) * 0.02f * shape;
+        sigmoidInput += harmonicBias;
+
+        float sigmoidOutput = std::tanh(sigmoidInput);
+
+        float blend = shape + std::sin(phase * 2.f * M_PI) * 0.01f * shape;
+        blend = rack::math::clamp(blend, 0.f, 1.f);
+
+        float result = linearSaw * (1.f - blend) + sigmoidOutput * blend;
+
+        // Add airy harmonics when not near Nyquist
+        float nyquist = sampleRate * 0.5f;
+        if (freq < nyquist * 0.3f) {
+            float air = std::sin(phase * 2.f * M_PI * 7.f) * 0.005f * shape;
+            result += air;
+        }
+
+        return std::tanh(result * 1.05f) * 0.95f;
+    }
+
+    static float equalPowerMix(float a, float b, float t) {
+        float angle = rack::math::clamp(t, 0.f, 1.f) * (float)M_PI_2;
+        return a * std::cos(angle) + b * std::sin(angle);
+    }
 };
 
 }} // namespace shapetaker::dsp

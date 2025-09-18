@@ -181,11 +181,12 @@ public:
         }
         
         // Add all standard screws to a module widget
+        template <typename ScrewWidget = ScrewSilver>
         static void addStandardScrews(ModuleWidget* widget, float moduleWidth) {
-            widget->addChild(createWidget<ScrewSilver>(topLeft()));
-            widget->addChild(createWidget<ScrewSilver>(topRight(moduleWidth)));
-            widget->addChild(createWidget<ScrewSilver>(bottomLeft()));
-            widget->addChild(createWidget<ScrewSilver>(bottomRight(moduleWidth)));
+            widget->addChild(createWidget<ScrewWidget>(topLeft()));
+            widget->addChild(createWidget<ScrewWidget>(topRight(moduleWidth)));
+            widget->addChild(createWidget<ScrewWidget>(bottomLeft()));
+            widget->addChild(createWidget<ScrewWidget>(bottomRight(moduleWidth)));
         }
     };
     
@@ -197,11 +198,10 @@ public:
         float moduleWidth;
         float startY;
         float columnWidth;
-        int numColumns;
-        
+
     public:
         GridLayout(float modWidth, float topMargin = 20.0f, int cols = 3) 
-            : moduleWidth(modWidth), startY(topMargin), numColumns(cols) {
+            : moduleWidth(modWidth), startY(topMargin) {
             columnWidth = (modWidth - 20.0f) / cols; // 10mm margins
         }
         

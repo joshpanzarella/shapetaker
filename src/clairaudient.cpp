@@ -2,6 +2,7 @@
 #include "transmutation/ui.hpp" // for PanelPatinaOverlay (shared vintage overlay)
 #include <cmath>
 #include <atomic>
+#include <functional>
 
 // (Removed: decorative HexagonWidget overlays)
 
@@ -22,8 +23,7 @@ struct ClairaudientModule : Module, IOscilloscopeSource {
         // Clamp to -24 to +24 semitones range (4 octaves)
         float clamped = clamp(semitones, -24.0f, 24.0f);
         // Round to nearest semitone and convert to voltage (octaves)
-        float quantizedSemitones = std::round(clamped);
-        return quantizedSemitones / 12.0f;
+        return std::round(clamped);
     }
     enum ParamId {
         FREQ1_PARAM,
@@ -61,22 +61,27 @@ struct ClairaudientModule : Module, IOscilloscopeSource {
         LIGHTS_LEN
     };
 
+    enum CrossfadeMode {
+        CROSSFADE_EQUAL_POWER = 0,
+        CROSSFADE_STEREO_SWAP = 1
+    };
+
     // Polyphonic oscillator state (up to 6 voices)
-    static const int MAX_POLY_VOICES = 6;
-    float phase1A[MAX_POLY_VOICES] = {};  // Independent phase for osc 1A per voice
-    float phase1B[MAX_POLY_VOICES] = {};  // Independent phase for osc 1B per voice
-    float phase2A[MAX_POLY_VOICES] = {};  // Independent phase for osc 2A per voice
-    float phase2B[MAX_POLY_VOICES] = {};  // Independent phase for osc 2B per voice
+    static constexpr int MAX_POLY_VOICES = shapetaker::PolyphonicProcessor::MAX_VOICES;
+    shapetaker::FloatVoices phase1A;  // Independent phase for osc 1A per voice
+    shapetaker::FloatVoices phase1B;  // Independent phase for osc 1B per voice
+    shapetaker::FloatVoices phase2A;  // Independent phase for osc 2A per voice
+    shapetaker::FloatVoices phase2B;  // Independent phase for osc 2B per voice
     
     // Organic variation state per voice
-    float drift1A[MAX_POLY_VOICES] = {};
-    float drift1B[MAX_POLY_VOICES] = {};
-    float drift2A[MAX_POLY_VOICES] = {};
-    float drift2B[MAX_POLY_VOICES] = {};
-    float noise1A[MAX_POLY_VOICES] = {};
-    float noise1B[MAX_POLY_VOICES] = {};
-    float noise2A[MAX_POLY_VOICES] = {};
-    float noise2B[MAX_POLY_VOICES] = {};
+    shapetaker::FloatVoices drift1A;
+    shapetaker::FloatVoices drift1B;
+    shapetaker::FloatVoices drift2A;
+    shapetaker::FloatVoices drift2B;
+    shapetaker::FloatVoices noise1A;
+    shapetaker::FloatVoices noise1B;
+    shapetaker::FloatVoices noise2A;
+    shapetaker::FloatVoices noise2B;
 
     // User-adjustable oscillator noise amount (0..1), exposed via context menu slider.
     // Defaults to 0.0 (off). Controls both subtle phase jitter and added noise floor.
@@ -89,25 +94,21 @@ struct ClairaudientModule : Module, IOscilloscopeSource {
     std::atomic<int> oscilloscopeBufferIndex = {0};
     int oscilloscopeFrameCounter = 0;
 
-    struct OnePoleFilter {
-        float z1 = 0.f;
-        
-        float process(float input, float cutoff, float sampleRate) {
-            float dt = 1.f / sampleRate;
-            float RC = 1.f / (2.f * M_PI * cutoff);
-            float alpha = dt / (RC + dt);
-            z1 = z1 + alpha * (input - z1);
-            return z1;
-        }
-    };
-    
     // Anti-aliasing filters per voice
-    OnePoleFilter antiAliasFilterLeft[MAX_POLY_VOICES];
-    OnePoleFilter antiAliasFilterRight[MAX_POLY_VOICES];
+    shapetaker::VoiceArray<shapetaker::dsp::OnePoleLowpass> antiAliasFilterLeft;
+    shapetaker::VoiceArray<shapetaker::dsp::OnePoleLowpass> antiAliasFilterRight;
+    shapetaker::VoiceArray<shapetaker::dsp::OnePoleLowpass> highCutFilterLeft;
+    shapetaker::VoiceArray<shapetaker::dsp::OnePoleLowpass> highCutFilterRight;
+
+    shapetaker::PolyphonicProcessor polyProcessor;
 
     // Quantization mode settings
     bool quantizeOscV = true;  // V oscillator quantized to octaves by default
     bool quantizeOscZ = true;  // Z oscillator quantized to semitones by default
+    int crossfadeMode = CROSSFADE_EQUAL_POWER;
+    int oversampleFactor = 2;
+    bool highCutEnabled = false;
+    float driftAmount = 0.0f;
 
     // Update parameter snapping based on quantization modes
     void updateParameterSnapping() {
@@ -120,8 +121,16 @@ struct ClairaudientModule : Module, IOscilloscopeSource {
         getParamQuantity(FREQ2_PARAM)->smoothEnabled = !quantizeOscZ;
     }
 
+    void resetFilters() {
+        antiAliasFilterLeft.reset();
+        antiAliasFilterRight.reset();
+        highCutFilterLeft.reset();
+        highCutFilterRight.reset();
+    }
+
     ClairaudientModule() {
         config(PARAMS_LEN, INPUTS_LEN, OUTPUTS_LEN, LIGHTS_LEN);
+        using ParameterHelper = shapetaker::ParameterHelper;
         
         // Frequency controls
         // V oscillator snaps to whole octaves (5 total values: -2, -1, 0, +1, +2)
@@ -141,39 +150,39 @@ struct ClairaudientModule : Module, IOscilloscopeSource {
         configParam(FINE2_PARAM, -0.2f, 0.2f, 0.f, "Z Fine Tune", "cents", 0.f, 100.f);
         
         // Fine tune CV attenuverters
-        configParam(FINE1_ATTEN_PARAM, -1.f, 1.f, 0.f, "V Fine Tune CV Amount", "%", 0.f, 100.f);
-        configParam(FINE2_ATTEN_PARAM, -1.f, 1.f, 0.f, "Z Fine Tune CV Amount", "%", 0.f, 100.f);
+        ParameterHelper::configAttenuverter(this, FINE1_ATTEN_PARAM, "V Fine Tune CV Amount");
+        ParameterHelper::configAttenuverter(this, FINE2_ATTEN_PARAM, "Z Fine Tune CV Amount");
         
         // Shape morphing controls (default to 50% for proper sigmoid)
-        configParam(SHAPE1_PARAM, 0.f, 1.f, 0.5f, "V Shape", "%", 0.f, 100.f);
-        configParam(SHAPE2_PARAM, 0.f, 1.f, 0.5f, "Z Shape", "%", 0.f, 100.f);
+        ParameterHelper::configGain(this, SHAPE1_PARAM, "V Shape", 0.5f);
+        ParameterHelper::configGain(this, SHAPE2_PARAM, "Z Shape", 0.5f);
         
         // Shape CV attenuverters
-        configParam(SHAPE1_ATTEN_PARAM, -1.f, 1.f, 0.f, "V Shape CV Amount", "%", 0.f, 100.f);
-        configParam(SHAPE2_ATTEN_PARAM, -1.f, 1.f, 0.f, "Z Shape CV Amount", "%", 0.f, 100.f);
+        ParameterHelper::configAttenuverter(this, SHAPE1_ATTEN_PARAM, "V Shape CV Amount");
+        ParameterHelper::configAttenuverter(this, SHAPE2_ATTEN_PARAM, "Z Shape CV Amount");
         
         // Crossfade control (centered at 0.5)
-        configParam(XFADE_PARAM, 0.f, 1.f, 0.5f, "Crossfade", "%", 0.f, 100.f);
+        ParameterHelper::configMix(this, XFADE_PARAM, "Crossfade", 0.5f);
         
         // Crossfade CV attenuverter
-        configParam(XFADE_ATTEN_PARAM, -1.f, 1.f, 0.f, "Crossfade CV Amount", "%", 0.f, 100.f);
+        ParameterHelper::configAttenuverter(this, XFADE_ATTEN_PARAM, "Crossfade CV Amount");
         
         // Sync switches (default off for independent beating)
         configSwitch(SYNC1_PARAM, 0.f, 1.f, 0.f, "V Sync", {"Independent", "Synced"});
         configSwitch(SYNC2_PARAM, 0.f, 1.f, 0.f, "Z Sync", {"Independent", "Synced"});
         
         // Inputs
-        configInput(VOCT1_INPUT, "V Oscillator V/Oct");
-        configInput(VOCT2_INPUT, "Z Oscillator V/Oct");
-        configInput(FINE1_CV_INPUT, "V Fine Tune CV");
-        configInput(FINE2_CV_INPUT, "Z Fine Tune CV");
-        configInput(SHAPE1_CV_INPUT, "V Shape CV");
-        configInput(SHAPE2_CV_INPUT, "Z Shape CV");
-        configInput(XFADE_CV_INPUT, "Crossfade CV");
+        ParameterHelper::configCVInput(this, VOCT1_INPUT, "V Oscillator V/Oct");
+        ParameterHelper::configCVInput(this, VOCT2_INPUT, "Z Oscillator V/Oct");
+        ParameterHelper::configCVInput(this, FINE1_CV_INPUT, "V Fine Tune CV");
+        ParameterHelper::configCVInput(this, FINE2_CV_INPUT, "Z Fine Tune CV");
+        ParameterHelper::configCVInput(this, SHAPE1_CV_INPUT, "V Shape CV");
+        ParameterHelper::configCVInput(this, SHAPE2_CV_INPUT, "Z Shape CV");
+        ParameterHelper::configCVInput(this, XFADE_CV_INPUT, "Crossfade CV");
         
         // Outputs
-        configOutput(LEFT_OUTPUT, "Left");
-        configOutput(RIGHT_OUTPUT, "Right");
+        ParameterHelper::configAudioOutput(this, LEFT_OUTPUT, "Left");
+        ParameterHelper::configAudioOutput(this, RIGHT_OUTPUT, "Right");
     }
 
     json_t* dataToJson() override {
@@ -181,6 +190,10 @@ struct ClairaudientModule : Module, IOscilloscopeSource {
         json_object_set_new(rootJ, "quantizeOscV", json_boolean(quantizeOscV));
         json_object_set_new(rootJ, "quantizeOscZ", json_boolean(quantizeOscZ));
         json_object_set_new(rootJ, "oscNoiseAmount", json_real(oscNoiseAmount));
+        json_object_set_new(rootJ, "crossfadeMode", json_integer(crossfadeMode));
+        json_object_set_new(rootJ, "oversampleFactor", json_integer(oversampleFactor));
+        json_object_set_new(rootJ, "highCutEnabled", json_boolean(highCutEnabled));
+        json_object_set_new(rootJ, "driftAmount", json_real(driftAmount));
         return rootJ;
     }
 
@@ -197,20 +210,34 @@ struct ClairaudientModule : Module, IOscilloscopeSource {
         if (noiseJ)
             oscNoiseAmount = clamp((float)json_number_value(noiseJ), 0.f, 1.f);
 
+        json_t* xfadeModeJ = json_object_get(rootJ, "crossfadeMode");
+        if (xfadeModeJ)
+            crossfadeMode = clamp((int)json_integer_value(xfadeModeJ), CROSSFADE_EQUAL_POWER, CROSSFADE_STEREO_SWAP);
+
+        json_t* oversampleJ = json_object_get(rootJ, "oversampleFactor");
+        if (oversampleJ)
+            oversampleFactor = clamp((int)json_integer_value(oversampleJ), 1, 8);
+
+        json_t* highCutJ = json_object_get(rootJ, "highCutEnabled");
+        if (highCutJ)
+            highCutEnabled = json_boolean_value(highCutJ);
+
+        json_t* driftJ = json_object_get(rootJ, "driftAmount");
+        if (driftJ)
+            driftAmount = clamp((float)json_number_value(driftJ), 0.f, 1.f);
+
         // Update parameter snapping after loading settings
         updateParameterSnapping();
     }
 
     void process(const ProcessArgs& args) override {
         // Determine number of polyphonic voices (max 6)
-        int channels = std::min(std::max(inputs[VOCT1_INPUT].getChannels(), 1), MAX_POLY_VOICES);
-        
-        // Set output channels to match
-        outputs[LEFT_OUTPUT].setChannels(channels);
-        outputs[RIGHT_OUTPUT].setChannels(channels);
+        int channels = polyProcessor.updateChannels(
+            {inputs[VOCT1_INPUT], inputs[VOCT2_INPUT]},
+            {outputs[LEFT_OUTPUT], outputs[RIGHT_OUTPUT]});
         
         // 2x oversampling for smoother sound
-        const int oversample = 2;
+        int oversample = std::max(1, oversampleFactor);
         float oversampleRate = args.sampleRate * oversample;
 
         // Process each voice
@@ -220,19 +247,22 @@ struct ClairaudientModule : Module, IOscilloscopeSource {
 
             // --- Pre-calculate parameters for this voice ---
             // Get V/Oct inputs with fallback logic
-            float voct1 = inputs[VOCT1_INPUT].getVoltage(ch);
-            float voct2 = inputs[VOCT2_INPUT].isConnected() ? 
+            float voct1 = inputs[VOCT1_INPUT].getPolyVoltage(ch);
+            float voct2 = inputs[VOCT2_INPUT].isConnected() ?
                             inputs[VOCT2_INPUT].getPolyVoltage(ch) : voct1;
             
             // Get parameters for this voice
-            // V Oscillator: Apply quantization if enabled
-            float rawPitch1 = params[FREQ1_PARAM].getValue() + voct1;
-            float pitch1 = quantizeOscV ? quantizeToOctave(rawPitch1) : rawPitch1;
+            // V Oscillator: quantize knob value if enabled, then add CV
+            float basePitch1 = params[FREQ1_PARAM].getValue();
+            if (quantizeOscV)
+                basePitch1 = quantizeToOctave(basePitch1);
+            float pitch1 = basePitch1 + voct1;
 
-            // Z Oscillator: Apply quantization if enabled
-            float semitonesZ = params[FREQ2_PARAM].getValue(); // Already in semitone units
-            float rawPitch2 = semitonesZ / 12.0f + voct2; // Convert semitones to octaves and add V/Oct
-            float pitch2 = quantizeOscZ ? quantizeToSemitone(semitonesZ + voct2 * 12.0f) : rawPitch2;
+            // Z Oscillator: quantize knob (in semitones) if enabled, then add CV
+            float baseSemitoneZ = params[FREQ2_PARAM].getValue();
+            if (quantizeOscZ)
+                baseSemitoneZ = quantizeToSemitone(baseSemitoneZ);
+            float pitch2 = baseSemitoneZ / 12.0f + voct2;
             
             float fineTune1 = params[FINE1_PARAM].getValue();
             if (inputs[FINE1_CV_INPUT].isConnected()) {
@@ -269,13 +299,14 @@ struct ClairaudientModule : Module, IOscilloscopeSource {
                 float cvAmount = params[XFADE_ATTEN_PARAM].getValue();
                 xfade = clamp(xfade + inputs[XFADE_CV_INPUT].getPolyVoltage(ch) * cvAmount / 10.f, 0.f, 1.f);
             }
-            
+            float xfadeClamped = clamp(xfade, 0.f, 1.f);
+
             // Shape the user noise amount so the audible noise ramps up sooner
             float shapedNoise = std::pow(clamp(oscNoiseAmount, 0.f, 1.f), 0.65f);
 
             for (int os = 0; os < oversample; os++) {
                 // Add organic frequency drift (very subtle) for this voice
-                updateOrganicDrift(ch, args.sampleTime * oversample);
+                updateOrganicDrift(ch, args.sampleTime * oversample, driftAmount);
                 
                 float freq1A = 261.626f * std::pow(2.f, pitch1 + drift1A[ch]);
                 float freq1B = 261.626f * std::pow(2.f, pitch1 + fineTune1 + drift1B[ch]);
@@ -313,14 +344,28 @@ struct ClairaudientModule : Module, IOscilloscopeSource {
                 }
                 
                 // Generate sigmoid-morphed oscillators with anti-aliasing
-                float osc1A = generateOrganicOsc(phase1A[ch], shape1, freq1A, oversampleRate);
-                float osc1B = generateOrganicOsc(phase1B[ch], shape1, freq1B, oversampleRate);
-                float osc2A = generateOrganicOsc(phase2A[ch], shape2, freq2A, oversampleRate);
-                float osc2B = generateOrganicOsc(phase2B[ch], shape2, freq2B, oversampleRate);
+                float osc1A = shapetaker::dsp::OscillatorHelper::organicSigmoidSaw(phase1A[ch], shape1, freq1A, oversampleRate);
+                float osc1B = shapetaker::dsp::OscillatorHelper::organicSigmoidSaw(phase1B[ch], shape1, freq1B, oversampleRate);
+                float osc2A = shapetaker::dsp::OscillatorHelper::organicSigmoidSaw(phase2A[ch], shape2, freq2A, oversampleRate);
+                float osc2B = shapetaker::dsp::OscillatorHelper::organicSigmoidSaw(phase2B[ch], shape2, freq2B, oversampleRate);
                 
-                // Crossfade between pairs for each channel (A for Left, B for Right)
-                float leftOutput = osc1A * (1.f - xfade) + osc2A * xfade;
-                float rightOutput = osc1B * (1.f - xfade) + osc2B * xfade;
+                float leftOutput;
+                float rightOutput;
+
+                if (crossfadeMode == CROSSFADE_EQUAL_POWER) {
+                    leftOutput = shapetaker::dsp::OscillatorHelper::equalPowerMix(osc1A, osc2A, xfadeClamped);
+                    rightOutput = shapetaker::dsp::OscillatorHelper::equalPowerMix(osc1B, osc2B, xfadeClamped);
+                } else {
+                    if (xfadeClamped <= 0.5f) {
+                        float t = xfadeClamped * 2.f;
+                        leftOutput = shapetaker::dsp::OscillatorHelper::equalPowerMix(osc1A, osc2B, t);
+                        rightOutput = shapetaker::dsp::OscillatorHelper::equalPowerMix(osc1B, osc1A, t);
+                    } else {
+                        float t = (xfadeClamped - 0.5f) * 2.f;
+                        leftOutput = shapetaker::dsp::OscillatorHelper::equalPowerMix(osc2B, osc2A, t);
+                        rightOutput = shapetaker::dsp::OscillatorHelper::equalPowerMix(osc1A, osc2B, t);
+                    }
+                }
 
                 // Apply anti-aliasing filter to each channel separately for true stereo
                 float filteredLeft = antiAliasFilterLeft[ch].process(leftOutput, args.sampleRate * 0.45f, oversampleRate);
@@ -341,6 +386,12 @@ struct ClairaudientModule : Module, IOscilloscopeSource {
                 float nR = (rack::random::uniform() - 0.5f) * 2.f * NOISE_V_PEAK * shapedNoise;
                 outL += nL;
                 outR += nR;
+            }
+
+            if (highCutEnabled) {
+                const float HIGH_CUT_HZ = 8000.f;
+                outL = highCutFilterLeft[ch].process(outL, HIGH_CUT_HZ, args.sampleRate);
+                outR = highCutFilterRight[ch].process(outR, HIGH_CUT_HZ, args.sampleRate);
             }
 
             outputs[LEFT_OUTPUT].setVoltage(outL, ch);
@@ -381,63 +432,35 @@ struct ClairaudientModule : Module, IOscilloscopeSource {
 
 private:
     // Update organic drift and noise for more natural sound (per voice)
-    void updateOrganicDrift(int voice, float sampleTime) {
+    void updateOrganicDrift(int voice, float sampleTime, float amount) {
+        amount = clamp(amount, 0.f, 1.f);
+        if (amount <= 0.f) {
+            drift1A[voice] = drift1B[voice] = drift2A[voice] = drift2B[voice] = 0.f;
+            noise1A[voice] = noise1B[voice] = noise2A[voice] = noise2B[voice] = 0.f;
+            return;
+        }
         // Very slow random walk for frequency drift (like analog oscillator aging)
-        static float driftSpeed = 0.00002f;
-        
+        const float baseDriftSpeed = 0.00002f;
+        float driftSpeed = baseDriftSpeed * amount;
+
         drift1A[voice] += (rack::random::uniform() - 0.5f) * driftSpeed * sampleTime;
         drift1B[voice] += (rack::random::uniform() - 0.5f) * driftSpeed * sampleTime;
         drift2A[voice] += (rack::random::uniform() - 0.5f) * driftSpeed * sampleTime;
         drift2B[voice] += (rack::random::uniform() - 0.5f) * driftSpeed * sampleTime;
-        
+
         // Limit drift to very small amounts (±0.1 cents)
-        drift1A[voice] = clamp(drift1A[voice], -0.001f, 0.001f);
-        drift1B[voice] = clamp(drift1B[voice], -0.001f, 0.001f);
-        drift2A[voice] = clamp(drift2A[voice], -0.001f, 0.001f);
-        drift2B[voice] = clamp(drift2B[voice], -0.001f, 0.001f);
-        
+        const float driftLimit = 0.001f * amount;
+        drift1A[voice] = clamp(drift1A[voice], -driftLimit, driftLimit);
+        drift1B[voice] = clamp(drift1B[voice], -driftLimit, driftLimit);
+        drift2A[voice] = clamp(drift2A[voice], -driftLimit, driftLimit);
+        drift2B[voice] = clamp(drift2B[voice], -driftLimit, driftLimit);
+
         // Generate subtle phase noise
-        noise1A[voice] = (rack::random::uniform() - 0.5f) * 2.f;
-        noise1B[voice] = (rack::random::uniform() - 0.5f) * 2.f;
-        noise2A[voice] = (rack::random::uniform() - 0.5f) * 2.f;
-        noise2B[voice] = (rack::random::uniform() - 0.5f) * 2.f;
-    }
-    
-    // Generate organic-sounding sigmoid oscillator with subtle imperfections
-    float generateOrganicOsc(float phase, float shape, float freq, float sampleRate) {
-        // Linear sawtooth (when shape = 0)
-        float linearSaw = 2.f * phase - 1.f;
-        
-        if (shape < 0.001f) {
-            // Add tiny amount of saturation even to linear saw
-            return std::tanh(linearSaw * 1.02f) * 0.98f;
-        }
-        
-        // Sigmoid curve with subtle harmonic variations
-        float range = 3.f + shape * 5.f; // Variable steepness
-        float sigmoidInput = (phase - 0.5f) * range * 2.f;
-        
-        // Add subtle harmonics based on frequency (like analog oscillator nonlinearities)
-        float harmonicBias = std::sin(phase * 2.f * M_PI * 3.f) * 0.02f * shape;
-        sigmoidInput += harmonicBias;
-        
-        float sigmoidOutput = std::tanh(sigmoidInput);
-        
-        // Blend between linear and sigmoid with subtle nonlinear crossfade
-        float blend = shape + std::sin(phase * 2.f * M_PI) * 0.01f * shape;
-        blend = clamp(blend, 0.f, 1.f);
-        
-        float result = linearSaw * (1.f - blend) + sigmoidOutput * blend;
-        
-        // Add very subtle high-frequency content for "air"
-        float nyquist = sampleRate * 0.5f;
-        if (freq < nyquist * 0.3f) { // Only add if we're not near Nyquist
-            float air = std::sin(phase * 2.f * M_PI * 7.f) * 0.005f * shape;
-            result += air;
-        }
-        
-        // Subtle saturation for warmth
-        return std::tanh(result * 1.05f) * 0.95f;
+        float noiseScale = amount;
+        noise1A[voice] = (rack::random::uniform() - 0.5f) * 2.f * noiseScale;
+        noise1B[voice] = (rack::random::uniform() - 0.5f) * 2.f * noiseScale;
+        noise2A[voice] = (rack::random::uniform() - 0.5f) * 2.f * noiseScale;
+        noise2B[voice] = (rack::random::uniform() - 0.5f) * 2.f * noiseScale;
     }
 };
 
@@ -459,123 +482,88 @@ struct ClairaudientWidget : ModuleWidget {
         setModule(module);
         setPanel(createPanel(asset::plugin(pluginInstance, "res/panels/Clairaudient.svg")));
 
-        addChild(createWidget<ScrewBlack>(Vec(RACK_GRID_WIDTH, 0)));
-        addChild(createWidget<ScrewBlack>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, 0)));
-        addChild(createWidget<ScrewBlack>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
-        addChild(createWidget<ScrewBlack>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
+        using LayoutHelper = shapetaker::ui::LayoutHelper;
 
-        // Read positions from panel SVG by id, like Transmutation
+        LayoutHelper::ScrewPositions::addStandardScrews<ScrewBlack>(this, box.size.x);
+
+        // Use shared panel parser utilities for control placement
         auto svgPath = asset::plugin(pluginInstance, "res/panels/Clairaudient.svg");
-        std::string svg;
-        {
-            std::ifstream f(svgPath);
-            if (f) { std::stringstream ss; ss << f.rdbuf(); svg = ss.str(); }
-        }
-        auto findTagForId = [&](const std::string& id) -> std::string {
-            if (svg.empty()) return "";
-            std::string needle = "id=\"" + id + "\"";
-            size_t pos = svg.find(needle);
-            if (pos == std::string::npos) return "";
-            size_t start = svg.rfind('<', pos);
-            size_t end = svg.find('>', pos);
-            if (start == std::string::npos || end == std::string::npos || end <= start) return "";
-            return svg.substr(start, end - start + 1);
-        };
-        auto getAttr = [&](const std::string& tag, const std::string& key, float defVal) -> float {
-            if (tag.empty()) return defVal;
-            std::string k = key + "=\"";
-            size_t p = tag.find(k);
-            if (p == std::string::npos) return defVal;
-            p += k.size();
-            size_t q = tag.find('"', p);
-            if (q == std::string::npos) return defVal;
-            try { return std::stof(tag.substr(p, q - p)); } catch (...) { return defVal; }
-        };
-        auto centerFromId = [&](const std::string& id, float defx, float defy) -> Vec {
-            std::string tag = findTagForId(id);
-            if (tag.find("<rect") != std::string::npos) {
-                float x = getAttr(tag, "x", defx);
-                float y = getAttr(tag, "y", defy);
-                float w = getAttr(tag, "width", 0.f);
-                float h = getAttr(tag, "height", 0.f);
-                return Vec(x + w * 0.5f, y + h * 0.5f);
-            }
-            float cx = getAttr(tag, "cx", defx);
-            float cy = getAttr(tag, "cy", defy);
-            return Vec(cx, cy);
+        LayoutHelper::PanelSVGParser parser(svgPath);
+        auto centerPx = [&](const std::string& id, float defx, float defy) -> Vec {
+            return parser.centerPx(id, defx, defy);
         };
 
         // V/Z oscillator large frequency knobs
-        addParam(createParamCentered<ShapetakerKnobOscilloscopeMedium>(mm2px(centerFromId("freq_v", 13.422475f, 25.464647f)), module, ClairaudientModule::FREQ1_PARAM));
-        addParam(createParamCentered<ShapetakerKnobOscilloscopeMedium>(mm2px(centerFromId("freq_z", 68.319061f, 25.695415f)), module, ClairaudientModule::FREQ2_PARAM));
+        addParam(createParamCentered<ShapetakerKnobOscilloscopeMedium>(centerPx("freq_v", 13.422475f, 25.464647f), module, ClairaudientModule::FREQ1_PARAM));
+        addParam(createParamCentered<ShapetakerKnobOscilloscopeMedium>(centerPx("freq_z", 68.319061f, 25.695415f), module, ClairaudientModule::FREQ2_PARAM));
 
         // V/Z sync switches (vintage toggle)
         {
-            Vec pos1 = mm2px(centerFromId("sync_v", 26.023623f, 66.637276f));
+            Vec pos1 = centerPx("sync_v", 26.023623f, 66.637276f);
             auto* sw1 = createParamCentered<ShapetakerVintageToggleSwitch>(pos1, module, ClairaudientModule::SYNC1_PARAM);
             addParam(sw1);
 
-            Vec pos2 = mm2px(centerFromId("sync_z", 55.676144f, 66.637276f));
+            Vec pos2 = centerPx("sync_z", 55.676144f, 66.637276f);
             auto* sw2 = createParamCentered<ShapetakerVintageToggleSwitch>(pos2, module, ClairaudientModule::SYNC2_PARAM);
             addParam(sw2);
         }
 
         // V/Z fine tune controls
-        addParam(createParamCentered<ShapetakerKnobOscilloscopeSmall>(mm2px(centerFromId("fine_v", 19.023623f, 45.841431f)), module, ClairaudientModule::FINE1_PARAM));
-        addParam(createParamCentered<ShapetakerKnobOscilloscopeSmall>(mm2px(centerFromId("fine_z", 62.717918f, 45.883205f)), module, ClairaudientModule::FINE2_PARAM));
+        addParam(createParamCentered<ShapetakerKnobOscilloscopeSmall>(centerPx("fine_v", 19.023623f, 45.841431f), module, ClairaudientModule::FINE1_PARAM));
+        addParam(createParamCentered<ShapetakerKnobOscilloscopeSmall>(centerPx("fine_z", 62.717918f, 45.883205f), module, ClairaudientModule::FINE2_PARAM));
 
         // V/Z fine tune attenuverters
-        addParam(createParamCentered<ShapetakerAttenuverterOscilloscope>(mm2px(centerFromId("fine_atten_v", 12.023623f, 61.744068f)), module, ClairaudientModule::FINE1_ATTEN_PARAM));
-        addParam(createParamCentered<ShapetakerAttenuverterOscilloscope>(mm2px(centerFromId("fine_atten_z", 69.621849f, 61.744068f)), module, ClairaudientModule::FINE2_ATTEN_PARAM));
+        addParam(createParamCentered<ShapetakerAttenuverterOscilloscope>(centerPx("fine_atten_v", 12.023623f, 61.744068f), module, ClairaudientModule::FINE1_ATTEN_PARAM));
+        addParam(createParamCentered<ShapetakerAttenuverterOscilloscope>(centerPx("fine_atten_z", 69.621849f, 61.744068f), module, ClairaudientModule::FINE2_ATTEN_PARAM));
         
         // (Removed decorative teal hexagon indicators for fine attenuverters)
         
         
         // Crossfade control (center)
-        addParam(createParamCentered<ShapetakerKnobOscilloscopeMedium>(mm2px(centerFromId("x_fade_knob", 40.87077f, 57.091526f)), module, ClairaudientModule::XFADE_PARAM));
+        addParam(createParamCentered<ShapetakerKnobOscilloscopeMedium>(centerPx("x_fade_knob", 40.87077f, 57.091526f), module, ClairaudientModule::XFADE_PARAM));
 
         // Crossfade attenuverter (center)
-        addParam(createParamCentered<ShapetakerAttenuverterOscilloscope>(mm2px(centerFromId("x_fade_atten", 40.639999f, 75.910126f)), module, ClairaudientModule::XFADE_ATTEN_PARAM));
+        addParam(createParamCentered<ShapetakerAttenuverterOscilloscope>(centerPx("x_fade_atten", 40.639999f, 75.910126f), module, ClairaudientModule::XFADE_ATTEN_PARAM));
         
         // (Removed decorative teal hexagon indicator for crossfade attenuverters)
         
         
         // V/Z shape controls
-        addParam(createParamCentered<ShapetakerKnobOscilloscopeSmall>(mm2px(centerFromId("sh_knob_v", 13.422475f, 79.825134f)), module, ClairaudientModule::SHAPE1_PARAM));
-        addParam(createParamCentered<ShapetakerKnobOscilloscopeSmall>(mm2px(centerFromId("sh_knob_z", 68.319061f, 79.825134f)), module, ClairaudientModule::SHAPE2_PARAM));
+        addParam(createParamCentered<ShapetakerKnobOscilloscopeSmall>(centerPx("sh_knob_v", 13.422475f, 79.825134f), module, ClairaudientModule::SHAPE1_PARAM));
+        addParam(createParamCentered<ShapetakerKnobOscilloscopeSmall>(centerPx("sh_knob_z", 68.319061f, 79.825134f), module, ClairaudientModule::SHAPE2_PARAM));
         
         // V/Z shape attenuverters
-        addParam(createParamCentered<ShapetakerAttenuverterOscilloscope>(mm2px(centerFromId("sh_cv_v", 22.421556f, 93.003937f)), module, ClairaudientModule::SHAPE1_ATTEN_PARAM));
-        addParam(createParamCentered<ShapetakerAttenuverterOscilloscope>(mm2px(centerFromId("sh_cv_z", 58.858444f, 93.003937f)), module, ClairaudientModule::SHAPE2_ATTEN_PARAM));
+        addParam(createParamCentered<ShapetakerAttenuverterOscilloscope>(centerPx("sh_cv_v", 22.421556f, 93.003937f), module, ClairaudientModule::SHAPE1_ATTEN_PARAM));
+        addParam(createParamCentered<ShapetakerAttenuverterOscilloscope>(centerPx("sh_cv_z", 58.858444f, 93.003937f), module, ClairaudientModule::SHAPE2_ATTEN_PARAM));
 
         // Vintage oscilloscope display showing real-time waveform (circular)
         // The module itself is the source for the oscilloscope data
         if (module) {
             VintageOscilloscopeWidget* oscope = new VintageOscilloscopeWidget(module);
-            Vec scr = centerFromId("oscope_screen", 40.87077f, 29.04454f);
+            Vec scrPx = centerPx("oscope_screen", 40.87077f, 29.04454f);
             // Increase oscilloscope screen size slightly (square to preserve CRT effect)
             constexpr float OSCOPE_SIZE_MM = 33.f; // +1mm from previous 32
-            Vec sizeMM = Vec(OSCOPE_SIZE_MM, OSCOPE_SIZE_MM);
-            Vec topLeft = mm2px(scr).minus(mm2px(sizeMM).div(2.f));
+            Vec sizePx = LayoutHelper::mm2px(Vec(OSCOPE_SIZE_MM, OSCOPE_SIZE_MM));
+            Vec topLeft = scrPx.minus(sizePx.div(2.f));
             oscope->box.pos = topLeft;
-            oscope->box.size = mm2px(sizeMM);
+            oscope->box.size = sizePx;
             addChild(oscope);
         }
 
         // Input row 1: V oscillator V/OCT and CV inputs - BNC connectors
-        addInput(createInputCentered<ShapetakerBNCPort>(mm2px(centerFromId("v_oct_v", 23.762346f, 105.77721f)), module, ClairaudientModule::VOCT1_INPUT));
-        addInput(createInputCentered<ShapetakerBNCPort>(mm2px(centerFromId("fine_cv_v", 38.386749f, 105.77721f)), module, ClairaudientModule::FINE1_CV_INPUT));
-        addInput(createInputCentered<ShapetakerBNCPort>(mm2px(centerFromId("shape_cv_v", 52.878323f, 105.77721f)), module, ClairaudientModule::SHAPE1_CV_INPUT));
-        addInput(createInputCentered<ShapetakerBNCPort>(mm2px(centerFromId("x_fade_cv", 40.639999f, 90.126892f)), module, ClairaudientModule::XFADE_CV_INPUT));
+        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("v_oct_v", 23.762346f, 105.77721f), module, ClairaudientModule::VOCT1_INPUT));
+        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("fine_cv_v", 38.386749f, 105.77721f), module, ClairaudientModule::FINE1_CV_INPUT));
+        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("shape_cv_v", 52.878323f, 105.77721f), module, ClairaudientModule::SHAPE1_CV_INPUT));
+        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("x_fade_cv", 40.639999f, 90.126892f), module, ClairaudientModule::XFADE_CV_INPUT));
 
         // Input row 2: Z oscillator and outputs - BNC connectors
-        addInput(createInputCentered<ShapetakerBNCPort>(mm2px(centerFromId("v_out_z", 23.76195f, 118.09399f)), module, ClairaudientModule::VOCT2_INPUT));
-        addInput(createInputCentered<ShapetakerBNCPort>(mm2px(centerFromId("fine_cv_z", 38.386749f, 118.09399f)), module, ClairaudientModule::FINE2_CV_INPUT));
-        addInput(createInputCentered<ShapetakerBNCPort>(mm2px(centerFromId("shape_cv_z", 52.878323f, 118.09399f)), module, ClairaudientModule::SHAPE2_CV_INPUT));
+        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("v_out_z", 23.76195f, 118.09399f), module, ClairaudientModule::VOCT2_INPUT));
+        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("fine_cv_z", 38.386749f, 118.09399f), module, ClairaudientModule::FINE2_CV_INPUT));
+        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("shape_cv_z", 52.878323f, 118.09399f), module, ClairaudientModule::SHAPE2_CV_INPUT));
 
         // Stereo outputs - BNC connectors for consistent vintage look
-        addOutput(createOutputCentered<ShapetakerBNCPort>(mm2px(centerFromId("output_l", 67.369896f, 105.77721f)), module, ClairaudientModule::LEFT_OUTPUT));
-        addOutput(createOutputCentered<ShapetakerBNCPort>(mm2px(centerFromId("output_r", 67.369896f, 117.72548f)), module, ClairaudientModule::RIGHT_OUTPUT));
+        addOutput(createOutputCentered<ShapetakerBNCPort>(centerPx("output_l", 67.369896f, 105.77721f), module, ClairaudientModule::LEFT_OUTPUT));
+        addOutput(createOutputCentered<ShapetakerBNCPort>(centerPx("output_r", 67.369896f, 117.72548f), module, ClairaudientModule::RIGHT_OUTPUT));
 
         // Subtle patina overlay to match Transmutation
         auto overlay = new PanelPatinaOverlay();
@@ -639,6 +627,62 @@ struct ClairaudientWidget : ModuleWidget {
         auto* ns = new NoiseSlider(module);
         ns->box.size.x = 200.f;
         menu->addChild(ns);
+
+        menu->addChild(new MenuSeparator);
+        menu->addChild(createMenuLabel("Organic Drift"));
+        struct DriftQuantity : Quantity {
+            ClairaudientModule* m;
+            explicit DriftQuantity(ClairaudientModule* mod) : m(mod) {}
+            void setValue(float v) override { m->driftAmount = clamp(v, 0.f, 1.f); }
+            float getValue() override { return m->driftAmount; }
+            float getMinValue() override { return 0.f; }
+            float getMaxValue() override { return 1.f; }
+            float getDefaultValue() override { return 0.f; }
+            float getDisplayValue() override { return getValue() * 100.f; }
+            void setDisplayValue(float v) override { setValue(v / 100.f); }
+            std::string getLabel() override { return "Drift"; }
+            std::string getUnit() override { return "%"; }
+        };
+        struct DriftSlider : ui::Slider {
+            explicit DriftSlider(ClairaudientModule* m) { quantity = new DriftQuantity(m); }
+            ~DriftSlider() override { delete quantity; }
+        };
+        auto* ds = new DriftSlider(module);
+        ds->box.size.x = 200.f;
+        menu->addChild(ds);
+
+        menu->addChild(new MenuSeparator);
+        menu->addChild(createMenuLabel("Tone Options"));
+
+        menu->addChild(createCheckMenuItem("High Cut Enabled", "", [=] { return module->highCutEnabled; }, [=] {
+            module->highCutEnabled = !module->highCutEnabled;
+            module->resetFilters();
+        }));
+
+        menu->addChild(createSubmenuItem("Oversampling", "", [=](Menu* subMenu) {
+            auto addOversampleItem = [&](const std::string& label, int factor) {
+                subMenu->addChild(createCheckMenuItem(label, "", [=] { return module->oversampleFactor == factor; }, [=] {
+                    module->oversampleFactor = factor;
+                    module->resetFilters();
+                }));
+            };
+
+            addOversampleItem("2×", 2);
+            addOversampleItem("4×", 4);
+            addOversampleItem("8×", 8);
+        }));
+
+        menu->addChild(new MenuSeparator);
+        menu->addChild(createMenuLabel("Crossfade Curve"));
+
+        auto addCrossfadeModeItem = [&](const std::string& label, int mode) {
+            menu->addChild(createCheckMenuItem(label, "", [=] { return module->crossfadeMode == mode; }, [=] {
+                module->crossfadeMode = mode;
+            }));
+        };
+
+        addCrossfadeModeItem("Equal-Power", ClairaudientModule::CROSSFADE_EQUAL_POWER);
+        addCrossfadeModeItem("Stereo Swap", ClairaudientModule::CROSSFADE_STEREO_SWAP);
     }
 };
 

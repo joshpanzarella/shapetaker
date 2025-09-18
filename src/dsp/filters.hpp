@@ -11,6 +11,27 @@ namespace dsp {
 // FILTER UTILITIES
 // ============================================================================
 
+// Simple one-pole low-pass filter for lightweight smoothing
+class OnePoleLowpass {
+public:
+    float z1 = 0.f;
+
+    float process(float input, float cutoff, float sampleRate) {
+        if (cutoff <= 0.f || !std::isfinite(cutoff)) {
+            return z1;
+        }
+        float dt = 1.f / sampleRate;
+        float RC = 1.f / (2.f * M_PI * cutoff);
+        float alpha = dt / (RC + dt);
+        z1 += alpha * (input - z1);
+        return z1;
+    }
+
+    void reset() {
+        z1 = 0.f;
+    }
+};
+
 // Generic biquad filter with multiple filter types
 class BiquadFilter {
 public:

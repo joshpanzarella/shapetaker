@@ -2,6 +2,7 @@
 #include <rack.hpp>
 #include <algorithm>
 #include <array>
+#include <initializer_list>
 
 using namespace rack;
 
@@ -48,6 +49,17 @@ public:
         }
         return std::min(maxChannels, MAX_VOICES);
     }
+
+    int getChannelCount(std::initializer_list<std::reference_wrapper<Input>> inputs) {
+        int maxChannels = 1;
+        for (auto& inputRef : inputs) {
+            Input& input = inputRef.get();
+            if (input.isConnected()) {
+                maxChannels = std::max(maxChannels, input.getChannels());
+            }
+        }
+        return std::min(maxChannels, MAX_VOICES);
+    }
     
     /**
      * Update channel count and configure output channels accordingly
@@ -81,6 +93,17 @@ public:
             output.setChannels(currentChannels);
         }
         
+        return currentChannels;
+    }
+
+    int updateChannels(std::initializer_list<std::reference_wrapper<Input>> inputs,
+                      std::initializer_list<std::reference_wrapper<Output>> outputs) {
+        currentChannels = getChannelCount(inputs);
+
+        for (auto& outputRef : outputs) {
+            outputRef.get().setChannels(currentChannels);
+        }
+
         return currentChannels;
     }
     
