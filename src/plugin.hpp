@@ -16,6 +16,7 @@ extern Model* modelInvolution;
 extern Model* modelEvocation;
 extern Model* modelIncantation;
 extern Model* modelTransmutation;
+extern Model* modelSpecula;
 
 struct ShapetakerKnobLarge : app::SvgKnob {
     widget::SvgWidget* bg;
@@ -705,19 +706,90 @@ struct ShapetakerTieMomentary : app::SvgSwitch {
     }
 };
 
-// Legacy chicken-head selector removed; use ShapetakerVintageSelector instead
+struct ShapetakerVintageSelector : app::ParamWidget {
+    std::shared_ptr<Svg> bgSvg;
+    std::shared_ptr<Svg> pointerSvg;
+    float minAngle = 0.f;
+    float maxAngle = 5.f * M_PI / 3.f;
+    bool snap = true;
+    float accumulatedDelta = 0.f; // Accumulate small movements
 
-struct ShapetakerVintageSelector : app::SvgSwitch {
     ShapetakerVintageSelector() {
-        addFrame(Svg::load(asset::plugin(pluginInstance, "res/switches/st_vintage_selector_0.svg")));
-        addFrame(Svg::load(asset::plugin(pluginInstance, "res/switches/st_vintage_selector_1.svg")));
-        addFrame(Svg::load(asset::plugin(pluginInstance, "res/switches/st_vintage_selector_2.svg")));
-        addFrame(Svg::load(asset::plugin(pluginInstance, "res/switches/st_vintage_selector_3.svg")));
-        addFrame(Svg::load(asset::plugin(pluginInstance, "res/switches/st_vintage_selector_4.svg")));
-        addFrame(Svg::load(asset::plugin(pluginInstance, "res/switches/st_vintage_selector_5.svg")));
-        // Vintage selector — mm sizing. Previous 35px ≈ 9.3mm, use 9mm
-        box.size = mm2px(Vec(9.f, 9.f));
-        if (shadow) shadow->visible = false;
+        // Load SVGs
+        bgSvg = Svg::load(asset::plugin(pluginInstance, "res/switches/distortion_selector.svg"));
+        pointerSvg = Svg::load(asset::plugin(pluginInstance, "res/switches/distortion_selector_pointer.svg"));
+
+        // Force large size - no SvgKnob to interfere
+        box.size = mm2px(Vec(22.0f, 22.0f));
+    }
+
+    void onDragMove(const event::DragMove& e) override {
+        if (getParamQuantity()) {
+            // Accumulate movement for very responsive control
+            float sensitivity = 1.0f;
+            float delta = sensitivity * (e.mouseDelta.x - e.mouseDelta.y);
+            accumulatedDelta += delta;
+
+            // For discrete selector - step when accumulated movement reaches threshold
+            if (snap) {
+                float stepThreshold = 75.0f; // Moderate threshold for natural stepping
+
+                if (fabsf(accumulatedDelta) >= stepThreshold) {
+                    float oldValue = getParamQuantity()->getValue();
+                    float step = (accumulatedDelta > 0) ? 1.0f : -1.0f;
+                    float newValue = clamp(oldValue + step,
+                                         getParamQuantity()->minValue,
+                                         getParamQuantity()->maxValue);
+                    getParamQuantity()->setValue(newValue);
+
+                    // Reset accumulator after step, but keep remainder
+                    accumulatedDelta = fmodf(accumulatedDelta, stepThreshold);
+                }
+            } else {
+                // Continuous mode - very sensitive, immediate response
+                float paramRange = getParamQuantity()->maxValue - getParamQuantity()->minValue;
+                float newValue = getParamQuantity()->getValue() + delta * paramRange * 0.003f;
+                newValue = clamp(newValue, getParamQuantity()->minValue, getParamQuantity()->maxValue);
+                getParamQuantity()->setValue(newValue);
+            }
+        }
+    }
+
+    void onButton(const event::Button& e) override {
+        if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_LEFT) {
+            e.consume(this);
+        }
+        ParamWidget::onButton(e);
+    }
+
+    void draw(const DrawArgs& args) override {
+        // Draw background at full widget size
+        if (bgSvg) {
+            nvgSave(args.vg);
+            float scale = box.size.x / bgSvg->handle->width;
+            nvgScale(args.vg, scale, scale);
+            svgDraw(args.vg, bgSvg->handle);
+            nvgRestore(args.vg);
+        }
+
+        // Draw pointer rotated based on parameter value
+        if (pointerSvg && getParamQuantity()) {
+            nvgSave(args.vg);
+
+            // Calculate rotation angle
+            float t = getParamQuantity()->getScaledValue();
+            float angle = math::rescale(t, 0.f, 1.f, minAngle, maxAngle);
+
+            // Rotate around center
+            nvgTranslate(args.vg, box.size.x * 0.5f, box.size.y * 0.5f);
+            nvgRotate(args.vg, angle);
+            nvgTranslate(args.vg, -box.size.x * 0.5f, -box.size.y * 0.5f);
+
+            float scale = box.size.x / pointerSvg->handle->width;
+            nvgScale(args.vg, scale, scale);
+            svgDraw(args.vg, pointerSvg->handle);
+            nvgRestore(args.vg);
+        }
     }
 };
 

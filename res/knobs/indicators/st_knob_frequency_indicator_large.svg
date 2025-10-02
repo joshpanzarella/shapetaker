@@ -1,0 +1,59 @@
+<svg width="24mm" height="24mm" viewBox="0 0 63 63" xmlns="http://www.w3.org/2000/svg">
+  <!-- Vintage cream wedge indicator (rotates with knob) -->
+  <!-- Push tip closer to outer edge for clearer read -->
+  <path d="M 31.5 8.6 L 35.3 19.6 Q 31.5 21.4 27.7 19.6 Z" fill="#e8e0c8" stroke="none"/>
+
+  <!-- Frequency scale markings around the knob (static background) -->
+  <!-- Major tick marks at key frequencies -->
+
+  <!-- 20 Hz (bottom left, around -135 degrees) -->
+  <g transform="rotate(-135 31.5 31.5)">
+    <line x1="31.5" y1="5" x2="31.5" y2="9" stroke="#e8e0c8" stroke-width="0.8" opacity="0.9"/>
+    <text x="31.5" y="2" text-anchor="middle" font-family="Arial, sans-serif" font-size="3.5" fill="#e8e0c8" opacity="0.8">20Hz</text>
+  </g>
+
+  <!-- 100 Hz (-90 degrees) -->
+  <g transform="rotate(-90 31.5 31.5)">
+    <line x1="31.5" y1="6" x2="31.5" y2="9" stroke="#c8c8b6" stroke-width="0.6" opacity="0.8"/>
+    <text x="31.5" y="3.5" text-anchor="middle" font-family="Arial, sans-serif" font-size="2.5" fill="#c8c8b6" opacity="0.7">100</text>
+  </g>
+
+  <!-- 1 kHz (-45 degrees) -->
+  <g transform="rotate(-45 31.5 31.5)">
+    <line x1="31.5" y1="6" x2="31.5" y2="9" stroke="#c8c8b6" stroke-width="0.6" opacity="0.8"/>
+    <text x="31.5" y="3.5" text-anchor="middle" font-family="Arial, sans-serif" font-size="2.5" fill="#c8c8b6" opacity="0.7">1k</text>
+  </g>
+
+  <!-- 10 kHz (0 degrees, top) -->
+  <g transform="rotate(0 31.5 31.5)">
+    <line x1="31.5" y1="6" x2="31.5" y2="9" stroke="#c8c8b6" stroke-width="0.6" opacity="0.8"/>
+    <text x="31.5" y="3.5" text-anchor="middle" font-family="Arial, sans-serif" font-size="2.5" fill="#c8c8b6" opacity="0.7">10k</text>
+  </g>
+
+  <!-- 20 kHz (bottom right, around +135 degrees) -->
+  <g transform="rotate(135 31.5 31.5)">
+    <line x1="31.5" y1="5" x2="31.5" y2="9" stroke="#e8e0c8" stroke-width="0.8" opacity="0.9"/>
+    <text x="31.5" y="2" text-anchor="middle" font-family="Arial, sans-serif" font-size="3.5" fill="#e8e0c8" opacity="0.8">20kHz</text>
+  </g>
+
+  <!-- Minor tick marks for intermediate frequencies -->
+  <!-- 50 Hz -->
+  <g transform="rotate(-112.5 31.5 31.5)">
+    <line x1="31.5" y1="7" x2="31.5" y2="9" stroke="#888" stroke-width="0.4" opacity="0.6"/>
+  </g>
+
+  <!-- 200 Hz -->
+  <g transform="rotate(-67.5 31.5 31.5)">
+    <line x1="31.5" y1="7" x2="31.5" y2="9" stroke="#888" stroke-width="0.4" opacity="0.6"/>
+  </g>
+
+  <!-- 500 Hz -->
+  <g transform="rotate(-22.5 31.5 31.5)">
+    <line x1="31.5" y1="7" x2="31.5" y2="9" stroke="#888" stroke-width="0.4" opacity="0.6"/>
+  </g>
+
+  <!-- 2 kHz -->
+  <g transform="rotate(22.5 31.5 31.5)">
+    <line x1="31.5" y1="7" x2="31.5" y2="9" stroke="#888" stroke-width="0.4" opacity="0.6"/>
+  </g>
+</svg>

@@ -77,6 +77,12 @@
         "Chord",
         "Controller"
       ]
+    },
+    {
+      "slug": "Specula",
+      "name": "Specula",
+      "description": "A dual VU meter.",
+      "tags": ["Utility", "Metering"]
     }
   ]
 }

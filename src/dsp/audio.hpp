@@ -34,6 +34,14 @@ public:
         input *= drive;
         return std::tanh(input) / std::tanh(drive);
     }
+
+    static float softLimit(float input, float limit = 10.f) {
+        if (limit <= 0.f) {
+            return 0.f;
+        }
+        float scaled = input / limit;
+        return limit * std::tanh(scaled);
+    }
     
     static float asymmetricClip(float input, float drive = 1.f) {
         input *= drive;

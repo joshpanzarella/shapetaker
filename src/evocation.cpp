@@ -1,6 +1,8 @@
 #include "plugin.hpp"
 #include <vector>
 #include <algorithm>
+#include <cmath>
+#include <cstdio>
 
 // Forward declaration
 struct Evocation;
@@ -10,32 +12,44 @@ struct TouchStripWidget : Widget {
     Evocation* module;
     
     // Visual properties
-    Vec stripSize = Vec(68, 188);
     Vec currentTouchPos = Vec(0, 0);
     bool isDragging = false;
     bool showTouch = false;
     
     // Animation and visual effects
     float glowIntensity = 0.0f;
-    std::vector<Vec> sparkles;
-    float sparkleTimer = 0.0f;
-    
+    struct LightPulse {
+        Vec pos;
+        float intensity;
+    };
+    std::vector<LightPulse> lightPulses;
+    float lastSampleTime = -1.0f;
+    static constexpr float MIN_SAMPLE_INTERVAL = 1.f / 120.f;
+
     TouchStripWidget(Evocation* module);
-    
+
     // Method declarations only - implementations after Evocation class
     void onButton(const event::Button& e) override;
     void onDragStart(const event::DragStart& e) override;
     void onDragMove(const event::DragMove& e) override;
     void onDragEnd(const event::DragEnd& e) override;
-    void addEnvelopePoint(Vec pos);
-    void createSparkle(Vec pos);
+    void recordSample(const char* stage, bool force = false);
+    float computeNormalizedVoltage() const;
+    void createPulse(Vec pos);
+    void clearPulses();
+    Vec clampToBounds(Vec pos) const;
+    Vec resolveMouseLocal(const Vec& fallback);
+    void resetForNewRecording();
+    void logTouchDebug(const char* stage, const Vec& localPos, float normalizedTime, float normalizedVoltage);
     void step() override;
     void drawLayer(const DrawArgs& args, int layer) override;
     void drawTouchStrip(const DrawArgs& args);
     void drawBackground(const DrawArgs& args);
     void drawEnvelope(const DrawArgs& args);
+    void drawEnvelopeStandard(const DrawArgs& args);
+    void drawEnvelopeVoltageTime(const DrawArgs& args);
     void drawCurrentTouch(const DrawArgs& args);
-    void drawSparkles(const DrawArgs& args);
+    void drawPulses(const DrawArgs& args);
     void drawBorder(const DrawArgs& args);
     void drawInstructions(const DrawArgs& args);
 };
@@ -100,6 +114,7 @@ struct Evocation : Module {
     std::vector<EnvelopePoint> envelope;
     bool isRecording = false;
     bool bufferHasData = false;
+    bool debugTouchLogging = false;
     
     // Individual loop states for each envelope player
     bool loopStates[4] = {false, false, false, false};
@@ -126,6 +141,17 @@ struct Evocation : Module {
     // Recording timing
     float recordingTime = 0.0f;
     float maxRecordingTime = 10.0f; // 10 seconds max
+    float firstSampleTime = -1.0f;
+    float recordedDuration = 2.0f;
+
+    // Reference to the touch strip widget for clearing gesture lights
+    TouchStripWidget* touchStripWidget = nullptr;
+
+    ~Evocation() override {
+        if (debugTouchLogging) {
+            INFO("Evocation::~Evocation envelopeSize=%zu bufferHasData=%d", envelope.size(), bufferHasData);
+        }
+    }
     
     Evocation() {
         config(PARAMS_LEN, INPUTS_LEN, OUTPUTS_LEN, LIGHTS_LEN);
@@ -133,10 +159,10 @@ struct Evocation : Module {
         configParam(RECORD_PARAM, 0.f, 1.f, 0.f, "Record");
         configParam(TRIGGER_PARAM, 0.f, 1.f, 0.f, "Manual Trigger");
         configParam(CLEAR_PARAM, 0.f, 1.f, 0.f, "Clear Buffer");
-        configParam(SPEED_1_PARAM, 0.1f, 8.0f, 1.0f, "Speed 1", "×");
-        configParam(SPEED_2_PARAM, 0.1f, 8.0f, 2.0f, "Speed 2", "×");
-        configParam(SPEED_3_PARAM, 0.1f, 8.0f, 4.0f, "Speed 3", "×");
-        configParam(SPEED_4_PARAM, 0.1f, 8.0f, 8.0f, "Speed 4", "×");
+        configParam(SPEED_1_PARAM, 0.1f, 16.0f, 1.0f, "Speed 1", "×");
+        configParam(SPEED_2_PARAM, 0.1f, 16.0f, 2.0f, "Speed 2", "×");
+        configParam(SPEED_3_PARAM, 0.1f, 16.0f, 4.0f, "Speed 3", "×");
+        configParam(SPEED_4_PARAM, 0.1f, 16.0f, 8.0f, "Speed 4", "×");
         configParam(LOOP_1_PARAM, 0.f, 1.f, 0.f, "Loop Output 1");
         configParam(LOOP_2_PARAM, 0.f, 1.f, 0.f, "Loop Output 2");
         configParam(LOOP_3_PARAM, 0.f, 1.f, 0.f, "Loop Output 3");
@@ -193,9 +219,9 @@ struct Evocation : Module {
         
         // Handle recording
         if (recordPressed) {
-            if (!isRecording && !bufferHasData) {
+            if (!isRecording) {
                 startRecording();
-            } else if (isRecording) {
+            } else {
                 stopRecording();
             }
         }
@@ -214,7 +240,7 @@ struct Evocation : Module {
         for (int i = 0; i < 4; i++) {
             processPlayback(i, args.sampleTime);
         }
-        
+
         // Update lights
         lights[RECORDING_LIGHT].setBrightness(isRecording ? 1.0f : 0.0f);
         lights[TRIGGER_LIGHT].setBrightness(isAnyPlaybackActive() ? 1.0f : 0.0f);
@@ -234,20 +260,55 @@ struct Evocation : Module {
     }
     
     void startRecording() {
-        if (bufferHasData) return; // Don't start if buffer already has data
-        
+        if (isRecording)
+            return;
+
         isRecording = true;
-        envelope.clear();
         recordingTime = 0.0f;
         bufferHasData = false;
+        envelope.clear();
+        stopAllPlayback();
+        firstSampleTime = -1.0f;
+        if (touchStripWidget) {
+            touchStripWidget->clearPulses();
+        }
+        recordedDuration = 2.0f;
+
+        if (debugTouchLogging) {
+            INFO("Evocation::startRecording");
+        }
+
+        if (touchStripWidget) {
+        touchStripWidget->resetForNewRecording();
+        }
     }
-    
+
     void stopRecording() {
-        if (isRecording && !envelope.empty()) {
-            isRecording = false;
+        if (!isRecording)
+            return;
+
+        isRecording = false;
+
+        if (!envelope.empty()) {
             normalizeEnvelopeTiming();
             bufferHasData = true;
+
+            float effectiveDuration = recordingTime;
+            if (firstSampleTime >= 0.0f) {
+                effectiveDuration -= firstSampleTime;
+            }
+            effectiveDuration = clamp(effectiveDuration, 1e-3f, maxRecordingTime);
+            recordedDuration = effectiveDuration;
+
+            if (debugTouchLogging) {
+                INFO("Evocation::stopRecording normalized points=%zu duration=%.3f", envelope.size(), recordedDuration);
+            }
+        } else {
+            bufferHasData = false;
+            recordedDuration = 2.0f;
         }
+
+        firstSampleTime = -1.0f;
     }
     
     void updateRecording(float sampleTime) {
@@ -267,25 +328,57 @@ struct Evocation : Module {
         envelope.push_back(point);
     }
     
-    void addEnvelopePointFromWidget(float x, float y) {
-        if (!isRecording) return;
-        
-        recordingTime += 0.016f; // Approximate 60fps update
-        float normalizedTime = recordingTime / maxRecordingTime;
-        
-        if (normalizedTime <= 1.0f) {
-            addEnvelopePoint(x, y, normalizedTime);
-        } else {
-            stopRecording();
+    void addEnvelopeSample(float normalizedVoltage) {
+        if (!isRecording) {
+            return;
+        }
+
+        if (firstSampleTime < 0.0f) {
+            firstSampleTime = recordingTime;
+        }
+
+        float effectiveTime = recordingTime - firstSampleTime;
+        if (!std::isfinite(effectiveTime) || effectiveTime < 0.f) {
+            effectiveTime = 0.f;
+        }
+
+        float normalizedTime = maxRecordingTime <= 0.f ? 0.f : clamp(effectiveTime / maxRecordingTime, 0.f, 1.f);
+
+        if (!envelope.empty()) {
+            float lastTime = envelope.back().time;
+            if (normalizedTime <= lastTime + 1e-5f) {
+                envelope.back().y = clamp(normalizedVoltage, 0.0f, 1.0f);
+                envelope.back().x = envelope.back().time;
+                return;
+            }
+        }
+
+        addEnvelopePoint(normalizedTime, normalizedVoltage, normalizedTime);
+
+        if (debugTouchLogging) {
+            INFO("Evocation::addEnvelopeSample voltage=%.4f time=%.4f rawTime=%.4f", normalizedVoltage, normalizedTime, effectiveTime);
         }
     }
-    
+
     void normalizeEnvelopeTiming() {
         if (envelope.size() < 2) return;
-        
-        // Ensure time values are properly distributed 0-1
+
+        float startTime = envelope.front().time;
+        float endTime = envelope.back().time;
+        float range = std::max(endTime - startTime, 1e-3f);
+        float lastValue = 0.f;
         for (size_t i = 0; i < envelope.size(); i++) {
-            envelope[i].time = (float)i / (envelope.size() - 1);
+            float normalized = (envelope[i].time - startTime) / range;
+            normalized = clamp(normalized, 0.f, 1.f);
+            if (i > 0) {
+                normalized = fmaxf(normalized, lastValue);
+            }
+            envelope[i].time = normalized;
+            lastValue = normalized;
+        }
+
+        if (debugTouchLogging) {
+            INFO("Evocation::normalizeEnvelopeTiming start=%.4f end=%.4f range=%.4f", startTime, endTime, range);
         }
     }
     
@@ -294,6 +387,17 @@ struct Evocation : Module {
         bufferHasData = false;
         isRecording = false;
         stopAllPlayback();
+        firstSampleTime = -1.0f;
+        recordedDuration = 2.0f;
+
+        if (debugTouchLogging) {
+            INFO("Evocation::clearBuffer");
+        }
+
+        // Clear light pulses from the touch strip widget
+        if (touchStripWidget) {
+            touchStripWidget->resetForNewRecording();
+        }
     }
     
     void triggerAllEnvelopes() {
@@ -304,6 +408,7 @@ struct Evocation : Module {
             playback[i].phase = 0.0f;
             playback[i].gateGen.trigger(1e-3f);
         }
+
     }
     
     void processPlayback(int outputIndex, float sampleTime) {
@@ -313,7 +418,7 @@ struct Evocation : Module {
             outputs[ENV_1_OUTPUT + outputIndex].setVoltage(0.0f);
             return;
         }
-        
+
         // Get speed from knob and CV
         float speed = params[SPEED_1_PARAM + outputIndex].getValue();
         if (inputs[SPEED_1_INPUT + outputIndex].isConnected()) {
@@ -335,15 +440,15 @@ struct Evocation : Module {
                 return;
             }
         }
-        
+
         // Interpolate envelope value at current phase
         float envelopeValue = interpolateEnvelope(pb.phase);
-        
+
         // Apply inversion if enabled for this output
         if (invertStates[outputIndex]) {
             envelopeValue = 1.0f - envelopeValue;
         }
-        
+
         outputs[ENV_1_OUTPUT + outputIndex].setVoltage(envelopeValue * 10.0f); // 0-10V output
     }
     
@@ -363,8 +468,28 @@ struct Evocation : Module {
         return envelope.back().y;
     }
     
+    bool hasRecordedEnvelope() const {
+        return bufferHasData && !envelope.empty();
+    }
+
+    float getRecordedDuration() const {
+        return std::max(recordedDuration, 1e-3f);
+    }
+
+    float getPlaybackPhase(int index) const {
+        if (index < 0 || index >= 4)
+            return 0.0f;
+        return clamp(playback[index].phase, 0.0f, 1.0f);
+    }
+
+    bool isPlaybackActive(int index) const {
+        if (index < 0 || index >= 4)
+            return false;
+        return playback[index].active;
+    }
+
     float getEnvelopeDuration() {
-        return 2.0f; // 2 second base duration
+        return getRecordedDuration();
     }
     
     bool isAnyPlaybackActive() {
@@ -378,6 +503,9 @@ struct Evocation : Module {
         for (int i = 0; i < 4; i++) {
             playback[i].active = false;
             playback[i].phase = 0.0f;
+        }
+        if (touchStripWidget) {
+            touchStripWidget->clearPulses();
         }
     }
     
@@ -400,7 +528,7 @@ struct Evocation : Module {
             json_array_append_new(invertStatesJ, json_boolean(invertStates[i]));
         }
         json_object_set_new(rootJ, "invertStates", invertStatesJ);
-        
+
         // Save envelope data
         if (bufferHasData && !envelope.empty()) {
             json_t* envelopeJ = json_array();
@@ -411,12 +539,15 @@ struct Evocation : Module {
                 json_object_set_new(pointJ, "time", json_real(point.time));
                 json_array_append_new(envelopeJ, pointJ);
             }
-            json_object_set_new(rootJ, "envelope", envelopeJ);
+        json_object_set_new(rootJ, "envelope", envelopeJ);
         }
-        
+
+        json_object_set_new(rootJ, "debugTouchLogging", json_boolean(debugTouchLogging));
+        json_object_set_new(rootJ, "recordedDuration", json_real(recordedDuration));
+
         return rootJ;
     }
-    
+
     void dataFromJson(json_t* rootJ) override {
         json_t* bufferHasDataJ = json_object_get(rootJ, "bufferHasData");
         if (bufferHasDataJ) bufferHasData = json_boolean_value(bufferHasDataJ);
@@ -462,13 +593,23 @@ struct Evocation : Module {
                 envelope.push_back(point);
             }
         }
+
+        json_t* debugTouchJ = json_object_get(rootJ, "debugTouchLogging");
+        if (debugTouchJ) {
+            debugTouchLogging = json_boolean_value(debugTouchJ);
+        }
+
+        json_t* durationJ = json_object_get(rootJ, "recordedDuration");
+        if (durationJ) {
+            recordedDuration = clamp((float)json_real_value(durationJ), 1e-3f, maxRecordingTime);
+        }
     }
 };
 
 // TouchStripWidget Method Implementations (after Evocation is fully defined)
 TouchStripWidget::TouchStripWidget(Evocation* module) {
     this->module = module;
-    box.size = stripSize;
+    box.size = shapetaker::ui::LayoutHelper::mm2px(Vec(28.0f, 86.0f));
 }
 
 void TouchStripWidget::onButton(const event::Button& e) {
@@ -478,18 +619,14 @@ void TouchStripWidget::onButton(const event::Button& e) {
         // Start recording
         isDragging = true;
         showTouch = true;
-        currentTouchPos = e.pos;
-        
-        // Clamp to widget bounds
-        currentTouchPos.x = clamp(currentTouchPos.x, 0.0f, box.size.x);
-        currentTouchPos.y = clamp(currentTouchPos.y, 0.0f, box.size.y);
-        
+        currentTouchPos = clampToBounds(resolveMouseLocal(e.pos));
+
         // Start recording in module
         module->startRecording();
-        
-        // Add first point
-        addEnvelopePoint(currentTouchPos);
-        
+
+        lastSampleTime = -1.f;
+        recordSample("press", true);
+
         glowIntensity = 1.0f;
         e.consume(this);
     }
@@ -505,64 +642,178 @@ void TouchStripWidget::onDragStart(const event::DragStart& e) {
 
 void TouchStripWidget::onDragMove(const event::DragMove& e) {
     if (!module || !isDragging) return;
-    
-    currentTouchPos = currentTouchPos.plus(e.mouseDelta);
-    
-    // Clamp to widget bounds
-    currentTouchPos.x = clamp(currentTouchPos.x, 0.0f, box.size.x);
-    currentTouchPos.y = clamp(currentTouchPos.y, 0.0f, box.size.y);
-    
-    // Add envelope point
-    addEnvelopePoint(currentTouchPos);
-    
-    // Create sparkle effect
-    createSparkle(currentTouchPos);
+    Vec fallbackPos = currentTouchPos.plus(e.mouseDelta);
+    currentTouchPos = clampToBounds(resolveMouseLocal(fallbackPos));
+
+    recordSample("drag");
 }
 
 void TouchStripWidget::onDragEnd(const event::DragEnd& e) {
     if (!module) return;
-    
+
     isDragging = false;
     showTouch = false;
     glowIntensity = 0.0f;
-    
+
+    // Clear light trail when done drawing
+    lightPulses.clear();
+    lastSampleTime = -1.f;
+
     // Stop recording in module
-    module->stopRecording();
-}
-
-void TouchStripWidget::addEnvelopePoint(Vec pos) {
-    if (!module) return;
-    
-    // Convert widget coordinates to normalized 0-1 values
-    float normalizedX = pos.x / box.size.x;
-    float normalizedY = 1.0f - (pos.y / box.size.y); // Invert Y so top = 1
-    
-    // Add point to module's envelope
-    module->addEnvelopePointFromWidget(normalizedX, normalizedY);
-}
-
-void TouchStripWidget::createSparkle(Vec pos) {
-    sparkles.push_back(pos);
-    // Limit sparkle count
-    if (sparkles.size() > 20) {
-        sparkles.erase(sparkles.begin());
+    currentTouchPos = clampToBounds(resolveMouseLocal(currentTouchPos));
+    recordSample("release", true);
+    if (module->isRecording) {
+        module->stopRecording();
     }
+
+    if (module && module->debugTouchLogging) {
+        INFO("TouchStripWidget::onDragEnd");
+    }
+}
+
+float TouchStripWidget::computeNormalizedVoltage() const {
+    if (box.size.y <= 0.f)
+        return 0.f;
+    const float height = box.size.y;
+    const float topPad = std::min(height * 0.04f, 12.0f);      // keep headroom near 10V
+    const float bottomPad = std::min(height * 0.12f, 20.0f);   // widen the 0V landing zone
+
+    float y = clamp(currentTouchPos.y, 0.0f, height);
+    if (y >= height - bottomPad)
+        return 0.0f;
+    if (y <= topPad)
+        return 1.0f;
+
+    float usable = height - topPad - bottomPad;
+    if (usable <= 1e-6f)
+        return (y <= height * 0.5f) ? 1.0f : 0.0f;
+
+    float normalized = 1.0f - ((y - topPad) / usable);
+    return clamp(normalized, 0.0f, 1.0f);
+}
+
+void TouchStripWidget::recordSample(const char* stage, bool force) {
+    if (!module || !module->isRecording)
+        return;
+
+    float currentTime = module->recordingTime;
+    if (!force && lastSampleTime >= 0.f && (currentTime - lastSampleTime) < MIN_SAMPLE_INTERVAL)
+        return;
+
+    float normalizedVoltage = computeNormalizedVoltage();
+    module->addEnvelopeSample(normalizedVoltage);
+    lastSampleTime = currentTime;
+
+    float effectiveTime = currentTime;
+    if (module->firstSampleTime >= 0.0f) {
+        effectiveTime = std::max(currentTime - module->firstSampleTime, 0.0f);
+    }
+
+    float normalizedTime = module->maxRecordingTime <= 0.f ? 0.f : clamp(effectiveTime / module->maxRecordingTime, 0.f, 1.f);
+    logTouchDebug(stage, currentTouchPos, normalizedTime, normalizedVoltage);
+
+    createPulse(currentTouchPos);
+}
+
+void TouchStripWidget::createPulse(Vec pos) {
+    LightPulse pulse;
+    pulse.pos = pos;
+    pulse.intensity = 1.0f;
+    lightPulses.push_back(pulse);
+
+    // Keep a manageable trail length so blending stays efficient
+    if (lightPulses.size() > 60) {
+        lightPulses.erase(lightPulses.begin());
+    }
+}
+
+void TouchStripWidget::clearPulses() {
+    lightPulses.clear();
+}
+
+Vec TouchStripWidget::clampToBounds(Vec pos) const {
+    pos.x = clamp(pos.x, 0.0f, box.size.x);
+    pos.y = clamp(pos.y, 0.0f, box.size.y);
+    return pos;
+}
+
+Vec TouchStripWidget::resolveMouseLocal(const Vec& fallback) {
+    if (!(APP && APP->scene))
+        return fallback;
+
+    Vec scenePos = APP->scene->getMousePos();
+    Vec widgetOrigin = getAbsoluteOffset(Vec());
+    float zoom = getAbsoluteZoom();
+    if (zoom <= 0.f) {
+        zoom = 1.f;
+    }
+
+    Vec local = scenePos.minus(widgetOrigin).div(zoom);
+    if (!local.isFinite())
+        return fallback;
+
+    return local;
+}
+
+void TouchStripWidget::resetForNewRecording() {
+    clearPulses();
+    isDragging = false;
+    showTouch = false;
+    glowIntensity = 0.0f;
+    lastSampleTime = -1.f;
+}
+
+void TouchStripWidget::logTouchDebug(const char* stage, const Vec& localPos, float normalizedTime, float normalizedVoltage) {
+    if (!module || !module->debugTouchLogging)
+        return;
+
+    math::Vec scenePos;
+    if (APP && APP->scene) {
+        scenePos = APP->scene->getMousePos();
+    }
+    Vec widgetOrigin = getAbsoluteOffset(Vec());
+    float zoom = getAbsoluteZoom();
+    INFO("EvocationTouch[%s] scene=(%.2f, %.2f) origin=(%.2f, %.2f) zoom=%.3f local=(%.2f, %.2f) size=(%.2f, %.2f) norm=(t=%.3f, v=%.3f)",
+         stage,
+         scenePos.x, scenePos.y,
+         widgetOrigin.x, widgetOrigin.y,
+         zoom,
+         localPos.x, localPos.y,
+         box.size.x, box.size.y,
+         normalizedTime, normalizedVoltage);
 }
 
 void TouchStripWidget::step() {
     Widget::step();
-    
-    // Update sparkle timer
-    sparkleTimer += APP->engine->getSampleTime();
-    
-    // Fade sparkles
-    if (sparkleTimer > 0.1f) { // Update every 100ms
-        sparkleTimer = 0.0f;
-        if (!sparkles.empty()) {
-            sparkles.erase(sparkles.begin());
+
+    if (module) {
+        if (module->isRecording) {
+            if (isDragging) {
+                currentTouchPos = clampToBounds(resolveMouseLocal(currentTouchPos));
+                recordSample("frame");
+            }
+        } else {
+            if (isDragging) {
+                isDragging = false;
+                showTouch = false;
+                glowIntensity = 0.0f;
+            }
+            lastSampleTime = -1.f;
         }
     }
-    
+
+    float sampleTime = (APP && APP->engine) ? APP->engine->getSampleTime() : 1.f / 60.f;
+    const float decayPerSecond = 1.8f;
+
+    for (auto& pulse : lightPulses) {
+        pulse.intensity -= decayPerSecond * sampleTime;
+        pulse.intensity = fmaxf(pulse.intensity, 0.0f);
+    }
+
+    lightPulses.erase(std::remove_if(lightPulses.begin(), lightPulses.end(), [](const LightPulse& pulse) {
+        return pulse.intensity <= 0.01f;
+    }), lightPulses.end());
+
     // Fade glow
     if (glowIntensity > 0.0f && !isDragging) {
         glowIntensity -= APP->engine->getSampleTime() * 2.0f; // Fade over 0.5 seconds
@@ -596,72 +847,114 @@ void TouchStripWidget::drawTouchStrip(const DrawArgs& args) {
         drawCurrentTouch(args);
     }
     
-    // Draw sparkles
-    drawSparkles(args);
+    // Draw LED pulses following the gesture trail only during capture
+    if (module && module->isRecording) {
+        drawPulses(args);
+    }
     
     // Draw border and recording glow
     drawBorder(args);
     
-    // Draw instructions if no data
-    if (!module || (!module->bufferHasData && !module->isRecording)) {
-        drawInstructions(args);
-    }
+    // Instructions removed per user request
     
     nvgRestore(args.vg);
 }
 
 void TouchStripWidget::drawBackground(const DrawArgs& args) {
     nvgBeginPath(args.vg);
-    nvgRoundedRect(args.vg, 0, 0, box.size.x, box.size.y, 8);
-    
-    // Gradient background
-    NVGpaint gradient = nvgLinearGradient(args.vg, 0, 0, 0, box.size.y,
-        nvgRGBA(20, 20, 40, 180), nvgRGBA(40, 20, 60, 180));
-    nvgFillPaint(args.vg, gradient);
+    const float borderRadius = 8.0f;
+    nvgRoundedRect(args.vg, 0, 0, box.size.x, box.size.y, borderRadius);
+
+    // Base brass gradient
+    NVGpaint base = nvgLinearGradient(args.vg, 0, 0, 0, box.size.y,
+        nvgRGBA(118, 92, 52, 255),
+        nvgRGBA(46, 30, 16, 255));
+    nvgFillPaint(args.vg, base);
     nvgFill(args.vg);
-    
-    // Grid lines for reference
-    nvgStrokeColor(args.vg, nvgRGBA(100, 100, 150, 30));
-    nvgStrokeWidth(args.vg, 1.0f);
-    
-    // Horizontal lines
-    for (int i = 1; i < 4; i++) {
-        float y = (box.size.y / 4.0f) * i;
+
+    // Subtle center glow to simulate polished metal
+    nvgBeginPath(args.vg);
+    nvgRoundedRect(args.vg, 1, 1, box.size.x - 2, box.size.y - 2, borderRadius - 1);
+    NVGpaint centerGlow = nvgLinearGradient(args.vg,
+        0,
+        box.size.y * 0.2f,
+        0,
+        box.size.y * 0.8f,
+        nvgRGBA(220, 190, 110, 90),
+        nvgRGBA(90, 60, 28, 0));
+    nvgFillPaint(args.vg, centerGlow);
+    nvgFill(args.vg);
+
+    // Edge sheen so the strip feels inset
+    NVGpaint edgeSheen = nvgBoxGradient(args.vg,
+        -4.0f,
+        -2.0f,
+        box.size.x + 8.0f,
+        box.size.y + 4.0f,
+        10.0f,
+        14.0f,
+        nvgRGBA(255, 215, 130, 32),
+        nvgRGBA(0, 0, 0, 0));
+    nvgBeginPath(args.vg);
+    nvgRoundedRect(args.vg, -2, -2, box.size.x + 4, box.size.y + 4, borderRadius + 2);
+    nvgFillPaint(args.vg, edgeSheen);
+    nvgFill(args.vg);
+
+    // Brushed metal texture (horizontal strokes)
+    nvgSave(args.vg);
+    nvgScissor(args.vg, 0, 0, box.size.x, box.size.y);
+    nvgStrokeWidth(args.vg, 0.8f);
+    nvgStrokeColor(args.vg, nvgRGBA(255, 230, 180, 18));
+    const int horizontalStrokes = 22;
+    for (int i = 1; i < horizontalStrokes; i++) {
+        float y = (box.size.y / horizontalStrokes) * i;
         nvgBeginPath(args.vg);
         nvgMoveTo(args.vg, 0, y);
         nvgLineTo(args.vg, box.size.x, y);
         nvgStroke(args.vg);
     }
-    
-    // Vertical lines
-    for (int i = 1; i < 4; i++) {
-        float x = (box.size.x / 4.0f) * i;
+
+    // Subtle segmentation to reference LED ladders
+    nvgStrokeWidth(args.vg, 1.2f);
+    nvgStrokeColor(args.vg, nvgRGBA(255, 207, 130, 35));
+    const int segments = 5;
+    for (int i = 1; i < segments; i++) {
+        float x = (box.size.x / segments) * i;
         nvgBeginPath(args.vg);
-        nvgMoveTo(args.vg, x, 0);
-        nvgLineTo(args.vg, x, box.size.y);
+        nvgMoveTo(args.vg, x, 4.0f);
+        nvgLineTo(args.vg, x, box.size.y - 4.0f);
         nvgStroke(args.vg);
     }
+    nvgRestore(args.vg);
 }
 
 void TouchStripWidget::drawEnvelope(const DrawArgs& args) {
     if (!module || module->envelope.empty()) return;
-    
-    nvgStrokeColor(args.vg, nvgRGBA(0, 255, 170, 200));
-    nvgStrokeWidth(args.vg, 3.0f);
+
+    if (!module->isRecording && module->hasRecordedEnvelope()) {
+        drawEnvelopeVoltageTime(args);
+    } else {
+        drawEnvelopeStandard(args);
+    }
+}
+
+void TouchStripWidget::drawEnvelopeStandard(const DrawArgs& args) {
+    nvgStrokeColor(args.vg, nvgRGBA(255, 222, 150, 180));
+    nvgStrokeWidth(args.vg, 2.2f);
     nvgLineCap(args.vg, NVG_ROUND);
     nvgLineJoin(args.vg, NVG_ROUND);
-    
+
     // Draw glow effect
     nvgGlobalCompositeOperation(args.vg, NVG_LIGHTER);
-    nvgStrokeWidth(args.vg, 6.0f);
-    nvgStrokeColor(args.vg, nvgRGBA(0, 255, 170, 60));
-    
+    nvgStrokeWidth(args.vg, 4.0f);
+    nvgStrokeColor(args.vg, nvgRGBA(255, 210, 110, 60));
+
     nvgBeginPath(args.vg);
     bool first = true;
     for (const auto& point : module->envelope) {
-        float x = point.x * box.size.x;
-        float y = (1.0f - point.y) * box.size.y;
-        
+        float x = point.time * box.size.x;
+        float y = (1.f - point.y) * box.size.y;
+
         if (first) {
             nvgMoveTo(args.vg, x, y);
             first = false;
@@ -670,18 +963,18 @@ void TouchStripWidget::drawEnvelope(const DrawArgs& args) {
         }
     }
     nvgStroke(args.vg);
-    
+
     // Draw main line
     nvgGlobalCompositeOperation(args.vg, NVG_SOURCE_OVER);
-    nvgStrokeWidth(args.vg, 3.0f);
-    nvgStrokeColor(args.vg, nvgRGBA(0, 255, 170, 255));
-    
+    nvgStrokeWidth(args.vg, 1.8f);
+    nvgStrokeColor(args.vg, nvgRGBA(255, 238, 200, 220));
+
     nvgBeginPath(args.vg);
     first = true;
     for (const auto& point : module->envelope) {
-        float x = point.x * box.size.x;
-        float y = (1.0f - point.y) * box.size.y;
-        
+        float x = point.time * box.size.x;
+        float y = (1.f - point.y) * box.size.y;
+
         if (first) {
             nvgMoveTo(args.vg, x, y);
             first = false;
@@ -690,54 +983,175 @@ void TouchStripWidget::drawEnvelope(const DrawArgs& args) {
         }
     }
     nvgStroke(args.vg);
-    
+
     // Draw envelope points as dots
-    nvgFillColor(args.vg, nvgRGBA(0, 255, 170, 255));
+    nvgFillColor(args.vg, nvgRGBA(255, 244, 210, 200));
     for (const auto& point : module->envelope) {
-        float x = point.x * box.size.x;
-        float y = (1.0f - point.y) * box.size.y;
-        
+        float x = point.time * box.size.x;
+        float y = (1.f - point.y) * box.size.y;
+
         nvgBeginPath(args.vg);
-        nvgCircle(args.vg, x, y, 2.5f);
+        nvgCircle(args.vg, x, y, 1.8f);
         nvgFill(args.vg);
     }
+
+}
+
+void TouchStripWidget::drawEnvelopeVoltageTime(const DrawArgs& args) {
+    constexpr int samples = 256;
+    float width = box.size.x;
+    float height = box.size.y;
+    float duration = module->getRecordedDuration();
+
+    // Background grid for time vs voltage reference
+    nvgSave(args.vg);
+    nvgStrokeWidth(args.vg, 1.0f);
+    nvgStrokeColor(args.vg, nvgRGBA(180, 140, 90, 40));
+    const int timeDivisions = 6;
+    for (int i = 1; i < timeDivisions; ++i) {
+        float y = (height / timeDivisions) * i;
+        nvgBeginPath(args.vg);
+        nvgMoveTo(args.vg, 0.0f, y);
+        nvgLineTo(args.vg, width, y);
+        nvgStroke(args.vg);
+    }
+    const int voltageDivisions = 5;
+    for (int i = 1; i < voltageDivisions; ++i) {
+        float x = (width / voltageDivisions) * i;
+        nvgBeginPath(args.vg);
+        nvgMoveTo(args.vg, x, 0.0f);
+        nvgLineTo(args.vg, x, height);
+        nvgStroke(args.vg);
+    }
+    nvgRestore(args.vg);
+
+    nvgLineCap(args.vg, NVG_ROUND);
+    nvgLineJoin(args.vg, NVG_ROUND);
+
+    auto drawSampledPath = [&](float strokeWidth, NVGcolor color) {
+        nvgGlobalCompositeOperation(args.vg, strokeWidth > 3.5f ? NVG_LIGHTER : NVG_SOURCE_OVER);
+        nvgStrokeWidth(args.vg, strokeWidth);
+        nvgStrokeColor(args.vg, color);
+
+        nvgBeginPath(args.vg);
+        for (int i = 0; i < samples; ++i) {
+            float phase = (float)i / (float)(samples - 1);
+            float value = clamp(module->interpolateEnvelope(phase), 0.0f, 1.0f);
+            float x = value * width;
+            float y = phase * height;
+            if (i == 0) {
+                nvgMoveTo(args.vg, x, y);
+            } else {
+                nvgLineTo(args.vg, x, y);
+            }
+        }
+        nvgStroke(args.vg);
+    };
+
+    drawSampledPath(4.0f, nvgRGBA(255, 200, 110, 60));
+    drawSampledPath(2.0f, nvgRGBA(255, 238, 200, 220));
+
+    // Draw original samples for reference
+    nvgFillColor(args.vg, nvgRGBA(255, 244, 210, 170));
+    for (const auto& point : module->envelope) {
+        float x = clamp(point.y, 0.0f, 1.0f) * width;
+        float y = clamp(point.time, 0.0f, 1.0f) * height;
+        nvgBeginPath(args.vg);
+        nvgCircle(args.vg, x, y, 1.5f);
+        nvgFill(args.vg);
+    }
+
+    // Axis labels (simple markers)
+    nvgFontSize(args.vg, 11.0f);
+    nvgFontFaceId(args.vg, APP->window->uiFont->handle);
+    nvgFillColor(args.vg, nvgRGBA(230, 210, 170, 180));
+    nvgTextAlign(args.vg, NVG_ALIGN_LEFT | NVG_ALIGN_TOP);
+    char timeLabel[32];
+    snprintf(timeLabel, sizeof(timeLabel), "%.2fs", duration);
+    nvgText(args.vg, 4.0f, 4.0f, "0V", nullptr);
+    nvgText(args.vg, 4.0f, 18.0f, "0s", nullptr);
+    nvgTextAlign(args.vg, NVG_ALIGN_RIGHT | NVG_ALIGN_TOP);
+    nvgText(args.vg, width - 4.0f, 4.0f, "10V", nullptr);
+    nvgTextAlign(args.vg, NVG_ALIGN_LEFT | NVG_ALIGN_BOTTOM);
+    nvgText(args.vg, 4.0f, height - 4.0f, timeLabel, nullptr);
+
 }
 
 void TouchStripWidget::drawCurrentTouch(const DrawArgs& args) {
-    // Main touch indicator
+    // Very subtle amber glow anchored to the finger position
+    NVGpaint aura = nvgRadialGradient(
+        args.vg,
+        currentTouchPos.x,
+        currentTouchPos.y,
+        0.0f,
+        3.2f,
+        nvgRGBA(255, 196, 106, 40),
+        nvgRGBA(120, 78, 30, 0)
+    );
     nvgBeginPath(args.vg);
-    nvgCircle(args.vg, currentTouchPos.x, currentTouchPos.y, 8);
-    
-    NVGpaint touchGradient = nvgRadialGradient(args.vg, 
-        currentTouchPos.x, currentTouchPos.y, 0, 15,
-        nvgRGBA(0, 255, 170, 200), nvgRGBA(0, 255, 170, 0));
-    nvgFillPaint(args.vg, touchGradient);
+    nvgCircle(args.vg, currentTouchPos.x, currentTouchPos.y, 2.6f);
+    nvgFillPaint(args.vg, aura);
     nvgFill(args.vg);
-    
-    // Inner bright circle
+
+    // Core highlight
     nvgBeginPath(args.vg);
-    nvgCircle(args.vg, currentTouchPos.x, currentTouchPos.y, 4);
-    nvgFillColor(args.vg, nvgRGBA(255, 255, 255, 255));
+    nvgCircle(args.vg, currentTouchPos.x, currentTouchPos.y, 1.0f);
+    nvgFillColor(args.vg, nvgRGBA(255, 230, 180, 110));
     nvgFill(args.vg);
-    
-    // Pulse ring - using system time for animation
-    float pulseRadius = 12 + sin(system::getTime() * 8) * 4;
-    nvgBeginPath(args.vg);
-    nvgCircle(args.vg, currentTouchPos.x, currentTouchPos.y, pulseRadius);
-    nvgStrokeColor(args.vg, nvgRGBA(0, 255, 170, 100));
-    nvgStrokeWidth(args.vg, 2.0f);
-    nvgStroke(args.vg);
 }
 
-void TouchStripWidget::drawSparkles(const DrawArgs& args) {
-    for (size_t i = 0; i < sparkles.size(); i++) {
-        float age = (float)i / sparkles.size();
-        float alpha = (1.0f - age) * 255;
-        float size = (1.0f - age) * 3 + 1;
-        
+void TouchStripWidget::drawPulses(const DrawArgs& args) {
+    for (const auto& pulse : lightPulses) {
+        if (pulse.intensity <= 0.0f)
+            continue;
+
+        float normalized = clamp(pulse.intensity, 0.0f, 1.0f);
+
+        // Establish an elongated footprint so the light feels embedded under glass
+        float baseWidth = box.size.x * 0.12f;
+        float baseHeight = box.size.y * 0.08f;
+        float width = clamp(baseWidth + normalized * baseWidth * 0.5f, 10.0f, box.size.x * 0.28f);
+        float height = clamp(baseHeight + normalized * baseHeight * 0.45f, 6.0f, box.size.y * 0.20f);
+
+        float ledX = clamp(pulse.pos.x, width * 0.5f, box.size.x - width * 0.5f);
+        float ledY = clamp(pulse.pos.y, height * 0.5f, box.size.y - height * 0.5f);
+
+        NVGcolor inner = nvgRGBA(255, 210, 128, (int)(110 * normalized));
+        NVGcolor outer = nvgRGBA(110, 70, 30, 0);
+
+        NVGpaint ledPaint = nvgBoxGradient(
+            args.vg,
+            ledX - width * 0.5f,
+            ledY - height * 0.5f,
+            width,
+            height,
+            height * 0.45f,
+            height,
+            inner,
+            outer
+        );
+
         nvgBeginPath(args.vg);
-        nvgCircle(args.vg, sparkles[i].x, sparkles[i].y, size);
-        nvgFillColor(args.vg, nvgRGBA(100, 200, 255, alpha));
+        nvgRoundedRect(args.vg, ledX - width * 0.5f, ledY - height * 0.5f, width, height, height * 0.45f);
+        nvgFillPaint(args.vg, ledPaint);
+        nvgFill(args.vg);
+
+        // Brighter core highlight to sell the LED diffusion
+        float highlightWidth = width * 0.5f;
+        float highlightHeight = height * 0.32f;
+        NVGpaint highlight = nvgLinearGradient(
+            args.vg,
+            ledX,
+            ledY - highlightHeight * 0.5f,
+            ledX,
+            ledY + highlightHeight * 0.5f,
+            nvgRGBA(255, 230, 188, (int)(110 * normalized)),
+            nvgRGBA(255, 190, 100, (int)(45 * normalized))
+        );
+
+        nvgBeginPath(args.vg);
+        nvgRoundedRect(args.vg, ledX - highlightWidth * 0.5f, ledY - highlightHeight * 0.5f, highlightWidth, highlightHeight, highlightHeight * 0.4f);
+        nvgFillPaint(args.vg, highlight);
         nvgFill(args.vg);
     }
 }
@@ -748,22 +1162,22 @@ void TouchStripWidget::drawBorder(const DrawArgs& args) {
     
     if (module && module->isRecording) {
         // Recording glow
-        nvgStrokeColor(args.vg, nvgRGBA(0, 255, 170, 255));
+        nvgStrokeColor(args.vg, nvgRGBA(255, 214, 138, 255));
         nvgStrokeWidth(args.vg, 3.0f);
         
         // Animated glow - using system time
         float glow = 0.5f + 0.5f * sin(system::getTime() * 6);
         nvgGlobalCompositeOperation(args.vg, NVG_LIGHTER);
-        nvgStrokeColor(args.vg, nvgRGBA(0, 255, 170, glow * 100));
+        nvgStrokeColor(args.vg, nvgRGBA(255, 196, 110, glow * 120));
         nvgStrokeWidth(args.vg, 8.0f);
         nvgStroke(args.vg);
         
         nvgGlobalCompositeOperation(args.vg, NVG_SOURCE_OVER);
-        nvgStrokeColor(args.vg, nvgRGBA(0, 255, 170, 255));
+        nvgStrokeColor(args.vg, nvgRGBA(255, 224, 170, 255));
         nvgStrokeWidth(args.vg, 2.0f);
     } else {
         // Normal border
-        nvgStrokeColor(args.vg, nvgRGBA(100, 150, 200, 100));
+        nvgStrokeColor(args.vg, nvgRGBA(78, 52, 26, 160));
         nvgStrokeWidth(args.vg, 2.0f);
     }
     nvgStroke(args.vg);
@@ -783,79 +1197,238 @@ void TouchStripWidget::drawInstructions(const DrawArgs& args) {
     nvgText(args.vg, box.size.x * 0.5f, box.size.y * 0.8f, "then draw envelope", NULL);
 }
 
+struct OutputProgressIndicator : Widget {
+    Evocation* module = nullptr;
+    int outputIndex = 0;
+
+    OutputProgressIndicator(Evocation* module, int outputIndex) {
+        this->module = module;
+        this->outputIndex = outputIndex;
+    }
+
+    void draw(const DrawArgs& args) override {
+        if (!module)
+            return;
+
+        bool hasEnvelope = module->hasRecordedEnvelope();
+        bool active = hasEnvelope && module->isPlaybackActive(outputIndex);
+        float phase = hasEnvelope ? clamp(module->getPlaybackPhase(outputIndex), 0.0f, 1.0f) : 0.0f;
+
+        NVGcontext* vg = args.vg;
+        Vec center = box.size.div(2.0f);
+        float maxDiameter = std::min(box.size.x, box.size.y);
+        float radius = maxDiameter * 0.5f - 4.0f; // keep everything inside the bezel "screen"
+        if (radius <= 0.f)
+            return;
+
+        // Base bezel / screen border
+        NVGcolor bezelColor = hasEnvelope ? nvgRGBA(120, 110, 100, 160) : nvgRGBA(70, 60, 50, 140);
+        nvgBeginPath(vg);
+        nvgCircle(vg, center.x, center.y, radius + 3.0f);
+        nvgStrokeWidth(vg, 1.2f);
+        nvgStrokeColor(vg, bezelColor);
+        nvgStroke(vg);
+
+        // Dark faceplate area where the light lives
+        nvgBeginPath(vg);
+        nvgCircle(vg, center.x, center.y, radius + 2.0f);
+        nvgFillColor(vg, nvgRGBA(8, 8, 12, 235));
+        nvgFill(vg);
+
+        // Inner screen glow (subtle) so the port feels inset
+        NVGpaint screenGlow = nvgRadialGradient(
+            vg,
+            center.x,
+            center.y,
+            radius * 0.1f,
+            radius + 2.0f,
+            nvgRGBA(40, 30, 45, 120),
+            nvgRGBA(5, 5, 10, 0)
+        );
+        nvgBeginPath(vg);
+        nvgCircle(vg, center.x, center.y, radius + 2.0f);
+        nvgFillPaint(vg, screenGlow);
+        nvgFill(vg);
+
+        if (!hasEnvelope)
+            return;
+        if (!active)
+            return;
+
+        float angleStart = -M_PI / 2.0f;
+        float angleEnd = angleStart + phase * 2.0f * (float)M_PI;
+
+        float arcRadius = radius;
+
+        // Progress arc
+        nvgBeginPath(vg);
+        nvgArc(vg, center.x, center.y, arcRadius, angleStart, angleEnd, NVG_CW);
+        nvgStrokeWidth(vg, 3.0f);
+        nvgLineCap(vg, NVG_ROUND);
+        nvgStrokeColor(vg, nvgRGBA(255, 214, 130, 200));
+        nvgStroke(vg);
+
+        // Leading indicator
+        Vec tip = center.plus(Vec(cosf(angleEnd), sinf(angleEnd)).mult(arcRadius));
+        nvgBeginPath(vg);
+        nvgCircle(vg, tip.x, tip.y, 4.0f);
+        nvgFillColor(vg, nvgRGBA(255, 244, 200, 220));
+        nvgFill(vg);
+    }
+};
+
 // Main Widget
 struct EvocationWidget : ModuleWidget {
     TouchStripWidget* touchStrip;
-    
+
+    void draw(const DrawArgs& args) override {
+        // Reapply shared panel background without caching across shutdown
+        std::shared_ptr<Image> bg = APP->window->loadImage(asset::plugin(pluginInstance, "res/panels/vcv-panel-background.png"));
+        if (bg) {
+            NVGpaint paint = nvgImagePattern(args.vg, 0.f, 0.f, box.size.x, box.size.y, 0.f, bg->handle, 1.f);
+            nvgBeginPath(args.vg);
+            nvgRect(args.vg, 0.f, 0.f, box.size.x, box.size.y);
+            nvgFillPaint(args.vg, paint);
+            nvgFill(args.vg);
+        }
+        ModuleWidget::draw(args);
+    }
+
     EvocationWidget(Evocation* module) {
         setModule(module);
         setPanel(createPanel(asset::plugin(pluginInstance, "res/panels/Evocation.svg")));
 
-        addChild(createWidget<ScrewSilver>(Vec(RACK_GRID_WIDTH, 0)));
-        addChild(createWidget<ScrewSilver>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, 0)));
-        addChild(createWidget<ScrewSilver>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
-        addChild(createWidget<ScrewSilver>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
+        using shapetaker::ui::LayoutHelper;
+        auto mm = [](float x, float y) { return LayoutHelper::mm2px(Vec(x, y)); };
 
-        // Touch strip widget - updated for new panel size
+        // Parse SVG panel for precise positioning
+        LayoutHelper::PanelSVGParser parser(asset::plugin(pluginInstance, "res/panels/Evocation.svg"));
+        auto centerPx = [&](const std::string& id, float defx, float defy) -> Vec {
+            return parser.centerPx(id, defx, defy);
+        };
+
+        constexpr float panelWidthMm = 81.28f;
+        constexpr float panelHeightMm = 128.5f;
+
+        addChild(createWidget<ScrewSilver>(mm(6.5f, 6.5f)));
+        addChild(createWidget<ScrewSilver>(mm(panelWidthMm - 6.5f, 6.5f)));
+        addChild(createWidget<ScrewSilver>(mm(6.5f, panelHeightMm - 6.5f)));
+        addChild(createWidget<ScrewSilver>(mm(panelWidthMm - 6.5f, panelHeightMm - 6.5f)));
+
+        // Touch strip (positioned by SVG rectangle)
         touchStrip = new TouchStripWidget(module);
-        touchStrip->box.pos = Vec(mm2px(8), mm2px(15)); // Position matches new panel
+        Rect touchStripRect = parser.rectMm("touch-strip", 9.0f, 22.0f, 28.0f, 86.0f);
+        touchStrip->box.pos = mm(touchStripRect.pos.x, touchStripRect.pos.y);
+        touchStrip->box.size = mm(touchStripRect.size.x, touchStripRect.size.y);
         addChild(touchStrip);
 
-        // Main control buttons - spread out horizontally
-        addParam(createParamCentered<VCVButton>(mm2px(Vec(42, 22)), module, Evocation::RECORD_PARAM));
-        addParam(createParamCentered<VCVButton>(mm2px(Vec(50, 22)), module, Evocation::TRIGGER_PARAM));
-        addParam(createParamCentered<VCVButton>(mm2px(Vec(58, 22)), module, Evocation::CLEAR_PARAM));
+        // Store reference in module for clearing pulse trail
+        if (module) {
+            module->touchStripWidget = touchStrip;
+        }
 
-        // Main inputs - right side
-        addInput(createInputCentered<PJ301MPort>(mm2px(Vec(50, 47)), module, Evocation::TRIGGER_INPUT));
-        addInput(createInputCentered<PJ301MPort>(mm2px(Vec(70, 47)), module, Evocation::CLEAR_INPUT));
+        // Record / trigger / clear (using SVG positioning)
+        addParam(createParamCentered<ShapetakerVintageMomentary>(centerPx("record-btn", 58.0f, 24.0f), module, Evocation::RECORD_PARAM));
+        addChild(createLightCentered<MediumLight<RedLight>>(centerPx("record-btn", 58.0f, 24.0f) + Vec(-15, 0), module, Evocation::RECORDING_LIGHT));
 
-        // Envelope Output 1 (top left) - much more space
-        addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(40, 72)), module, Evocation::SPEED_1_PARAM));
-        addInput(createInputCentered<PJ301MPort>(mm2px(Vec(40, 80)), module, Evocation::SPEED_1_INPUT));
-        addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(40, 88)), module, Evocation::ENV_1_OUTPUT));
-        addParam(createParamCentered<CKSS>(mm2px(Vec(35, 72)), module, Evocation::LOOP_1_PARAM));
-        addParam(createParamCentered<VCVBezel>(mm2px(Vec(47, 72)), module, Evocation::INVERT_1_PARAM));
-        
-        // Envelope Output 2 (top right)
-        addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(80, 72)), module, Evocation::SPEED_2_PARAM));
-        addInput(createInputCentered<PJ301MPort>(mm2px(Vec(80, 80)), module, Evocation::SPEED_2_INPUT));
-        addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(80, 88)), module, Evocation::ENV_2_OUTPUT));
-        addParam(createParamCentered<CKSS>(mm2px(Vec(75, 72)), module, Evocation::LOOP_2_PARAM));
-        addParam(createParamCentered<VCVBezel>(mm2px(Vec(87, 72)), module, Evocation::INVERT_2_PARAM));
-        
-        // Envelope Output 3 (bottom left) 
-        addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(40, 105)), module, Evocation::SPEED_3_PARAM));
-        addInput(createInputCentered<PJ301MPort>(mm2px(Vec(40, 113)), module, Evocation::SPEED_3_INPUT));
-        addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(40, 121)), module, Evocation::ENV_3_OUTPUT));
-        addParam(createParamCentered<CKSS>(mm2px(Vec(35, 105)), module, Evocation::LOOP_3_PARAM));
-        addParam(createParamCentered<VCVBezel>(mm2px(Vec(47, 105)), module, Evocation::INVERT_3_PARAM));
-        
-        // Envelope Output 4 (bottom right)
-        addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(80, 105)), module, Evocation::SPEED_4_PARAM));
-        addInput(createInputCentered<PJ301MPort>(mm2px(Vec(80, 113)), module, Evocation::SPEED_4_INPUT));
-        addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(80, 121)), module, Evocation::ENV_4_OUTPUT));
-        addParam(createParamCentered<CKSS>(mm2px(Vec(75, 105)), module, Evocation::LOOP_4_PARAM));
-        addParam(createParamCentered<VCVBezel>(mm2px(Vec(87, 105)), module, Evocation::INVERT_4_PARAM));
+        addParam(createParamCentered<ShapetakerVintageMomentary>(centerPx("trigger-btn", 66.0f, 24.0f), module, Evocation::TRIGGER_PARAM));
+        addChild(createLightCentered<MediumLight<GreenLight>>(centerPx("trigger-btn", 66.0f, 24.0f) + Vec(15, 0), module, Evocation::TRIGGER_LIGHT));
 
-        // Gate output - centered
-        addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(60, 110)), module, Evocation::GATE_OUTPUT));
+        addParam(createParamCentered<ShapetakerVintageMomentary>(centerPx("clear-btn", 74.0f, 24.0f), module, Evocation::CLEAR_PARAM));
 
-        // Status lights - updated positions for new layout
-        addChild(createLightCentered<MediumLight<RedLight>>(mm2px(Vec(37, 19)), module, Evocation::RECORDING_LIGHT));
-        addChild(createLightCentered<MediumLight<GreenLight>>(mm2px(Vec(63, 19)), module, Evocation::TRIGGER_LIGHT));
-        
-        // Individual loop lights - positioned with toggle switches
-        addChild(createLightCentered<MediumLight<BlueLight>>(mm2px(Vec(35, 72)), module, Evocation::LOOP_1_LIGHT));
-        addChild(createLightCentered<MediumLight<BlueLight>>(mm2px(Vec(75, 72)), module, Evocation::LOOP_2_LIGHT));
-        addChild(createLightCentered<MediumLight<BlueLight>>(mm2px(Vec(35, 105)), module, Evocation::LOOP_3_LIGHT));
-        addChild(createLightCentered<MediumLight<BlueLight>>(mm2px(Vec(75, 105)), module, Evocation::LOOP_4_LIGHT));
-        
-        // Invert lights - positioned with invert buttons  
-        addChild(createLightCentered<MediumLight<YellowLight>>(mm2px(Vec(47, 72)), module, Evocation::INVERT_1_LIGHT));
-        addChild(createLightCentered<MediumLight<YellowLight>>(mm2px(Vec(87, 72)), module, Evocation::INVERT_2_LIGHT));
-        addChild(createLightCentered<MediumLight<YellowLight>>(mm2px(Vec(47, 105)), module, Evocation::INVERT_3_LIGHT));
-        addChild(createLightCentered<MediumLight<YellowLight>>(mm2px(Vec(87, 105)), module, Evocation::INVERT_4_LIGHT));
+        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("trigger-cv", 58.0f, 34.0f), module, Evocation::TRIGGER_INPUT));
+        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("clear-cv", 74.0f, 34.0f), module, Evocation::CLEAR_INPUT));
+
+        // Envelope rows (using SVG positioning)
+        // Envelope 1 (FAST)
+        addParam(createParamCentered<ShapetakerVintageToggleSwitch>(centerPx("env1-loop", 32.0f, 50.0f), module, Evocation::LOOP_1_PARAM));
+        addChild(createLightCentered<MediumLight<BlueLight>>(centerPx("env1-loop", 32.0f, 50.0f), module, Evocation::LOOP_1_LIGHT));
+        addParam(createParamCentered<ShapetakerKnobOscilloscopeSmall>(centerPx("env1-speed", 52.0f, 50.0f), module, Evocation::SPEED_1_PARAM));
+        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("env1-speed-cv", 52.0f, 58.0f), module, Evocation::SPEED_1_INPUT));
+        addParam(createParamCentered<ShapetakerVintageToggleSwitch>(centerPx("env1-invert", 62.0f, 50.0f), module, Evocation::INVERT_1_PARAM));
+        addChild(createLightCentered<MediumLight<YellowLight>>(centerPx("env1-invert", 62.0f, 50.0f), module, Evocation::INVERT_1_LIGHT));
+        Vec env1OutCenter = centerPx("env1-out", 72.0f, 50.0f);
+        auto* env1Port = createOutputCentered<ShapetakerBNCPort>(env1OutCenter, module, Evocation::ENV_1_OUTPUT);
+        if (module) {
+            auto* indicator = new OutputProgressIndicator(module, 0);
+            Vec pad = Vec(4.0f, 4.0f);
+            indicator->box.size = Vec(env1Port->box.size.x + pad.x * 2.0f, env1Port->box.size.y + pad.y * 2.0f);
+            indicator->box.pos = Vec(env1Port->box.pos.x - pad.x, env1Port->box.pos.y - pad.y);
+            addChild(indicator);
+        }
+        addOutput(env1Port);
+
+        // Envelope 2 (MEDIUM)
+        addParam(createParamCentered<ShapetakerVintageToggleSwitch>(centerPx("env2-loop", 32.0f, 72.0f), module, Evocation::LOOP_2_PARAM));
+        addChild(createLightCentered<MediumLight<BlueLight>>(centerPx("env2-loop", 32.0f, 72.0f), module, Evocation::LOOP_2_LIGHT));
+        addParam(createParamCentered<ShapetakerKnobOscilloscopeSmall>(centerPx("env2-speed", 52.0f, 72.0f), module, Evocation::SPEED_2_PARAM));
+        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("env2-speed-cv", 52.0f, 80.0f), module, Evocation::SPEED_2_INPUT));
+        addParam(createParamCentered<ShapetakerVintageToggleSwitch>(centerPx("env2-invert", 62.0f, 72.0f), module, Evocation::INVERT_2_PARAM));
+        addChild(createLightCentered<MediumLight<YellowLight>>(centerPx("env2-invert", 62.0f, 72.0f), module, Evocation::INVERT_2_LIGHT));
+        Vec env2OutCenter = centerPx("env2-out", 72.0f, 72.0f);
+        auto* env2Port = createOutputCentered<ShapetakerBNCPort>(env2OutCenter, module, Evocation::ENV_2_OUTPUT);
+        if (module) {
+            auto* indicator = new OutputProgressIndicator(module, 1);
+            Vec pad = Vec(4.0f, 4.0f);
+            indicator->box.size = Vec(env2Port->box.size.x + pad.x * 2.0f, env2Port->box.size.y + pad.y * 2.0f);
+            indicator->box.pos = Vec(env2Port->box.pos.x - pad.x, env2Port->box.pos.y - pad.y);
+            addChild(indicator);
+        }
+        addOutput(env2Port);
+
+        // Envelope 3 (SLOW)
+        addParam(createParamCentered<ShapetakerVintageToggleSwitch>(centerPx("env3-loop", 32.0f, 94.0f), module, Evocation::LOOP_3_PARAM));
+        addChild(createLightCentered<MediumLight<BlueLight>>(centerPx("env3-loop", 32.0f, 94.0f), module, Evocation::LOOP_3_LIGHT));
+        addParam(createParamCentered<ShapetakerKnobOscilloscopeSmall>(centerPx("env3-speed", 52.0f, 94.0f), module, Evocation::SPEED_3_PARAM));
+        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("env3-speed-cv", 52.0f, 102.0f), module, Evocation::SPEED_3_INPUT));
+        addParam(createParamCentered<ShapetakerVintageToggleSwitch>(centerPx("env3-invert", 62.0f, 94.0f), module, Evocation::INVERT_3_PARAM));
+        addChild(createLightCentered<MediumLight<YellowLight>>(centerPx("env3-invert", 62.0f, 94.0f), module, Evocation::INVERT_3_LIGHT));
+        Vec env3OutCenter = centerPx("env3-out", 72.0f, 94.0f);
+        auto* env3Port = createOutputCentered<ShapetakerBNCPort>(env3OutCenter, module, Evocation::ENV_3_OUTPUT);
+        if (module) {
+            auto* indicator = new OutputProgressIndicator(module, 2);
+            Vec pad = Vec(4.0f, 4.0f);
+            indicator->box.size = Vec(env3Port->box.size.x + pad.x * 2.0f, env3Port->box.size.y + pad.y * 2.0f);
+            indicator->box.pos = Vec(env3Port->box.pos.x - pad.x, env3Port->box.pos.y - pad.y);
+            addChild(indicator);
+        }
+        addOutput(env3Port);
+
+        // Envelope 4 (PAD)
+        addParam(createParamCentered<ShapetakerVintageToggleSwitch>(centerPx("env4-loop", 32.0f, 116.0f), module, Evocation::LOOP_4_PARAM));
+        addChild(createLightCentered<MediumLight<BlueLight>>(centerPx("env4-loop", 32.0f, 116.0f), module, Evocation::LOOP_4_LIGHT));
+        addParam(createParamCentered<ShapetakerKnobOscilloscopeSmall>(centerPx("env4-speed", 52.0f, 116.0f), module, Evocation::SPEED_4_PARAM));
+        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("env4-speed-cv", 52.0f, 124.0f), module, Evocation::SPEED_4_INPUT));
+        addParam(createParamCentered<ShapetakerVintageToggleSwitch>(centerPx("env4-invert", 62.0f, 116.0f), module, Evocation::INVERT_4_PARAM));
+        addChild(createLightCentered<MediumLight<YellowLight>>(centerPx("env4-invert", 62.0f, 116.0f), module, Evocation::INVERT_4_LIGHT));
+        Vec env4OutCenter = centerPx("env4-out", 72.0f, 116.0f);
+        auto* env4Port = createOutputCentered<ShapetakerBNCPort>(env4OutCenter, module, Evocation::ENV_4_OUTPUT);
+        if (module) {
+            auto* indicator = new OutputProgressIndicator(module, 3);
+            Vec pad = Vec(4.0f, 4.0f);
+            indicator->box.size = Vec(env4Port->box.size.x + pad.x * 2.0f, env4Port->box.size.y + pad.y * 2.0f);
+            indicator->box.pos = Vec(env4Port->box.pos.x - pad.x, env4Port->box.pos.y - pad.y);
+            addChild(indicator);
+        }
+        addOutput(env4Port);
+
+        // Gate output
+        addOutput(createOutputCentered<ShapetakerBNCPort>(centerPx("gate-out", 65.0f, 118.0f), module, Evocation::GATE_OUTPUT));
+    }
+
+    void appendContextMenu(Menu* menu) override {
+        ModuleWidget::appendContextMenu(menu);
+        auto* evocation = dynamic_cast<Evocation*>(module);
+        if (!evocation)
+            return;
+
+        menu->addChild(new MenuSeparator);
+        menu->addChild(createCheckMenuItem("Debug Touch Logging", "", [=] {
+            return evocation->debugTouchLogging;
+        }, [=] {
+            evocation->debugTouchLogging = !evocation->debugTouchLogging;
+            INFO("Evocation debug logging %s", evocation->debugTouchLogging ? "enabled" : "disabled");
+        }));
     }
 };
 

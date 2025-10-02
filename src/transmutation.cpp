@@ -2322,7 +2322,6 @@ struct TransmutationWidget : ModuleWidget {
                 explicit PulseWidthSlider(Transmutation* m) {
                     quantity = new PulseWidthQuantity(m);
                 }
-                ~PulseWidthSlider() override { delete quantity; }
             };
             auto* pw = new PulseWidthSlider(module);
             pw->box.size.x = 200.f;
@@ -2378,7 +2377,6 @@ struct TransmutationWidget : ModuleWidget {
                 ProbSlider(float* ref, const char* label, float def) {
                     quantity = new ProbQuantity(ref, label, def);
                 }
-                ~ProbSlider() override { delete quantity; }
             };
             auto addProbSlider = [&](Menu* m, const char* label, float& ref, float def) {
                 m->addChild(createMenuLabel(label));

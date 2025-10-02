@@ -4,11 +4,6 @@
 #include <atomic>
 #include <functional>
 
-// (Removed: decorative HexagonWidget overlays)
-
-// Shadow behavior now lives in the base Shapetaker knob classes (plugin.hpp)
-
-
 struct ClairaudientModule : Module, IOscilloscopeSource {
     
     // Quantize voltage to discrete octave steps for oscillator V
@@ -22,7 +17,7 @@ struct ClairaudientModule : Module, IOscilloscopeSource {
     float quantizeToSemitone(float semitones) {
         // Clamp to -24 to +24 semitones range (4 octaves)
         float clamped = clamp(semitones, -24.0f, 24.0f);
-        // Round to nearest semitone and convert to voltage (octaves)
+        // Round to the nearest semitone step
         return std::round(clamped);
     }
     enum ParamId {
@@ -87,7 +82,6 @@ struct ClairaudientModule : Module, IOscilloscopeSource {
     // Defaults to 0.0 (off). Controls both subtle phase jitter and added noise floor.
     float oscNoiseAmount = 0.0f;
     
-    // Simple one-pole low-pass filter for anti-aliasing
     // --- Oscilloscope Buffering ---
     static const int OSCILLOSCOPE_BUFFER_SIZE = 1024;
     Vec oscilloscopeBuffer[OSCILLOSCOPE_BUFFER_SIZE] = {};
@@ -236,7 +230,7 @@ struct ClairaudientModule : Module, IOscilloscopeSource {
             {inputs[VOCT1_INPUT], inputs[VOCT2_INPUT]},
             {outputs[LEFT_OUTPUT], outputs[RIGHT_OUTPUT]});
         
-        // 2x oversampling for smoother sound
+        // Apply the configured oversampling factor (default 2×) for smoother sound
         int oversample = std::max(1, oversampleFactor);
         float oversampleRate = args.sampleRate * oversample;
 
@@ -276,7 +270,7 @@ struct ClairaudientModule : Module, IOscilloscopeSource {
                 fineTune2 = clamp(fineTune2 + inputs[FINE2_CV_INPUT].getPolyVoltage(ch) * cvAmount / 50.f, -0.2f, 0.2f);
             }
 
-            // Convert cents to octaves
+            // Convert semitone offsets to octaves
             fineTune1 /= 12.f;
             fineTune2 /= 12.f;
 
@@ -448,7 +442,7 @@ private:
         drift2A[voice] += (rack::random::uniform() - 0.5f) * driftSpeed * sampleTime;
         drift2B[voice] += (rack::random::uniform() - 0.5f) * driftSpeed * sampleTime;
 
-        // Limit drift to very small amounts (±0.1 cents)
+        // Limit drift to very small amounts (about ±1.2 cents at full amount)
         const float driftLimit = 0.001f * amount;
         drift1A[voice] = clamp(drift1A[voice], -driftLimit, driftLimit);
         drift1B[voice] = clamp(drift1B[voice], -driftLimit, driftLimit);
@@ -622,7 +616,6 @@ struct ClairaudientWidget : ModuleWidget {
         };
         struct NoiseSlider : ui::Slider {
             explicit NoiseSlider(ClairaudientModule* m) { quantity = new NoiseQuantity(m); }
-            ~NoiseSlider() override { delete quantity; }
         };
         auto* ns = new NoiseSlider(module);
         ns->box.size.x = 200.f;
@@ -645,7 +638,6 @@ struct ClairaudientWidget : ModuleWidget {
         };
         struct DriftSlider : ui::Slider {
             explicit DriftSlider(ClairaudientModule* m) { quantity = new DriftQuantity(m); }
-            ~DriftSlider() override { delete quantity; }
         };
         auto* ds = new DriftSlider(module);
         ds->box.size.x = 200.f;

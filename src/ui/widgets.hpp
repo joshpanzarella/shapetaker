@@ -264,21 +264,27 @@ public:
             svgDraw(args.vg, svg->handle);
             nvgRestore(args.vg);
         }
-        
+
         // Draw animated needle based on VU level
         if (lightId >= 0 && lightId < (int)module->lights.size()) {
-            float level = module->lights[lightId].getBrightness();
-            drawVUNeedle(args, level);
+            float value = clamp(module->lights[lightId].getBrightness(), 0.f, 1.f);
+            drawVUNeedle(args, value);
         }
     }
-    
+
 private:
-    void drawVUNeedle(const DrawArgs& args, float level) {
-        // Map level (0.0-1.0) to needle angle
-        // Start closer to -20 position and sweep to +3 position (slightly right of center)
-        // This mimics typical VU meter range from -20dB to +3dB
-        float angle = rescale(level, 0.0f, 1.0f, -55.0f, 15.0f); // Fine-tuned 5 degrees left to perfectly align with -20 symbol
-        
+    void drawVUNeedle(const DrawArgs& args, float normalized) {
+        normalized = clamp(normalized, 0.f, 1.f);
+
+        float angle;
+        if (normalized <= 0.5f) {
+            float t = rescale(normalized, 0.f, 0.5f, 0.f, 1.f);
+            angle = 160.f - t * (160.f - 90.f);
+        } else {
+            float t = rescale(normalized, 0.5f, 1.f, 0.f, 1.f);
+            angle = 90.f - t * (90.f - 35.f);
+        }
+
         Vec center = box.size.mult(0.5f);
         // Pivot point at the semi-circle at bottom of meter screen (not the calibration circle)
         Vec pivotPoint = Vec(center.x, box.size.y * 0.65f); // 65% down - at bottom of meter screen
@@ -289,13 +295,34 @@ private:
         nvgRotate(args.vg, angle * M_PI / 180.0f);
         
         // Draw thin black needle from pivot point up to meter scale
+        NVGcolor bodyColor = nvgRGBA(235, 120, 45, 240);
+        NVGcolor highlightColor = nvgRGBA(255, 200, 160, 220);
+
         nvgBeginPath(args.vg);
         nvgMoveTo(args.vg, 0, 0); // Start at pivot (bottom of meter screen)
         nvgLineTo(args.vg, 0, -needleLength); // Go up to meter scale
-        nvgStrokeWidth(args.vg, 1.0f); // Thinner needle
-        nvgStrokeColor(args.vg, nvgRGBA(0, 0, 0, 255)); // Black needle
+        nvgStrokeWidth(args.vg, 2.0f);
+        nvgStrokeColor(args.vg, bodyColor);
         nvgStroke(args.vg);
-        
+
+        // Add a slim highlight down the centre for visibility
+        nvgBeginPath(args.vg);
+        nvgMoveTo(args.vg, 1.0f, -needleLength * 0.2f);
+        nvgLineTo(args.vg, 1.0f, -needleLength);
+        nvgStrokeWidth(args.vg, 0.9f);
+        nvgStrokeColor(args.vg, highlightColor);
+        nvgStroke(args.vg);
+
+        // Draw a pivot cap so the needle doesn't disappear against the dial
+        nvgBeginPath(args.vg);
+        nvgCircle(args.vg, 0.f, 0.f, needleLength * 0.08f);
+        nvgFillColor(args.vg, nvgRGBA(30, 30, 30, 255));
+        nvgFill(args.vg);
+        nvgBeginPath(args.vg);
+        nvgCircle(args.vg, 0.f, 0.f, needleLength * 0.05f);
+        nvgFillColor(args.vg, highlightColor);
+        nvgFill(args.vg);
+
         nvgRestore(args.vg);
     }
 };
@@ -405,6 +432,15 @@ private:
         nvgStroke(args.vg);
         
         nvgGlobalCompositeOperation(args.vg, NVG_SOURCE_OVER);
+    }
+};
+
+struct Trimpot : app::SvgKnob {
+    Trimpot() {
+        minAngle = -0.5 * M_PI;
+        maxAngle = 0.5 * M_PI;
+        setSvg(APP->window->loadSvg(asset::system("res/ComponentLibrary/Trimpot.svg")));
+        box.size = mm2px(Vec(6, 6));
     }
 };
 

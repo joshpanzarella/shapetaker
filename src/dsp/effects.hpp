@@ -1,5 +1,6 @@
 #pragma once
 #include <rack.hpp>
+#include <algorithm>
 #include <cmath>
 
 using namespace rack;
@@ -206,8 +207,20 @@ private:
      * Aggressive hard clipping with extended drive range
      */
     float hardClip(float input, float drive) {
-        float x = input * (1.0f + drive * 8.0f); // Drive up to 9x gain
-        return rack::math::clamp(x, -1.0f, 1.0f);
+        // Tighten the clip threshold as drive increases for a more immediate crunch
+        float preGain = 1.0f + drive * 18.0f;
+        float threshold = rack::math::crossfade(1.0f, 0.18f, drive);
+        float x = input * preGain;
+        float clipped = rack::math::clamp(x, -threshold, threshold);
+
+        // Slight softening near the edges keeps the spectrum manageable
+        float excess = fabsf(x) - threshold;
+        if (excess > 0.f) {
+            float soften = threshold * 0.25f * (1.0f - expf(-excess * 6.0f));
+            clipped = rack::math::clamp(clipped + copysignf(soften, x), -threshold, threshold);
+        }
+
+        return rack::math::clamp(clipped / threshold, -1.0f, 1.0f);
     }
     
     /**
@@ -232,18 +245,23 @@ private:
      * Bit depth reduction with sample rate crushing
      */
     float bitCrush(float input, float drive) {
-        float bits = 16.0f - (drive * 14.0f);  // 16 bits down to 2 bits
-        bits = rack::math::clamp(bits, 2.0f, 16.0f);
-        
-        // Quantize to reduced bit depth
-        float levels = powf(2.0f, bits);
-        float quantized = roundf(input * levels) / levels;
+        // 16 down to 4 effective bits for a classic stepped contour
+        float bits = rack::math::crossfade(16.0f, 4.0f, drive);
+        bits = rack::math::clamp(bits, 4.0f, 16.0f);
 
-        // Sample-rate reduction via simple sample-and-hold
-        // Higher drive -> stronger reduction (longer hold)
-        int desiredHold = 1 + (int) std::round(drive * 127.0f); // 1..128
-        // Smoothly adapt the hold length to avoid zipper noise on parameter changes
-        if (desiredHold != crushHold) crushHold = desiredHold;
+        // Quantize to the reduced bit depth
+        float scale = std::exp2f(bits - 1.0f);
+        float quantized = roundf(input * scale) / scale;
+        quantized = rack::math::clamp(quantized, -1.0f, 1.0f);
+
+        // Gentle sample-rate crushing that stays subtle at low drive
+        float holdNorm = drive * drive; // slow ramp-in for S/R reduction
+        int desiredHold = 1 + (int)std::round(holdNorm * 63.0f); // 1..64
+        desiredHold = std::max(desiredHold, 1);
+        if (desiredHold != crushHold) {
+            crushHold = desiredHold;
+            crushCounter = std::min(crushCounter, crushHold);
+        }
 
         if (crushCounter <= 0) {
             crushCounter = crushHold;
@@ -299,14 +317,22 @@ private:
      * Asymmetric tube-style saturation
      */
     float tubeSat(float input, float drive) {
-        float x = input * (1.0f + drive * 2.0f);
-        
-        // Asymmetric saturation (different for positive/negative)
-        if (x >= 0.0f) {
-            return 1.0f - expf(-x);
-        } else {
-            return -(1.0f - expf(x));
-        }
+        float preGain = 1.0f + drive * 9.0f;
+        float bias = drive * 0.95f;
+        float x = input * preGain;
+
+        // Two biased triode curves blended for strong even harmonics without losing warmth
+        float posCurve = tanhf(x + bias);
+        float negCurve = tanhf(x - bias);
+        float core = 0.5f * (posCurve + negCurve);
+
+        // Additional dynamic compression for late-stage push
+        float hotStage = tanhf(x * (2.0f + drive * 5.0f));
+        float blended = rack::math::crossfade(core, hotStage, drive * 0.55f);
+
+        // Subtle cubic bloom that ramps in smoothly near max drive
+        float bloom = drive * drive * drive * tanhf(x * 0.85f);
+        return rack::math::clamp(blended + 0.42f * bloom, -1.0f, 1.0f);
     }
 };
 

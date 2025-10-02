@@ -99,44 +99,44 @@ struct Fatebinder : Module {
 
     Fatebinder() {
         config(PARAMS_LEN, INPUTS_LEN, OUTPUTS_LEN, LIGHTS_LEN);
-        
-        // Configure parameters
-        configParam(MASTER_FREQ_PARAM, -3.0f, 4.5f, 0.0f, "Master Frequency", " Hz", 2.f, 1.f);
-        configParam(LORENZ_FREQ_PARAM, -3.0f, 3.0f, 0.0f, "Lorenz Frequency", " Hz", 2.f, 1.f);
-        configParam(THOMAS_FREQ_PARAM, -3.0f, 3.0f, 0.0f, "Thomas Frequency", " Hz", 2.f, 1.f);
-        configParam(ROSSLER_FREQ_PARAM, -3.0f, 3.0f, 0.0f, "Rössler Frequency", " Hz", 2.f, 1.f);
-        configParam(CHEN_FREQ_PARAM, -3.0f, 3.0f, 0.0f, "Chen Frequency", " Hz", 2.f, 1.f);
-        
-        configParam(LORENZ_CV_PARAM, -1.0f, 1.0f, 0.0f, "Lorenz CV Amount");
-        configParam(THOMAS_CV_PARAM, -1.0f, 1.0f, 0.0f, "Thomas CV Amount");
-        configParam(ROSSLER_CV_PARAM, -1.0f, 1.0f, 0.0f, "Rössler CV Amount");
-        configParam(CHEN_CV_PARAM, -1.0f, 1.0f, 0.0f, "Chen CV Amount");
-        
+
+        // Configure parameters using Shapetaker utilities
+        shapetaker::ParameterHelper::configFrequency(this, MASTER_FREQ_PARAM, "Master Frequency", -3.0f, 4.5f, 0.0f);
+        shapetaker::ParameterHelper::configFrequency(this, LORENZ_FREQ_PARAM, "Lorenz Frequency", -3.0f, 3.0f, 0.0f);
+        shapetaker::ParameterHelper::configFrequency(this, THOMAS_FREQ_PARAM, "Thomas Frequency", -3.0f, 3.0f, 0.0f);
+        shapetaker::ParameterHelper::configFrequency(this, ROSSLER_FREQ_PARAM, "Rössler Frequency", -3.0f, 3.0f, 0.0f);
+        shapetaker::ParameterHelper::configFrequency(this, CHEN_FREQ_PARAM, "Chen Frequency", -3.0f, 3.0f, 0.0f);
+
+        shapetaker::ParameterHelper::configAttenuverter(this, LORENZ_CV_PARAM, "Lorenz CV Amount");
+        shapetaker::ParameterHelper::configAttenuverter(this, THOMAS_CV_PARAM, "Thomas CV Amount");
+        shapetaker::ParameterHelper::configAttenuverter(this, ROSSLER_CV_PARAM, "Rössler CV Amount");
+        shapetaker::ParameterHelper::configAttenuverter(this, CHEN_CV_PARAM, "Chen CV Amount");
+
         configParam(LORENZ_RHO_PARAM, 1.0f, 50.0f, 28.0f, "Lorenz ρ (Rho)");
         configParam(THOMAS_B_PARAM, 0.05f, 1.0f, 0.208f, "Thomas b");
         configParam(ROSSLER_A_PARAM, 0.05f, 1.0f, 0.2f, "Rössler a");
-        configParam(CHEN_A_PARAM, 10.0f, 40.0f, 35.0f, "Chen a"); // Reduced max from 50 to 40
-        
-        configButton(RESET_PARAM, "Reset");
-        
-        // Configure inputs
-        configInput(MASTER_FREQ_INPUT, "Master Frequency CV");
-        configInput(LORENZ_FREQ_INPUT, "Lorenz Frequency CV");
-        configInput(THOMAS_FREQ_INPUT, "Thomas Frequency CV");
-        configInput(ROSSLER_FREQ_INPUT, "Rössler Frequency CV");
-        configInput(CHEN_FREQ_INPUT, "Chen Frequency CV");
-        configInput(LORENZ_RHO_INPUT, "Lorenz ρ CV");
-        configInput(THOMAS_B_INPUT, "Thomas b CV");
-        configInput(ROSSLER_A_INPUT, "Rössler a CV");
-        configInput(CHEN_A_INPUT, "Chen a CV");
-        configInput(RESET_INPUT, "Reset");
-        
-        // Configure outputs
-        configOutput(LORENZ_OUTPUT, "Lorenz");
-        configOutput(THOMAS_OUTPUT, "Thomas");
-        configOutput(ROSSLER_OUTPUT, "Rössler");
-        configOutput(CHEN_OUTPUT, "Chen");
-        
+        configParam(CHEN_A_PARAM, 10.0f, 40.0f, 35.0f, "Chen a");
+
+        shapetaker::ParameterHelper::configButton(this, RESET_PARAM, "Reset");
+
+        // Configure inputs using Shapetaker utilities
+        shapetaker::ParameterHelper::configCVInput(this, MASTER_FREQ_INPUT, "Master Frequency CV");
+        shapetaker::ParameterHelper::configCVInput(this, LORENZ_FREQ_INPUT, "Lorenz Frequency CV");
+        shapetaker::ParameterHelper::configCVInput(this, THOMAS_FREQ_INPUT, "Thomas Frequency CV");
+        shapetaker::ParameterHelper::configCVInput(this, ROSSLER_FREQ_INPUT, "Rössler Frequency CV");
+        shapetaker::ParameterHelper::configCVInput(this, CHEN_FREQ_INPUT, "Chen Frequency CV");
+        shapetaker::ParameterHelper::configCVInput(this, LORENZ_RHO_INPUT, "Lorenz ρ CV");
+        shapetaker::ParameterHelper::configCVInput(this, THOMAS_B_INPUT, "Thomas b CV");
+        shapetaker::ParameterHelper::configCVInput(this, ROSSLER_A_INPUT, "Rössler a CV");
+        shapetaker::ParameterHelper::configCVInput(this, CHEN_A_INPUT, "Chen a CV");
+        shapetaker::ParameterHelper::configCVInput(this, RESET_INPUT, "Reset");
+
+        // Configure outputs using Shapetaker utilities
+        shapetaker::ParameterHelper::configAudioOutput(this, LORENZ_OUTPUT, "Lorenz");
+        shapetaker::ParameterHelper::configAudioOutput(this, THOMAS_OUTPUT, "Thomas");
+        shapetaker::ParameterHelper::configAudioOutput(this, ROSSLER_OUTPUT, "Rössler");
+        shapetaker::ParameterHelper::configAudioOutput(this, CHEN_OUTPUT, "Chen");
+
         // Initialize attractors
         resetAttractors();
     }
@@ -565,64 +565,71 @@ struct Fatebinder : Module {
 struct FatebinderWidget : ModuleWidget {
     FatebinderWidget(Fatebinder* module) {
         setModule(module);
-        setPanel(createPanel(asset::plugin(pluginInstance, "res/panels/Fatebinder.svg")));
+        setPanel(APP->window->loadSvg(asset::plugin(pluginInstance, "res/panels/Fatebinder.svg")));
 
-        addChild(createWidget<ScrewSilver>(Vec(RACK_GRID_WIDTH, 0)));
-        addChild(createWidget<ScrewSilver>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, 0)));
-        addChild(createWidget<ScrewSilver>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
-        addChild(createWidget<ScrewSilver>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
+        addChild(createWidget<ScrewBlack>(Vec(RACK_GRID_WIDTH, 0)));
+        addChild(createWidget<ScrewBlack>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, 0)));
+        addChild(createWidget<ScrewBlack>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
+        addChild(createWidget<ScrewBlack>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
-        // Master controls
-        addParam(createParamCentered<RoundHugeBlackKnob>(mm2px(Vec(30, 17.7)), module, Fatebinder::MASTER_FREQ_PARAM));
-        addInput(createInputCentered<PJ301MPort>(mm2px(Vec(30, 20.4)), module, Fatebinder::MASTER_FREQ_INPUT));
-        
-        // Reset
-        addParam(createParamCentered<LEDButton>(mm2px(Vec(60, 17.7)), module, Fatebinder::RESET_PARAM));
-        addInput(createInputCentered<PJ301MPort>(mm2px(Vec(60, 20.4)), module, Fatebinder::RESET_INPUT));
+        using shapetaker::ui::LayoutHelper;
+        auto mm = [](float x, float y) {
+            return LayoutHelper::mm2px(Vec(x, y));
+        };
 
-        // Lorenz section
-        float lorenzY = 34.9f;
-        addParam(createParamCentered<RoundLargeBlackKnob>(mm2px(Vec(20, lorenzY)), module, Fatebinder::LORENZ_FREQ_PARAM));
-        addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(35, lorenzY)), module, Fatebinder::LORENZ_CV_PARAM));
-        addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(50, lorenzY)), module, Fatebinder::LORENZ_RHO_PARAM));
-        addInput(createInputCentered<PJ301MPort>(mm2px(Vec(75, lorenzY)), module, Fatebinder::LORENZ_FREQ_INPUT));
-        addInput(createInputCentered<PJ301MPort>(mm2px(Vec(90, lorenzY)), module, Fatebinder::LORENZ_RHO_INPUT));
-        
-        addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(35, 38.9)), module, Fatebinder::LORENZ_OUTPUT));
-        addChild(createLightCentered<MediumLight<RedLight>>(mm2px(Vec(119, lorenzY)), module, Fatebinder::LORENZ_LIGHT));
+        // Master section
+        addParam(createParamCentered<ShapetakerKnobOscilloscopeLarge>(mm(18.0f, 26.5f), module, Fatebinder::MASTER_FREQ_PARAM));
+        addInput(createInputCentered<ShapetakerBNCPort>(mm(18.0f, 12.0f), module, Fatebinder::MASTER_FREQ_INPUT));
 
-        // Thomas section
-        float thomasY = 57.4f;
-        addParam(createParamCentered<RoundLargeBlackKnob>(mm2px(Vec(20, thomasY)), module, Fatebinder::THOMAS_FREQ_PARAM));
-        addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(35, thomasY)), module, Fatebinder::THOMAS_CV_PARAM));
-        addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(50, thomasY)), module, Fatebinder::THOMAS_B_PARAM));
-        addInput(createInputCentered<PJ301MPort>(mm2px(Vec(75, thomasY)), module, Fatebinder::THOMAS_FREQ_INPUT));
-        addInput(createInputCentered<PJ301MPort>(mm2px(Vec(90, thomasY)), module, Fatebinder::THOMAS_B_INPUT));
-        
-        addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(35, 61.4)), module, Fatebinder::THOMAS_OUTPUT));
-        addChild(createLightCentered<MediumLight<GreenLight>>(mm2px(Vec(119, thomasY)), module, Fatebinder::THOMAS_LIGHT));
+        addParam(createParamCentered<ShapetakerVintageMomentary>(mm(45.5f, 26.5f), module, Fatebinder::RESET_PARAM));
+        addInput(createInputCentered<ShapetakerBNCPort>(mm(45.5f, 12.0f), module, Fatebinder::RESET_INPUT));
 
-        // Rössler section
-        float rosslerY = 79.9f;
-        addParam(createParamCentered<RoundLargeBlackKnob>(mm2px(Vec(20, rosslerY)), module, Fatebinder::ROSSLER_FREQ_PARAM));
-        addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(35, rosslerY)), module, Fatebinder::ROSSLER_CV_PARAM));
-        addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(50, rosslerY)), module, Fatebinder::ROSSLER_A_PARAM));
-        addInput(createInputCentered<PJ301MPort>(mm2px(Vec(75, rosslerY)), module, Fatebinder::ROSSLER_FREQ_INPUT));
-        addInput(createInputCentered<PJ301MPort>(mm2px(Vec(90, rosslerY)), module, Fatebinder::ROSSLER_A_INPUT));
-        
-        addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(35, 83.9)), module, Fatebinder::ROSSLER_OUTPUT));
-        addChild(createLightCentered<MediumLight<BlueLight>>(mm2px(Vec(119, rosslerY)), module, Fatebinder::ROSSLER_LIGHT));
+        // Common x positions for attractor rows
+        const float freqX = 14.0f;
+        const float attenX = 32.0f;
+        const float paramX = 50.0f;
+        const float outX = 55.0f;
+        const float cvOffsetY = 10.0f;
 
-        // Chen section
-        float chenY = 102.4f;
-        addParam(createParamCentered<RoundLargeBlackKnob>(mm2px(Vec(20, chenY)), module, Fatebinder::CHEN_FREQ_PARAM));
-        addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(35, chenY)), module, Fatebinder::CHEN_CV_PARAM));
-        addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(50, chenY)), module, Fatebinder::CHEN_A_PARAM));
-        addInput(createInputCentered<PJ301MPort>(mm2px(Vec(75, chenY)), module, Fatebinder::CHEN_FREQ_INPUT));
-        addInput(createInputCentered<PJ301MPort>(mm2px(Vec(90, chenY)), module, Fatebinder::CHEN_A_INPUT));
-        
-        addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(35, 106.4)), module, Fatebinder::CHEN_OUTPUT));
-        addChild(createLightCentered<MediumLight<YellowLight>>(mm2px(Vec(119, chenY)), module, Fatebinder::CHEN_LIGHT));
+        auto addAttractorRow = [&](float centerY,
+                                   int freqParam, int freqInput,
+                                   int attenParam,
+                                   int shapeParam, int shapeInput,
+                                   int outputId) {
+            addParam(createParamCentered<ShapetakerKnobOscilloscopeMedium>(mm(freqX, centerY), module, freqParam));
+            addInput(createInputCentered<ShapetakerBNCPort>(mm(freqX, centerY - cvOffsetY), module, freqInput));
+
+            addParam(createParamCentered<ShapetakerAttenuverterOscilloscope>(mm(attenX, centerY), module, attenParam));
+
+            addParam(createParamCentered<ShapetakerKnobOscilloscopeSmall>(mm(paramX, centerY), module, shapeParam));
+            addInput(createInputCentered<ShapetakerBNCPort>(mm(paramX, centerY - cvOffsetY), module, shapeInput));
+
+            addOutput(createOutputCentered<ShapetakerBNCPort>(mm(outX, centerY), module, outputId));
+        };
+
+        addAttractorRow(46.0f,
+                        Fatebinder::LORENZ_FREQ_PARAM, Fatebinder::LORENZ_FREQ_INPUT,
+                        Fatebinder::LORENZ_CV_PARAM,
+                        Fatebinder::LORENZ_RHO_PARAM, Fatebinder::LORENZ_RHO_INPUT,
+                        Fatebinder::LORENZ_OUTPUT);
+
+        addAttractorRow(74.0f,
+                        Fatebinder::THOMAS_FREQ_PARAM, Fatebinder::THOMAS_FREQ_INPUT,
+                        Fatebinder::THOMAS_CV_PARAM,
+                        Fatebinder::THOMAS_B_PARAM, Fatebinder::THOMAS_B_INPUT,
+                        Fatebinder::THOMAS_OUTPUT);
+
+        addAttractorRow(102.0f,
+                        Fatebinder::ROSSLER_FREQ_PARAM, Fatebinder::ROSSLER_FREQ_INPUT,
+                        Fatebinder::ROSSLER_CV_PARAM,
+                        Fatebinder::ROSSLER_A_PARAM, Fatebinder::ROSSLER_A_INPUT,
+                        Fatebinder::ROSSLER_OUTPUT);
+
+        addAttractorRow(120.0f,
+                        Fatebinder::CHEN_FREQ_PARAM, Fatebinder::CHEN_FREQ_INPUT,
+                        Fatebinder::CHEN_CV_PARAM,
+                        Fatebinder::CHEN_A_PARAM, Fatebinder::CHEN_A_INPUT,
+                        Fatebinder::CHEN_OUTPUT);
     }
 };
 
