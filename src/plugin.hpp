@@ -503,43 +503,34 @@ struct ShapetakerVintageMomentary : app::SvgSwitch {
         nvgScale(args.vg, s, s);
         app::SvgSwitch::draw(args);
         nvgRestore(args.vg);
+    }
+};
 
-        // Pressed visual: subtle dark overlay to indicate depression
-        bool pressed = false;
-        if (getParamQuantity()) pressed = getParamQuantity()->getValue() > 0.5f;
-        if (pressed) {
-            nvgSave(args.vg);
-            // Draw overlay in panel coordinates
-            nvgBeginPath(args.vg);
-            float cx = box.size.x * 0.5f;
-            float cy = box.size.y * 0.5f;
-            float outerR = std::min(box.size.x, box.size.y) * 0.48f;
-            float innerR = outerR * 0.65f;
+struct RingLight : app::ModuleLightWidget {
+    RingLight() {
+        box.size = mm2px(Vec(11.f, 11.f));
+        // A bright teal color for the selection indicator
+        color = nvgRGB(0x2e, 0xea, 0xd8);
+    }
 
-            // Slight darkening toward the center to sell the pressed look
-            NVGpaint pressedPaint = nvgRadialGradient(
-                args.vg,
-                cx,
-                cy,
-                innerR * 0.1f,
-                innerR,
-                nvgRGBA(0, 0, 0, 120),
-                nvgRGBA(0, 0, 0, 15)
-            );
-            nvgBeginPath(args.vg);
-            nvgCircle(args.vg, cx, cy, innerR);
-            nvgFillPaint(args.vg, pressedPaint);
-            nvgFill(args.vg);
+    void draw(const DrawArgs& args) override {
+        float radius = box.size.x * 0.45f; // Make radius a bit larger
+        float cx = box.size.x * 0.5f;
+        float cy = box.size.y * 0.5f;
 
-            // Gentle ring shadow just inside the bezel for extra depth
-            nvgBeginPath(args.vg);
-            nvgCircle(args.vg, cx, cy, outerR);
-            nvgStrokeColor(args.vg, nvgRGBA(0, 0, 0, 35));
-            nvgStrokeWidth(args.vg, outerR * 0.08f);
-            nvgStroke(args.vg);
+        float brightness = module ? module->lights[firstLightId].getBrightness() : 0.f;
+        if (brightness <= 0.f) return;
 
-            nvgRestore(args.vg);
-        }
+        NVGcolor baseColor = color;
+        baseColor.a = brightness;
+
+        NVGcolor transparent = nvgRGBAf(baseColor.r, baseColor.g, baseColor.b, 0.f);
+
+        nvgBeginPath(args.vg);
+        nvgRect(args.vg, 0, 0, box.size.x, box.size.y);
+        NVGpaint paint = nvgRadialGradient(args.vg, cx, cy, radius - 1.f, radius + 1.f, baseColor, transparent);
+        nvgFillPaint(args.vg, paint);
+        nvgFill(args.vg);
     }
 };
 
@@ -1341,19 +1332,54 @@ struct VintageOscilloscopeWidget : widget::Widget {
 
 // Capacitive touch switch (brass touch pad like touch strip)
 struct CapacitiveTouchSwitch : app::SvgSwitch {
-    widget::SvgWidget* background;
-
     CapacitiveTouchSwitch() {
         momentary = false;
         latch = true;
-
-        // Load background (brass touch pad)
-        background = new widget::SvgWidget();
-        background->setSvg(Svg::load(asset::plugin(pluginInstance, "res/ui/capacitive_touch_pad.svg")));
-        addChild(background);
-
         // No frames needed - visual state shown by LED
-        box.size = Vec(40, 40);
+        box.size = Vec(32, 32);
+        if (shadow) shadow->visible = false;
+    }
+
+    void draw(const DrawArgs& args) override {
+        float radius = box.size.x / 2.0f;
+        float cx = box.size.x / 2.0f;
+        float cy = box.size.y / 2.0f;
+
+        // Base brass gradient
+        nvgBeginPath(args.vg);
+        nvgCircle(args.vg, cx, cy, radius);
+        NVGpaint base = nvgLinearGradient(args.vg, cx, cy - radius, cx, cy + radius,
+            nvgRGBA(148, 122, 82, 255), // Lighter top color
+            nvgRGBA(76, 60, 46, 255));  // Lighter bottom color
+        nvgFillPaint(args.vg, base);
+        nvgFill(args.vg);
+
+        // Subtle center glow
+        nvgBeginPath(args.vg);
+        nvgCircle(args.vg, cx, cy, radius * 0.95f);
+        NVGpaint centerGlow = nvgRadialGradient(args.vg,
+            cx, cy, radius * 0.1f, radius * 0.95f,
+            nvgRGBA(240, 210, 130, 110), // Brighter glow
+            nvgRGBA(100, 70, 38, 0));
+        nvgFillPaint(args.vg, centerGlow);
+        nvgFill(args.vg);
+
+        // Edge sheen
+        NVGpaint edgeSheen = nvgRadialGradient(args.vg,
+            cx, cy, radius * 0.8f, radius,
+            nvgRGBA(255, 235, 150, 48), // Brighter sheen
+            nvgRGBA(0, 0, 0, 0));
+        nvgBeginPath(args.vg);
+        nvgCircle(args.vg, cx, cy, radius);
+        nvgFillPaint(args.vg, edgeSheen);
+        nvgFill(args.vg);
+
+        // Border
+        nvgBeginPath(args.vg);
+        nvgCircle(args.vg, cx, cy, radius - 0.5f);
+        nvgStrokeColor(args.vg, nvgRGBA(88, 62, 36, 160));
+        nvgStrokeWidth(args.vg, 1.0f);
+        nvgStroke(args.vg);
     }
 
     void onChange(const ChangeEvent& e) override {
