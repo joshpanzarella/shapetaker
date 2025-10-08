@@ -1002,16 +1002,16 @@ void AlchemicalSymbolWidget::draw(const DrawArgs& args) {
         nvgStroke(args.vg);
     } else if (playheadA) {
         // Sequence A playing - teal background
-        nvgFillColor(args.vg, nvgRGBA(0, 255, 180, 200));
+        nvgFillColor(args.vg, nvgRGBA(0, 154, 122, 200));
         nvgFill(args.vg);
-        nvgStrokeColor(args.vg, nvgRGBA(0, 255, 180, 255));
+        nvgStrokeColor(args.vg, nvgRGBA(0, 154, 122, 255));
         nvgStrokeWidth(args.vg, 2.0f);
         nvgStroke(args.vg);
     } else if (playheadB) {
         // Sequence B playing - purple background
-        nvgFillColor(args.vg, nvgRGBA(180, 0, 255, 200));
+        nvgFillColor(args.vg, nvgRGBA(111, 31, 183, 200));
         nvgFill(args.vg);
-        nvgStrokeColor(args.vg, nvgRGBA(180, 0, 255, 255));
+        nvgStrokeColor(args.vg, nvgRGBA(111, 31, 183, 255));
         nvgStrokeWidth(args.vg, 2.0f);
         nvgStroke(args.vg);
     } else if (isSelected && inEditMode) {
@@ -1218,15 +1218,15 @@ void RestTieMomentary::draw(const DrawArgs& args) {
         nvgStrokeWidth(args.vg, 2.0f);
         nvgStroke(args.vg);
     } else if (playA) {
-        nvgFillColor(args.vg, nvgRGBA(0, 255, 180, 200));
+        nvgFillColor(args.vg, nvgRGBA(0, 154, 122, 200));
         nvgFill(args.vg);
-        nvgStrokeColor(args.vg, nvgRGBA(0, 255, 180, 255));
+        nvgStrokeColor(args.vg, nvgRGBA(0, 154, 122, 255));
         nvgStrokeWidth(args.vg, 2.0f);
         nvgStroke(args.vg);
     } else if (playB) {
-        nvgFillColor(args.vg, nvgRGBA(180, 0, 255, 200));
+        nvgFillColor(args.vg, nvgRGBA(111, 31, 183, 200));
         nvgFill(args.vg);
-        nvgStrokeColor(args.vg, nvgRGBA(180, 0, 255, 255));
+        nvgStrokeColor(args.vg, nvgRGBA(111, 31, 183, 255));
         nvgStrokeWidth(args.vg, 2.0f);
         nvgStroke(args.vg);
     } else {

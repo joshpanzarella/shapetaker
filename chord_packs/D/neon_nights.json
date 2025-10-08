@@ -5,75 +5,150 @@
   "chords": [
     {
       "name": "Dmaj7",
-      "intervals": [2, 6, 9, 1],
+      "intervals": [
+        2,
+        6,
+        9,
+        1
+      ],
       "preferredVoices": 4,
       "category": "major7"
     },
     {
       "name": "Bm7",
-      "intervals": [11, 2, 6, 9],
+      "intervals": [
+        11,
+        2,
+        6,
+        9
+      ],
       "preferredVoices": 4,
       "category": "minor7"
     },
     {
       "name": "Gmaj7",
-      "intervals": [7, 11, 2, 6],
+      "intervals": [
+        7,
+        11,
+        2,
+        6
+      ],
       "preferredVoices": 4,
       "category": "major7"
     },
     {
       "name": "A7",
-      "intervals": [9, 1, 4, 7],
+      "intervals": [
+        9,
+        1,
+        4,
+        7
+      ],
       "preferredVoices": 4,
       "category": "dominant7"
     },
     {
       "name": "F#m7",
-      "intervals": [6, 9, 1, 4],
+      "intervals": [
+        6,
+        9,
+        1,
+        4
+      ],
       "preferredVoices": 4,
       "category": "minor7"
     },
     {
       "name": "Em7",
-      "intervals": [4, 7, 11, 2],
+      "intervals": [
+        4,
+        7,
+        11,
+        2
+      ],
       "preferredVoices": 4,
       "category": "minor7"
     },
     {
       "name": "Dmaj9",
-      "intervals": [2, 6, 9, 1, 4],
+      "intervals": [
+        2,
+        6,
+        9,
+        1,
+        4
+      ],
       "preferredVoices": 5,
       "category": "major9"
     },
     {
       "name": "Bm9",
-      "intervals": [11, 2, 6, 9, 1],
+      "intervals": [
+        11,
+        2,
+        6,
+        9,
+        1
+      ],
       "preferredVoices": 5,
       "category": "minor9"
     },
     {
       "name": "Gmaj9",
-      "intervals": [7, 11, 2, 6, 9],
+      "intervals": [
+        7,
+        11,
+        2,
+        6,
+        9
+      ],
       "preferredVoices": 5,
       "category": "major9"
     },
     {
       "name": "A9sus4",
-      "intervals": [9, 2, 4, 7, 11],
+      "intervals": [
+        9,
+        2,
+        4,
+        7,
+        11
+      ],
       "preferredVoices": 5,
       "category": "dominant9sus4"
     },
     {
       "name": "Dadd9",
-      "intervals": [2, 6, 9, 4],
+      "intervals": [
+        2,
+        6,
+        9,
+        4
+      ],
       "preferredVoices": 4,
       "category": "majoradd9"
     },
     {
       "name": "Bm(add9)",
-      "intervals": [11, 2, 6, 1],
+      "intervals": [
+        11,
+        2,
+        6,
+        1
+      ],
       "preferredVoices": 4,
       "category": "minoradd9"
     }
+  ],
+  "mode": "major",
+  "scale": "D major",
+  "genre": "synthwave",
+  "mood": "warm",
+  "complexity": "moderate",
+  "voicingStyle": "pad",
+  "tags": [
+    "synthwave",
+    "major",
+    "warm"
   ]
 }

@@ -5,75 +5,150 @@
   "chords": [
     {
       "name": "Emaj7",
-      "intervals": [4, 8, 11, 3],
+      "intervals": [
+        4,
+        8,
+        11,
+        3
+      ],
       "preferredVoices": 4,
       "category": "major7"
     },
     {
       "name": "C#m7",
-      "intervals": [1, 4, 8, 11],
+      "intervals": [
+        1,
+        4,
+        8,
+        11
+      ],
       "preferredVoices": 4,
       "category": "minor7"
     },
     {
       "name": "Amaj7",
-      "intervals": [9, 1, 4, 8],
+      "intervals": [
+        9,
+        1,
+        4,
+        8
+      ],
       "preferredVoices": 4,
       "category": "major7"
     },
     {
       "name": "B7",
-      "intervals": [11, 3, 6, 9],
+      "intervals": [
+        11,
+        3,
+        6,
+        9
+      ],
       "preferredVoices": 4,
       "category": "dominant7"
     },
     {
       "name": "G#m7",
-      "intervals": [8, 11, 3, 6],
+      "intervals": [
+        8,
+        11,
+        3,
+        6
+      ],
       "preferredVoices": 4,
       "category": "minor7"
     },
     {
       "name": "F#m7",
-      "intervals": [6, 9, 1, 4],
+      "intervals": [
+        6,
+        9,
+        1,
+        4
+      ],
       "preferredVoices": 4,
       "category": "minor7"
     },
     {
       "name": "Emaj9",
-      "intervals": [4, 8, 11, 3, 6],
+      "intervals": [
+        4,
+        8,
+        11,
+        3,
+        6
+      ],
       "preferredVoices": 5,
       "category": "major9"
     },
     {
       "name": "C#m9",
-      "intervals": [1, 4, 8, 11, 3],
+      "intervals": [
+        1,
+        4,
+        8,
+        11,
+        3
+      ],
       "preferredVoices": 5,
       "category": "minor9"
     },
     {
       "name": "Amaj9",
-      "intervals": [9, 1, 4, 8, 11],
+      "intervals": [
+        9,
+        1,
+        4,
+        8,
+        11
+      ],
       "preferredVoices": 5,
       "category": "major9"
     },
     {
       "name": "B9sus4",
-      "intervals": [11, 4, 6, 9, 1],
+      "intervals": [
+        11,
+        4,
+        6,
+        9,
+        1
+      ],
       "preferredVoices": 5,
       "category": "dominant9sus4"
     },
     {
       "name": "Eadd9",
-      "intervals": [4, 8, 11, 6],
+      "intervals": [
+        4,
+        8,
+        11,
+        6
+      ],
       "preferredVoices": 4,
       "category": "majoradd9"
     },
     {
       "name": "C#m(add9)",
-      "intervals": [1, 4, 8, 3],
+      "intervals": [
+        1,
+        4,
+        8,
+        3
+      ],
       "preferredVoices": 4,
       "category": "minoradd9"
     }
+  ],
+  "mode": "major",
+  "scale": "E major",
+  "genre": "ambient",
+  "mood": "golden",
+  "complexity": "moderate",
+  "voicingStyle": "open",
+  "tags": [
+    "ambient",
+    "sunset",
+    "major"
   ]
 }

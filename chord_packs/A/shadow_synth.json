@@ -5,75 +5,139 @@
   "chords": [
     {
       "name": "Am",
-      "intervals": [0, 3, 7],
+      "intervals": [
+        9,
+        0,
+        4
+      ],
       "preferredVoices": 3,
       "category": "minor"
     },
     {
       "name": "Dm",
-      "intervals": [2, 5, 9],
+      "intervals": [
+        2,
+        5,
+        9
+      ],
       "preferredVoices": 3,
       "category": "minor"
     },
     {
       "name": "Em",
-      "intervals": [4, 7, 11],
+      "intervals": [
+        4,
+        7,
+        11
+      ],
       "preferredVoices": 3,
       "category": "minor"
     },
     {
       "name": "F",
-      "intervals": [5, 9, 0],
+      "intervals": [
+        5,
+        9,
+        0
+      ],
       "preferredVoices": 3,
       "category": "major"
     },
     {
       "name": "G",
-      "intervals": [7, 11, 2],
+      "intervals": [
+        7,
+        11,
+        2
+      ],
       "preferredVoices": 3,
       "category": "major"
     },
     {
       "name": "C",
-      "intervals": [0, 4, 7],
+      "intervals": [
+        0,
+        4,
+        7
+      ],
       "preferredVoices": 3,
       "category": "major"
     },
     {
       "name": "Bbdim",
-      "intervals": [10, 1, 4],
+      "intervals": [
+        10,
+        1,
+        4
+      ],
       "preferredVoices": 3,
       "category": "diminished"
     },
     {
       "name": "Am(maj7)",
-      "intervals": [0, 3, 7, 11],
+      "intervals": [
+        9,
+        0,
+        4,
+        8
+      ],
       "preferredVoices": 4,
       "category": "minorMaj7"
     },
     {
       "name": "Dm7b5",
-      "intervals": [2, 5, 8, 0],
+      "intervals": [
+        2,
+        5,
+        8,
+        0
+      ],
       "preferredVoices": 4,
       "category": "halfDim7"
     },
     {
       "name": "E7",
-      "intervals": [4, 8, 11, 2],
+      "intervals": [
+        4,
+        8,
+        11,
+        2
+      ],
       "preferredVoices": 4,
       "category": "dominant7"
     },
     {
       "name": "Fm6",
-      "intervals": [5, 8, 0, 2],
+      "intervals": [
+        5,
+        8,
+        0,
+        2
+      ],
       "preferredVoices": 4,
       "category": "minor6"
     },
     {
       "name": "G#dim7",
-      "intervals": [8, 11, 2, 5],
+      "intervals": [
+        8,
+        11,
+        2,
+        5
+      ],
       "preferredVoices": 4,
       "category": "diminished7"
     }
+  ],
+  "mode": "minor",
+  "scale": "A minor",
+  "genre": "darkwave",
+  "mood": "brooding",
+  "complexity": "moderate",
+  "voicingStyle": "stacked fifths",
+  "tags": [
+    "dark",
+    "minor",
+    "synth"
   ]
 }

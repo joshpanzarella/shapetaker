@@ -3,14 +3,18 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <memory>
+#include <string>
+#include <cctype>
 
 // Forward declaration
 struct Evocation;
+struct EvocationOLEDDisplay;
 
 // Custom Touch Strip Widget - Declaration only
 struct TouchStripWidget : Widget {
     Evocation* module;
-    
+
     // Visual properties
     Vec currentTouchPos = Vec(0, 0);
     bool isDragging = false;
@@ -72,11 +76,21 @@ struct Evocation : Module {
         INVERT_2_PARAM,
         INVERT_3_PARAM,
         INVERT_4_PARAM,
+        ENVELOPE_ADVANCE_PARAM,
+        PARAM_ADVANCE_PARAM,
+        ENV_SPEED_PARAM,
+        ENV_PHASE_PARAM,
+        ENV_SELECT_1_PARAM,
+        ENV_SELECT_2_PARAM,
+        ENV_SELECT_3_PARAM,
+        ENV_SELECT_4_PARAM,
         PARAMS_LEN
     };
     enum InputId {
+        RECORD_INPUT,
         TRIGGER_INPUT,
         CLEAR_INPUT,
+        GATE_INPUT,
         SPEED_1_INPUT,
         SPEED_2_INPUT,
         SPEED_3_INPUT,
@@ -88,7 +102,14 @@ struct Evocation : Module {
         ENV_2_OUTPUT,
         ENV_3_OUTPUT,
         ENV_4_OUTPUT,
-        GATE_OUTPUT,
+        ENV_1_GATE_OUTPUT,
+        ENV_2_GATE_OUTPUT,
+        ENV_3_GATE_OUTPUT,
+        ENV_4_GATE_OUTPUT,
+        ENV_1_EOC_OUTPUT,
+        ENV_2_EOC_OUTPUT,
+        ENV_3_EOC_OUTPUT,
+        ENV_4_EOC_OUTPUT,
         OUTPUTS_LEN
     };
     enum LightId {
@@ -111,6 +132,20 @@ struct Evocation : Module {
         float time;     // normalized time 0-1
     };
 
+    enum class EditableParam : int {
+        Speed = 0,
+        Loop,
+        Invert,
+        Phase,
+        Count
+    };
+
+    static constexpr int NUM_ENVELOPES = 4;
+    static constexpr int NUM_EDIT_PARAMS = static_cast<int>(EditableParam::Count);
+
+    int currentEnvelopeIndex = 0;
+    int currentParameterIndex = 0;
+
     std::vector<EnvelopePoint> envelope;
     bool isRecording = false;
     bool bufferHasData = false;
@@ -126,23 +161,38 @@ struct Evocation : Module {
     struct PlaybackState {
         bool active = false;
         float phase = 0.0f;
-        dsp::PulseGenerator gateGen;
+        dsp::PulseGenerator eocPulse;
     };
-    
+
     PlaybackState playback[4]; // Four independent envelope players
-    
+
     // Triggers
     dsp::SchmittTrigger triggerTrigger;
+    dsp::SchmittTrigger gateTrigger;
     dsp::SchmittTrigger clearTrigger;
     dsp::SchmittTrigger recordTrigger;
-    dsp::SchmittTrigger loopTriggers[4];
-    dsp::SchmittTrigger invertTriggers[4];
+    dsp::SchmittTrigger envSelectTriggers[4];
+    bool envelopeAdvanceButtonLatch = false;
+    bool parameterAdvanceButtonLatch = false;
     
     // Recording timing
     float recordingTime = 0.0f;
     float maxRecordingTime = 10.0f; // 10 seconds max
     float firstSampleTime = -1.0f;
+    float phaseOffsets[4] = {0.f, 0.f, 0.f, 0.f};
+    float envSpeedControlCache = 1.0f;
+    float envPhaseControlCache = 0.0f;
+    float selectionFlashTimer = 0.0f;
+
     float recordedDuration = 2.0f;
+
+    // Track last touched parameter for OLED display
+    struct LastTouchedParam {
+        std::string name = "";
+        std::string value = "";
+        float timer = 0.0f;
+        bool hasParam = false;
+    } lastTouched;
 
     // Reference to the touch strip widget for clearing gesture lights
     TouchStripWidget* touchStripWidget = nullptr;
@@ -171,6 +221,14 @@ struct Evocation : Module {
         configParam(INVERT_2_PARAM, 0.f, 1.f, 0.f, "Invert Output 2");
         configParam(INVERT_3_PARAM, 0.f, 1.f, 0.f, "Invert Output 3");
         configParam(INVERT_4_PARAM, 0.f, 1.f, 0.f, "Invert Output 4");
+        configButton(ENVELOPE_ADVANCE_PARAM, "Next Envelope");
+        configButton(PARAM_ADVANCE_PARAM, "Next Parameter");
+        configParam(ENV_SPEED_PARAM, 0.1f, 16.0f, 1.0f, "Selected Envelope Speed", "×");
+        configParam(ENV_PHASE_PARAM, 0.f, 1.f, 0.f, "Selected Envelope Phase");
+        configButton(ENV_SELECT_1_PARAM, "Select Envelope 1");
+        configButton(ENV_SELECT_2_PARAM, "Select Envelope 2");
+        configButton(ENV_SELECT_3_PARAM, "Select Envelope 3");
+        configButton(ENV_SELECT_4_PARAM, "Select Envelope 4");
         
         configInput(TRIGGER_INPUT, "External Trigger");
         configInput(CLEAR_INPUT, "Clear Trigger");
@@ -183,7 +241,10 @@ struct Evocation : Module {
         configOutput(ENV_2_OUTPUT, "Envelope 2");
         configOutput(ENV_3_OUTPUT, "Envelope 3");  
         configOutput(ENV_4_OUTPUT, "Envelope 4");
-        configOutput(GATE_OUTPUT, "Gate");
+        configOutput(ENV_1_GATE_OUTPUT, "Envelope 1 Gate");
+        configOutput(ENV_2_GATE_OUTPUT, "Envelope 2 Gate");
+        configOutput(ENV_3_GATE_OUTPUT, "Envelope 3 Gate");
+        configOutput(ENV_4_GATE_OUTPUT, "Envelope 4 Gate");
     }
     
     void process(const ProcessArgs& args) override {
@@ -201,41 +262,127 @@ struct Evocation : Module {
             1.f
         );
         bool recordPressed = recordTrigger.process(params[RECORD_PARAM].getValue());
-        
-        // Handle individual loop button toggles
-        for (int i = 0; i < 4; i++) {
-            shapetaker::TriggerHelper::processToggle(loopTriggers[i], params[LOOP_1_PARAM + i].getValue(), loopStates[i]);
+        for (int i = 0; i < 4; ++i) {
+            if (envSelectTriggers[i].process(params[ENV_SELECT_1_PARAM + i].getValue())) {
+                selectEnvelope(i);
+            }
         }
+        bool envelopeButtonPressed = params[ENVELOPE_ADVANCE_PARAM].getValue() > 0.5f;
+        bool paramButtonPressed = params[PARAM_ADVANCE_PARAM].getValue() > 0.5f;
+
+        if (envelopeButtonPressed && !envelopeAdvanceButtonLatch) {
+            advanceEnvelopeSelection();
+        }
+        if (paramButtonPressed && !parameterAdvanceButtonLatch) {
+            advanceParameterSelection();
+        }
+        envelopeAdvanceButtonLatch = envelopeButtonPressed;
+        parameterAdvanceButtonLatch = paramButtonPressed;
         
-        // Handle invert button toggles
-        for (int i = 0; i < 4; i++) {
-            shapetaker::TriggerHelper::processToggle(invertTriggers[i], params[INVERT_1_PARAM + i].getValue(), invertStates[i]);
+        if (selectionFlashTimer > 0.f) {
+            selectionFlashTimer = std::max(0.f, selectionFlashTimer - args.sampleTime);
+        }
+
+        // Decay last touched timer
+        if (lastTouched.timer > 0.f) {
+            lastTouched.timer = std::max(0.f, lastTouched.timer - args.sampleTime);
+            if (lastTouched.timer <= 0.f) {
+                lastTouched.hasParam = false;
+            }
+        }
+
+        if (currentEnvelopeIndex >= 0 && currentEnvelopeIndex < NUM_ENVELOPES) {
+            float speedControl = params[ENV_SPEED_PARAM].getValue();
+            if (std::fabs(speedControl - envSpeedControlCache) > 1e-6f) {
+                envSpeedControlCache = speedControl;
+                params[SPEED_1_PARAM + currentEnvelopeIndex].setValue(envSpeedControlCache);
+                // Update OLED display
+                std::string speedStr = string::f("%.2fx", envSpeedControlCache);
+                updateLastTouched(string::f("ENV %d SPEED", currentEnvelopeIndex + 1), speedStr);
+            } else {
+                float actualSpeed = params[SPEED_1_PARAM + currentEnvelopeIndex].getValue();
+                if (std::fabs(actualSpeed - envSpeedControlCache) > 1e-6f) {
+                    envSpeedControlCache = actualSpeed;
+                    params[ENV_SPEED_PARAM].setValue(actualSpeed);
+                }
+            }
+
+            float phaseControl = params[ENV_PHASE_PARAM].getValue();
+            if (std::fabs(phaseControl - envPhaseControlCache) > 1e-6f) {
+                envPhaseControlCache = phaseControl;
+                phaseOffsets[currentEnvelopeIndex] = envPhaseControlCache;
+                // Update OLED display
+                float phaseDeg = envPhaseControlCache * 360.f;
+                updateLastTouched(string::f("ENV %d PHASE", currentEnvelopeIndex + 1), string::f("%.2f°", phaseDeg));
+            } else {
+                float actualPhase = phaseOffsets[currentEnvelopeIndex];
+                if (std::fabs(actualPhase - envPhaseControlCache) > 1e-6f) {
+                    envPhaseControlCache = actualPhase;
+                    params[ENV_PHASE_PARAM].setValue(actualPhase);
+                }
+            }
+        }
+
+        // Handle loop switch for current envelope (latching switch - read param value directly)
+        if (currentEnvelopeIndex >= 0 && currentEnvelopeIndex < NUM_ENVELOPES) {
+            bool newLoopState = params[LOOP_1_PARAM].getValue() > 0.5f;
+            if (loopStates[currentEnvelopeIndex] != newLoopState) {
+                loopStates[currentEnvelopeIndex] = newLoopState;
+                updateLastTouched(string::f("ENV %d LOOP", currentEnvelopeIndex + 1), loopStates[currentEnvelopeIndex] ? "ON" : "OFF");
+            }
+        }
+
+        // Handle invert switch for current envelope (latching switch - read param value directly)
+        if (currentEnvelopeIndex >= 0 && currentEnvelopeIndex < NUM_ENVELOPES) {
+            bool newInvertState = params[INVERT_1_PARAM].getValue() > 0.5f;
+            if (invertStates[currentEnvelopeIndex] != newInvertState) {
+                invertStates[currentEnvelopeIndex] = newInvertState;
+                updateLastTouched(string::f("ENV %d INVERT", currentEnvelopeIndex + 1), invertStates[currentEnvelopeIndex] ? "ON" : "OFF");
+            }
         }
         
         // Handle clear
         if (clearPressed) {
             clearBuffer();
+            updateLastTouched("CLEAR", "BUFFER CLEARED");
         }
-        
+
         // Handle recording
         if (recordPressed) {
             if (!isRecording) {
                 startRecording();
+                updateLastTouched("RECORD", "STARTED");
             } else {
                 stopRecording();
+                updateLastTouched("RECORD", "STOPPED");
             }
         }
-        
+
+        // Handle trigger
+        if (triggerPressed && bufferHasData) {
+            updateLastTouched("TRIGGER", "PLAYBACK");
+        }
+
         // Update recording
         if (isRecording) {
             updateRecording(args.sampleTime);
         }
-        
+
         // Handle triggers for playback
+        // Trigger takes precedence over gate
         if (triggerPressed && bufferHasData) {
             triggerAllEnvelopes();
+        } else if (inputs[GATE_INPUT].isConnected() && bufferHasData) {
+            // Gate input - sustain playback while gate is high
+            bool gateHigh = inputs[GATE_INPUT].getVoltage() >= 1.0f;
+            if (gateHigh) {
+                // Start all envelopes if gate just went high
+                if (gateTrigger.process(inputs[GATE_INPUT].getVoltage())) {
+                    triggerAllEnvelopes();
+                }
+            }
         }
-        
+
         // Process each output
         for (int i = 0; i < 4; i++) {
             processPlayback(i, args.sampleTime);
@@ -244,19 +391,12 @@ struct Evocation : Module {
         // Update lights
         lights[RECORDING_LIGHT].setBrightness(isRecording ? 1.0f : 0.0f);
         lights[TRIGGER_LIGHT].setBrightness(isAnyPlaybackActive() ? 1.0f : 0.0f);
-        
-        // Update individual loop lights
-        for (int i = 0; i < 4; i++) {
-            lights[LOOP_1_LIGHT + i].setBrightness(loopStates[i] ? 1.0f : 0.0f);
+
+        // Update loop and invert lights for currently selected envelope
+        if (currentEnvelopeIndex >= 0 && currentEnvelopeIndex < NUM_ENVELOPES) {
+            lights[LOOP_1_LIGHT].setBrightness(loopStates[currentEnvelopeIndex] ? 1.0f : 0.0f);
+            lights[INVERT_1_LIGHT].setBrightness(invertStates[currentEnvelopeIndex] ? 1.0f : 0.0f);
         }
-        
-        // Update invert lights
-        for (int i = 0; i < 4; i++) {
-            lights[INVERT_1_LIGHT + i].setBrightness(invertStates[i] ? 1.0f : 0.0f);
-        }
-        
-        // Output gate signal when any envelope is playing
-        outputs[GATE_OUTPUT].setVoltage(isAnyPlaybackActive() ? 10.0f : 0.0f);
     }
     
     void startRecording() {
@@ -406,16 +546,20 @@ struct Evocation : Module {
         for (int i = 0; i < 4; i++) {
             playback[i].active = true;
             playback[i].phase = 0.0f;
-            playback[i].gateGen.trigger(1e-3f);
         }
 
     }
     
     void processPlayback(int outputIndex, float sampleTime) {
         PlaybackState& pb = playback[outputIndex];
-        
+
+        // Process EOC pulse
+        bool eocPulse = pb.eocPulse.process(sampleTime);
+        outputs[ENV_1_EOC_OUTPUT + outputIndex].setVoltage(eocPulse ? 10.0f : 0.0f);
+
         if (!pb.active || !bufferHasData) {
             outputs[ENV_1_OUTPUT + outputIndex].setVoltage(0.0f);
+            outputs[ENV_1_GATE_OUTPUT + outputIndex].setVoltage(0.0f);
             return;
         }
 
@@ -425,31 +569,39 @@ struct Evocation : Module {
             speed += inputs[SPEED_1_INPUT + outputIndex].getVoltage(); // 1V/oct style
         }
         speed = clamp(speed, 0.1f, 16.0f); // Reasonable speed limits
-        
+
         // Advance phase
         float phaseIncrement = speed * sampleTime / getEnvelopeDuration();
         pb.phase += phaseIncrement;
-        
+
         // Check if envelope is complete
         if (pb.phase >= 1.0f) {
+            // Trigger EOC pulse
+            pb.eocPulse.trigger(1e-3f); // 1ms pulse
+
             if (loopStates[outputIndex]) {
                 pb.phase -= 1.0f; // Wrap around for looping
             } else {
                 pb.active = false;
                 outputs[ENV_1_OUTPUT + outputIndex].setVoltage(0.0f);
+                outputs[ENV_1_GATE_OUTPUT + outputIndex].setVoltage(0.0f);
                 return;
             }
         }
 
         // Interpolate envelope value at current phase
-        float envelopeValue = interpolateEnvelope(pb.phase);
+        float samplePhase = pb.phase + phaseOffsets[outputIndex];
+        samplePhase -= std::floor(samplePhase);
+        if (samplePhase < 0.f) samplePhase += 1.f;
 
-        // Apply inversion if enabled for this output
+        float envelopeValue = interpolateEnvelope(samplePhase);
+
         if (invertStates[outputIndex]) {
             envelopeValue = 1.0f - envelopeValue;
         }
 
         outputs[ENV_1_OUTPUT + outputIndex].setVoltage(envelopeValue * 10.0f); // 0-10V output
+        outputs[ENV_1_GATE_OUTPUT + outputIndex].setVoltage(pb.active ? 10.0f : 0.0f);
     }
     
     float interpolateEnvelope(float phase) {
@@ -490,6 +642,139 @@ struct Evocation : Module {
 
     float getEnvelopeDuration() {
         return getRecordedDuration();
+    }
+
+    static int wrapIndex(int current, int delta, int maxCount) {
+        if (maxCount <= 0)
+            return 0;
+        int next = current + delta;
+        next %= maxCount;
+        if (next < 0) {
+            next += maxCount;
+        }
+        return next;
+    }
+
+    void setCurrentEnvelopeIndex(int index) {
+        if (NUM_ENVELOPES <= 0) {
+            currentEnvelopeIndex = 0;
+            return;
+        }
+        int normalized = index % NUM_ENVELOPES;
+        if (normalized < 0) {
+            normalized += NUM_ENVELOPES;
+        }
+        currentEnvelopeIndex = normalized;
+    }
+
+    void setCurrentParameterIndex(int index) {
+        if (NUM_EDIT_PARAMS <= 0) {
+            currentParameterIndex = 0;
+            return;
+        }
+        int normalized = index % NUM_EDIT_PARAMS;
+        if (normalized < 0) {
+            normalized += NUM_EDIT_PARAMS;
+        }
+        currentParameterIndex = normalized;
+    }
+
+    void advanceEnvelopeSelection(int delta = 1) {
+        currentEnvelopeIndex = wrapIndex(currentEnvelopeIndex, delta, NUM_ENVELOPES);
+        onEnvelopeSelectionChanged();
+    }
+
+    void advanceParameterSelection(int delta = 1) {
+        currentParameterIndex = wrapIndex(currentParameterIndex, delta, NUM_EDIT_PARAMS);
+    }
+
+    void onEnvelopeSelectionChanged(bool flash = true) {
+        currentEnvelopeIndex = clamp(currentEnvelopeIndex, 0, NUM_ENVELOPES - 1);
+        float speed = params[SPEED_1_PARAM + currentEnvelopeIndex].getValue();
+        params[ENV_SPEED_PARAM].setValue(speed);
+        envSpeedControlCache = speed;
+        float phase = phaseOffsets[currentEnvelopeIndex];
+        params[ENV_PHASE_PARAM].setValue(phase);
+        envPhaseControlCache = phase;
+
+        // Update loop and invert switch states to reflect current envelope
+        params[LOOP_1_PARAM].setValue(loopStates[currentEnvelopeIndex] ? 1.0f : 0.0f);
+        params[INVERT_1_PARAM].setValue(invertStates[currentEnvelopeIndex] ? 1.0f : 0.0f);
+
+        if (flash)
+            selectionFlashTimer = 0.75f;
+    }
+
+    void selectEnvelope(int index, bool flash = true) {
+        setCurrentEnvelopeIndex(index);
+        onEnvelopeSelectionChanged(flash);
+    }
+
+    bool isSelectionFlashActive() const {
+        return selectionFlashTimer > 0.f;
+    }
+
+    void updateLastTouched(const std::string& paramName, const std::string& paramValue) {
+        lastTouched.name = paramName;
+        lastTouched.value = paramValue;
+        lastTouched.timer = 0.75f; // Display for 0.75 seconds
+        lastTouched.hasParam = true;
+        selectionFlashTimer = 0.f; // Clear envelope selection flash immediately
+    }
+
+    EditableParam getCurrentEditableParam() const {
+        int clamped = clamp(currentParameterIndex, 0, NUM_EDIT_PARAMS - 1);
+        return static_cast<EditableParam>(clamped);
+    }
+
+    static const char* editableParamLabel(EditableParam param) {
+        switch (param) {
+            case EditableParam::Speed:
+                return "Speed";
+            case EditableParam::Loop:
+                return "Loop";
+            case EditableParam::Invert:
+                return "Invert";
+            case EditableParam::Phase:
+                return "Phase";
+            default:
+                return "";
+        }
+    }
+
+    const char* getCurrentEditableParamLabel() const {
+        return editableParamLabel(getCurrentEditableParam());
+    }
+
+    char getCurrentEnvelopeCode() const {
+        return static_cast<char>('1' + clamp(currentEnvelopeIndex, 0, NUM_ENVELOPES - 1));
+    }
+
+    char getCurrentParameterCode() const {
+        switch (getCurrentEditableParam()) {
+            case EditableParam::Speed:
+                return 'S';
+            case EditableParam::Loop:
+                return 'L';
+            case EditableParam::Invert:
+                return 'I';
+            case EditableParam::Phase:
+                return 'P';
+            default:
+                return '-';
+        }
+    }
+
+    int getCurrentParameterOrdinal() const {
+        return clamp(currentParameterIndex, 0, NUM_EDIT_PARAMS - 1) + 1;
+    }
+
+    int getCurrentEnvelopeIndex() const {
+        return clamp(currentEnvelopeIndex, 0, NUM_ENVELOPES - 1);
+    }
+
+    int getCurrentParameterIndex() const {
+        return clamp(currentParameterIndex, 0, NUM_EDIT_PARAMS - 1);
     }
     
     bool isAnyPlaybackActive() {
@@ -542,8 +827,16 @@ struct Evocation : Module {
         json_object_set_new(rootJ, "envelope", envelopeJ);
         }
 
+        json_t* phaseOffsetsJ = json_array();
+        for (int i = 0; i < 4; i++) {
+            json_array_append_new(phaseOffsetsJ, json_real(phaseOffsets[i]));
+        }
+        json_object_set_new(rootJ, "phaseOffsets", phaseOffsetsJ);
+
         json_object_set_new(rootJ, "debugTouchLogging", json_boolean(debugTouchLogging));
         json_object_set_new(rootJ, "recordedDuration", json_real(recordedDuration));
+        json_object_set_new(rootJ, "currentEnvelopeIndex", json_integer(currentEnvelopeIndex));
+        json_object_set_new(rootJ, "currentParameterIndex", json_integer(currentParameterIndex));
 
         return rootJ;
     }
@@ -571,6 +864,15 @@ struct Evocation : Module {
             for (size_t i = 0; i < n; i++) {
                 json_t* invertJ = json_array_get(invertStatesJ, i);
                 if (invertJ) invertStates[(int)i] = json_boolean_value(invertJ);
+            }
+        }
+        json_t* phaseOffsetsJ = json_object_get(rootJ, "phaseOffsets");
+        if (phaseOffsetsJ) {
+            size_t n = json_array_size(phaseOffsetsJ);
+            n = std::min(n, (size_t)4);
+            for (size_t i = 0; i < n; i++) {
+                json_t* phaseJ = json_array_get(phaseOffsetsJ, i);
+                if (phaseJ) phaseOffsets[(int)i] = clamp((float)json_real_value(phaseJ), 0.f, 1.f);
             }
         }
         
@@ -603,13 +905,38 @@ struct Evocation : Module {
         if (durationJ) {
             recordedDuration = clamp((float)json_real_value(durationJ), 1e-3f, maxRecordingTime);
         }
+
+        json_t* currentEnvelopeIndexJ = json_object_get(rootJ, "currentEnvelopeIndex");
+        if (currentEnvelopeIndexJ) {
+            setCurrentEnvelopeIndex((int)json_integer_value(currentEnvelopeIndexJ));
+        }
+
+        json_t* currentParameterIndexJ = json_object_get(rootJ, "currentParameterIndex");
+        if (currentParameterIndexJ) {
+            setCurrentParameterIndex((int)json_integer_value(currentParameterIndexJ));
+        }
+
+        onEnvelopeSelectionChanged(false);
     }
+
+    void onReset() override {
+        Module::onReset();
+        for (int i = 0; i < 4; ++i) {
+            loopStates[i] = false;
+            invertStates[i] = false;
+            phaseOffsets[i] = 0.f;
+        }
+        selectionFlashTimer = 0.f;
+        onEnvelopeSelectionChanged(false);
+    }
+
 };
 
 // TouchStripWidget Method Implementations (after Evocation is fully defined)
 TouchStripWidget::TouchStripWidget(Evocation* module) {
     this->module = module;
-    box.size = shapetaker::ui::LayoutHelper::mm2px(Vec(28.0f, 86.0f));
+    // Size will be set by the widget constructor based on SVG rect
+    box.size = Vec(0, 0);
 }
 
 void TouchStripWidget::onButton(const event::Button& e) {
@@ -675,20 +1002,8 @@ float TouchStripWidget::computeNormalizedVoltage() const {
     if (box.size.y <= 0.f)
         return 0.f;
     const float height = box.size.y;
-    const float topPad = std::min(height * 0.04f, 12.0f);      // keep headroom near 10V
-    const float bottomPad = std::min(height * 0.12f, 20.0f);   // widen the 0V landing zone
-
     float y = clamp(currentTouchPos.y, 0.0f, height);
-    if (y >= height - bottomPad)
-        return 0.0f;
-    if (y <= topPad)
-        return 1.0f;
-
-    float usable = height - topPad - bottomPad;
-    if (usable <= 1e-6f)
-        return (y <= height * 0.5f) ? 1.0f : 0.0f;
-
-    float normalized = 1.0f - ((y - topPad) / usable);
+    float normalized = 1.0f - (y / height);
     return clamp(normalized, 0.0f, 1.0f);
 }
 
@@ -830,18 +1145,13 @@ void TouchStripWidget::drawLayer(const DrawArgs& args, int layer) {
 
 void TouchStripWidget::drawTouchStrip(const DrawArgs& args) {
     nvgSave(args.vg);
-    
+
     // Clip to widget bounds
     nvgScissor(args.vg, 0, 0, box.size.x, box.size.y);
-    
+
     // Draw background gradient
     drawBackground(args);
-    
-    // Draw recorded envelope
-    if (module && module->bufferHasData) {
-        drawEnvelope(args);
-    }
-    
+
     // Draw current touch position
     if (showTouch && isDragging) {
         drawCurrentTouch(args);
@@ -1278,8 +1588,229 @@ struct OutputProgressIndicator : Widget {
 };
 
 // Main Widget
+// OLED Display Widget
+struct EvocationOLEDDisplay : Widget {
+    Evocation* module = nullptr;
+    widget::SvgWidget* background = nullptr;
+    std::shared_ptr<Font> font;
+
+    explicit EvocationOLEDDisplay(Evocation* module) {
+        this->module = module;
+        background = new widget::SvgWidget();
+        background->setSvg(Svg::load(asset::plugin(pluginInstance, "res/ui/feedback_oled.svg")));
+        addChild(background);
+        box.size = background->box.size;
+    }
+
+    void step() override {
+        Widget::step();
+        if (background) {
+            background->box.pos = Vec();
+            background->box.size = box.size;
+        }
+    }
+
+    void draw(const DrawArgs& args) override {
+        Widget::draw(args);
+        drawContent(args);
+    }
+
+  private:
+    void ensureFont() {
+        if (!font && APP && APP->window) {
+            font = APP->window->loadFont(asset::system("res/fonts/ShareTechMono-Regular.ttf"));
+        }
+    }
+
+    void drawContent(const DrawArgs& args) {
+        ensureFont();
+        nvgSave(args.vg);
+        if (!module) {
+            nvgRestore(args.vg);
+            return;
+        }
+
+        // Define safe display area (inside bezel)
+        const float padding = 6.0f;
+        const float safeWidth = box.size.x - (padding * 2.0f);
+
+        int envIndex = module->getCurrentEnvelopeIndex();
+        envIndex = clamp(envIndex, 0, Evocation::NUM_ENVELOPES - 1);
+
+        bool flash = module->isSelectionFlashActive();
+        if (flash) {
+            std::string flashText = string::f("ENV %d SELECTED", envIndex + 1);
+            if (font) {
+                nvgFontFaceId(args.vg, font->handle);
+
+                // Measure text and scale to fit
+                float fontSize = 12.0f;
+                nvgFontSize(args.vg, fontSize);
+                float bounds[4];
+                nvgTextBounds(args.vg, 0, 0, flashText.c_str(), nullptr, bounds);
+                float textWidth = bounds[2] - bounds[0];
+
+                // Scale down if too wide
+                if (textWidth > safeWidth) {
+                    fontSize *= safeWidth / textWidth;
+                    nvgFontSize(args.vg, fontSize);
+                }
+
+                nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+                nvgFillColor(args.vg, nvgRGBA(120, 220, 208, 240));
+                nvgText(args.vg, box.size.x * 0.5f, box.size.y * 0.5f, flashText.c_str(), nullptr);
+            }
+            nvgRestore(args.vg);
+            return;
+        }
+
+        // Display last touched parameter if available
+        if (module->lastTouched.hasParam && module->lastTouched.timer > 0.f && font) {
+            nvgFontFaceId(args.vg, font->handle);
+
+            // Parameter name
+            float nameFontSize = 9.0f;
+            nvgFontSize(args.vg, nameFontSize);
+            float nameBounds[4];
+            nvgTextBounds(args.vg, 0, 0, module->lastTouched.name.c_str(), nullptr, nameBounds);
+            float nameWidth = nameBounds[2] - nameBounds[0];
+
+            // Scale name if too wide
+            if (nameWidth > safeWidth) {
+                nameFontSize *= safeWidth / nameWidth;
+                nvgFontSize(args.vg, nameFontSize);
+            }
+
+            nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_TOP);
+            nvgFillColor(args.vg, nvgRGBA(140, 220, 208, 200));
+            nvgText(args.vg, box.size.x * 0.5f, padding + 8.0f, module->lastTouched.name.c_str(), nullptr);
+
+            // Parameter value (larger)
+            float valueFontSize = 16.0f;
+            nvgFontSize(args.vg, valueFontSize);
+            float valueBounds[4];
+            nvgTextBounds(args.vg, 0, 0, module->lastTouched.value.c_str(), nullptr, valueBounds);
+            float valueWidth = valueBounds[2] - valueBounds[0];
+
+            // Scale value if too wide
+            if (valueWidth > safeWidth) {
+                valueFontSize *= safeWidth / valueWidth;
+                nvgFontSize(args.vg, valueFontSize);
+            }
+
+            nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+            nvgFillColor(args.vg, nvgRGBA(180, 255, 240, 255));
+            nvgText(args.vg, box.size.x * 0.5f, box.size.y * 0.6f, module->lastTouched.value.c_str(), nullptr);
+        } else if (font) {
+            // Default display showing current envelope
+            bool hasEnv = module->hasRecordedEnvelope();
+
+            if (hasEnv && !module->envelope.empty()) {
+                // Draw envelope waveform on OLED
+                const float labelHeight = 14.0f;
+                const float topPadding = 10.0f;
+                const float bottomPadding = 6.0f;
+                const float sidePadding = 8.0f;
+                const float graphWidth = box.size.x - (sidePadding * 2.0f);
+                const float graphHeight = box.size.y - topPadding - bottomPadding - labelHeight;
+                const float graphX = sidePadding;
+                const float graphY = topPadding;
+
+                // Draw grid lines
+                nvgStrokeColor(args.vg, nvgRGBA(60, 100, 90, 40));
+                nvgStrokeWidth(args.vg, 0.5f);
+                // Horizontal center line (5V)
+                nvgBeginPath(args.vg);
+                nvgMoveTo(args.vg, graphX, graphY + graphHeight * 0.5f);
+                nvgLineTo(args.vg, graphX + graphWidth, graphY + graphHeight * 0.5f);
+                nvgStroke(args.vg);
+
+                // Draw 10V line (top) and 0V line (bottom) in faint red
+                nvgStrokeColor(args.vg, nvgRGBA(180, 60, 60, 80));
+                nvgStrokeWidth(args.vg, 0.5f);
+                // 10V line at top
+                nvgBeginPath(args.vg);
+                nvgMoveTo(args.vg, graphX, graphY);
+                nvgLineTo(args.vg, graphX + graphWidth, graphY);
+                nvgStroke(args.vg);
+                // 0V line at bottom
+                nvgBeginPath(args.vg);
+                nvgMoveTo(args.vg, graphX, graphY + graphHeight);
+                nvgLineTo(args.vg, graphX + graphWidth, graphY + graphHeight);
+                nvgStroke(args.vg);
+
+                // Draw envelope waveform
+                nvgStrokeColor(args.vg, nvgRGBA(120, 220, 208, 200));
+                nvgStrokeWidth(args.vg, 1.5f);
+                nvgLineCap(args.vg, NVG_ROUND);
+                nvgLineJoin(args.vg, NVG_ROUND);
+
+                nvgBeginPath(args.vg);
+                bool first = true;
+                for (const auto& point : module->envelope) {
+                    float x = graphX + point.time * graphWidth;
+                    float y = graphY + (1.0f - point.y) * graphHeight;
+
+                    if (first) {
+                        nvgMoveTo(args.vg, x, y);
+                        first = false;
+                    } else {
+                        nvgLineTo(args.vg, x, y);
+                    }
+                }
+                nvgStroke(args.vg);
+
+                // Draw envelope points as small dots
+                nvgFillColor(args.vg, nvgRGBA(180, 255, 240, 180));
+                for (const auto& point : module->envelope) {
+                    float x = graphX + point.time * graphWidth;
+                    float y = graphY + (1.0f - point.y) * graphHeight;
+
+                    nvgBeginPath(args.vg);
+                    nvgCircle(args.vg, x, y, 1.0f);
+                    nvgFill(args.vg);
+                }
+
+                // Draw speed in top left corner
+                nvgFontFaceId(args.vg, font->handle);
+                nvgFontSize(args.vg, 7.0f);
+                nvgTextAlign(args.vg, NVG_ALIGN_LEFT | NVG_ALIGN_TOP);
+                nvgFillColor(args.vg, nvgRGBA(140, 180, 170, 200));
+                float speed = module->params[Evocation::SPEED_1_PARAM + envIndex].getValue();
+                std::string speedText = string::f("%.2fx", speed);
+                nvgText(args.vg, sidePadding, 3.0f, speedText.c_str(), nullptr);
+
+                // Draw phase in top right corner
+                nvgTextAlign(args.vg, NVG_ALIGN_RIGHT | NVG_ALIGN_TOP);
+                float phase = module->phaseOffsets[envIndex];
+                float phaseDeg = phase * 360.0f;
+                std::string phaseText = string::f("%.0f°", phaseDeg);
+                nvgText(args.vg, box.size.x - sidePadding, 3.0f, phaseText.c_str(), nullptr);
+
+                // Draw envelope label at bottom (below waveform)
+                nvgFontSize(args.vg, 10.0f);
+                nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_BOTTOM);
+                nvgFillColor(args.vg, nvgRGBA(120, 200, 188, 220));
+                std::string text = string::f("ENV %d", envIndex + 1);
+                nvgText(args.vg, box.size.x * 0.5f, box.size.y - bottomPadding, text.c_str(), nullptr);
+
+            } else {
+                // No envelope recorded
+                nvgFontFaceId(args.vg, font->handle);
+                nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+                nvgFontSize(args.vg, 10.0f);
+                nvgFillColor(args.vg, nvgRGBA(100, 160, 150, 180));
+                nvgText(args.vg, box.size.x * 0.5f, box.size.y * 0.5f, "[ENV EMPTY]", nullptr);
+            }
+        }
+
+        nvgRestore(args.vg);
+    }
+};
+
 struct EvocationWidget : ModuleWidget {
-    TouchStripWidget* touchStrip;
+    TouchStripWidget* touchStrip = nullptr;
+    EvocationOLEDDisplay* oledDisplay = nullptr;
 
     void draw(const DrawArgs& args) override {
         // Reapply shared panel background without caching across shutdown
@@ -1307,17 +1838,17 @@ struct EvocationWidget : ModuleWidget {
             return parser.centerPx(id, defx, defy);
         };
 
-        constexpr float panelWidthMm = 81.28f;
+        constexpr float panelWidthMm = 91.44f;
         constexpr float panelHeightMm = 128.5f;
 
-        addChild(createWidget<ScrewSilver>(mm(6.5f, 6.5f)));
-        addChild(createWidget<ScrewSilver>(mm(panelWidthMm - 6.5f, 6.5f)));
-        addChild(createWidget<ScrewSilver>(mm(6.5f, panelHeightMm - 6.5f)));
-        addChild(createWidget<ScrewSilver>(mm(panelWidthMm - 6.5f, panelHeightMm - 6.5f)));
+        addChild(createWidget<ScrewBlack>(mm(6.5f, 6.5f)));
+        addChild(createWidget<ScrewBlack>(mm(panelWidthMm - 6.5f, 6.5f)));
+        addChild(createWidget<ScrewBlack>(mm(6.5f, panelHeightMm - 6.5f)));
+        addChild(createWidget<ScrewBlack>(mm(panelWidthMm - 6.5f, panelHeightMm - 6.5f)));
 
         // Touch strip (positioned by SVG rectangle)
         touchStrip = new TouchStripWidget(module);
-        Rect touchStripRect = parser.rectMm("touch-strip", 9.0f, 22.0f, 28.0f, 86.0f);
+        Rect touchStripRect = parser.rectMm("touch-strip", 6.8731313f, 15.396681f, 30.561571f, 72.217186f);
         touchStrip->box.pos = mm(touchStripRect.pos.x, touchStripRect.pos.y);
         touchStrip->box.size = mm(touchStripRect.size.x, touchStripRect.size.y);
         addChild(touchStrip);
@@ -1327,27 +1858,55 @@ struct EvocationWidget : ModuleWidget {
             module->touchStripWidget = touchStrip;
         }
 
-        // Record / trigger / clear (using SVG positioning)
-        addParam(createParamCentered<ShapetakerVintageMomentary>(centerPx("record-btn", 58.0f, 24.0f), module, Evocation::RECORD_PARAM));
-        addChild(createLightCentered<MediumLight<RedLight>>(centerPx("record-btn", 58.0f, 24.0f) + Vec(-15, 0), module, Evocation::RECORDING_LIGHT));
+        // Feedback OLED display
+        Rect oledRect = parser.rectMm("feedback-oled", 6.8391566f, 98.025497f, 29.917749f, 22.122351f);
+        oledDisplay = new EvocationOLEDDisplay(module);
+        oledDisplay->box.pos = mm(oledRect.pos.x, oledRect.pos.y);
+        oledDisplay->box.size = mm(oledRect.size.x, oledRect.size.y);
+        addChild(oledDisplay);
 
-        addParam(createParamCentered<ShapetakerVintageMomentary>(centerPx("trigger-btn", 66.0f, 24.0f), module, Evocation::TRIGGER_PARAM));
-        addChild(createLightCentered<MediumLight<GreenLight>>(centerPx("trigger-btn", 66.0f, 24.0f) + Vec(15, 0), module, Evocation::TRIGGER_LIGHT));
+        // Record / trigger / clear buttons (positioned by SVG elements)
+        Vec recordBtn = parser.centerPx("record-btn", 49.159584f, 18.659674f);
+        addParam(createParamCentered<ShapetakerVintageMomentary>(recordBtn, module, Evocation::RECORD_PARAM));
 
-        addParam(createParamCentered<ShapetakerVintageMomentary>(centerPx("clear-btn", 74.0f, 24.0f), module, Evocation::CLEAR_PARAM));
+        Vec triggerBtn = parser.centerPx("trigger-btn-0", 63.618366f, 18.659674f);
+        addParam(createParamCentered<ShapetakerVintageMomentary>(triggerBtn, module, Evocation::TRIGGER_PARAM));
 
-        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("trigger-cv", 58.0f, 34.0f), module, Evocation::TRIGGER_INPUT));
-        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("clear-cv", 74.0f, 34.0f), module, Evocation::CLEAR_INPUT));
+        Vec clearBtn = parser.centerPx("clear-buffer-btn", 78.077148f, 18.659674f);
+        addParam(createParamCentered<ShapetakerVintageMomentary>(clearBtn, module, Evocation::CLEAR_PARAM));
 
-        // Envelope rows (using SVG positioning)
-        // Envelope 1 (FAST)
-        addParam(createParamCentered<ShapetakerVintageToggleSwitch>(centerPx("env1-loop", 32.0f, 50.0f), module, Evocation::LOOP_1_PARAM));
-        addChild(createLightCentered<MediumLight<BlueLight>>(centerPx("env1-loop", 32.0f, 50.0f), module, Evocation::LOOP_1_LIGHT));
-        addParam(createParamCentered<ShapetakerKnobOscilloscopeSmall>(centerPx("env1-speed", 52.0f, 50.0f), module, Evocation::SPEED_1_PARAM));
-        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("env1-speed-cv", 52.0f, 58.0f), module, Evocation::SPEED_1_INPUT));
-        addParam(createParamCentered<ShapetakerVintageToggleSwitch>(centerPx("env1-invert", 62.0f, 50.0f), module, Evocation::INVERT_1_PARAM));
-        addChild(createLightCentered<MediumLight<YellowLight>>(centerPx("env1-invert", 62.0f, 50.0f), module, Evocation::INVERT_1_LIGHT));
-        Vec env1OutCenter = centerPx("env1-out", 72.0f, 50.0f);
+        // CV inputs for record/trigger/clear
+        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("record-cv-in", 49.159584f, 29.776815f), module, Evocation::RECORD_INPUT));
+        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("trigger-cv-in", 63.618366f, 29.776815f), module, Evocation::TRIGGER_INPUT));
+        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("clear-cv-in", 78.077148f, 29.776815f), module, Evocation::CLEAR_INPUT));
+        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("gate-cv-in", 63.618366f, 40.893959f), module, Evocation::GATE_INPUT));
+
+        // Envelope controls
+        addParam(createParamCentered<ShapetakerKnobMedium>(centerPx("env-speed", 49.159584f, 47.892654f), module, Evocation::ENV_SPEED_PARAM));
+        addParam(createParamCentered<ShapetakerKnobOscilloscopeSmall>(centerPx("env-phase-offset", 78.077148f, 47.892654f), module, Evocation::ENV_PHASE_PARAM));
+
+        // Loop and invert capacitive touch switches with jewel LED indicators
+        addParam(createParamCentered<CapacitiveTouchSwitch>(centerPx("loop-sw", 78.077148f, 66.94957f), module, Evocation::LOOP_1_PARAM));
+        addChild(createLightCentered<shapetaker::ui::SmallJewelLED>(centerPx("loop-sw", 78.077148f, 66.94957f), module, Evocation::LOOP_1_LIGHT));
+
+        addParam(createParamCentered<CapacitiveTouchSwitch>(centerPx("invert-sw", 49.159584f, 68.657234f), module, Evocation::INVERT_1_PARAM));
+        addChild(createLightCentered<shapetaker::ui::SmallJewelLED>(centerPx("invert-sw", 49.159584f, 68.657234f), module, Evocation::INVERT_1_LIGHT));
+
+        // Envelope selection buttons
+        addParam(createParamCentered<ShapetakerVintageMomentary>(centerPx("env1-select-btn", 46.216522f, 92.244675f), module, Evocation::ENV_SELECT_1_PARAM));
+        addParam(createParamCentered<ShapetakerVintageMomentary>(centerPx("env2-select-btn", 58.543388f, 92.244675f), module, Evocation::ENV_SELECT_2_PARAM));
+        addParam(createParamCentered<ShapetakerVintageMomentary>(centerPx("env3-select-btn", 70.870247f, 92.244675f), module, Evocation::ENV_SELECT_3_PARAM));
+        addParam(createParamCentered<ShapetakerVintageMomentary>(centerPx("env4-select-btn", 83.197113f, 92.244675f), module, Evocation::ENV_SELECT_4_PARAM));
+
+        // EOC outputs per envelope
+        addOutput(createOutputCentered<ShapetakerBNCPort>(centerPx("env1-eoc", 46.216522f, 92.957283f), module, Evocation::ENV_1_EOC_OUTPUT));
+        addOutput(createOutputCentered<ShapetakerBNCPort>(centerPx("env2-eoc", 58.543388f, 92.957283f), module, Evocation::ENV_2_EOC_OUTPUT));
+        addOutput(createOutputCentered<ShapetakerBNCPort>(centerPx("env3-eoc", 70.870247f, 92.957291f), module, Evocation::ENV_3_EOC_OUTPUT));
+        addOutput(createOutputCentered<ShapetakerBNCPort>(centerPx("env4-eoc", 83.197113f, 92.957291f), module, Evocation::ENV_4_EOC_OUTPUT));
+
+        // Envelope outputs (using SVG positioning)
+        // Envelope 1
+        Vec env1OutCenter = centerPx("env1-out", 46.216522f, 104.81236f);
         auto* env1Port = createOutputCentered<ShapetakerBNCPort>(env1OutCenter, module, Evocation::ENV_1_OUTPUT);
         if (module) {
             auto* indicator = new OutputProgressIndicator(module, 0);
@@ -1358,14 +1917,8 @@ struct EvocationWidget : ModuleWidget {
         }
         addOutput(env1Port);
 
-        // Envelope 2 (MEDIUM)
-        addParam(createParamCentered<ShapetakerVintageToggleSwitch>(centerPx("env2-loop", 32.0f, 72.0f), module, Evocation::LOOP_2_PARAM));
-        addChild(createLightCentered<MediumLight<BlueLight>>(centerPx("env2-loop", 32.0f, 72.0f), module, Evocation::LOOP_2_LIGHT));
-        addParam(createParamCentered<ShapetakerKnobOscilloscopeSmall>(centerPx("env2-speed", 52.0f, 72.0f), module, Evocation::SPEED_2_PARAM));
-        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("env2-speed-cv", 52.0f, 80.0f), module, Evocation::SPEED_2_INPUT));
-        addParam(createParamCentered<ShapetakerVintageToggleSwitch>(centerPx("env2-invert", 62.0f, 72.0f), module, Evocation::INVERT_2_PARAM));
-        addChild(createLightCentered<MediumLight<YellowLight>>(centerPx("env2-invert", 62.0f, 72.0f), module, Evocation::INVERT_2_LIGHT));
-        Vec env2OutCenter = centerPx("env2-out", 72.0f, 72.0f);
+        // Envelope 2
+        Vec env2OutCenter = centerPx("env2-out", 58.543388f, 104.81236f);
         auto* env2Port = createOutputCentered<ShapetakerBNCPort>(env2OutCenter, module, Evocation::ENV_2_OUTPUT);
         if (module) {
             auto* indicator = new OutputProgressIndicator(module, 1);
@@ -1376,14 +1929,8 @@ struct EvocationWidget : ModuleWidget {
         }
         addOutput(env2Port);
 
-        // Envelope 3 (SLOW)
-        addParam(createParamCentered<ShapetakerVintageToggleSwitch>(centerPx("env3-loop", 32.0f, 94.0f), module, Evocation::LOOP_3_PARAM));
-        addChild(createLightCentered<MediumLight<BlueLight>>(centerPx("env3-loop", 32.0f, 94.0f), module, Evocation::LOOP_3_LIGHT));
-        addParam(createParamCentered<ShapetakerKnobOscilloscopeSmall>(centerPx("env3-speed", 52.0f, 94.0f), module, Evocation::SPEED_3_PARAM));
-        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("env3-speed-cv", 52.0f, 102.0f), module, Evocation::SPEED_3_INPUT));
-        addParam(createParamCentered<ShapetakerVintageToggleSwitch>(centerPx("env3-invert", 62.0f, 94.0f), module, Evocation::INVERT_3_PARAM));
-        addChild(createLightCentered<MediumLight<YellowLight>>(centerPx("env3-invert", 62.0f, 94.0f), module, Evocation::INVERT_3_LIGHT));
-        Vec env3OutCenter = centerPx("env3-out", 72.0f, 94.0f);
+        // Envelope 3
+        Vec env3OutCenter = centerPx("env3-out", 70.870247f, 104.81237f);
         auto* env3Port = createOutputCentered<ShapetakerBNCPort>(env3OutCenter, module, Evocation::ENV_3_OUTPUT);
         if (module) {
             auto* indicator = new OutputProgressIndicator(module, 2);
@@ -1394,14 +1941,8 @@ struct EvocationWidget : ModuleWidget {
         }
         addOutput(env3Port);
 
-        // Envelope 4 (PAD)
-        addParam(createParamCentered<ShapetakerVintageToggleSwitch>(centerPx("env4-loop", 32.0f, 116.0f), module, Evocation::LOOP_4_PARAM));
-        addChild(createLightCentered<MediumLight<BlueLight>>(centerPx("env4-loop", 32.0f, 116.0f), module, Evocation::LOOP_4_LIGHT));
-        addParam(createParamCentered<ShapetakerKnobOscilloscopeSmall>(centerPx("env4-speed", 52.0f, 116.0f), module, Evocation::SPEED_4_PARAM));
-        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("env4-speed-cv", 52.0f, 124.0f), module, Evocation::SPEED_4_INPUT));
-        addParam(createParamCentered<ShapetakerVintageToggleSwitch>(centerPx("env4-invert", 62.0f, 116.0f), module, Evocation::INVERT_4_PARAM));
-        addChild(createLightCentered<MediumLight<YellowLight>>(centerPx("env4-invert", 62.0f, 116.0f), module, Evocation::INVERT_4_LIGHT));
-        Vec env4OutCenter = centerPx("env4-out", 72.0f, 116.0f);
+        // Envelope 4
+        Vec env4OutCenter = centerPx("env4-out", 83.197113f, 104.81237f);
         auto* env4Port = createOutputCentered<ShapetakerBNCPort>(env4OutCenter, module, Evocation::ENV_4_OUTPUT);
         if (module) {
             auto* indicator = new OutputProgressIndicator(module, 3);
@@ -1412,8 +1953,11 @@ struct EvocationWidget : ModuleWidget {
         }
         addOutput(env4Port);
 
-        // Gate output
-        addOutput(createOutputCentered<ShapetakerBNCPort>(centerPx("gate-out", 65.0f, 118.0f), module, Evocation::GATE_OUTPUT));
+        // Gate outputs per envelope (updated positions from SVG)
+        addOutput(createOutputCentered<ShapetakerBNCPort>(centerPx("env1-gate", 46.216522f, 117.38005f), module, Evocation::ENV_1_GATE_OUTPUT));
+        addOutput(createOutputCentered<ShapetakerBNCPort>(centerPx("env2-gate", 58.543388f, 117.38005f), module, Evocation::ENV_2_GATE_OUTPUT));
+        addOutput(createOutputCentered<ShapetakerBNCPort>(centerPx("env3-gate", 70.870247f, 117.38005f), module, Evocation::ENV_3_GATE_OUTPUT));
+        addOutput(createOutputCentered<ShapetakerBNCPort>(centerPx("env4-gate", 83.197113f, 117.38005f), module, Evocation::ENV_4_GATE_OUTPUT));
     }
 
     void appendContextMenu(Menu* menu) override {

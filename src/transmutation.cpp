@@ -13,6 +13,9 @@
 #include <sstream>
 #include <cmath>
 #include <unordered_set>
+#include <cctype>
+#include <map>
+#include <jansson.h>
 #include "voice/PolyOut.hpp"
 
 using stx::transmutation::ChordPack;
@@ -153,6 +156,26 @@ struct Transmutation : Module,
     Sequence sequenceA;
     Sequence sequenceB;
 
+    struct PackMetadata {
+        std::string relativePath;
+        std::string absolutePath;
+        std::string name;
+        std::string key;
+        std::string mode;
+        std::string scale;
+        std::string genre;
+        std::string mood;
+        std::string complexity;
+        std::string voicingStyle;
+        std::vector<std::string> tags;
+        std::string description;
+        int chordCount = 0;
+    };
+
+    std::vector<PackMetadata> packMetadata;
+    bool packMetadataLoaded = false;
+    std::string currentChordPackFile;
+
     // Edit mode state
     bool editModeA = false;
     bool editModeB = false;
@@ -175,6 +198,9 @@ struct Transmutation : Module,
     std::array<int, 12> buttonToSymbolMapping; // Maps button positions 0-11 to symbol IDs 0..(st::SymbolCount-1)
     std::array<float, 12> buttonPressAnim;     // 1.0 on press, decays to 0 for animation
 
+    enum class ChordRole { Tonic, Predominant, Dominant, Other };
+    std::vector<ChordRole> chordRoles;
+
     // Clock system
     float internalClock = 0.0f;
     float clockRate = 120.0f; // BPM
@@ -184,7 +210,7 @@ struct Transmutation : Module,
     // (CV slew removed)
 
     // Tunables
-    bool stablePolyChannels = true; // Keep poly channel count stable across steps to avoid gate/channel drops
+    bool stablePolyChannels = false; // Default to actual voice count for friendlier downstream poly behavior
 
     // Groove engine
     bool grooveEnabled = false;
@@ -234,6 +260,148 @@ struct Transmutation : Module,
         }
     }
 
+    void ensurePackMetadataLoaded() {
+        if (packMetadataLoaded) return;
+        packMetadataLoaded = true;
+        packMetadata.clear();
+
+        std::string indexPath = asset::plugin(pluginInstance, "chord_packs/index.json");
+        if (system::exists(indexPath)) {
+            json_error_t error;
+            json_t* rootJ = json_load_file(indexPath.c_str(), 0, &error);
+            if (rootJ) {
+                json_t* packsJ = json_object_get(rootJ, "packs");
+                if (packsJ && json_is_array(packsJ)) {
+                    size_t index;
+                    json_t* packJ;
+                    json_array_foreach(packsJ, index, packJ) {
+                        if (!json_is_object(packJ)) continue;
+                        PackMetadata meta;
+                        if (json_t* fileJ = json_object_get(packJ, "file")) {
+                            if (json_is_string(fileJ)) meta.relativePath = json_string_value(fileJ);
+                        }
+                        if (meta.relativePath.empty()) continue;
+                        meta.absolutePath = asset::plugin(pluginInstance, std::string("chord_packs/") + meta.relativePath);
+                        if (json_t* nameJ = json_object_get(packJ, "name")) {
+                            if (json_is_string(nameJ)) meta.name = json_string_value(nameJ);
+                        }
+                        if (json_t* keyJ = json_object_get(packJ, "key")) {
+                            if (json_is_string(keyJ)) meta.key = json_string_value(keyJ);
+                        }
+                        if (json_t* modeJ = json_object_get(packJ, "mode")) {
+                            if (json_is_string(modeJ)) meta.mode = json_string_value(modeJ);
+                        }
+                        if (json_t* scaleJ = json_object_get(packJ, "scale")) {
+                            if (json_is_string(scaleJ)) meta.scale = json_string_value(scaleJ);
+                        }
+                        if (json_t* genreJ = json_object_get(packJ, "genre")) {
+                            if (json_is_string(genreJ)) meta.genre = json_string_value(genreJ);
+                        }
+                        if (json_t* moodJ = json_object_get(packJ, "mood")) {
+                            if (json_is_string(moodJ)) meta.mood = json_string_value(moodJ);
+                        }
+                        if (json_t* complexityJ = json_object_get(packJ, "complexity")) {
+                            if (json_is_string(complexityJ)) meta.complexity = json_string_value(complexityJ);
+                        }
+                        if (json_t* voicingJ = json_object_get(packJ, "voicingStyle")) {
+                            if (json_is_string(voicingJ)) meta.voicingStyle = json_string_value(voicingJ);
+                        }
+                        if (json_t* tagsJ = json_object_get(packJ, "tags")) {
+                            if (json_is_array(tagsJ)) {
+                                size_t tagIndex;
+                                json_t* tagJ;
+                                json_array_foreach(tagsJ, tagIndex, tagJ) {
+                                    if (json_is_string(tagJ)) meta.tags.push_back(json_string_value(tagJ));
+                                }
+                            }
+                        }
+                        if (json_t* descJ = json_object_get(packJ, "description")) {
+                            if (json_is_string(descJ)) meta.description = json_string_value(descJ);
+                        }
+                        if (json_t* countJ = json_object_get(packJ, "chordCount")) {
+                            if (json_is_integer(countJ)) meta.chordCount = (int)json_integer_value(countJ);
+                        }
+                        packMetadata.push_back(std::move(meta));
+                    }
+                }
+                json_decref(rootJ);
+            }
+        }
+
+        if (!packMetadata.empty()) {
+            std::sort(packMetadata.begin(), packMetadata.end(), [](const PackMetadata& a, const PackMetadata& b){
+                if (a.key == b.key) return a.name < b.name;
+                return a.key < b.key;
+            });
+            return;
+        }
+
+        // Fallback manual scan if index is missing
+        std::string chordPackDir = asset::plugin(pluginInstance, "chord_packs");
+        if (!system::isDirectory(chordPackDir)) return;
+        for (const std::string& entry : system::getEntries(chordPackDir)) {
+            if (!system::isDirectory(entry)) continue;
+            size_t slash = entry.find_last_of("/\\");
+            std::string keyLabel = (slash == std::string::npos) ? entry : entry.substr(slash + 1);
+            for (const std::string& fileEntry : system::getEntries(entry)) {
+                if (system::getExtension(fileEntry) != ".json") continue;
+                PackMetadata meta;
+                meta.absolutePath = fileEntry;
+                if (fileEntry.size() > chordPackDir.size()) {
+                    std::string rel = fileEntry.substr(chordPackDir.size());
+                    if (!rel.empty() && (rel[0] == '/' || rel[0] == '\\')) rel.erase(rel.begin());
+                    meta.relativePath = rel;
+                }
+                std::ifstream f(fileEntry);
+                if (f) {
+                    std::stringstream ss; ss << f.rdbuf();
+                    std::string content = ss.str();
+                    if (!content.empty()) {
+                        json_error_t error;
+                        json_t* rootJ = json_loads(content.c_str(), 0, &error);
+                        if (rootJ) {
+                            if (json_t* nameJ = json_object_get(rootJ, "name")) {
+                                if (json_is_string(nameJ)) meta.name = json_string_value(nameJ);
+                            }
+                            if (json_t* keyJ = json_object_get(rootJ, "key")) {
+                                if (json_is_string(keyJ)) meta.key = json_string_value(keyJ);
+                            }
+                            if (json_t* descJ = json_object_get(rootJ, "description")) {
+                                if (json_is_string(descJ)) meta.description = json_string_value(descJ);
+                            }
+                            if (json_t* chordsJ = json_object_get(rootJ, "chords")) {
+                                if (json_is_array(chordsJ)) meta.chordCount = (int)json_array_size(chordsJ);
+                            }
+                            json_decref(rootJ);
+                        }
+                    }
+                }
+                if (meta.name.empty()) {
+                    size_t slash2 = fileEntry.find_last_of("/\\");
+                    std::string stem = (slash2 == std::string::npos) ? fileEntry : fileEntry.substr(slash2 + 1);
+                    size_t dot = stem.find_last_of('.');
+                    if (dot != std::string::npos) stem = stem.substr(0, dot);
+                    meta.name = stem;
+                }
+                if (meta.key.empty()) meta.key = keyLabel;
+                packMetadata.push_back(std::move(meta));
+            }
+        }
+        std::sort(packMetadata.begin(), packMetadata.end(), [](const PackMetadata& a, const PackMetadata& b){
+            if (a.key == b.key) return a.name < b.name;
+            return a.key < b.key;
+        });
+    }
+
+    bool loadPackFromMetadata(const PackMetadata& meta) {
+        bool ok = loadChordPackFromFile(meta.absolutePath);
+        if (ok) {
+            displayChordName = meta.name.empty() ? meta.relativePath : meta.name;
+            displaySymbolId = -999;
+            symbolPreviewTimer = 1.0f;
+        }
+        return ok;
+    }
     // =========================
     // Chord pack normalization
     // - ensure no duplicate chords per pack (prefer inversions to differentiate)
@@ -352,6 +520,227 @@ struct Transmutation : Module,
         }
     }
 
+    static std::string toLower(const std::string& value) {
+        std::string low = value;
+        std::transform(low.begin(), low.end(), low.begin(), [](unsigned char c){ return (char)std::tolower(c); });
+        return low;
+    }
+
+    static int noteNameToSemitone(const std::string& note) {
+        static const std::map<std::string, int> lookup = {
+            {"C",0},{"C#",1},{"Db",1},{"D",2},{"D#",3},{"Eb",3},{"E",4},{"Fb",4},{"F",5},{"E#",5},{"F#",6},{"Gb",6},{"G",7},{"G#",8},{"Ab",8},{"A",9},{"A#",10},{"Bb",10},{"B",11},{"Cb",11}
+        };
+        auto it = lookup.find(note);
+        if (it != lookup.end()) return it->second;
+        return -1;
+    }
+
+    static std::string extractChordRoot(const std::string& name) {
+        if (name.empty()) return "";
+        char first = name[0];
+        if (!std::isalpha((unsigned char)first)) return "";
+        std::string root;
+        root.push_back((char)std::toupper(first));
+        if (name.size() >= 2) {
+            char second = name[1];
+            if (second == '#' || second == 'b' || second == 'B') {
+                root.push_back(second == 'B' ? 'b' : second);
+            }
+        }
+        return root;
+    }
+
+    ChordRole classifyMajorDegree(int rel) const {
+        switch (rel % 12) {
+            case 0: case 4: case 9:
+                return ChordRole::Tonic;
+            case 2: case 5:
+                return ChordRole::Predominant;
+            case 7: case 11: case 10:
+                return ChordRole::Dominant;
+            default:
+                return ChordRole::Other;
+        }
+    }
+
+    ChordRole classifyMinorDegree(int rel) const {
+        switch (rel % 12) {
+            case 0: case 3:
+                return ChordRole::Tonic;
+            case 5: case 2: case 8:
+                return ChordRole::Predominant;
+            case 7: case 10: case 11:
+                return ChordRole::Dominant;
+            default:
+                return ChordRole::Other;
+        }
+    }
+
+    void analyzeChordRoles() {
+        chordRoles.assign(currentChordPack.chords.size(), ChordRole::Other);
+        if (currentChordPack.chords.empty()) return;
+
+        int keySemi = noteNameToSemitone(extractChordRoot(currentChordPack.key));
+        if (keySemi < 0) keySemi = 0; // default to C
+
+        std::string modeLower = toLower(currentChordPack.mode);
+        bool isMinor = false;
+        if (!modeLower.empty()) {
+            if (modeLower.find("minor") != std::string::npos || modeLower.find("dorian") != std::string::npos) {
+                isMinor = true;
+            }
+        }
+
+        for (size_t i = 0; i < currentChordPack.chords.size(); ++i) {
+            const auto& chord = currentChordPack.chords[i];
+            int rootSemi = keySemi;
+            if (!chord.intervals.empty()) {
+                rootSemi = ((int)std::round(chord.intervals[0])) % 12;
+            } else {
+                int parsed = noteNameToSemitone(extractChordRoot(chord.name));
+                if (parsed >= 0) rootSemi = parsed;
+            }
+            int rel = (rootSemi - keySemi + 12) % 12;
+            chordRoles[i] = isMinor ? classifyMinorDegree(rel) : classifyMajorDegree(rel);
+        }
+    }
+
+    ChordRole getRoleForSymbol(int symbol) const {
+        if (!st::isValidSymbolId(symbol)) return ChordRole::Other;
+        int mapped = symbolToChordMapping[symbol];
+        if (mapped >= 0 && mapped < (int)chordRoles.size()) return chordRoles[mapped];
+        return ChordRole::Other;
+    }
+
+    std::vector<int> generateChordPlan(int length, std::mt19937& rng, const std::vector<int>& symbols) {
+        std::vector<int> plan;
+        if (length <= 0 || symbols.empty()) return plan;
+
+        std::vector<int> tonicSymbols;
+        std::vector<int> predominants;
+        std::vector<int> dominants;
+        std::vector<int> others;
+        tonicSymbols.reserve(symbols.size());
+        predominants.reserve(symbols.size());
+        dominants.reserve(symbols.size());
+        others.reserve(symbols.size());
+
+        for (int sym : symbols) {
+            switch (getRoleForSymbol(sym)) {
+                case ChordRole::Tonic: tonicSymbols.push_back(sym); break;
+                case ChordRole::Predominant: predominants.push_back(sym); break;
+                case ChordRole::Dominant: dominants.push_back(sym); break;
+                case ChordRole::Other: default: others.push_back(sym); break;
+            }
+        }
+
+        auto pickFrom = [&](const std::vector<int>& list) -> int {
+            if (list.empty()) return symbols[rng() % symbols.size()];
+            std::uniform_int_distribution<size_t> dist(0, list.size() - 1);
+            return list[dist(rng)];
+        };
+
+        auto chooseSymbolForRole = [&](ChordRole role) -> int {
+            switch (role) {
+                case ChordRole::Tonic:
+                    if (!tonicSymbols.empty()) return pickFrom(tonicSymbols);
+                    break;
+                case ChordRole::Predominant:
+                    if (!predominants.empty()) return pickFrom(predominants);
+                    break;
+                case ChordRole::Dominant:
+                    if (!dominants.empty()) return pickFrom(dominants);
+                    break;
+                case ChordRole::Other:
+                    if (!others.empty()) return pickFrom(others);
+                    break;
+            }
+            if (!tonicSymbols.empty()) return pickFrom(tonicSymbols);
+            if (!predominants.empty()) return pickFrom(predominants);
+            if (!dominants.empty()) return pickFrom(dominants);
+            if (!others.empty()) return pickFrom(others);
+            return symbols[rng() % symbols.size()];
+        };
+
+        auto chooseNextRole = [&](ChordRole current) -> ChordRole {
+            struct Option { ChordRole role; float weight; };
+            std::vector<Option> options;
+            options.reserve(4);
+
+            auto addOption = [&](ChordRole role, float weight) {
+                if (weight <= 0.f) return;
+                switch (role) {
+                    case ChordRole::Tonic: if (tonicSymbols.empty()) return; break;
+                    case ChordRole::Predominant: if (predominants.empty()) return; break;
+                    case ChordRole::Dominant: if (dominants.empty()) return; break;
+                    case ChordRole::Other: if (others.empty()) return; break;
+                }
+                options.push_back({role, weight});
+            };
+
+            switch (current) {
+                case ChordRole::Tonic:
+                    addOption(ChordRole::Tonic, 0.35f);
+                    addOption(ChordRole::Predominant, 0.35f);
+                    addOption(ChordRole::Dominant, 0.25f);
+                    addOption(ChordRole::Other, 0.05f);
+                    break;
+                case ChordRole::Predominant:
+                    addOption(ChordRole::Dominant, 0.45f);
+                    addOption(ChordRole::Tonic, 0.35f);
+                    addOption(ChordRole::Predominant, 0.10f);
+                    addOption(ChordRole::Other, 0.10f);
+                    break;
+                case ChordRole::Dominant:
+                    addOption(ChordRole::Tonic, 0.60f);
+                    addOption(ChordRole::Predominant, 0.20f);
+                    addOption(ChordRole::Dominant, 0.15f);
+                    addOption(ChordRole::Other, 0.05f);
+                    break;
+                case ChordRole::Other:
+                default:
+                    addOption(ChordRole::Tonic, 0.40f);
+                    addOption(ChordRole::Predominant, 0.30f);
+                    addOption(ChordRole::Dominant, 0.20f);
+                    addOption(ChordRole::Other, 0.10f);
+                    break;
+            }
+
+            if (options.empty()) {
+                if (!tonicSymbols.empty()) return ChordRole::Tonic;
+                if (!predominants.empty()) return ChordRole::Predominant;
+                if (!dominants.empty()) return ChordRole::Dominant;
+                return ChordRole::Other;
+            }
+
+            float total = 0.f;
+            for (const auto& opt : options) total += opt.weight;
+            std::uniform_real_distribution<float> dist(0.f, total);
+            float pick = dist(rng);
+            float accum = 0.f;
+            for (const auto& opt : options) {
+                accum += opt.weight;
+                if (pick <= accum) return opt.role;
+            }
+            return options.back().role;
+        };
+
+        ChordRole currentRole = ChordRole::Other;
+        if (!tonicSymbols.empty()) currentRole = ChordRole::Tonic;
+        else if (!predominants.empty()) currentRole = ChordRole::Predominant;
+        else if (!dominants.empty()) currentRole = ChordRole::Dominant;
+
+        plan.reserve(length);
+        for (int i = 0; i < length; ++i) {
+            if (i > 0) currentRole = chooseNextRole(currentRole);
+            int symbol = chooseSymbolForRole(currentRole);
+            plan.push_back(symbol);
+            currentRole = getRoleForSymbol(symbol);
+        }
+        return plan;
+    }
+
+
     // Compute per-step micro-delay (seconds), clamped to [0 .. 0.45 * stepPeriod]
     float computeGrooveDelaySec(const Sequence& seq, int nextIndex, float stepPeriodSec) const {
         if (!grooveEnabled || grooveAmount <= 0.f) return 0.f;
@@ -456,6 +845,9 @@ struct Transmutation : Module,
 
     Transmutation() {
         config(PARAMS_LEN, INPUTS_LEN, OUTPUTS_LEN, LIGHTS_LEN);
+
+        currentChordPackFile.clear();
+        packMetadataLoaded = false;
 
         // Edit mode buttons
         configParam(EDIT_A_PARAM, 0.f, 1.f, 0.f, "Edit Transmutation A");
@@ -1492,8 +1884,10 @@ struct Transmutation : Module,
             // Normalize pack content to avoid duplicates and redundant words
             normalizeChordPack(currentChordPack);
             INFO("Loaded: '%s' (%d chords)", currentChordPack.name.c_str(), (int)currentChordPack.chords.size());
+            currentChordPackFile = filepath;
             // Remap placed steps to preserve button positions with the new symbol set
             randomizeSymbolAssignment(true);
+            analyzeChordRoles();
             // Normalize existing sequences to new pack (ensure playable voices)
             auto normalize = [&](Sequence& seq){
                 for (int i = 0; i < seq.length; ++i) {
@@ -1579,6 +1973,8 @@ struct Transmutation : Module,
         normalizeChordPack(currentChordPack);
         // Remap placed steps to preserve button positions with the new symbol set
         randomizeSymbolAssignment(true);
+        analyzeChordRoles();
+        currentChordPackFile.clear();
     }
 
     // Randomize both sequence lengths with improved variety and musicality
@@ -1689,28 +2085,39 @@ struct Transmutation : Module,
 
     // Discover all chord pack files under chord_packs/*/*.json
     std::vector<std::string> listAllChordPackFiles() {
+        ensurePackMetadataLoaded();
         std::vector<std::string> packs;
-        std::string chordPackDir = asset::plugin(pluginInstance, "chord_packs");
-        if (!system::isDirectory(chordPackDir)) return packs;
-        for (const std::string& entry : system::getEntries(chordPackDir)) {
-            std::string fullPath = entry; // system::getEntries returns full paths
-            if (!system::isDirectory(fullPath)) continue;
-            for (const std::string& fileEntry : system::getEntries(fullPath)) {
-                if (system::getExtension(fileEntry) == ".json") packs.push_back(fileEntry);
-            }
+        packs.reserve(packMetadata.size());
+        for (const auto& meta : packMetadata) {
+            packs.push_back(meta.absolutePath);
         }
         return packs;
     }
 
     // Randomly choose and load a chord pack; returns true if loaded
     bool randomizeChordPack() {
+        ensurePackMetadataLoaded();
+        std::vector<const PackMetadata*> candidates;
+        candidates.reserve(packMetadata.size());
+        for (auto& meta : packMetadata) {
+            candidates.push_back(&meta);
+        }
+
+        if (!candidates.empty()) {
+            std::mt19937 rng(rack::random::u32());
+            const PackMetadata* choice = candidates[rng() % candidates.size()];
+            if (choice && loadPackFromMetadata(*choice)) {
+                return true;
+            }
+        }
+
+        // Fallback to direct scan if metadata missing or load failed
         auto packs = listAllChordPackFiles();
         if (packs.empty()) return false;
         std::mt19937 rng(rack::random::u32());
         const std::string& path = packs[rng() % packs.size()];
         bool ok = loadChordPackFromFile(path);
         if (ok) {
-            // Brief on-screen preview using proper chord pack name
             displayChordName = currentChordPack.name;
             displaySymbolId = -999;
             symbolPreviewTimer = 1.0f;
@@ -1823,6 +2230,8 @@ struct Transmutation : Module,
         std::mt19937 rng(rack::random::u32());
         std::uniform_int_distribution<int> voiceDist(1, stx::transmutation::MAX_VOICES);
         std::uniform_real_distribution<float> pick(0.f, 1.f);
+        std::vector<int> chordPlan = generateChordPlan(seq.length, rng, symbols);
+        size_t planIndex = 0;
 
         int len = clamp(seq.length, 1, gridSteps);
         // Compute final probabilities: chord density wins; remaining split by rest/tie weights
@@ -1854,7 +2263,12 @@ struct Transmutation : Module,
                 stp.voiceCount = 1;
             } else {
                 // Chord step
-                int sidx = symbols[rng() % symbols.size()];
+                int sidx;
+                if (planIndex < chordPlan.size()) {
+                    sidx = chordPlan[planIndex++];
+                } else {
+                    sidx = symbols[rng() % symbols.size()];
+                }
                 stp.chordIndex = sidx;
                 stp.alchemySymbolId = sidx;
                 // Choose voices: prefer chord's suggested size if available
@@ -1913,7 +2327,7 @@ struct Transmutation : Module,
         sequenceA.running = false;
         sequenceB.running = false;
         // (CV slew removed)
-        stablePolyChannels = true;
+        stablePolyChannels = false;
         forceSixPoly = false;
         gateMode = GATE_SUSTAIN;
         gatePulseMs = 8.0f;
@@ -2288,6 +2702,10 @@ struct TransmutationWidget : ModuleWidget {
             // (CV Slew removed)
             sub->addChild(createMenuItem("Stable Poly Channels", check(module->stablePolyChannels), [module]() {
                 module->stablePolyChannels = !module->stablePolyChannels;
+                module->reassertPolyA = true;
+                module->reassertPolyB = true;
+                module->oneShotExactPolyA = true;
+                module->oneShotExactPolyB = true;
             }));
             sub->addChild(createMenuItem("Force 6-voice Polyphony", check(module->forceSixPoly), [module]() {
                 module->forceSixPoly = !module->forceSixPoly;
@@ -2394,138 +2812,118 @@ struct TransmutationWidget : ModuleWidget {
             }));
         }));
 
-        // Chord packs submenu (reverted to key-based organization)
+        // Chord packs submenu grouped by metadata
         menu->addChild(createSubmenuItem("Chord Packs", "", [module](Menu* chordMenu) {
-            // Helper to get a friendly display name from a JSON pack, falling back to filename stem
-            auto packDisplayName = [](const std::string& packPath, const std::string& fallbackStem) {
-                std::string display = fallbackStem;
-                try {
-                    std::string content;
-                    if (system::exists(packPath)) {
-                        std::string data;
-                        std::ifstream f(packPath);
-                        if (f) {
-                            std::stringstream ss; ss << f.rdbuf();
-                            content = ss.str();
-                        }
+            module->ensurePackMetadataLoaded();
+
+            auto addPackItem = [module](Menu* parent, const Transmutation::PackMetadata* meta) {
+                if (!meta) return;
+                std::string label = meta->name.empty() ? meta->relativePath : meta->name;
+                auto* item = createMenuItem(label, "", [module, meta]() {
+                    if (!module) return;
+                    if (!module->loadPackFromMetadata(*meta)) {
+                        module->displayChordName = "LOAD ERROR";
+                        module->displaySymbolId = -999;
+                        module->symbolPreviewTimer = 1.0f;
+                        WARN("Failed to load chord pack: %s", meta->absolutePath.c_str());
                     }
-                    if (!content.empty()) {
-                        json_error_t error;
-                        json_t* rootJ = json_loads(content.c_str(), 0, &error);
-                        if (rootJ) {
-                            json_t* nameJ = json_object_get(rootJ, "name");
-                            if (nameJ && json_is_string(nameJ)) {
-                                display = json_string_value(nameJ);
-                            }
-                            json_decref(rootJ);
-                        }
+                });
+                if (module->currentChordPackFile == meta->absolutePath) {
+                    item->rightText = "✓";
+                } else {
+                    std::string right;
+                    if (!meta->key.empty()) right += meta->key;
+                    if (!meta->mode.empty()) {
+                        if (!right.empty()) right += " • ";
+                        right += meta->mode;
                     }
-                } catch (...) {}
-                return display;
+                    if (!meta->genre.empty()) {
+                        if (!right.empty()) right += " • ";
+                        right += meta->genre;
+                    }
+                    item->rightText = right;
+                }
+                parent->addChild(item);
             };
 
-            // Root chord pack directory inside plugin assets
-            std::string chordPackDir = asset::plugin(pluginInstance, "chord_packs");
+            auto addPackList = [addPackItem](Menu* parent, std::vector<const Transmutation::PackMetadata*> list) {
+                std::sort(list.begin(), list.end(), [](const Transmutation::PackMetadata* a, const Transmutation::PackMetadata* b) {
+                    return a->name < b->name;
+                });
+                for (const auto* meta : list) {
+                    addPackItem(parent, meta);
+                }
+            };
 
-            // Default pack at top
-            std::string rightText = (module->currentChordPack.name == "Basic Major") ? "✓" : "";
+            std::string rightText = module->currentChordPackFile.empty() ? "✓" : "";
             chordMenu->addChild(createMenuItem("Basic Major", rightText, [module]() {
                 module->loadDefaultChordPack();
                 module->displayChordName = "Basic Major";
-                module->displaySymbolId = -999; // text-only preview
+                module->displaySymbolId = -999;
                 module->symbolPreviewTimer = 1.0f;
             }));
 
-            // Random chord pack helpers
-            chordMenu->addChild(createMenuItem("Random Pack (Safe)", "", [module]() {
-                module->randomizePackSafe();
-            }));
             chordMenu->addChild(createMenuItem("Random Pack", "", [module]() {
                 if (!module->randomizeChordPack()) {
-                    // Fallback to default if none found
                     module->loadDefaultChordPack();
                 }
             }));
 
-            if (!system::isDirectory(chordPackDir)) {
-                chordMenu->addChild(createMenuLabel("No chord_packs directory found"));
+            if (module->packMetadata.empty()) {
+                chordMenu->addChild(new MenuSeparator);
+                chordMenu->addChild(createMenuLabel("No chord packs found"));
                 return;
             }
 
-            // Helpers for clean labels
-            auto basename = [](const std::string& path) {
-                size_t pos = path.find_last_of("/\\");
-                return (pos == std::string::npos) ? path : path.substr(pos + 1);
-            };
-            auto stem = [](const std::string& filename) {
-                size_t slash = filename.find_last_of("/\\");
-                std::string name = (slash == std::string::npos) ? filename : filename.substr(slash + 1);
-                size_t dot = name.find_last_of('.');
-                return (dot == std::string::npos) ? name : name.substr(0, dot);
-            };
+            std::map<std::string, std::vector<const Transmutation::PackMetadata*>> byKey;
+            std::map<std::string, std::vector<const Transmutation::PackMetadata*>> byMode;
+            std::map<std::string, std::vector<const Transmutation::PackMetadata*>> byGenre;
+            std::map<std::string, std::vector<const Transmutation::PackMetadata*>> byComplexity;
+            std::map<std::string, std::vector<const Transmutation::PackMetadata*>> byTag;
 
-            // Collect key directories as absolute paths, sort by base name
-            std::vector<std::string> keyDirs;
-            for (const std::string& entry : system::getEntries(chordPackDir)) {
-                std::string fullPath = entry;
-                if (system::isDirectory(fullPath)) keyDirs.push_back(fullPath);
-            }
-            std::sort(keyDirs.begin(), keyDirs.end(), [&](const std::string& a, const std::string& b) {
-                return basename(a) < basename(b);
-            });
-
-            if (!keyDirs.empty()) chordMenu->addChild(new MenuSeparator);
-
-            // Build submenus per key with friendly names, no absolute paths
-            for (const std::string& keyPath : keyDirs) {
-                if (!system::isDirectory(keyPath)) continue;
-                std::string keyLabel = basename(keyPath);
-
-                // Gather pack files
-                std::vector<std::string> packFiles;
-                for (const std::string& fileEntry : system::getEntries(keyPath)) {
-                    if (system::getExtension(fileEntry) == ".json") packFiles.push_back(fileEntry);
+            for (const auto& meta : module->packMetadata) {
+                const auto* ptr = &meta;
+                byKey[meta.key.empty() ? "Unlabeled" : meta.key].push_back(ptr);
+                if (!meta.mode.empty()) byMode[meta.mode].push_back(ptr);
+                if (!meta.genre.empty()) byGenre[meta.genre].push_back(ptr);
+                if (!meta.complexity.empty()) byComplexity[meta.complexity].push_back(ptr);
+                for (const auto& tag : meta.tags) {
+                    if (!tag.empty()) byTag[tag].push_back(ptr);
                 }
-                std::sort(packFiles.begin(), packFiles.end(), [&](const std::string& a, const std::string& b){
-                    return stem(a) < stem(b);
-                });
-                if (packFiles.empty()) continue;
+            }
 
-                chordMenu->addChild(createSubmenuItem(keyLabel, "", [module, keyPath, keyLabel, packFiles, packDisplayName, stem](Menu* keySubmenu) {
-                    keySubmenu->addChild(createMenuLabel("Key: " + keyLabel));
-                    keySubmenu->addChild(new MenuSeparator);
-
-                    for (const std::string& packFile : packFiles) {
-                        std::string packPath = packFile; // absolute path
-                        std::string packStem = stem(packFile);
-                        std::string displayName = packDisplayName(packPath, packStem);
-
-                        std::string check = "";
-                        if (module) {
-                            if (module->currentChordPack.name == displayName ||
-                                module->currentChordPack.name.find(packStem) != std::string::npos) {
-                                check = "✓";
-                            }
-                        }
-
-                        keySubmenu->addChild(createMenuItem(displayName, check, [module, packPath, displayName]() {
-                            if (!module) return;
-                        if (module->loadChordPackFromFile(packPath)) {
-                            module->displayChordName = displayName;
-                            module->displaySymbolId = -999; // text-only preview
-                            module->symbolPreviewTimer = 1.0f;
-                            INFO("Loaded chord pack: %s", displayName.c_str());
-                            } else {
-                                module->displayChordName = "LOAD ERROR";
-                                module->displaySymbolId = -999;
-                                module->symbolPreviewTimer = 1.0f;
-                                WARN("Failed to load chord pack: %s", packPath.c_str());
-                            }
+            auto addGroupSubmenu = [chordMenu, addPackList](const std::string& title,
+                const std::map<std::string, std::vector<const Transmutation::PackMetadata*>>& groups) {
+                if (groups.empty()) return;
+                chordMenu->addChild(createSubmenuItem(title, "", [addPackList, groups](Menu* groupMenu) {
+                    for (const auto& entry : groups) {
+                        std::string label = entry.first.empty() ? "Misc" : entry.first;
+                        std::vector<const Transmutation::PackMetadata*> list = entry.second;
+                        groupMenu->addChild(createSubmenuItem(label, "", [addPackList, list](Menu* packMenu) mutable {
+                            addPackList(packMenu, list);
                         }));
                     }
                 }));
+            };
+
+            chordMenu->addChild(new MenuSeparator);
+            addGroupSubmenu("By Key", byKey);
+            addGroupSubmenu("By Mode", byMode);
+            addGroupSubmenu("By Genre", byGenre);
+            addGroupSubmenu("By Complexity", byComplexity);
+
+            if (!byTag.empty()) {
+                std::map<std::string, std::vector<const Transmutation::PackMetadata*>> limitedTags;
+                size_t count = 0;
+                for (const auto& entry : byTag) {
+                    if (count >= 12) break;
+                    limitedTags.insert(entry);
+                    ++count;
+                }
+                addGroupSubmenu("By Tag", limitedTags);
             }
         }));
+
     }
 
     TransmutationWidget(Transmutation* module) {
@@ -2634,15 +3032,15 @@ struct TransmutationWidget : ModuleWidget {
                 return mm2px(Vec(cx, cy));
             };
             // Sequence A
-            // Upsize length knobs from Medium to Large for better ergonomics
-            addParam(createParamCentered<ShapetakerKnobLarge>(pos("seq_a_length", 15.950587f, 37.849998f), module, Transmutation::LENGTH_A_PARAM));
-            addParam(createParamCentered<ShapetakerKnobMedium>(pos("main_bpm", 15.950588f, 18.322521f), module, Transmutation::INTERNAL_CLOCK_PARAM));
-            addParam(createParamCentered<ShapetakerKnobOscilloscopeSmall>(pos("clk_mult_select", 34.340317f, 18.322521f), module, Transmutation::BPM_MULTIPLIER_PARAM));
+            // Hardware-realistic sizes: Medium for length, Small for BPM
+            addParam(createParamCentered<ShapetakerKnobMedium>(pos("seq_a_length", 15.950587f, 37.849998f), module, Transmutation::LENGTH_A_PARAM));
+            addParam(createParamCentered<ShapetakerKnobOscilloscopeSmall>(pos("main_bpm", 15.950588f, 18.322521f), module, Transmutation::INTERNAL_CLOCK_PARAM));
+            addParam(createParamCentered<ShapetakerAttenuverterOscilloscope>(pos("clk_mult_select", 34.340317f, 18.322521f), module, Transmutation::BPM_MULTIPLIER_PARAM));
             addMomentaryScaled(pos("a_play_btn", 22.586929f, 67.512939f), Transmutation::START_A_PARAM);
             addMomentaryScaled(pos("a_stop_btn", 22.784245f, 75.573959f), Transmutation::STOP_A_PARAM);
             addMomentaryScaled(pos("a_reset_btn", 22.784245f, 83.509323f), Transmutation::RESET_A_PARAM);
             // Sequence B
-            addParam(createParamCentered<ShapetakerKnobLarge>(pos("seq_b_length", 115.02555f, 37.849998f), module, Transmutation::LENGTH_B_PARAM));
+            addParam(createParamCentered<ShapetakerKnobMedium>(pos("seq_b_length", 115.02555f, 37.849998f), module, Transmutation::LENGTH_B_PARAM));
             addMomentaryScaled(pos("b_play_btn", 108.43727f, 67.450111f), Transmutation::START_B_PARAM);
             addMomentaryScaled(pos("b_stop_btn", 108.43727f, 75.511131f), Transmutation::STOP_B_PARAM);
             addMomentaryScaled(pos("b_reset_btn", 108.43728f, 83.446495f), Transmutation::RESET_B_PARAM);

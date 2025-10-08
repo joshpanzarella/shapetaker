@@ -5,75 +5,150 @@
   "chords": [
     {
       "name": "Cmaj7",
-      "intervals": [0, 4, 7, 11],
+      "intervals": [
+        0,
+        4,
+        7,
+        11
+      ],
       "preferredVoices": 4,
       "category": "major7"
     },
     {
       "name": "Am7",
-      "intervals": [9, 0, 4, 7],
+      "intervals": [
+        9,
+        0,
+        4,
+        7
+      ],
       "preferredVoices": 4,
       "category": "minor7"
     },
     {
       "name": "Fmaj7",
-      "intervals": [5, 9, 0, 4],
+      "intervals": [
+        5,
+        9,
+        0,
+        4
+      ],
       "preferredVoices": 4,
       "category": "major7"
     },
     {
       "name": "G7",
-      "intervals": [7, 11, 2, 5],
+      "intervals": [
+        7,
+        11,
+        2,
+        5
+      ],
       "preferredVoices": 4,
       "category": "dominant7"
     },
     {
       "name": "Em7",
-      "intervals": [4, 7, 11, 2],
+      "intervals": [
+        4,
+        7,
+        11,
+        2
+      ],
       "preferredVoices": 4,
       "category": "minor7"
     },
     {
       "name": "Dm7",
-      "intervals": [2, 5, 9, 0],
+      "intervals": [
+        2,
+        5,
+        9,
+        0
+      ],
       "preferredVoices": 4,
       "category": "minor7"
     },
     {
       "name": "Cmaj9",
-      "intervals": [0, 4, 7, 11, 2],
+      "intervals": [
+        0,
+        4,
+        7,
+        11,
+        2
+      ],
       "preferredVoices": 5,
       "category": "major9"
     },
     {
       "name": "Am9",
-      "intervals": [9, 0, 4, 7, 11],
+      "intervals": [
+        9,
+        0,
+        4,
+        7,
+        11
+      ],
       "preferredVoices": 5,
       "category": "minor9"
     },
     {
       "name": "Fmaj9",
-      "intervals": [5, 9, 0, 4, 7],
+      "intervals": [
+        5,
+        9,
+        0,
+        4,
+        7
+      ],
       "preferredVoices": 5,
       "category": "major9"
     },
     {
       "name": "G9sus4",
-      "intervals": [7, 0, 2, 5, 9],
+      "intervals": [
+        7,
+        0,
+        2,
+        5,
+        9
+      ],
       "preferredVoices": 5,
       "category": "dominant9sus4"
     },
     {
       "name": "Cadd9",
-      "intervals": [0, 4, 7, 2],
+      "intervals": [
+        0,
+        4,
+        7,
+        2
+      ],
       "preferredVoices": 4,
       "category": "majoradd9"
     },
     {
       "name": "Am(add9)",
-      "intervals": [9, 0, 4, 11],
+      "intervals": [
+        9,
+        0,
+        4,
+        11
+      ],
       "preferredVoices": 4,
       "category": "minoradd9"
     }
+  ],
+  "mode": "major",
+  "scale": "C major",
+  "genre": "chillwave",
+  "mood": "dreamy",
+  "complexity": "moderate",
+  "voicingStyle": "smooth",
+  "tags": [
+    "chillwave",
+    "dreamy",
+    "major"
   ]
 }

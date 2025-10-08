@@ -26,6 +26,13 @@ bool loadChordPackFromFile(const std::string& filepath, ChordPack& out) {
         json_t* nameJ = json_object_get(rootJ, "name");
         json_t* keyJ  = json_object_get(rootJ, "key");
         json_t* descJ = json_object_get(rootJ, "description");
+        json_t* modeJ = json_object_get(rootJ, "mode");
+        json_t* scaleJ = json_object_get(rootJ, "scale");
+        json_t* genreJ = json_object_get(rootJ, "genre");
+        json_t* moodJ = json_object_get(rootJ, "mood");
+        json_t* complexityJ = json_object_get(rootJ, "complexity");
+        json_t* voicingJ = json_object_get(rootJ, "voicingStyle");
+        json_t* tagsJ = json_object_get(rootJ, "tags");
         json_t* chordsJ = json_object_get(rootJ, "chords");
         if (!nameJ || !keyJ || !chordsJ) {
             json_decref(rootJ);
@@ -35,6 +42,19 @@ bool loadChordPackFromFile(const std::string& filepath, ChordPack& out) {
         out.name = json_string_value(nameJ);
         out.key  = json_string_value(keyJ);
         out.description = descJ ? json_string_value(descJ) : "";
+        out.mode = modeJ && json_is_string(modeJ) ? json_string_value(modeJ) : "";
+        out.scale = scaleJ && json_is_string(scaleJ) ? json_string_value(scaleJ) : "";
+        out.genre = genreJ && json_is_string(genreJ) ? json_string_value(genreJ) : "";
+        out.mood = moodJ && json_is_string(moodJ) ? json_string_value(moodJ) : "";
+        out.complexity = complexityJ && json_is_string(complexityJ) ? json_string_value(complexityJ) : "";
+        out.voicingStyle = voicingJ && json_is_string(voicingJ) ? json_string_value(voicingJ) : "";
+        out.tags.clear();
+        if (tagsJ && json_is_array(tagsJ)) {
+            size_t tagIndex; json_t* tagJ;
+            json_array_foreach(tagsJ, tagIndex, tagJ) {
+                if (json_is_string(tagJ)) out.tags.push_back(json_string_value(tagJ));
+            }
+        }
         out.chords.clear();
 
         size_t chordIndex;
@@ -67,6 +87,13 @@ bool loadChordPackFromFile(const std::string& filepath, ChordPack& out) {
 void loadDefaultChordPack(ChordPack& out) {
     out.name = "Basic Major";
     out.key  = "C";
+    out.mode = "major";
+    out.scale = "C major";
+    out.genre = "classic";
+    out.mood = "balanced";
+    out.complexity = "simple";
+    out.voicingStyle = "triads";
+    out.tags = {"major", "basic", "tonal"};
     out.description = "Basic major chord progressions";
 
     ChordData cmaj  = {"Cmaj",  {0, 4, 7},            3, "major"};
@@ -75,7 +102,7 @@ void loadDefaultChordPack(ChordPack& out) {
     ChordData fmaj  = {"Fmaj",  {5, 9, 0},            3, "major"};
     ChordData gmaj  = {"Gmaj",  {7, 11, 2},           3, "major"};
     ChordData amin  = {"Amin",  {9, 0, 4},            3, "minor"};
-    ChordData gmaj7 = {"Gmaj7", {7, 11, 2, 5},        4, "major7"};
+    ChordData gmaj7 = {"Gmaj7", {7, 11, 2, 6},        4, "major7"};
     ChordData fmaj7 = {"Fmaj7", {5, 9, 0, 4},         4, "major7"};
     ChordData dmin7 = {"Dmin7", {2, 5, 9, 0},         4, "minor7"};
     ChordData cmaj7 = {"Cmaj7", {0, 4, 7, 11},        4, "major7"};

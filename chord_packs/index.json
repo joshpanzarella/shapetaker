@@ -1,0 +1,437 @@
+{
+  "version": 1,
+  "packs": [
+    {
+      "file": "A/lunar_gardens.json",
+      "name": "Lunar Gardens",
+      "key": "A",
+      "mode": "major",
+      "scale": "A major",
+      "genre": "ambient",
+      "mood": "serene",
+      "complexity": "extended",
+      "voicingStyle": "spacious",
+      "tags": [
+        "ambient",
+        "chillwave",
+        "major"
+      ],
+      "description": "Ambient chillwave with ethereal garden harmonies and lunar light textures",
+      "chordCount": 12
+    },
+    {
+      "file": "A/shadow_synth.json",
+      "name": "Shadow Synth",
+      "key": "A",
+      "mode": "minor",
+      "scale": "A minor",
+      "genre": "darkwave",
+      "mood": "brooding",
+      "complexity": "moderate",
+      "voicingStyle": "stacked fifths",
+      "tags": [
+        "dark",
+        "minor",
+        "synth"
+      ],
+      "description": "Dark wave synthesis with haunting minor modulations and subharmonic resonance",
+      "chordCount": 12
+    },
+    {
+      "file": "Ab/quantum_pulse.json",
+      "name": "Quantum Pulse",
+      "key": "Ab",
+      "mode": "modal",
+      "scale": "Ab modal",
+      "genre": "sci-fi",
+      "mood": "glitchy",
+      "complexity": "advanced",
+      "voicingStyle": "wide spread",
+      "tags": [
+        "modal",
+        "pulsing",
+        "experimental"
+      ],
+      "description": "Pulsing quantum harmonics with phase-shifted chord morphing",
+      "chordCount": 13
+    },
+    {
+      "file": "Ab/shadow_waves.json",
+      "name": "Shadow Waves",
+      "key": "Ab",
+      "mode": "minor",
+      "scale": "Ab minor",
+      "genre": "ambient",
+      "mood": "mysterious",
+      "complexity": "extended",
+      "voicingStyle": "lush pads",
+      "tags": [
+        "dark",
+        "ambient",
+        "minor"
+      ],
+      "description": "Dark ambient synthwave with mysterious chords and deep atmospheric textures",
+      "chordCount": 12
+    },
+    {
+      "file": "B/astral_flow.json",
+      "name": "Astral Flow",
+      "key": "B",
+      "mode": "major",
+      "scale": "B major",
+      "genre": "ambient",
+      "mood": "floating",
+      "complexity": "extended",
+      "voicingStyle": "open",
+      "tags": [
+        "ambient",
+        "major",
+        "pads"
+      ],
+      "description": "Flowing ambient synthwave with astral projections and ethereal chord movements",
+      "chordCount": 12
+    },
+    {
+      "file": "B/resonance_lab.json",
+      "name": "Resonance Lab",
+      "key": "B",
+      "mode": "modal",
+      "scale": "B modal",
+      "genre": "experimental",
+      "mood": "unsettled",
+      "complexity": "advanced",
+      "voicingStyle": "hybrid",
+      "tags": [
+        "experimental",
+        "modal",
+        "resonant"
+      ],
+      "description": "Experimental resonant filter banks with self-oscillating harmonics",
+      "chordCount": 12
+    },
+    {
+      "file": "Bb/jazz_standards.json",
+      "name": "Jazz Standards Bb",
+      "key": "Bb",
+      "mode": "major",
+      "scale": "Bb major",
+      "genre": "jazz",
+      "mood": "classic",
+      "complexity": "extended",
+      "voicingStyle": "drop-2",
+      "tags": [
+        "jazz",
+        "standards",
+        "major"
+      ],
+      "description": "Essential jazz chord progressions in Bb major",
+      "chordCount": 12
+    },
+    {
+      "file": "Bb/neon_cascade.json",
+      "name": "Aurora Cascade",
+      "key": "Bb",
+      "mode": "major",
+      "scale": "Bb major",
+      "genre": "synthwave",
+      "mood": "glowing",
+      "complexity": "moderate",
+      "voicingStyle": "stacked",
+      "tags": [
+        "synthwave",
+        "major",
+        "bright"
+      ],
+      "description": "Vibey synthwave cascades with phosphor-bright harmonies and flowing textures",
+      "chordCount": 12
+    },
+    {
+      "file": "C/midnight_vibe.json",
+      "name": "Midnight Vibe",
+      "key": "C",
+      "mode": "major",
+      "scale": "C major",
+      "genre": "chillwave",
+      "mood": "dreamy",
+      "complexity": "moderate",
+      "voicingStyle": "smooth",
+      "tags": [
+        "chillwave",
+        "dreamy",
+        "major"
+      ],
+      "description": "Chillwave synthwave with dreamy nostalgic harmonies and lush voicings",
+      "chordCount": 12
+    },
+    {
+      "file": "C/neon_dreams.json",
+      "name": "Phosphor Dreams",
+      "key": "C",
+      "mode": "major",
+      "scale": "C major",
+      "genre": "synthwave",
+      "mood": "uplifting",
+      "complexity": "moderate",
+      "voicingStyle": "tight",
+      "tags": [
+        "retro",
+        "major",
+        "bright"
+      ],
+      "description": "Synthwave progressions with retro-futuristic glow",
+      "chordCount": 12
+    },
+    {
+      "file": "D/digital_aurora.json",
+      "name": "Digital Aurora",
+      "key": "D",
+      "mode": "modal",
+      "scale": "D modal",
+      "genre": "ambient",
+      "mood": "shimmering",
+      "complexity": "advanced",
+      "voicingStyle": "spread",
+      "tags": [
+        "ambient",
+        "modal",
+        "textures"
+      ],
+      "description": "Shimmering modular synth textures and evolving harmonics",
+      "chordCount": 12
+    },
+    {
+      "file": "D/neon_nights.json",
+      "name": "Lucent Nights",
+      "key": "D",
+      "mode": "major",
+      "scale": "D major",
+      "genre": "synthwave",
+      "mood": "warm",
+      "complexity": "moderate",
+      "voicingStyle": "pad",
+      "tags": [
+        "synthwave",
+        "major",
+        "warm"
+      ],
+      "description": "Ethereal synthwave textures with warm analog chord progressions",
+      "chordCount": 12
+    },
+    {
+      "file": "D#/80s_pop.json",
+      "name": "80s Pop D#",
+      "key": "D#",
+      "mode": "major",
+      "scale": "D# major",
+      "genre": "pop",
+      "mood": "nostalgic",
+      "complexity": "simple",
+      "voicingStyle": "triads",
+      "tags": [
+        "80s",
+        "pop",
+        "major"
+      ],
+      "description": "Classic 80s chord progressions in D# major",
+      "chordCount": 12
+    },
+    {
+      "file": "E/analog_drive.json",
+      "name": "Analog Drive",
+      "key": "E",
+      "mode": "mixolydian",
+      "scale": "E mixolydian",
+      "genre": "analog",
+      "mood": "gritty",
+      "complexity": "advanced",
+      "voicingStyle": "stacked",
+      "tags": [
+        "analog",
+        "mixolydian",
+        "drive"
+      ],
+      "description": "Overdriven analog filter sweeps with saturated harmonic content",
+      "chordCount": 12
+    },
+    {
+      "file": "E/sunset_dreams.json",
+      "name": "Sunset Dreams",
+      "key": "E",
+      "mode": "major",
+      "scale": "E major",
+      "genre": "ambient",
+      "mood": "golden",
+      "complexity": "moderate",
+      "voicingStyle": "open",
+      "tags": [
+        "ambient",
+        "sunset",
+        "major"
+      ],
+      "description": "Ambient chillwave with golden hour harmonies and floating textures",
+      "chordCount": 12
+    },
+    {
+      "file": "Eb/crystal_matrix.json",
+      "name": "Crystal Matrix",
+      "key": "Eb",
+      "mode": "lydian",
+      "scale": "Eb lydian",
+      "genre": "ambient",
+      "mood": "sparkling",
+      "complexity": "advanced",
+      "voicingStyle": "clustered",
+      "tags": [
+        "fm",
+        "lydian",
+        "shimmer"
+      ],
+      "description": "Crystalline FM synthesis chords with complex harmonic structures",
+      "chordCount": 12
+    },
+    {
+      "file": "Eb/deep_space.json",
+      "name": "Deep Space",
+      "key": "Eb",
+      "mode": "minor",
+      "scale": "Eb minor",
+      "genre": "ambient",
+      "mood": "cosmic",
+      "complexity": "extended",
+      "voicingStyle": "wide",
+      "tags": [
+        "space",
+        "ambient",
+        "minor"
+      ],
+      "description": "Ambient deep space textures with ethereal chillwave harmonies and cosmic drift",
+      "chordCount": 12
+    },
+    {
+      "file": "F/lunar_bass.json",
+      "name": "Lunar Bass",
+      "key": "F",
+      "mode": "dorian",
+      "scale": "F dorian",
+      "genre": "bass",
+      "mood": "subterranean",
+      "complexity": "advanced",
+      "voicingStyle": "stacked fourths",
+      "tags": [
+        "bass",
+        "dorian",
+        "dark"
+      ],
+      "description": "Deep sub bass synthesis with low-frequency harmonic exploration",
+      "chordCount": 12
+    },
+    {
+      "file": "F/velvet_sky.json",
+      "name": "Velvet Sky",
+      "key": "F",
+      "mode": "major",
+      "scale": "F major",
+      "genre": "ambient",
+      "mood": "velvety",
+      "complexity": "extended",
+      "voicingStyle": "pad",
+      "tags": [
+        "ambient",
+        "major",
+        "lush"
+      ],
+      "description": "Lush ambient synthwave with deep nostalgic resonance",
+      "chordCount": 12
+    },
+    {
+      "file": "F#/cosmic_drift.json",
+      "name": "Cosmic Drift",
+      "key": "F#",
+      "mode": "major",
+      "scale": "F# major",
+      "genre": "ambient",
+      "mood": "expansive",
+      "complexity": "extended",
+      "voicingStyle": "open",
+      "tags": [
+        "ambient",
+        "major",
+        "drift"
+      ],
+      "description": "Ethereal pad synthesis with interstellar chord voicings and spatial reverb",
+      "chordCount": 12
+    },
+    {
+      "file": "F#/crystal_waves.json",
+      "name": "Crystal Waves",
+      "key": "F#",
+      "mode": "major",
+      "scale": "F# major",
+      "genre": "ambient",
+      "mood": "glacial",
+      "complexity": "extended",
+      "voicingStyle": "shimmer",
+      "tags": [
+        "ambient",
+        "major",
+        "crystalline"
+      ],
+      "description": "Crystalline ambient synthwave with shimmering harmonies and wave-like textures",
+      "chordCount": 12
+    },
+    {
+      "file": "F#/electronic_ambient.json",
+      "name": "Electronic Ambient F#",
+      "key": "F#",
+      "mode": "minor",
+      "scale": "F# minor",
+      "genre": "ambient",
+      "mood": "weightless",
+      "complexity": "moderate",
+      "voicingStyle": "sustained",
+      "tags": [
+        "ambient",
+        "minor",
+        "electronic"
+      ],
+      "description": "Atmospheric electronic and ambient chord voicings",
+      "chordCount": 14
+    },
+    {
+      "file": "G/cosmic_drift.json",
+      "name": "Cosmic Drift",
+      "key": "G",
+      "mode": "major",
+      "scale": "G major",
+      "genre": "ambient",
+      "mood": "cosmic",
+      "complexity": "extended",
+      "voicingStyle": "open",
+      "tags": [
+        "ambient",
+        "major",
+        "cosmic"
+      ],
+      "description": "Ethereal ambient textures with floating synthwave harmonies and cosmic resonance",
+      "chordCount": 12
+    },
+    {
+      "file": "G/voltage_flux.json",
+      "name": "Voltage Flux",
+      "key": "G",
+      "mode": "mixolydian",
+      "scale": "G mixolydian",
+      "genre": "cv",
+      "mood": "energetic",
+      "complexity": "advanced",
+      "voicingStyle": "hybrid",
+      "tags": [
+        "cv",
+        "mixolydian",
+        "poly"
+      ],
+      "description": "Dynamic CV-driven chord progressions with analog warmth",
+      "chordCount": 12
+    }
+  ]
+}

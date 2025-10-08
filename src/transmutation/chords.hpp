@@ -17,6 +17,13 @@ struct ChordData {
 struct ChordPack {
     std::string name;
     std::string key;
+    std::string mode;
+    std::string scale;
+    std::string genre;
+    std::string mood;
+    std::string complexity;
+    std::string voicingStyle;
+    std::vector<std::string> tags;
     std::vector<ChordData> chords;
     std::string description;
 };

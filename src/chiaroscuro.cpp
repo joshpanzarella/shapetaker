@@ -1046,12 +1046,22 @@ struct Chiaroscuro : Module {
             float input_r = linked ? input_l : 
                            (inputs[AUDIO_R_INPUT].isConnected() ? inputs[AUDIO_R_INPUT].getPolyVoltage(ch) : input_l);
             
-            float vca_l = input_l * vca_gain;
-            float vca_r = input_r * vca_gain;
+            float base_vca_l = input_l * vca_gain;
+            float base_vca_r = input_r * vca_gain;
+
+            float openFactor = clamp((vca_gain - 0.9f) / 0.4f, 0.0f, 1.0f);
+            float signalPeak = fmaxf(fabsf(base_vca_l), fabsf(base_vca_r));
+            float hotSignal = clamp((signalPeak - 6.0f) / 4.0f, 0.0f, 1.0f);
+            float aggression = openFactor * hotSignal;
+            float aggression_gain = 1.0f + aggression * 0.18f;
+            float pre_drive_boost = 1.0f + aggression * 0.35f;
+
+            float vca_l = base_vca_l * aggression_gain;
+            float vca_r = base_vca_r * aggression_gain;
             
             // Process distortion for this voice with consistent headroom reference
-            float normalized_l = vca_l * invNormalization;
-            float normalized_r = vca_r * invNormalization;
+            float normalized_l = (vca_l * pre_drive_boost) * invNormalization;
+            float normalized_r = (vca_r * pre_drive_boost) * invNormalization;
 
             float wetNormL = distortion_l[ch].process(normalized_l, distortion_amount,
                                                      (shapetaker::DistortionEngine::Type)distortion_type);
@@ -1093,6 +1103,10 @@ struct Chiaroscuro : Module {
             // Mix between clean and distorted signals - use effective mix for sidechain mode
             float output_l = vca_l + effective_mix * (compensated_l - vca_l);
             float output_r = vca_r + effective_mix * (compensated_r - vca_r);
+
+            const float headroom = 9.5f;
+            output_l = headroom * std::tanh(output_l / headroom);
+            output_r = headroom * std::tanh(output_r / headroom);
             
             outputs[AUDIO_L_OUTPUT].setVoltage(output_l, ch);
             outputs[AUDIO_R_OUTPUT].setVoltage(output_r, ch);

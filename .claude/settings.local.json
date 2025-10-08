@@ -44,7 +44,11 @@
       "Bash(echo:*)",
       "Bash(for id in v_oct_v fine_cv_v shape_cv_v x_fade_cv v_out_z fine_cv_z shape_cv_z output_l output_r)",
       "Bash(do)",
-      "Bash(done)"
+      "Bash(done)",
+      "Bash(for file in nixie-char-3.svg nixie-char-4.svg nixie-char-S.svg nixie-char-L.svg nixie-char-I.svg nixie-char-P.svg)",
+      "Bash(do echo \"=== $file ===\")",
+      "Bash(cat:*)",
+      "Bash(head:*)"
     ],
     "deny": [],
     "ask": []

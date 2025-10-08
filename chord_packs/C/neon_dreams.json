@@ -5,75 +5,153 @@
   "chords": [
     {
       "name": "Cmaj7",
-      "intervals": [0, 4, 7, 11],
+      "intervals": [
+        0,
+        4,
+        7,
+        11
+      ],
       "preferredVoices": 4,
       "category": "major7"
     },
     {
       "name": "Am7",
-      "intervals": [9, 0, 4, 7],
+      "intervals": [
+        9,
+        0,
+        4,
+        7
+      ],
       "preferredVoices": 4,
       "category": "minor7"
     },
     {
       "name": "Fmaj7",
-      "intervals": [5, 9, 0, 4],
+      "intervals": [
+        5,
+        9,
+        0,
+        4
+      ],
       "preferredVoices": 4,
       "category": "major7"
     },
     {
       "name": "G7sus4",
-      "intervals": [7, 0, 2, 5],
+      "intervals": [
+        7,
+        0,
+        2,
+        5
+      ],
       "preferredVoices": 4,
       "category": "dominant7sus4"
     },
     {
       "name": "Dm9",
-      "intervals": [2, 5, 9, 0, 4],
+      "intervals": [
+        2,
+        5,
+        9,
+        0,
+        4
+      ],
       "preferredVoices": 5,
       "category": "minor9"
     },
     {
       "name": "Em7add11",
-      "intervals": [4, 7, 11, 2, 9],
+      "intervals": [
+        4,
+        7,
+        11,
+        2,
+        9
+      ],
       "preferredVoices": 5,
       "category": "minor7add11"
     },
     {
       "name": "Cmaj7add9",
-      "intervals": [0, 4, 7, 11, 2],
+      "intervals": [
+        0,
+        4,
+        7,
+        11,
+        2
+      ],
       "preferredVoices": 5,
       "category": "major7add9"
     },
     {
       "name": "Am(maj7)",
-      "intervals": [9, 0, 4, 8],
+      "intervals": [
+        9,
+        0,
+        4,
+        8
+      ],
       "preferredVoices": 4,
       "category": "minorMaj7"
     },
     {
       "name": "F6/9",
-      "intervals": [5, 9, 0, 2, 7],
+      "intervals": [
+        5,
+        9,
+        0,
+        2,
+        7
+      ],
       "preferredVoices": 5,
       "category": "major6add9"
     },
     {
       "name": "G13sus4",
-      "intervals": [7, 0, 2, 5, 9, 4],
+      "intervals": [
+        7,
+        0,
+        2,
+        5,
+        9,
+        4
+      ],
       "preferredVoices": 6,
       "category": "dominant13sus4"
     },
     {
       "name": "Bbmaj7#11",
-      "intervals": [10, 2, 5, 9, 4],
+      "intervals": [
+        10,
+        2,
+        5,
+        9,
+        4
+      ],
       "preferredVoices": 5,
       "category": "major7#11"
     },
     {
       "name": "Csus2add9",
-      "intervals": [0, 2, 7, 9],
+      "intervals": [
+        0,
+        2,
+        7,
+        9
+      ],
       "preferredVoices": 4,
       "category": "sus2add9"
     }
+  ],
+  "mode": "major",
+  "scale": "C major",
+  "genre": "synthwave",
+  "mood": "uplifting",
+  "complexity": "moderate",
+  "voicingStyle": "tight",
+  "tags": [
+    "retro",
+    "major",
+    "bright"
   ]
 }

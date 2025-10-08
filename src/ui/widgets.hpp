@@ -162,7 +162,7 @@ public:
     TealJewelLEDMedium() {
         // Override with teal color only
         baseColors.clear();
-        addBaseColor(nvgRGB(0, 255, 180));   // Teal (#00FFB4)
+        addBaseColor(nvgRGB(0, 154, 122));   // Teal (#009A7A)
     }
 };
 
@@ -172,7 +172,7 @@ public:
     PurpleJewelLEDMedium() {
         // Override with purple color only
         baseColors.clear();
-        addBaseColor(nvgRGB(180, 0, 255));   // Purple (#B400FF)
+        addBaseColor(nvgRGB(111, 31, 183));  // Purple (#6F1FB7)
     }
 };
 

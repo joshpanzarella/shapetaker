@@ -24,8 +24,8 @@ public:
      */
     struct BrandColors {
         // Signature dual-channel colors
-        static constexpr NVGcolor TEAL = {{{0.0f, 1.0f, 0.706f, 1.0f}}}; // #00FFB4
-        static constexpr NVGcolor PURPLE = {{{0.706f, 0.0f, 1.0f, 1.0f}}}; // #B400FF
+        static constexpr NVGcolor TEAL = {{{0.0f, 0.604f, 0.478f, 1.0f}}}; // #009A7A
+        static constexpr NVGcolor PURPLE = {{{0.435f, 0.122f, 0.718f, 1.0f}}}; // #6F1FB7
         
         // Mixed state color (both channels active)
         static constexpr NVGcolor CYAN_MAGENTA = {{{0.5f, 1.0f, 1.0f, 1.0f}}}; // Cyan-magenta mix
@@ -35,8 +35,8 @@ public:
         static constexpr NVGcolor SILVER = {{{0.753f, 0.753f, 0.753f, 1.0f}}}; // #C0C0C0
         
         // Convenience functions for RGB values
-        static graphics::RGBColor tealRGB() { return graphics::RGBColor(0.0f, 1.0f, 0.706f); }
-        static graphics::RGBColor purpleRGB() { return graphics::RGBColor(0.706f, 0.0f, 1.0f); }
+        static graphics::RGBColor tealRGB() { return graphics::RGBColor(0.0f, 0.604f, 0.478f); }
+        static graphics::RGBColor purpleRGB() { return graphics::RGBColor(0.435f, 0.122f, 0.718f); }
     };
     
     // ============================================================================

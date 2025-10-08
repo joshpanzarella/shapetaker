@@ -5,75 +5,141 @@
   "chords": [
     {
       "name": "D#maj",
-      "intervals": [0, 4, 7],
+      "intervals": [
+        3,
+        7,
+        10
+      ],
       "preferredVoices": 3,
       "category": "major"
     },
     {
       "name": "Fmin",
-      "intervals": [2, 5, 9],
+      "intervals": [
+        2,
+        5,
+        9
+      ],
       "preferredVoices": 3,
       "category": "minor"
     },
     {
       "name": "Gmin",
-      "intervals": [4, 7, 11],
+      "intervals": [
+        4,
+        7,
+        11
+      ],
       "preferredVoices": 3,
       "category": "minor"
     },
     {
       "name": "G#maj",
-      "intervals": [5, 9, 0],
+      "intervals": [
+        8,
+        0,
+        3
+      ],
       "preferredVoices": 3,
       "category": "major"
     },
     {
       "name": "A#maj",
-      "intervals": [7, 11, 2],
+      "intervals": [
+        10,
+        2,
+        5
+      ],
       "preferredVoices": 3,
       "category": "major"
     },
     {
       "name": "Cmin",
-      "intervals": [9, 0, 4],
+      "intervals": [
+        9,
+        0,
+        4
+      ],
       "preferredVoices": 3,
       "category": "minor"
     },
     {
       "name": "D#maj7",
-      "intervals": [0, 4, 7, 11],
+      "intervals": [
+        3,
+        7,
+        10,
+        2
+      ],
       "preferredVoices": 4,
       "category": "major7"
     },
     {
       "name": "Fmin7",
-      "intervals": [2, 5, 9, 0],
+      "intervals": [
+        2,
+        5,
+        9,
+        0
+      ],
       "preferredVoices": 4,
       "category": "minor7"
     },
     {
       "name": "A#sus4",
-      "intervals": [7, 0, 2],
+      "intervals": [
+        10,
+        3,
+        5
+      ],
       "preferredVoices": 3,
       "category": "sus4"
     },
     {
       "name": "G#maj9",
-      "intervals": [5, 9, 0, 4, 7],
+      "intervals": [
+        8,
+        0,
+        3,
+        7,
+        10
+      ],
       "preferredVoices": 5,
       "category": "major9"
     },
     {
       "name": "Cmin9",
-      "intervals": [9, 0, 4, 7, 11],
+      "intervals": [
+        9,
+        0,
+        4,
+        7,
+        11
+      ],
       "preferredVoices": 5,
       "category": "minor9"
     },
     {
       "name": "D#add9",
-      "intervals": [0, 4, 7, 2],
+      "intervals": [
+        3,
+        7,
+        10,
+        5
+      ],
       "preferredVoices": 4,
       "category": "add9"
     }
+  ],
+  "mode": "major",
+  "scale": "D# major",
+  "genre": "pop",
+  "mood": "nostalgic",
+  "complexity": "simple",
+  "voicingStyle": "triads",
+  "tags": [
+    "80s",
+    "pop",
+    "major"
   ]
 }

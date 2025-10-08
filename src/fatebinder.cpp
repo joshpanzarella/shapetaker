@@ -5,560 +5,378 @@
 #define M_PI 3.14159265358979323846
 #endif
 
+//
+// Fatebinder (reimagined)
+// A causal-modulation LFO featuring:
+//  - Interleaved LFO Threads (A/B/C) ratioed to a master timebase
+//  - Echo Matrix (per-thread circular delay with feedback)
+//  - Quantized Drift (stepped bias with slewed approach)
+//  - Event-Triggered actions (Bind/Recall/Invert)
+//  - Binding Bus (internal cross-mod from Echo -> phase)
+//
+
 struct Fatebinder : Module {
     enum ParamId {
-        MASTER_FREQ_PARAM,
-        LORENZ_FREQ_PARAM,
-        THOMAS_FREQ_PARAM,
-        ROSSLER_FREQ_PARAM,
-        CHEN_FREQ_PARAM,
-        LORENZ_CV_PARAM,
-        THOMAS_CV_PARAM,
-        ROSSLER_CV_PARAM,
-        CHEN_CV_PARAM,
-        LORENZ_RHO_PARAM,
-        THOMAS_B_PARAM,
-        ROSSLER_A_PARAM,
-        CHEN_A_PARAM,
-        RESET_PARAM,
+        // Master & Interleave
+        MASTER_RATE_PARAM,        // coarse master rate (octave-style)
+        MASTER_FINE_PARAM,        // fine trim
+        RATIO_A_PARAM,            // ratio for A
+        RATIO_B_PARAM,            // ratio for B
+        RATIO_C_PARAM,            // ratio for C
+        PHASE_SPREAD_PARAM,       // spread subordinate phases around master
+
+        // Echo
+        ECHO_TIME_PARAM,          // 50 ms .. 5 s
+        ECHO_FEEDBACK_PARAM,      // 0..0.95
+        ECHO_SEND_PARAM,          // how much each thread writes to echo bus
+
+        // Quantized Drift
+        DRIFT_STEP_PARAM,         // step size (V)
+        DRIFT_RATE_PARAM,         // steps per second (0..2 Hz)
+        DRIFT_SLEW_PARAM,         // slew time (s) for approach between steps
+
+        // Output shape
+        SHAPE_MORPH_PARAM,        // 0: sine -> triangle -> square (waveshaper)
+        DEPTH_PARAM,              // global modulation depth / amplitude
+
+        // Events (behavior toggles)
+        INVERT_LATCH_PARAM,       // front-panel toggle (also via Event 3)
+
         PARAMS_LEN
     };
+
     enum InputId {
-        MASTER_FREQ_INPUT,
-        LORENZ_FREQ_INPUT,
-        THOMAS_FREQ_INPUT,
-        ROSSLER_FREQ_INPUT,
-        CHEN_FREQ_INPUT,
-        LORENZ_RHO_INPUT,
-        THOMAS_B_INPUT,
-        ROSSLER_A_INPUT,
-        CHEN_A_INPUT,
-        RESET_INPUT,
+        MASTER_RATE_INPUT,
+        MASTER_RESET_INPUT,       // hard sync master phase to 0
+        EVENT1_INPUT,             // Bind: sync A/B/C to master phase + apply spread
+        EVENT2_INPUT,             // Recall: momentarily replace live output with echo
+        EVENT3_INPUT,             // Invert: toggle output polarity
+
+        // Optional CVs
+        RATIO_A_CV_INPUT,
+        RATIO_B_CV_INPUT,
+        RATIO_C_CV_INPUT,
+        ECHO_TIME_CV_INPUT,
+        ECHO_FEEDBACK_CV_INPUT,
+        DRIFT_STEP_CV_INPUT,
+        DRIFT_RATE_CV_INPUT,
+        SHAPE_MORPH_CV_INPUT,
+        DEPTH_CV_INPUT,
+
         INPUTS_LEN
     };
+
     enum OutputId {
-        LORENZ_OUTPUT,
-        THOMAS_OUTPUT,
-        ROSSLER_OUTPUT,
-        CHEN_OUTPUT,
+        THREAD_A_OUTPUT,
+        THREAD_B_OUTPUT,
+        THREAD_C_OUTPUT,
+        ECHO_OUTPUT,              // raw echo bus output
+        DRIFT_OUTPUT,             // the quantized drift bias alone
         OUTPUTS_LEN
     };
+
     enum LightId {
-        LORENZ_LIGHT,
-        THOMAS_LIGHT,
-        ROSSLER_LIGHT,
-        CHEN_LIGHT,
+        MASTER_LIGHT,
+        A_LIGHT,
+        B_LIGHT,
+        C_LIGHT,
+        ECHO_HOLD_LIGHT,
+        INVERT_LIGHT,
         LIGHTS_LEN
     };
 
-    // Attractor state variables
-    struct AttractorState {
-        float x, y, z;
-        float dx, dy, dz;
-        float phase; // For periodic oscillations
-        float stuckCounter; // Counter for detecting stuck states
+    // ----------------------------
+    // Internal state
+    // ----------------------------
+    struct Thread {
+        float phase = 0.f;     // 0..1
+        float last = 0.f;      // last output (for lights)
     };
-    
-    AttractorState lorenz = {1.0f, 1.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
-    AttractorState thomas = {1.0f, 1.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
-    AttractorState rossler = {1.0f, 1.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
-    AttractorState chen = {1.0f, 1.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
-    
-    // Attractor parameters
-    struct LorenzParams {
-        float sigma = 10.0f;
-        float rho = 28.0f;
-        float beta = 8.0f/3.0f;
-    } lorenzParams;
-    
-    struct ThomasParams {
-        float b = 0.208f;
-    } thomasParams;
-    
-    struct RosslerParams {
-        float a = 0.2f;
-        float b = 0.2f;
-        float c = 5.7f;
-    } rosslerParams;
-    
-    struct ChenParams {
-        float a = 35.0f;
-        float b = 3.0f;
-        float c = 28.0f;
-    } chenParams;
-    
-    // Scaling factors for output voltages
-    float lorenzScale = 0.15f;
-    float thomasScale = 3.0f;
-    float rosslerScale = 0.5f;
-    float chenScale = 0.3f; // Increased from 0.1f
-    
-    // Reset triggers
-    dsp::SchmittTrigger resetTrigger;
-    dsp::SchmittTrigger resetButtonTrigger;
+
+    Thread A, B, C;
+
+    // Master phase/timebase
+    float masterPhase = 0.f;
+
+    // Echo matrix: a single shared circular buffer (mono) which threads can write to
+    // and read from with settable delay time & feedback.
+    std::vector<float> echoBuffer;
+    size_t echoHead = 0;          // write head
+    size_t echoDelaySamples = 2400; // default ~50 ms @ 48k
+
+    // Quantized drift: stepped target with slew towards it
+    float driftCurrent = 0.f;
+    float driftTarget = 0.f;
+    float driftSlewCoeff = 0.999f; // computed per sample from DRIFT_SLEW_PARAM
+    float driftStepTimer = 0.f;     // countdown to next target step
+
+    // Event triggers
+    dsp::SchmittTrigger resetTrig;
+    dsp::SchmittTrigger bindTrig;     // EVENT1
+    dsp::SchmittTrigger recallTrig;   // EVENT2
+    dsp::SchmittTrigger invertTrig;   // EVENT3
+
+    // Latches
+    bool echoHold = false; // when true, outputs prefer echo tap over live wave
 
     Fatebinder() {
         config(PARAMS_LEN, INPUTS_LEN, OUTPUTS_LEN, LIGHTS_LEN);
 
-        // Configure parameters using Shapetaker utilities
-        shapetaker::ParameterHelper::configFrequency(this, MASTER_FREQ_PARAM, "Master Frequency", -3.0f, 4.5f, 0.0f);
-        shapetaker::ParameterHelper::configFrequency(this, LORENZ_FREQ_PARAM, "Lorenz Frequency", -3.0f, 3.0f, 0.0f);
-        shapetaker::ParameterHelper::configFrequency(this, THOMAS_FREQ_PARAM, "Thomas Frequency", -3.0f, 3.0f, 0.0f);
-        shapetaker::ParameterHelper::configFrequency(this, ROSSLER_FREQ_PARAM, "Rössler Frequency", -3.0f, 3.0f, 0.0f);
-        shapetaker::ParameterHelper::configFrequency(this, CHEN_FREQ_PARAM, "Chen Frequency", -3.0f, 3.0f, 0.0f);
+        using shapetaker::ParameterHelper;
+        // Master rate: coarse as exponent, fine as +/- 0.1 oct
+        ParameterHelper::configFrequency(this, MASTER_RATE_PARAM, "Master Rate", -6.f, 8.f, 0.f);
+        configParam(MASTER_FINE_PARAM, -0.1f, 0.1f, 0.f, "Master Fine (oct)");
 
-        shapetaker::ParameterHelper::configAttenuverter(this, LORENZ_CV_PARAM, "Lorenz CV Amount");
-        shapetaker::ParameterHelper::configAttenuverter(this, THOMAS_CV_PARAM, "Thomas CV Amount");
-        shapetaker::ParameterHelper::configAttenuverter(this, ROSSLER_CV_PARAM, "Rössler CV Amount");
-        shapetaker::ParameterHelper::configAttenuverter(this, CHEN_CV_PARAM, "Chen CV Amount");
+        // Ratios (displayed as multipliers)
+        configParam(RATIO_A_PARAM, -4.f, 4.f, 0.f, "A Ratio (oct)");
+        configParam(RATIO_B_PARAM, -4.f, 4.f, 1.f, "B Ratio (oct)");
+        configParam(RATIO_C_PARAM, -4.f, 4.f, -1.f, "C Ratio (oct)");
+        configParam(PHASE_SPREAD_PARAM, 0.f, 1.f, 0.33f, "Phase Spread");
 
-        configParam(LORENZ_RHO_PARAM, 1.0f, 50.0f, 28.0f, "Lorenz ρ (Rho)");
-        configParam(THOMAS_B_PARAM, 0.05f, 1.0f, 0.208f, "Thomas b");
-        configParam(ROSSLER_A_PARAM, 0.05f, 1.0f, 0.2f, "Rössler a");
-        configParam(CHEN_A_PARAM, 10.0f, 40.0f, 35.0f, "Chen a");
+        // Echo
+        configParam(ECHO_TIME_PARAM, 0.05f, 5.f, 0.2f, "Echo Time (s)");
+        configParam(ECHO_FEEDBACK_PARAM, 0.f, 0.95f, 0.35f, "Echo Feedback");
+        configParam(ECHO_SEND_PARAM, 0.f, 1.f, 0.7f, "Echo Send");
 
-        shapetaker::ParameterHelper::configButton(this, RESET_PARAM, "Reset");
+        // Drift
+        configParam(DRIFT_STEP_PARAM, 0.01f, 1.0f, 0.1f, "Drift Step (V)");
+        configParam(DRIFT_RATE_PARAM, 0.f, 2.0f, 0.2f, "Drift Rate (Hz)");
+        configParam(DRIFT_SLEW_PARAM, 0.001f, 2.0f, 0.1f, "Drift Slew (s)");
 
-        // Configure inputs using Shapetaker utilities
-        shapetaker::ParameterHelper::configCVInput(this, MASTER_FREQ_INPUT, "Master Frequency CV");
-        shapetaker::ParameterHelper::configCVInput(this, LORENZ_FREQ_INPUT, "Lorenz Frequency CV");
-        shapetaker::ParameterHelper::configCVInput(this, THOMAS_FREQ_INPUT, "Thomas Frequency CV");
-        shapetaker::ParameterHelper::configCVInput(this, ROSSLER_FREQ_INPUT, "Rössler Frequency CV");
-        shapetaker::ParameterHelper::configCVInput(this, CHEN_FREQ_INPUT, "Chen Frequency CV");
-        shapetaker::ParameterHelper::configCVInput(this, LORENZ_RHO_INPUT, "Lorenz ρ CV");
-        shapetaker::ParameterHelper::configCVInput(this, THOMAS_B_INPUT, "Thomas b CV");
-        shapetaker::ParameterHelper::configCVInput(this, ROSSLER_A_INPUT, "Rössler a CV");
-        shapetaker::ParameterHelper::configCVInput(this, CHEN_A_INPUT, "Chen a CV");
-        shapetaker::ParameterHelper::configCVInput(this, RESET_INPUT, "Reset");
+        // Waveshape & depth
+        configParam(SHAPE_MORPH_PARAM, 0.f, 2.f, 0.f, "Waveshape Morph");
+        configParam(DEPTH_PARAM, 0.f, 10.f, 5.f, "Depth (Vpp/2)");
 
-        // Configure outputs using Shapetaker utilities
-        shapetaker::ParameterHelper::configAudioOutput(this, LORENZ_OUTPUT, "Lorenz");
-        shapetaker::ParameterHelper::configAudioOutput(this, THOMAS_OUTPUT, "Thomas");
-        shapetaker::ParameterHelper::configAudioOutput(this, ROSSLER_OUTPUT, "Rössler");
-        shapetaker::ParameterHelper::configAudioOutput(this, CHEN_OUTPUT, "Chen");
+        // Toggles
+        configParam(INVERT_LATCH_PARAM, 0.f, 1.f, 0.f, "Invert Latch");
 
-        // Initialize attractors
-        resetAttractors();
+        // CV inputs
+        ParameterHelper::configCVInput(this, MASTER_RATE_INPUT, "Master Rate CV");
+        ParameterHelper::configCVInput(this, MASTER_RESET_INPUT, "Master Reset");
+        ParameterHelper::configCVInput(this, EVENT1_INPUT, "Event 1: Bind");
+        ParameterHelper::configCVInput(this, EVENT2_INPUT, "Event 2: Recall");
+        ParameterHelper::configCVInput(this, EVENT3_INPUT, "Event 3: Invert");
+        ParameterHelper::configCVInput(this, RATIO_A_CV_INPUT, "A Ratio CV");
+        ParameterHelper::configCVInput(this, RATIO_B_CV_INPUT, "B Ratio CV");
+        ParameterHelper::configCVInput(this, RATIO_C_CV_INPUT, "C Ratio CV");
+        ParameterHelper::configCVInput(this, ECHO_TIME_CV_INPUT, "Echo Time CV");
+        ParameterHelper::configCVInput(this, ECHO_FEEDBACK_CV_INPUT, "Echo Feedback CV");
+        ParameterHelper::configCVInput(this, DRIFT_STEP_CV_INPUT, "Drift Step CV");
+        ParameterHelper::configCVInput(this, DRIFT_RATE_CV_INPUT, "Drift Rate CV");
+        ParameterHelper::configCVInput(this, SHAPE_MORPH_CV_INPUT, "Waveshape Morph CV");
+        ParameterHelper::configCVInput(this, DEPTH_CV_INPUT, "Depth CV");
+
+        // Outputs
+        shapetaker::ParameterHelper::configAudioOutput(this, THREAD_A_OUTPUT, "Thread A");
+        shapetaker::ParameterHelper::configAudioOutput(this, THREAD_B_OUTPUT, "Thread B");
+        shapetaker::ParameterHelper::configAudioOutput(this, THREAD_C_OUTPUT, "Thread C");
+        shapetaker::ParameterHelper::configAudioOutput(this, ECHO_OUTPUT,   "Echo");
+        shapetaker::ParameterHelper::configAudioOutput(this, DRIFT_OUTPUT,  "Drift");
+
+        // Lights
+        configLight(MASTER_LIGHT, "Master");
+        configLight(A_LIGHT, "A Activity");
+        configLight(B_LIGHT, "B Activity");
+        configLight(C_LIGHT, "C Activity");
+        configLight(ECHO_HOLD_LIGHT, "Echo Hold");
+        configLight(INVERT_LIGHT, "Invert");
+
+        // Allocate echo buffer for up to 5 s @ max sample rate assumption (~96k safety)
+        const size_t maxSamples = 48000 * 6; // 6 s margin at 48k
+        echoBuffer.resize(maxSamples, 0.f);
     }
-    
-    void resetAttractors() {
-        // Initialize with slightly different starting conditions to avoid convergence
-        lorenz = {1.0f, 1.05f, 1.1f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
-        thomas = {0.1f, 0.15f, 0.2f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
-        rossler = {1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
-        chen = {-7.0f, 0.0f, 24.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f}; // Better initial conditions for Chen
+
+    // Utility: simple waveshape morph 0..2 : sine -> triangle -> square
+    inline float morphWave(float phase01, float morph) {
+        // phase01 in [0,1)
+        float x = phase01;
+        // base sine
+        float s = std::sin(2.f * M_PI * x);
+        // triangle
+        float tri = 4.f * fabsf(x - floorf(x + 0.5f)) - 1.f; // -1..1
+        // square
+        float sq = s >= 0.f ? 1.f : -1.f;
+
+        if (morph < 1.f) {
+            return rack::simd::clamp(s * (1.f - morph) + tri * morph, -1.f, 1.f);
+        } else {
+            float t = morph - 1.f; // 0..1
+            float mix = tri * (1.f - t) + sq * t;
+            return rack::simd::clamp(mix, -1.f, 1.f);
+        }
     }
-    
-    float getFrequency(int freqParam, int freqInput, int cvParam) {
-        float freq = params[freqParam].getValue();
-        
-        // Add CV input with attenuverter
-        if (inputs[freqInput].isConnected()) {
-            freq += inputs[freqInput].getVoltage() * params[cvParam].getValue();
-        }
-        
-        // Apply master frequency
-        float masterFreq = params[MASTER_FREQ_PARAM].getValue();
-        if (inputs[MASTER_FREQ_INPUT].isConnected()) {
-            masterFreq += inputs[MASTER_FREQ_INPUT].getVoltage() * 0.1f;
-        }
-        
-        return std::pow(2.f, freq + masterFreq);
+
+    inline float applyDepthAndDrift(float v, float depth, float drift, bool invert) {
+        float out = v * depth + drift;
+        return invert ? -out : out;
     }
-    
-    float getChaosAmount(int chaosParam, int chaosInput) {
-        float chaos = params[chaosParam].getValue();
-        
-        // Add CV input (0-10V maps to 0-1)
-        if (inputs[chaosInput].isConnected()) {
-            chaos += inputs[chaosInput].getVoltage() * 0.1f;
-        }
-        
-        return clamp(chaos, 0.0f, 1.0f);
+
+    void hardSyncThreads(float spread) {
+        // Set A/B/C phases to master with spread around the circle
+        A.phase = masterPhase;
+        B.phase = masterPhase + spread;
+        C.phase = masterPhase + 2.f * spread;
+        A.phase -= floorf(A.phase);
+        B.phase -= floorf(B.phase);
+        C.phase -= floorf(C.phase);
     }
-    
-    float getLorenzRho() {
-        float rho = params[LORENZ_RHO_PARAM].getValue();
-        
-        // CV input: ±5V gives ±10 units variation
-        if (inputs[LORENZ_RHO_INPUT].isConnected()) {
-            rho += inputs[LORENZ_RHO_INPUT].getVoltage() * 2.0f;
-        }
-        
-        return clamp(rho, 1.0f, 50.0f);
+
+    void updateEchoConfig(float sampleRate, float timeSeconds) {
+        timeSeconds = clamp(timeSeconds, 0.05f, 5.f);
+        size_t want = (size_t)std::round(sampleRate * timeSeconds);
+        want = std::max((size_t)1, std::min(want, echoBuffer.size() - 1));
+        echoDelaySamples = want;
     }
-    
-    float getThomasB() {
-        float b = params[THOMAS_B_PARAM].getValue();
-        
-        // CV input: ±5V gives ±0.2 units variation
-        if (inputs[THOMAS_B_INPUT].isConnected()) {
-            b += inputs[THOMAS_B_INPUT].getVoltage() * 0.04f;
-        }
-        
-        return clamp(b, 0.05f, 1.0f);
-    }
-    
-    float getRosslerA() {
-        float a = params[ROSSLER_A_PARAM].getValue();
-        
-        // CV input: ±5V gives ±0.2 units variation
-        if (inputs[ROSSLER_A_INPUT].isConnected()) {
-            a += inputs[ROSSLER_A_INPUT].getVoltage() * 0.04f;
-        }
-        
-        return clamp(a, 0.05f, 1.0f);
-    }
-    
-    float getChenA() {
-        float a = params[CHEN_A_PARAM].getValue();
-        
-        // CV input: ±5V gives ±8 units variation
-        if (inputs[CHEN_A_INPUT].isConnected()) {
-            a += inputs[CHEN_A_INPUT].getVoltage() * 1.6f;
-        }
-        
-        return clamp(a, 10.0f, 40.0f); // Reduced max from 50 to 40
-    }
-    
-    void checkAndUnstickAttractor(AttractorState& attractor, float chaos, float minVelocity = 0.001f, float maxMagnitude = 100.0f, float stuckTime = 88200.0f) {
-        // Only check for sticking in chaotic mode
-        if (chaos < 0.1f) {
-            attractor.stuckCounter = 0.0f;
-            return;
-        }
-        
-        // Check for escape to infinity - if any coordinate is too large, reset
-        float magnitude = std::sqrt(attractor.x * attractor.x + 
-                                  attractor.y * attractor.y + 
-                                  attractor.z * attractor.z);
-        
-        if (magnitude > maxMagnitude || !std::isfinite(magnitude)) {
-            // Reset to known good position with small perturbation
-            if (&attractor == &lorenz) {
-                attractor.x = 1.0f + (rack::random::uniform() - 0.5f) * 0.2f;
-                attractor.y = 1.05f + (rack::random::uniform() - 0.5f) * 0.2f;
-                attractor.z = 1.1f + (rack::random::uniform() - 0.5f) * 0.2f;
-            } else if (&attractor == &thomas) {
-                attractor.x = 0.1f + (rack::random::uniform() - 0.5f) * 0.1f;
-                attractor.y = 0.15f + (rack::random::uniform() - 0.5f) * 0.1f;
-                attractor.z = 0.2f + (rack::random::uniform() - 0.5f) * 0.1f;
-            } else if (&attractor == &rossler) {
-                attractor.x = 1.0f + (rack::random::uniform() - 0.5f) * 0.2f;
-                attractor.y = (rack::random::uniform() - 0.5f) * 0.2f;
-                attractor.z = (rack::random::uniform() - 0.5f) * 0.2f;
-            } else if (&attractor == &chen) {
-                attractor.x = -7.0f + (rack::random::uniform() - 0.5f) * 2.0f;
-                attractor.y = (rack::random::uniform() - 0.5f) * 2.0f;
-                attractor.z = 24.0f + (rack::random::uniform() - 0.5f) * 4.0f;
+
+    void stepDrift(float dt, float stepSize, float rateHz, float slewSeconds) {
+        // Update target at rateHz
+        if (rateHz > 0.f) {
+            driftStepTimer -= dt;
+            if (driftStepTimer <= 0.f) {
+                // pick -1, 0, or +1 step (biased to 0 slightly)
+                float r = rack::random::uniform();
+                int dir = (r < 0.2f) ? -1 : (r > 0.8f ? +1 : 0);
+                driftTarget += dir * stepSize;
+                // keep within a musically sane window
+                driftTarget = clamp(driftTarget, -5.f, 5.f);
+                driftStepTimer += 1.f / rateHz;
             }
-            attractor.stuckCounter = 0.0f;
-            return;
         }
-        
-        // Calculate velocity magnitude
-        float velocity = std::sqrt(attractor.dx * attractor.dx + 
-                                 attractor.dy * attractor.dy + 
-                                 attractor.dz * attractor.dz);
-        
-        // If velocity is too low, increment stuck counter
-        if (velocity < minVelocity) {
-            attractor.stuckCounter += 1.0f;
-            
-            // If stuck for too long, add perturbation
-            if (attractor.stuckCounter > stuckTime) {
-                // Add small random perturbations to get unstuck
-                attractor.x += (rack::random::uniform() - 0.5f) * 0.1f;
-                attractor.y += (rack::random::uniform() - 0.5f) * 0.1f;
-                attractor.z += (rack::random::uniform() - 0.5f) * 0.1f;
-                attractor.stuckCounter = 0.0f;
-            }
-        } else {
-            // Reset counter if moving well
-            attractor.stuckCounter = 0.0f;
-        }
+        // compute per-sample slew coeff from time constant
+        float tau = std::max(0.001f, slewSeconds);
+        float a = std::exp(-dt / tau);
+        driftCurrent = a * driftCurrent + (1.f - a) * driftTarget;
     }
-    
-    void updateLorenz(float dt, float chaos, float rho) {
-        // Update phase for periodic oscillations
-        lorenz.phase += dt * 2.0f * M_PI;
-        if (lorenz.phase >= 2.0f * M_PI) lorenz.phase -= 2.0f * M_PI;
-        
-        // Calculate periodic oscillations (simple sinusoids)
-        float periodicX = std::sin(lorenz.phase);
-        float periodicY = std::sin(lorenz.phase + 2.0f * M_PI / 3.0f); // 120° phase shift
-        float periodicZ = std::sin(lorenz.phase + 4.0f * M_PI / 3.0f); // 240° phase shift
-        
-        if (chaos > 0.0f) {
-            // Lorenz equations with modulated rho parameter
-            lorenz.dx = lorenzParams.sigma * (lorenz.y - lorenz.x);
-            lorenz.dy = lorenz.x * (rho - lorenz.z) - lorenz.y;  // Using modulated rho
-            lorenz.dz = lorenz.x * lorenz.y - lorenzParams.beta * lorenz.z;
-            
-            // Runge-Kutta 4th order integration
-            float k1x = lorenz.dx * dt;
-            float k1y = lorenz.dy * dt;
-            float k1z = lorenz.dz * dt;
-            
-            float tempX = lorenz.x + k1x * 0.5f;
-            float tempY = lorenz.y + k1y * 0.5f;
-            float tempZ = lorenz.z + k1z * 0.5f;
-            
-            float k2x = lorenzParams.sigma * (tempY - tempX) * dt;
-            float k2y = (tempX * (rho - tempZ) - tempY) * dt;  // Using modulated rho
-            float k2z = (tempX * tempY - lorenzParams.beta * tempZ) * dt;
-            
-            tempX = lorenz.x + k2x * 0.5f;
-            tempY = lorenz.y + k2y * 0.5f;
-            tempZ = lorenz.z + k2z * 0.5f;
-            
-            float k3x = lorenzParams.sigma * (tempY - tempX) * dt;
-            float k3y = (tempX * (rho - tempZ) - tempY) * dt;  // Using modulated rho
-            float k3z = (tempX * tempY - lorenzParams.beta * tempZ) * dt;
-            
-            tempX = lorenz.x + k3x;
-            tempY = lorenz.y + k3y;
-            tempZ = lorenz.z + k3z;
-            
-            float k4x = lorenzParams.sigma * (tempY - tempX) * dt;
-            float k4y = (tempX * (rho - tempZ) - tempY) * dt;  // Using modulated rho
-            float k4z = (tempX * tempY - lorenzParams.beta * tempZ) * dt;
-            
-            float chaoticX = lorenz.x + (k1x + 2*k2x + 2*k3x + k4x) / 6.0f;
-            float chaoticY = lorenz.y + (k1y + 2*k2y + 2*k3y + k4y) / 6.0f;
-            float chaoticZ = lorenz.z + (k1z + 2*k2z + 2*k3z + k4z) / 6.0f;
-            
-            // Blend between periodic and chaotic
-            lorenz.x = periodicX * (1.0f - chaos) + chaoticX * chaos;
-            lorenz.y = periodicY * (1.0f - chaos) + chaoticY * chaos;
-            lorenz.z = periodicZ * (1.0f - chaos) + chaoticZ * chaos;
-        } else {
-            // Pure periodic oscillations
-            lorenz.x = periodicX;
-            lorenz.y = periodicY;
-            lorenz.z = periodicZ;
-        }
+
+    float readEchoTap(size_t delay) const {
+        size_t idx = (echoHead + echoBuffer.size() - delay) % echoBuffer.size();
+        return echoBuffer[idx];
     }
-    
-    void updateThomas(float dt, float chaos, float b) {
-        // Update phase for periodic oscillations
-        thomas.phase += dt * 2.0f * M_PI;
-        if (thomas.phase >= 2.0f * M_PI) thomas.phase -= 2.0f * M_PI;
-        
-        // Calculate periodic oscillations (different waveforms for variety)
-        float periodicX = std::sin(thomas.phase);
-        float periodicY = std::cos(thomas.phase * 1.5f); // Different frequency ratio
-        float periodicZ = std::sin(thomas.phase * 0.75f); // Lower frequency
-        
-        if (chaos > 0.0f) {
-            // Thomas equations with modulated b parameter
-            thomas.dx = std::sin(thomas.y) - b * thomas.x;  // Using modulated b
-            thomas.dy = std::sin(thomas.z) - b * thomas.y;  // Using modulated b
-            thomas.dz = std::sin(thomas.x) - b * thomas.z;  // Using modulated b
-            
-            // Simple Euler integration (Thomas is more stable)
-            float chaoticX = thomas.x + thomas.dx * dt;
-            float chaoticY = thomas.y + thomas.dy * dt;
-            float chaoticZ = thomas.z + thomas.dz * dt;
-            
-            // Blend between periodic and chaotic
-            thomas.x = periodicX * (1.0f - chaos) + chaoticX * chaos;
-            thomas.y = periodicY * (1.0f - chaos) + chaoticY * chaos;
-            thomas.z = periodicZ * (1.0f - chaos) + chaoticZ * chaos;
-        } else {
-            // Pure periodic oscillations
-            thomas.x = periodicX;
-            thomas.y = periodicY;
-            thomas.z = periodicZ;
-        }
-    }
-    
-    void updateRossler(float dt, float chaos, float a) {
-        // Update phase for periodic oscillations
-        rossler.phase += dt * 2.0f * M_PI;
-        if (rossler.phase >= 2.0f * M_PI) rossler.phase -= 2.0f * M_PI;
-        
-        // Calculate periodic oscillations (triangle and sawtooth-like for variety)
-        float periodicX = std::sin(rossler.phase);
-        float periodicY = std::sin(rossler.phase + M_PI / 2.0f); // 90° phase shift
-        float periodicZ = (rossler.phase < M_PI) ? (rossler.phase / M_PI) * 2.0f - 1.0f : 
-                          (2.0f * M_PI - rossler.phase) / M_PI * 2.0f - 1.0f; // Triangle wave
-        
-        if (chaos > 0.0f) {
-            // Rössler equations with modulated a parameter
-            rossler.dx = -rossler.y - rossler.z;
-            rossler.dy = rossler.x + a * rossler.y;  // Using modulated a
-            rossler.dz = rosslerParams.b + rossler.z * (rossler.x - rosslerParams.c);
-            
-            // Runge-Kutta 4th order
-            float k1x = rossler.dx * dt;
-            float k1y = rossler.dy * dt;
-            float k1z = rossler.dz * dt;
-            
-            float tempX = rossler.x + k1x * 0.5f;
-            float tempY = rossler.y + k1y * 0.5f;
-            float tempZ = rossler.z + k1z * 0.5f;
-            
-            float k2x = (-tempY - tempZ) * dt;
-            float k2y = (tempX + a * tempY) * dt;  // Using modulated a
-            float k2z = (rosslerParams.b + tempZ * (tempX - rosslerParams.c)) * dt;
-            
-            tempX = rossler.x + k2x * 0.5f;
-            tempY = rossler.y + k2y * 0.5f;
-            tempZ = rossler.z + k2z * 0.5f;
-            
-            float k3x = (-tempY - tempZ) * dt;
-            float k3y = (tempX + a * tempY) * dt;  // Using modulated a
-            float k3z = (rosslerParams.b + tempZ * (tempX - rosslerParams.c)) * dt;
-            
-            tempX = rossler.x + k3x;
-            tempY = rossler.y + k3y;
-            tempZ = rossler.z + k3z;
-            
-            float k4x = (-tempY - tempZ) * dt;
-            float k4y = (tempX + a * tempY) * dt;  // Using modulated a
-            float k4z = (rosslerParams.b + tempZ * (tempX - rosslerParams.c)) * dt;
-            
-            float chaoticX = rossler.x + (k1x + 2*k2x + 2*k3x + k4x) / 6.0f;
-            float chaoticY = rossler.y + (k1y + 2*k2y + 2*k3y + k4y) / 6.0f;
-            float chaoticZ = rossler.z + (k1z + 2*k2z + 2*k3z + k4z) / 6.0f;
-            
-            // Blend between periodic and chaotic
-            rossler.x = periodicX * (1.0f - chaos) + chaoticX * chaos;
-            rossler.y = periodicY * (1.0f - chaos) + chaoticY * chaos;
-            rossler.z = periodicZ * (1.0f - chaos) + chaoticZ * chaos;
-        } else {
-            // Pure periodic oscillations
-            rossler.x = periodicX;
-            rossler.y = periodicY;
-            rossler.z = periodicZ;
-        }
-    }
-    
-    void updateChen(float dt, float chaos, float a) {
-        // Update phase for periodic oscillations
-        chen.phase += dt * 2.0f * M_PI;
-        if (chen.phase >= 2.0f * M_PI) chen.phase -= 2.0f * M_PI;
-        
-        // Calculate periodic oscillations (different waveforms for variety)
-        float periodicX = std::sin(chen.phase * 0.8f); // Slightly slower
-        float periodicY = std::cos(chen.phase * 1.2f); // Different ratio
-        float periodicZ = std::sin(chen.phase * 1.6f); // Faster harmonic
-        
-        if (chaos > 0.0f) {
-            // Chen equations with modulated a parameter
-            chen.dx = a * (chen.y - chen.x);  // Using modulated a
-            chen.dy = (chenParams.c - a) * chen.x - chen.x * chen.z + chenParams.c * chen.y;
-            chen.dz = chen.x * chen.y - chenParams.b * chen.z;
-            
-            // Runge-Kutta 4th order integration
-            float k1x = chen.dx * dt;
-            float k1y = chen.dy * dt;
-            float k1z = chen.dz * dt;
-            
-            float tempX = chen.x + k1x * 0.5f;
-            float tempY = chen.y + k1y * 0.5f;
-            float tempZ = chen.z + k1z * 0.5f;
-            
-            float k2x = a * (tempY - tempX) * dt;  // Using modulated a
-            float k2y = ((chenParams.c - a) * tempX - tempX * tempZ + chenParams.c * tempY) * dt;
-            float k2z = (tempX * tempY - chenParams.b * tempZ) * dt;
-            
-            tempX = chen.x + k2x * 0.5f;
-            tempY = chen.y + k2y * 0.5f;
-            tempZ = chen.z + k2z * 0.5f;
-            
-            float k3x = a * (tempY - tempX) * dt;  // Using modulated a
-            float k3y = ((chenParams.c - a) * tempX - tempX * tempZ + chenParams.c * tempY) * dt;
-            float k3z = (tempX * tempY - chenParams.b * tempZ) * dt;
-            
-            tempX = chen.x + k3x;
-            tempY = chen.y + k3y;
-            tempZ = chen.z + k3z;
-            
-            float k4x = a * (tempY - tempX) * dt;  // Using modulated a
-            float k4y = ((chenParams.c - a) * tempX - tempX * tempZ + chenParams.c * tempY) * dt;
-            float k4z = (tempX * tempY - chenParams.b * tempZ) * dt;
-            
-            float chaoticX = chen.x + (k1x + 2*k2x + 2*k3x + k4x) / 6.0f;
-            float chaoticY = chen.y + (k1y + 2*k2y + 2*k3y + k4y) / 6.0f;
-            float chaoticZ = chen.z + (k1z + 2*k2z + 2*k3z + k4z) / 6.0f;
-            
-            // Blend between periodic and chaotic
-            chen.x = periodicX * (1.0f - chaos) + chaoticX * chaos;
-            chen.y = periodicY * (1.0f - chaos) + chaoticY * chaos;
-            chen.z = periodicZ * (1.0f - chaos) + chaoticZ * chaos;
-        } else {
-            // Pure periodic oscillations
-            chen.x = periodicX;
-            chen.y = periodicY;
-            chen.z = periodicZ;
-        }
+
+    void writeEcho(float send, float feedback, float sample) {
+        // read current delayed sample
+        size_t idxTap = (echoHead + echoBuffer.size() - echoDelaySamples) % echoBuffer.size();
+        float delayed = echoBuffer[idxTap];
+        // write new sample into head with feedback
+        float writeVal = delayed * feedback + sample * send;
+        echoBuffer[echoHead] = writeVal;
+        // advance head
+        echoHead = (echoHead + 1) % echoBuffer.size();
     }
 
     void process(const ProcessArgs& args) override {
-        // Handle reset
-        if (resetButtonTrigger.process(params[RESET_PARAM].getValue()) ||
-            resetTrigger.process(inputs[RESET_INPUT].getVoltage())) {
-            resetAttractors();
+        float dt = args.sampleTime;
+        float sr = args.sampleRate;
+
+        // --- Parameters & CV ---
+        auto getExp = [&](int p, int cvIn){
+            float v = params[p].getValue();
+            if (inputs[cvIn].isConnected()) v += inputs[cvIn].getVoltage() * 0.1f; // 1V/oct like influence
+            return std::pow(2.f, v);
+        };
+
+        float masterRateOct = params[MASTER_RATE_PARAM].getValue() + params[MASTER_FINE_PARAM].getValue();
+        if (inputs[MASTER_RATE_INPUT].isConnected()) masterRateOct += inputs[MASTER_RATE_INPUT].getVoltage() * 0.1f;
+        float masterHz = std::pow(2.f, masterRateOct); // exponential mapping
+        masterHz = clamp(masterHz, 0.0001f, 50.f);
+
+        float ratioA = std::pow(2.f, params[RATIO_A_PARAM].getValue() + (inputs[RATIO_A_CV_INPUT].isConnected() ? inputs[RATIO_A_CV_INPUT].getVoltage() * 0.1f : 0.f));
+        float ratioB = std::pow(2.f, params[RATIO_B_PARAM].getValue() + (inputs[RATIO_B_CV_INPUT].isConnected() ? inputs[RATIO_B_CV_INPUT].getVoltage() * 0.1f : 0.f));
+        float ratioC = std::pow(2.f, params[RATIO_C_PARAM].getValue() + (inputs[RATIO_C_CV_INPUT].isConnected() ? inputs[RATIO_C_CV_INPUT].getVoltage() * 0.1f : 0.f));
+        ratioA = clamp(ratioA, 0.0001f, 64.f);
+        ratioB = clamp(ratioB, 0.0001f, 64.f);
+        ratioC = clamp(ratioC, 0.0001f, 64.f);
+
+        float phaseSpread = params[PHASE_SPREAD_PARAM].getValue();
+
+        float echoTime = params[ECHO_TIME_PARAM].getValue() + (inputs[ECHO_TIME_CV_INPUT].isConnected() ? inputs[ECHO_TIME_CV_INPUT].getVoltage() * 0.2f : 0.f);
+        float echoFeedback = clamp(params[ECHO_FEEDBACK_PARAM].getValue() + (inputs[ECHO_FEEDBACK_CV_INPUT].isConnected() ? inputs[ECHO_FEEDBACK_CV_INPUT].getVoltage() * 0.05f : 0.f), 0.f, 0.95f);
+        float echoSend = clamp(params[ECHO_SEND_PARAM].getValue(), 0.f, 1.f);
+        updateEchoConfig(sr, echoTime);
+
+        float driftStep = params[DRIFT_STEP_PARAM].getValue() + (inputs[DRIFT_STEP_CV_INPUT].isConnected() ? inputs[DRIFT_STEP_CV_INPUT].getVoltage() * 0.1f : 0.f);
+        driftStep = clamp(driftStep, 0.005f, 2.f);
+        float driftRate = params[DRIFT_RATE_PARAM].getValue() + (inputs[DRIFT_RATE_CV_INPUT].isConnected() ? inputs[DRIFT_RATE_CV_INPUT].getVoltage() * 0.1f : 0.f);
+        driftRate = clamp(driftRate, 0.f, 4.f);
+        float driftSlew = params[DRIFT_SLEW_PARAM].getValue();
+
+        float morph = params[SHAPE_MORPH_PARAM].getValue() + (inputs[SHAPE_MORPH_CV_INPUT].isConnected() ? inputs[SHAPE_MORPH_CV_INPUT].getVoltage() * 0.2f : 0.f);
+        morph = clamp(morph, 0.f, 2.f);
+        float depth = params[DEPTH_PARAM].getValue() + (inputs[DEPTH_CV_INPUT].isConnected() ? inputs[DEPTH_CV_INPUT].getVoltage() : 0.f);
+        depth = clamp(depth, 0.f, 10.f);
+
+        bool invertLatch = params[INVERT_LATCH_PARAM].getValue() >= 0.5f;
+
+        // --- Triggers ---
+        if (resetTrig.process(inputs[MASTER_RESET_INPUT].getVoltage())) {
+            masterPhase = 0.f;
         }
-        
-        // Get frequencies with safety bounds
-        float lorenzFreq = std::max(0.001f, getFrequency(LORENZ_FREQ_PARAM, LORENZ_FREQ_INPUT, LORENZ_CV_PARAM));
-        float thomasFreq = std::max(0.001f, getFrequency(THOMAS_FREQ_PARAM, THOMAS_FREQ_INPUT, THOMAS_CV_PARAM));
-        float rosslerFreq = std::max(0.001f, getFrequency(ROSSLER_FREQ_PARAM, ROSSLER_FREQ_INPUT, ROSSLER_CV_PARAM));
-        float chenFreq = std::max(0.001f, getFrequency(CHEN_FREQ_PARAM, CHEN_FREQ_INPUT, CHEN_CV_PARAM));
-        
-        // Hardcoded optimal chaos values
-        float lorenzChaos = 1.0f;  // 100% chaos
-        float thomasChaos = 0.95f; // 95% chaos - sweet spot for Thomas
-        float rosslerChaos = 1.0f; // 100% chaos
-        float chenChaos = 1.0f;    // 100% chaos
-        
-        // Get modulated parameters
-        float lorenzRho = getLorenzRho();
-        float thomasB = getThomasB();
-        float rosslerA = getRosslerA();
-        float chenA = getChenA();
-        
-        // Calculate time steps with safety bounds
-        float dt = clamp(args.sampleTime, 0.0001f, 0.01f); // Limit timestep
-        float lorenzDt = clamp(dt * lorenzFreq * 0.01f, 0.0f, 0.001f);
-        float thomasDt = clamp(dt * thomasFreq * 0.1f, 0.0f, 0.01f);
-        float rosslerDt = clamp(dt * rosslerFreq * 0.1f, 0.0f, 0.01f);
-        
-        // Chen time step scales inversely with 'a' parameter for stability
-        float chenTimeScale = 0.02f / (chenA / 20.0f); // Slower when 'a' is higher
-        float chenDt = clamp(dt * chenFreq * chenTimeScale, 0.0f, 0.001f);
-        
-        // Update attractors
-        updateLorenz(lorenzDt, lorenzChaos, lorenzRho);
-        updateThomas(thomasDt, thomasChaos, thomasB);
-        updateRossler(rosslerDt, rosslerChaos, rosslerA);
-        updateChen(chenDt, chenChaos, chenA);
-        
-        // Check for stuck attractors and unstick them if needed
-        checkAndUnstickAttractor(lorenz, lorenzChaos, 0.001f, 100.0f, 88200.0f);
-        checkAndUnstickAttractor(thomas, thomasChaos, 0.01f, 50.0f, 88200.0f);
-        checkAndUnstickAttractor(rossler, rosslerChaos, 0.001f, 100.0f, 88200.0f);
-        checkAndUnstickAttractor(chen, chenChaos, 0.001f, 80.0f, 22050.0f); // More aggressive for Chen
-        
-        // Set outputs with NaN protection - mix coordinates for more interesting outputs
-        float lorenzOut = std::isfinite(lorenz.x) ? (lorenz.x + lorenz.y * 0.3f) * lorenzScale : 0.0f;
-        float thomasOut = std::isfinite(thomas.x) ? thomas.x * thomasScale : 0.0f;
-        float rosslerOut = std::isfinite(rossler.x) ? (rossler.x + rossler.z * 0.2f) * rosslerScale : 0.0f;
-        float chenOut = std::isfinite(chen.x) ? (chen.x + chen.y * 0.25f) * chenScale : 0.0f;
-        
-        outputs[LORENZ_OUTPUT].setVoltage(clamp(lorenzOut, -10.0f, 10.0f));
-        outputs[THOMAS_OUTPUT].setVoltage(clamp(thomasOut, -10.0f, 10.0f));
-        outputs[ROSSLER_OUTPUT].setVoltage(clamp(rosslerOut, -10.0f, 10.0f));
-        outputs[CHEN_OUTPUT].setVoltage(clamp(chenOut, -10.0f, 10.0f));
-        
-        // Update lights to show activity (with safety bounds)
-        lights[LORENZ_LIGHT].setBrightness(clamp(std::abs(lorenz.x) * 0.1f, 0.0f, 1.0f));
-        lights[THOMAS_LIGHT].setBrightness(clamp(std::abs(thomas.x) * 0.3f, 0.0f, 1.0f));
-        lights[ROSSLER_LIGHT].setBrightness(clamp(std::abs(rossler.x) * 0.2f, 0.0f, 1.0f));
-        lights[CHEN_LIGHT].setBrightness(clamp(std::abs(chen.x) * 0.15f, 0.0f, 1.0f));
+        if (bindTrig.process(inputs[EVENT1_INPUT].getVoltage())) {
+            hardSyncThreads(phaseSpread);
+        }
+        if (recallTrig.process(inputs[EVENT2_INPUT].getVoltage())) {
+            echoHold = !echoHold; // toggle hold
+        }
+        if (invertTrig.process(inputs[EVENT3_INPUT].getVoltage())) {
+            invertLatch = !invertLatch;
+            params[INVERT_LATCH_PARAM].setValue(invertLatch ? 1.f : 0.f);
+        }
+
+        // --- Advance master & threads ---
+        masterPhase += dt * masterHz;
+        masterPhase -= floorf(masterPhase);
+
+        A.phase += dt * masterHz * ratioA;
+        B.phase += dt * masterHz * ratioB;
+        C.phase += dt * masterHz * ratioC;
+        A.phase -= floorf(A.phase);
+        B.phase -= floorf(B.phase);
+        C.phase -= floorf(C.phase);
+
+        // Quantized drift engine
+        stepDrift(dt, driftStep, driftRate, driftSlew);
+
+        // Binding bus: use echo tap to FM phases slightly (causal attractor feel)
+        float echoTap = readEchoTap(echoDelaySamples);
+        float fmAmt = 0.0015f; // gentle
+        A.phase += fmAmt * echoTap; A.phase -= floorf(A.phase);
+        B.phase += fmAmt * echoTap * 0.7f; B.phase -= floorf(B.phase);
+        C.phase += fmAmt * echoTap * 1.2f; C.phase -= floorf(C.phase);
+
+        // Waveshapes (morphing) per thread
+        float aRaw = morphWave(A.phase, morph);
+        float bRaw = morphWave(B.phase, morph * 0.85f);
+        float cRaw = morphWave(C.phase, morph * 1.15f > 2.f ? 2.f : morph * 1.15f);
+
+        // Mix to echo send bus (pre- or post-drift; choose pre for clearer echoes)
+        float echoSendSample = (aRaw + bRaw + cRaw) / 3.f;
+        writeEcho(echoSend, echoFeedback, echoSendSample);
+
+        // If echoHold, prefer echo output as the thread signal body
+        float bodyA = echoHold ? echoTap : aRaw;
+        float bodyB = echoHold ? echoTap : bRaw;
+        float bodyC = echoHold ? echoTap : cRaw;
+
+        // Apply depth & drift & optional inversion
+        bool invert = invertLatch;
+        float aOut = applyDepthAndDrift(bodyA, depth, driftCurrent, invert);
+        float bOut = applyDepthAndDrift(bodyB, depth, driftCurrent, invert);
+        float cOut = applyDepthAndDrift(bodyC, depth, driftCurrent, invert);
+
+        // Outputs with protection
+        outputs[THREAD_A_OUTPUT].setVoltage(clamp(aOut, -10.f, 10.f));
+        outputs[THREAD_B_OUTPUT].setVoltage(clamp(bOut, -10.f, 10.f));
+        outputs[THREAD_C_OUTPUT].setVoltage(clamp(cOut, -10.f, 10.f));
+        outputs[ECHO_OUTPUT].setVoltage(clamp(echoTap * depth, -10.f, 10.f));
+        outputs[DRIFT_OUTPUT].setVoltage(clamp(driftCurrent, -10.f, 10.f));
+
+        // Lights
+        lights[MASTER_LIGHT].setBrightness(0.1f + 0.9f * (0.5f + 0.5f * std::sin(2.f * M_PI * masterPhase)));
+        lights[A_LIGHT].setBrightness(fabsf(aRaw));
+        lights[B_LIGHT].setBrightness(fabsf(bRaw));
+        lights[C_LIGHT].setBrightness(fabsf(cRaw));
+        lights[ECHO_HOLD_LIGHT].setBrightness(echoHold ? 1.f : 0.f);
+        lights[INVERT_LIGHT].setBrightness(invert ? 1.f : 0.f);
     }
 };
 
@@ -573,63 +391,52 @@ struct FatebinderWidget : ModuleWidget {
         addChild(createWidget<ScrewBlack>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
         using shapetaker::ui::LayoutHelper;
-        auto mm = [](float x, float y) {
-            return LayoutHelper::mm2px(Vec(x, y));
-        };
+        auto mm = [](float x, float y) { return LayoutHelper::mm2px(Vec(x, y)); };
 
-        // Master section
-        addParam(createParamCentered<ShapetakerKnobOscilloscopeLarge>(mm(18.0f, 26.5f), module, Fatebinder::MASTER_FREQ_PARAM));
-        addInput(createInputCentered<ShapetakerBNCPort>(mm(18.0f, 12.0f), module, Fatebinder::MASTER_FREQ_INPUT));
+        // Top: Master & Events
+        addParam(createParamCentered<ShapetakerKnobOscilloscopeLarge>(mm(18.0f, 18.0f), module, Fatebinder::MASTER_RATE_PARAM));
+        addParam(createParamCentered<ShapetakerKnobOscilloscopeSmall>(mm(32.0f, 18.0f), module, Fatebinder::MASTER_FINE_PARAM));
+        addInput(createInputCentered<ShapetakerBNCPort>(mm(46.0f, 18.0f), module, Fatebinder::MASTER_RATE_INPUT));
+        addInput(createInputCentered<ShapetakerBNCPort>(mm(60.0f, 18.0f), module, Fatebinder::MASTER_RESET_INPUT));
 
-        addParam(createParamCentered<ShapetakerVintageMomentary>(mm(45.5f, 26.5f), module, Fatebinder::RESET_PARAM));
-        addInput(createInputCentered<ShapetakerBNCPort>(mm(45.5f, 12.0f), module, Fatebinder::RESET_INPUT));
+        addInput(createInputCentered<ShapetakerBNCPort>(mm(76.0f, 18.0f), module, Fatebinder::EVENT1_INPUT));
+        addInput(createInputCentered<ShapetakerBNCPort>(mm(90.0f, 18.0f), module, Fatebinder::EVENT2_INPUT));
+        addInput(createInputCentered<ShapetakerBNCPort>(mm(104.0f, 18.0f), module, Fatebinder::EVENT3_INPUT));
+        addParam(createParamCentered<ShapetakerVintageToggleSwitch>(mm(118.0f, 18.0f), module, Fatebinder::INVERT_LATCH_PARAM));
 
-        // Common x positions for attractor rows
-        const float freqX = 14.0f;
-        const float attenX = 32.0f;
-        const float paramX = 50.0f;
-        const float outX = 55.0f;
-        const float cvOffsetY = 10.0f;
+        // Ratios & phase spread row
+        addParam(createParamCentered<ShapetakerKnobOscilloscopeMedium>(mm(22.0f, 44.0f), module, Fatebinder::RATIO_A_PARAM));
+        addParam(createParamCentered<ShapetakerKnobOscilloscopeMedium>(mm(48.0f, 44.0f), module, Fatebinder::RATIO_B_PARAM));
+        addParam(createParamCentered<ShapetakerKnobOscilloscopeMedium>(mm(74.0f, 44.0f), module, Fatebinder::RATIO_C_PARAM));
+        addParam(createParamCentered<ShapetakerKnobOscilloscopeSmall>(mm(100.0f, 44.0f), module, Fatebinder::PHASE_SPREAD_PARAM));
+        addInput(createInputCentered<ShapetakerBNCPort>(mm(22.0f, 32.0f), module, Fatebinder::RATIO_A_CV_INPUT));
+        addInput(createInputCentered<ShapetakerBNCPort>(mm(48.0f, 32.0f), module, Fatebinder::RATIO_B_CV_INPUT));
+        addInput(createInputCentered<ShapetakerBNCPort>(mm(74.0f, 32.0f), module, Fatebinder::RATIO_C_CV_INPUT));
 
-        auto addAttractorRow = [&](float centerY,
-                                   int freqParam, int freqInput,
-                                   int attenParam,
-                                   int shapeParam, int shapeInput,
-                                   int outputId) {
-            addParam(createParamCentered<ShapetakerKnobOscilloscopeMedium>(mm(freqX, centerY), module, freqParam));
-            addInput(createInputCentered<ShapetakerBNCPort>(mm(freqX, centerY - cvOffsetY), module, freqInput));
+        // Echo section
+        addParam(createParamCentered<ShapetakerKnobOscilloscopeMedium>(mm(22.0f, 70.0f), module, Fatebinder::ECHO_TIME_PARAM));
+        addParam(createParamCentered<ShapetakerKnobOscilloscopeSmall>(mm(38.0f, 70.0f), module, Fatebinder::ECHO_FEEDBACK_PARAM));
+        addParam(createParamCentered<ShapetakerKnobOscilloscopeSmall>(mm(54.0f, 70.0f), module, Fatebinder::ECHO_SEND_PARAM));
+        addInput(createInputCentered<ShapetakerBNCPort>(mm(22.0f, 58.0f), module, Fatebinder::ECHO_TIME_CV_INPUT));
+        addInput(createInputCentered<ShapetakerBNCPort>(mm(38.0f, 58.0f), module, Fatebinder::ECHO_FEEDBACK_CV_INPUT));
+        addOutput(createOutputCentered<ShapetakerBNCPort>(mm(70.0f, 70.0f), module, Fatebinder::ECHO_OUTPUT));
+        addChild(createLightCentered<TinyLight<GreenLight>>(mm(84.0f, 70.0f), module, Fatebinder::ECHO_HOLD_LIGHT));
 
-            addParam(createParamCentered<ShapetakerAttenuverterOscilloscope>(mm(attenX, centerY), module, attenParam));
+        // Drift & Shape
+        addParam(createParamCentered<ShapetakerKnobOscilloscopeMedium>(mm(22.0f, 96.0f), module, Fatebinder::DRIFT_STEP_PARAM));
+        addParam(createParamCentered<ShapetakerKnobOscilloscopeSmall>(mm(38.0f, 96.0f), module, Fatebinder::DRIFT_RATE_PARAM));
+        addParam(createParamCentered<ShapetakerKnobOscilloscopeSmall>(mm(54.0f, 96.0f), module, Fatebinder::DRIFT_SLEW_PARAM));
+        addOutput(createOutputCentered<ShapetakerBNCPort>(mm(70.0f, 96.0f), module, Fatebinder::DRIFT_OUTPUT));
+        addParam(createParamCentered<ShapetakerKnobOscilloscopeMedium>(mm(96.0f, 96.0f), module, Fatebinder::SHAPE_MORPH_PARAM));
+        addParam(createParamCentered<ShapetakerKnobOscilloscopeMedium>(mm(122.0f, 96.0f), module, Fatebinder::DEPTH_PARAM));
+        addInput(createInputCentered<ShapetakerBNCPort>(mm(96.0f, 84.0f), module, Fatebinder::SHAPE_MORPH_CV_INPUT));
+        addInput(createInputCentered<ShapetakerBNCPort>(mm(122.0f, 84.0f), module, Fatebinder::DEPTH_CV_INPUT));
+        addChild(createLightCentered<TinyLight<YellowLight>>(mm(110.0f, 84.0f), module, Fatebinder::INVERT_LIGHT));
 
-            addParam(createParamCentered<ShapetakerKnobOscilloscopeSmall>(mm(paramX, centerY), module, shapeParam));
-            addInput(createInputCentered<ShapetakerBNCPort>(mm(paramX, centerY - cvOffsetY), module, shapeInput));
-
-            addOutput(createOutputCentered<ShapetakerBNCPort>(mm(outX, centerY), module, outputId));
-        };
-
-        addAttractorRow(46.0f,
-                        Fatebinder::LORENZ_FREQ_PARAM, Fatebinder::LORENZ_FREQ_INPUT,
-                        Fatebinder::LORENZ_CV_PARAM,
-                        Fatebinder::LORENZ_RHO_PARAM, Fatebinder::LORENZ_RHO_INPUT,
-                        Fatebinder::LORENZ_OUTPUT);
-
-        addAttractorRow(74.0f,
-                        Fatebinder::THOMAS_FREQ_PARAM, Fatebinder::THOMAS_FREQ_INPUT,
-                        Fatebinder::THOMAS_CV_PARAM,
-                        Fatebinder::THOMAS_B_PARAM, Fatebinder::THOMAS_B_INPUT,
-                        Fatebinder::THOMAS_OUTPUT);
-
-        addAttractorRow(102.0f,
-                        Fatebinder::ROSSLER_FREQ_PARAM, Fatebinder::ROSSLER_FREQ_INPUT,
-                        Fatebinder::ROSSLER_CV_PARAM,
-                        Fatebinder::ROSSLER_A_PARAM, Fatebinder::ROSSLER_A_INPUT,
-                        Fatebinder::ROSSLER_OUTPUT);
-
-        addAttractorRow(120.0f,
-                        Fatebinder::CHEN_FREQ_PARAM, Fatebinder::CHEN_FREQ_INPUT,
-                        Fatebinder::CHEN_CV_PARAM,
-                        Fatebinder::CHEN_A_PARAM, Fatebinder::CHEN_A_INPUT,
-                        Fatebinder::CHEN_OUTPUT);
+        // Outputs
+        addOutput(createOutputCentered<ShapetakerBNCPort>(mm(30.0f, 120.0f), module, Fatebinder::THREAD_A_OUTPUT));
+        addOutput(createOutputCentered<ShapetakerBNCPort>(mm(62.0f, 120.0f), module, Fatebinder::THREAD_B_OUTPUT));
+        addOutput(createOutputCentered<ShapetakerBNCPort>(mm(94.0f, 120.0f), module, Fatebinder::THREAD_C_OUTPUT));
     }
 };
 

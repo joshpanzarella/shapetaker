@@ -81,8 +81,8 @@ public:
     }
     
     // Transmutation-specific colors
-    static RGBColor getTealColor() { return RGBColor(0.0f, 1.0f, 0.706f); } // #00ffb4
-    static RGBColor getPurpleColor() { return RGBColor(0.706f, 0.0f, 1.0f); } // #b400ff
+    static RGBColor getTealColor() { return RGBColor(0.0f, 0.604f, 0.478f); } // #009A7A
+    static RGBColor getPurpleColor() { return RGBColor(0.435f, 0.122f, 0.718f); } // #6F1FB7
     
     // Mix two colors with specified blend factor
     static RGBColor mixColors(const RGBColor& a, const RGBColor& b, float blend) {

@@ -5,75 +5,143 @@
   "chords": [
     {
       "name": "E7",
-      "intervals": [4, 8, 11, 2],
+      "intervals": [
+        4,
+        8,
+        11,
+        2
+      ],
       "preferredVoices": 4,
       "category": "dominant7"
     },
     {
       "name": "A7",
-      "intervals": [9, 1, 4, 7],
+      "intervals": [
+        9,
+        1,
+        4,
+        7
+      ],
       "preferredVoices": 4,
       "category": "dominant7"
     },
     {
       "name": "B7",
-      "intervals": [11, 3, 6, 9],
+      "intervals": [
+        11,
+        3,
+        6,
+        9
+      ],
       "preferredVoices": 4,
       "category": "dominant7"
     },
     {
       "name": "E",
-      "intervals": [4, 8, 11],
+      "intervals": [
+        4,
+        8,
+        11
+      ],
       "preferredVoices": 3,
       "category": "major"
     },
     {
       "name": "A",
-      "intervals": [9, 1, 4],
+      "intervals": [
+        9,
+        1,
+        4
+      ],
       "preferredVoices": 3,
       "category": "major"
     },
     {
       "name": "B",
-      "intervals": [11, 3, 6],
+      "intervals": [
+        11,
+        3,
+        6
+      ],
       "preferredVoices": 3,
       "category": "major"
     },
     {
       "name": "C#m",
-      "intervals": [1, 4, 8],
+      "intervals": [
+        1,
+        4,
+        8
+      ],
       "preferredVoices": 3,
       "category": "minor"
     },
     {
       "name": "F#m",
-      "intervals": [6, 9, 1],
+      "intervals": [
+        6,
+        9,
+        1
+      ],
       "preferredVoices": 3,
       "category": "minor"
     },
     {
       "name": "G#m",
-      "intervals": [8, 11, 3],
+      "intervals": [
+        8,
+        11,
+        3
+      ],
       "preferredVoices": 3,
       "category": "minor"
     },
     {
       "name": "E9",
-      "intervals": [4, 8, 11, 2, 6],
+      "intervals": [
+        4,
+        8,
+        11,
+        2,
+        6
+      ],
       "preferredVoices": 5,
       "category": "dominant9"
     },
     {
       "name": "A9",
-      "intervals": [9, 1, 4, 7, 11],
+      "intervals": [
+        9,
+        1,
+        4,
+        7,
+        11
+      ],
       "preferredVoices": 5,
       "category": "dominant9"
     },
     {
       "name": "B7#9",
-      "intervals": [11, 3, 6, 9, 1],
+      "intervals": [
+        11,
+        3,
+        6,
+        9,
+        1
+      ],
       "preferredVoices": 5,
       "category": "altered7"
     }
+  ],
+  "mode": "mixolydian",
+  "scale": "E mixolydian",
+  "genre": "analog",
+  "mood": "gritty",
+  "complexity": "advanced",
+  "voicingStyle": "stacked",
+  "tags": [
+    "analog",
+    "mixolydian",
+    "drive"
   ]
 }
