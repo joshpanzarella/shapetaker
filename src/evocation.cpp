@@ -143,6 +143,23 @@ struct Evocation : Module {
     static constexpr int NUM_ENVELOPES = 4;
     static constexpr int NUM_EDIT_PARAMS = static_cast<int>(EditableParam::Count);
 
+    enum class EnvelopeMode {
+        GESTURE = 0,
+        ADSR = 1
+    };
+
+    EnvelopeMode mode = EnvelopeMode::GESTURE;
+
+    // ADSR parameters (times in seconds, contours 0-1 where 0=linear, 1=exponential)
+    float adsrAttackTime = 0.01f;    // Fast attack (10ms)
+    float adsrDecayTime = 0.5f;      // Medium decay (500ms)
+    float adsrSustainLevel = 0.5f;   // Mid-level sustain
+    float adsrReleaseTime = 2.0f;    // 2 second release
+    float adsrAttackContour = 0.5f;  // mapped from ENV_PHASE_PARAM when ENV1 selected
+    float adsrDecayContour = 0.5f;   // mapped from ENV_PHASE_PARAM when ENV2 selected
+    float adsrSustainContour = 0.5f; // mapped from ENV_PHASE_PARAM when ENV3 selected
+    float adsrReleaseContour = 0.5f; // mapped from ENV_PHASE_PARAM when ENV4 selected
+
     int currentEnvelopeIndex = 0;
     int currentParameterIndex = 0;
 
@@ -293,33 +310,118 @@ struct Evocation : Module {
         }
 
         if (currentEnvelopeIndex >= 0 && currentEnvelopeIndex < NUM_ENVELOPES) {
-            float speedControl = params[ENV_SPEED_PARAM].getValue();
-            if (std::fabs(speedControl - envSpeedControlCache) > 1e-6f) {
-                envSpeedControlCache = speedControl;
-                params[SPEED_1_PARAM + currentEnvelopeIndex].setValue(envSpeedControlCache);
-                // Update OLED display
-                std::string speedStr = string::f("%.2fx", envSpeedControlCache);
-                updateLastTouched(string::f("ENV %d SPEED", currentEnvelopeIndex + 1), speedStr);
-            } else {
-                float actualSpeed = params[SPEED_1_PARAM + currentEnvelopeIndex].getValue();
-                if (std::fabs(actualSpeed - envSpeedControlCache) > 1e-6f) {
-                    envSpeedControlCache = actualSpeed;
-                    params[ENV_SPEED_PARAM].setValue(actualSpeed);
+            if (mode == EnvelopeMode::GESTURE) {
+                // Gesture mode: speed and phase controls
+                float speedControl = params[ENV_SPEED_PARAM].getValue();
+                if (std::fabs(speedControl - envSpeedControlCache) > 1e-6f) {
+                    envSpeedControlCache = speedControl;
+                    params[SPEED_1_PARAM + currentEnvelopeIndex].setValue(envSpeedControlCache);
+                    std::string speedStr = string::f("%.2fx", envSpeedControlCache);
+                    updateLastTouched(string::f("ENV %d SPEED", currentEnvelopeIndex + 1), speedStr);
+                } else {
+                    float actualSpeed = params[SPEED_1_PARAM + currentEnvelopeIndex].getValue();
+                    if (std::fabs(actualSpeed - envSpeedControlCache) > 1e-6f) {
+                        envSpeedControlCache = actualSpeed;
+                        params[ENV_SPEED_PARAM].setValue(actualSpeed);
+                    }
                 }
-            }
 
-            float phaseControl = params[ENV_PHASE_PARAM].getValue();
-            if (std::fabs(phaseControl - envPhaseControlCache) > 1e-6f) {
-                envPhaseControlCache = phaseControl;
-                phaseOffsets[currentEnvelopeIndex] = envPhaseControlCache;
-                // Update OLED display
-                float phaseDeg = envPhaseControlCache * 360.f;
-                updateLastTouched(string::f("ENV %d PHASE", currentEnvelopeIndex + 1), string::f("%.2f°", phaseDeg));
+                float phaseControl = params[ENV_PHASE_PARAM].getValue();
+                if (std::fabs(phaseControl - envPhaseControlCache) > 1e-6f) {
+                    envPhaseControlCache = phaseControl;
+                    phaseOffsets[currentEnvelopeIndex] = envPhaseControlCache;
+                    float phaseDeg = envPhaseControlCache * 360.f;
+                    updateLastTouched(string::f("ENV %d PHASE", currentEnvelopeIndex + 1), string::f("%.2f°", phaseDeg));
+                } else {
+                    float actualPhase = phaseOffsets[currentEnvelopeIndex];
+                    if (std::fabs(actualPhase - envPhaseControlCache) > 1e-6f) {
+                        envPhaseControlCache = actualPhase;
+                        params[ENV_PHASE_PARAM].setValue(actualPhase);
+                    }
+                }
             } else {
-                float actualPhase = phaseOffsets[currentEnvelopeIndex];
-                if (std::fabs(actualPhase - envPhaseControlCache) > 1e-6f) {
-                    envPhaseControlCache = actualPhase;
-                    params[ENV_PHASE_PARAM].setValue(actualPhase);
+                // ADSR mode: ENV_SPEED_PARAM controls current stage time/level
+                float speedControl = params[ENV_SPEED_PARAM].getValue();
+                // Map 0-1 knob range to 0.01-10 seconds for times, 0-1 for sustain level
+                float targetValue;
+                if (currentEnvelopeIndex == 2) {
+                    // Sustain level: 0-1
+                    targetValue = speedControl;
+                } else {
+                    // Attack/Decay/Release: 0.01-10 seconds (logarithmic)
+                    targetValue = 0.01f + speedControl * 9.99f;
+                }
+
+                bool changed = false;
+                std::string paramName = "";
+                std::string paramUnit = "";
+
+                switch (currentEnvelopeIndex) {
+                    case 0: // Attack
+                        if (std::fabs(targetValue - adsrAttackTime) > 1e-6f) {
+                            adsrAttackTime = targetValue;
+                            params[SPEED_1_PARAM].setValue(speedControl);
+                            changed = true;
+                        } else {
+                            // Sync knob to current value (inverse of 0.01-10 mapping)
+                            float currentKnobValue = (adsrAttackTime - 0.01f) / 9.99f;
+                            if (std::fabs(currentKnobValue - speedControl) > 1e-6f) {
+                                params[ENV_SPEED_PARAM].setValue(currentKnobValue);
+                            }
+                        }
+                        break;
+                    case 1: // Decay
+                        if (std::fabs(targetValue - adsrDecayTime) > 1e-6f) {
+                            adsrDecayTime = targetValue;
+                            params[SPEED_2_PARAM].setValue(speedControl);
+                            changed = true;
+                        } else {
+                            float currentKnobValue = (adsrDecayTime - 0.01f) / 9.99f;
+                            if (std::fabs(currentKnobValue - speedControl) > 1e-6f) {
+                                params[ENV_SPEED_PARAM].setValue(currentKnobValue);
+                            }
+                        }
+                        break;
+                    case 2: // Sustain
+                        if (std::fabs(targetValue - adsrSustainLevel) > 1e-6f) {
+                            adsrSustainLevel = clamp(targetValue, 0.0f, 1.0f);
+                            params[SPEED_3_PARAM].setValue(speedControl);
+                            changed = true;
+                        } else {
+                            if (std::fabs(adsrSustainLevel - speedControl) > 1e-6f) {
+                                params[ENV_SPEED_PARAM].setValue(adsrSustainLevel);
+                            }
+                        }
+                        break;
+                    case 3: // Release
+                        if (std::fabs(targetValue - adsrReleaseTime) > 1e-6f) {
+                            adsrReleaseTime = targetValue;
+                            params[SPEED_4_PARAM].setValue(speedControl);
+                            changed = true;
+                        } else {
+                            float currentKnobValue = (adsrReleaseTime - 0.01f) / 9.99f;
+                            if (std::fabs(currentKnobValue - speedControl) > 1e-6f) {
+                                params[ENV_SPEED_PARAM].setValue(currentKnobValue);
+                            }
+                        }
+                        break;
+                }
+
+                // Handle contour control
+                float contourControl = params[ENV_PHASE_PARAM].getValue();
+                if (std::fabs(contourControl - envPhaseControlCache) > 1e-6f) {
+                    envPhaseControlCache = contourControl;
+                    switch (currentEnvelopeIndex) {
+                        case 0: adsrAttackContour = contourControl; break;
+                        case 1: adsrDecayContour = contourControl; break;
+                        case 2: adsrSustainContour = contourControl; break;
+                        case 3: adsrReleaseContour = contourControl; break;
+                    }
+                    changed = true;
+                }
+
+                if (changed) {
+                    generateADSREnvelope();
                 }
             }
         }
@@ -343,41 +445,50 @@ struct Evocation : Module {
         }
         
         // Handle clear
-        if (clearPressed) {
+        if (clearPressed && mode == EnvelopeMode::GESTURE) {
             clearBuffer();
             updateLastTouched("CLEAR", "BUFFER CLEARED");
         }
 
-        // Handle recording
-        if (recordPressed) {
-            if (!isRecording) {
-                startRecording();
-                updateLastTouched("RECORD", "STARTED");
-            } else {
-                stopRecording();
-                updateLastTouched("RECORD", "STOPPED");
+        // Handle recording (Gesture mode only)
+        if (mode == EnvelopeMode::GESTURE) {
+            if (recordPressed) {
+                if (!isRecording) {
+                    startRecording();
+                    updateLastTouched("RECORD", "STARTED");
+                } else {
+                    stopRecording();
+                    updateLastTouched("RECORD", "STOPPED");
+                }
+            }
+
+            // Update recording
+            if (isRecording) {
+                updateRecording(args.sampleTime);
             }
         }
 
-        // Handle trigger
-        // (removed OLED display update for trigger)
-
-        // Update recording
-        if (isRecording) {
-            updateRecording(args.sampleTime);
-        }
-
         // Handle triggers for playback
-        // Trigger takes precedence over gate
-        if (triggerPressed && bufferHasData) {
-            triggerAllEnvelopes();
-        } else if (inputs[GATE_INPUT].isConnected() && bufferHasData) {
-            // Gate input - sustain playback while gate is high
-            bool gateHigh = inputs[GATE_INPUT].getVoltage() >= 1.0f;
-            if (gateHigh) {
-                // Start all envelopes if gate just went high
+        if (mode == EnvelopeMode::GESTURE) {
+            // Gesture mode: trigger button or gate triggers playback
+            if (triggerPressed && bufferHasData) {
+                triggerAllEnvelopes();
+            } else if (inputs[GATE_INPUT].isConnected() && bufferHasData) {
+                bool gateHigh = inputs[GATE_INPUT].getVoltage() >= 1.0f;
+                if (gateHigh) {
+                    if (gateTrigger.process(inputs[GATE_INPUT].getVoltage())) {
+                        triggerAllEnvelopes();
+                    }
+                }
+            }
+        } else {
+            // ADSR mode: gate input triggers and sustains envelope
+            if (inputs[GATE_INPUT].isConnected() && bufferHasData) {
+                bool gateHigh = inputs[GATE_INPUT].getVoltage() >= 1.0f;
                 if (gateTrigger.process(inputs[GATE_INPUT].getVoltage())) {
-                    triggerAllEnvelopes();
+                    if (gateHigh) {
+                        triggerAllEnvelopes();
+                    }
                 }
             }
         }
@@ -640,7 +751,65 @@ struct Evocation : Module {
     }
 
     float getEnvelopeDuration() {
+        if (mode == EnvelopeMode::ADSR) {
+            return adsrAttackTime + adsrDecayTime + adsrReleaseTime;
+        }
         return getRecordedDuration();
+    }
+
+    // Apply contour curve to a linear 0-1 value
+    float applyContour(float linear, float contour) {
+        // contour 0 = linear, 0.5 = slight curve, 1 = exponential
+        if (contour < 0.01f) return linear;
+        float curve = 1.0f + (contour * 4.0f); // 1 to 5 range
+        return std::pow(linear, curve);
+    }
+
+    // Generate ADSR envelope from current parameters
+    void generateADSREnvelope() {
+        envelope.clear();
+
+        float totalTime = adsrAttackTime + adsrDecayTime + adsrReleaseTime;
+        if (totalTime < 0.001f) totalTime = 0.001f;
+
+        // Attack phase
+        int attackPoints = std::max(2, (int)(adsrAttackTime * 20.0f)); // 20 points per second
+        for (int i = 0; i < attackPoints; i++) {
+            float t = (float)i / (attackPoints - 1);
+            float curved = applyContour(t, adsrAttackContour);
+            float time = (adsrAttackTime * t) / totalTime;
+            envelope.push_back({0.0f, curved, time});
+        }
+
+        // Decay phase
+        float decayStart = adsrAttackTime / totalTime;
+        int decayPoints = std::max(2, (int)(adsrDecayTime * 20.0f));
+        float clampedSustain = clamp(adsrSustainLevel, 0.0f, 1.0f);
+        for (int i = 0; i < decayPoints; i++) {
+            float t = (float)i / (decayPoints - 1);
+            float curved = applyContour(t, adsrDecayContour);
+            float level = 1.0f - curved * (1.0f - clampedSustain);
+            float time = decayStart + (adsrDecayTime * t) / totalTime;
+            envelope.push_back({0.0f, level, time});
+        }
+
+        // Sustain point (will hold here during gate)
+        float sustainStart = (adsrAttackTime + adsrDecayTime) / totalTime;
+        envelope.push_back({0.0f, clampedSustain, sustainStart});
+
+        // Release phase (from sustain level to 0)
+        float releaseStart = sustainStart;
+        int releasePoints = std::max(2, (int)(adsrReleaseTime * 20.0f));
+        for (int i = 1; i < releasePoints; i++) {
+            float t = (float)i / (releasePoints - 1);
+            float curved = applyContour(t, adsrReleaseContour);
+            float level = clampedSustain * (1.0f - curved);
+            float time = releaseStart + (adsrReleaseTime * t) / totalTime;
+            envelope.push_back({0.0f, level, time});
+        }
+
+        bufferHasData = true;
+        recordedDuration = totalTime;
     }
 
     static int wrapIndex(int current, int delta, int maxCount) {
@@ -702,6 +871,12 @@ struct Evocation : Module {
 
         if (flash)
             selectionFlashTimer = 0.75f;
+    }
+
+    void regenerateADSR() {
+        if (mode == EnvelopeMode::ADSR) {
+            generateADSREnvelope();
+        }
     }
 
     void selectEnvelope(int index, bool flash = true) {
@@ -796,16 +971,27 @@ struct Evocation : Module {
     // Save/Load state
     json_t* dataToJson() override {
         json_t* rootJ = json_object();
-        
+
         json_object_set_new(rootJ, "bufferHasData", json_boolean(bufferHasData));
-        
+        json_object_set_new(rootJ, "mode", json_integer((int)mode));
+
+        // Save ADSR parameters
+        json_object_set_new(rootJ, "adsrAttackTime", json_real(adsrAttackTime));
+        json_object_set_new(rootJ, "adsrDecayTime", json_real(adsrDecayTime));
+        json_object_set_new(rootJ, "adsrSustainLevel", json_real(adsrSustainLevel));
+        json_object_set_new(rootJ, "adsrReleaseTime", json_real(adsrReleaseTime));
+        json_object_set_new(rootJ, "adsrAttackContour", json_real(adsrAttackContour));
+        json_object_set_new(rootJ, "adsrDecayContour", json_real(adsrDecayContour));
+        json_object_set_new(rootJ, "adsrSustainContour", json_real(adsrSustainContour));
+        json_object_set_new(rootJ, "adsrReleaseContour", json_real(adsrReleaseContour));
+
         // Save individual loop states
         json_t* loopStatesJ = json_array();
         for (int i = 0; i < 4; i++) {
             json_array_append_new(loopStatesJ, json_boolean(loopStates[i]));
         }
         json_object_set_new(rootJ, "loopStates", loopStatesJ);
-        
+
         // Save invert states
         json_t* invertStatesJ = json_array();
         for (int i = 0; i < 4; i++) {
@@ -843,7 +1029,35 @@ struct Evocation : Module {
     void dataFromJson(json_t* rootJ) override {
         json_t* bufferHasDataJ = json_object_get(rootJ, "bufferHasData");
         if (bufferHasDataJ) bufferHasData = json_boolean_value(bufferHasDataJ);
-        
+
+        json_t* modeJ = json_object_get(rootJ, "mode");
+        if (modeJ) mode = (EnvelopeMode)json_integer_value(modeJ);
+
+        // Load ADSR parameters
+        json_t* adsrAttackTimeJ = json_object_get(rootJ, "adsrAttackTime");
+        if (adsrAttackTimeJ) adsrAttackTime = json_real_value(adsrAttackTimeJ);
+
+        json_t* adsrDecayTimeJ = json_object_get(rootJ, "adsrDecayTime");
+        if (adsrDecayTimeJ) adsrDecayTime = json_real_value(adsrDecayTimeJ);
+
+        json_t* adsrSustainLevelJ = json_object_get(rootJ, "adsrSustainLevel");
+        if (adsrSustainLevelJ) adsrSustainLevel = json_real_value(adsrSustainLevelJ);
+
+        json_t* adsrReleaseTimeJ = json_object_get(rootJ, "adsrReleaseTime");
+        if (adsrReleaseTimeJ) adsrReleaseTime = json_real_value(adsrReleaseTimeJ);
+
+        json_t* adsrAttackContourJ = json_object_get(rootJ, "adsrAttackContour");
+        if (adsrAttackContourJ) adsrAttackContour = json_real_value(adsrAttackContourJ);
+
+        json_t* adsrDecayContourJ = json_object_get(rootJ, "adsrDecayContour");
+        if (adsrDecayContourJ) adsrDecayContour = json_real_value(adsrDecayContourJ);
+
+        json_t* adsrSustainContourJ = json_object_get(rootJ, "adsrSustainContour");
+        if (adsrSustainContourJ) adsrSustainContour = json_real_value(adsrSustainContourJ);
+
+        json_t* adsrReleaseContourJ = json_object_get(rootJ, "adsrReleaseContour");
+        if (adsrReleaseContourJ) adsrReleaseContour = json_real_value(adsrReleaseContourJ);
+
         // Load individual loop states
         json_t* loopStatesJ = json_object_get(rootJ, "loopStates");
         if (loopStatesJ) {
@@ -854,7 +1068,7 @@ struct Evocation : Module {
                 if (loopJ) loopStates[(int)i] = json_boolean_value(loopJ);
             }
         }
-        
+
         // Load invert states
         json_t* invertStatesJ = json_object_get(rootJ, "invertStates");
         if (invertStatesJ) {
@@ -908,6 +1122,11 @@ struct Evocation : Module {
         json_t* currentEnvelopeIndexJ = json_object_get(rootJ, "currentEnvelopeIndex");
         if (currentEnvelopeIndexJ) {
             setCurrentEnvelopeIndex((int)json_integer_value(currentEnvelopeIndexJ));
+        }
+
+        // Regenerate ADSR envelope if in ADSR mode
+        if (mode == EnvelopeMode::ADSR) {
+            generateADSREnvelope();
         }
 
         json_t* currentParameterIndexJ = json_object_get(rootJ, "currentParameterIndex");
@@ -1648,7 +1867,13 @@ struct EvocationOLEDDisplay : Widget {
 
         bool flash = module->isSelectionFlashActive();
         if (flash) {
-            std::string flashText = string::f("ENV %d SELECTED", envIndex + 1);
+            std::string flashText;
+            if (module->mode == Evocation::EnvelopeMode::ADSR) {
+                const char* stages[] = {"ATTACK", "DECAY", "SUSTAIN", "RELEASE"};
+                flashText = string::f("%s SELECTED", stages[envIndex]);
+            } else {
+                flashText = string::f("ENV %d SELECTED", envIndex + 1);
+            }
             if (font) {
                 nvgFontFaceId(args.vg, font->handle);
 
@@ -1800,35 +2025,71 @@ struct EvocationOLEDDisplay : Widget {
                     nvgStroke(args.vg);
                 }
 
-                // Draw speed in top left corner (cyan)
+                // Draw mode-specific info in top corners
                 nvgFontFaceId(args.vg, font->handle);
                 nvgFontSize(args.vg, 7.0f);
                 nvgTextAlign(args.vg, NVG_ALIGN_LEFT | NVG_ALIGN_TOP);
                 nvgFillColor(args.vg, nvgRGBA(0, 255, 220, 200));
-                float speed = module->params[Evocation::SPEED_1_PARAM + envIndex].getValue();
-                std::string speedText = string::f("%.2fx", speed);
-                nvgText(args.vg, sidePadding, 3.0f, speedText.c_str(), nullptr);
 
-                // Draw recorded time at top center (bright magenta)
+                if (module->mode == Evocation::EnvelopeMode::ADSR) {
+                    // ADSR mode: show value for current stage
+                    std::string leftText;
+                    switch (envIndex) {
+                        case 0: leftText = string::f("%.3fs", module->adsrAttackTime); break;
+                        case 1: leftText = string::f("%.3fs", module->adsrDecayTime); break;
+                        case 2: leftText = string::f("%.2f", module->adsrSustainLevel); break;
+                        case 3: leftText = string::f("%.3fs", module->adsrReleaseTime); break;
+                    }
+                    nvgText(args.vg, sidePadding, 3.0f, leftText.c_str(), nullptr);
+                } else {
+                    // Gesture mode: show speed
+                    float speed = module->params[Evocation::SPEED_1_PARAM + envIndex].getValue();
+                    std::string speedText = string::f("%.2fx", speed);
+                    nvgText(args.vg, sidePadding, 3.0f, speedText.c_str(), nullptr);
+                }
+
+                // Draw total time at top center (bright magenta)
                 nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_TOP);
                 nvgFillColor(args.vg, nvgRGBA(255, 100, 220, 220));
                 float duration = module->getEnvelopeDuration();
                 std::string timeText = string::f("%.2fs", duration);
                 nvgText(args.vg, box.size.x * 0.5f, 3.0f, timeText.c_str(), nullptr);
 
-                // Draw phase in top right corner (cyan)
+                // Draw phase/contour in top right corner (cyan)
                 nvgTextAlign(args.vg, NVG_ALIGN_RIGHT | NVG_ALIGN_TOP);
                 nvgFillColor(args.vg, nvgRGBA(0, 255, 220, 200));
-                float phase = module->phaseOffsets[envIndex];
-                float phaseDeg = phase * 360.0f;
-                std::string phaseText = string::f("%.0f°", phaseDeg);
-                nvgText(args.vg, box.size.x - sidePadding, 3.0f, phaseText.c_str(), nullptr);
+
+                if (module->mode == Evocation::EnvelopeMode::ADSR) {
+                    // ADSR mode: show contour type
+                    float contour = 0.0f;
+                    switch (envIndex) {
+                        case 0: contour = module->adsrAttackContour; break;
+                        case 1: contour = module->adsrDecayContour; break;
+                        case 2: contour = module->adsrSustainContour; break;
+                        case 3: contour = module->adsrReleaseContour; break;
+                    }
+                    std::string contourText = contour < 0.33f ? "LIN" :
+                                              contour < 0.67f ? "CRV" : "EXP";
+                    nvgText(args.vg, box.size.x - sidePadding, 3.0f, contourText.c_str(), nullptr);
+                } else {
+                    // Gesture mode: show phase
+                    float phase = module->phaseOffsets[envIndex];
+                    float phaseDeg = phase * 360.0f;
+                    std::string phaseText = string::f("%.0f°", phaseDeg);
+                    nvgText(args.vg, box.size.x - sidePadding, 3.0f, phaseText.c_str(), nullptr);
+                }
 
                 // Draw envelope label at bottom center (magenta glow)
                 nvgFontSize(args.vg, 10.0f);
                 nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_BOTTOM);
                 nvgFillColor(args.vg, nvgRGBA(255, 100, 220, 240));
-                std::string text = string::f("ENV %d", envIndex + 1);
+                std::string text;
+                if (module->mode == Evocation::EnvelopeMode::ADSR) {
+                    const char* stages[] = {"ATTACK", "DECAY", "SUSTAIN", "RELEASE"};
+                    text = stages[envIndex];
+                } else {
+                    text = string::f("ENV %d", envIndex + 1);
+                }
                 nvgText(args.vg, box.size.x * 0.5f, box.size.y - bottomPadding, text.c_str(), nullptr);
 
                 // Draw invert status at bottom left (cyan)
@@ -1855,7 +2116,13 @@ struct EvocationOLEDDisplay : Widget {
                 nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
                 nvgFontSize(args.vg, 10.0f);
                 nvgFillColor(args.vg, nvgRGBA(100, 160, 150, 180));
-                nvgText(args.vg, box.size.x * 0.5f, box.size.y * 0.5f, "[ENV EMPTY]", nullptr);
+                std::string emptyText;
+                if (module->mode == Evocation::EnvelopeMode::ADSR) {
+                    emptyText = "[ADSR MODE]";
+                } else {
+                    emptyText = "[ENV EMPTY]";
+                }
+                nvgText(args.vg, box.size.x * 0.5f, box.size.y * 0.5f, emptyText.c_str(), nullptr);
             }
         }
 
@@ -1988,6 +2255,23 @@ struct EvocationWidget : ModuleWidget {
         auto* evocation = dynamic_cast<Evocation*>(module);
         if (!evocation)
             return;
+
+        menu->addChild(new MenuSeparator);
+
+        // Mode selection - Gesture
+        menu->addChild(createCheckMenuItem("Gesture Mode", "", [=] {
+            return evocation->mode == Evocation::EnvelopeMode::GESTURE;
+        }, [=] {
+            evocation->mode = Evocation::EnvelopeMode::GESTURE;
+        }));
+
+        // Mode selection - ADSR
+        menu->addChild(createCheckMenuItem("ADSR Mode", "", [=] {
+            return evocation->mode == Evocation::EnvelopeMode::ADSR;
+        }, [=] {
+            evocation->mode = Evocation::EnvelopeMode::ADSR;
+            evocation->regenerateADSR();
+        }));
 
         menu->addChild(new MenuSeparator);
         menu->addChild(createCheckMenuItem("Debug Touch Logging", "", [=] {
