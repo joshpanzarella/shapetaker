@@ -11,6 +11,18 @@
 struct Evocation;
 struct EvocationOLEDDisplay;
 
+// Custom ParamQuantity for ADSR stage selection buttons
+// Implementation will be after Evocation class definition
+struct ADSRStageButtonQuantity : ParamQuantity {
+    int stageIndex; // 0=Attack, 1=Decay, 2=Sustain, 3=Release
+    std::string getLabel() override; // Implemented later
+};
+
+// Custom ParamQuantity for ENV_SPEED_PARAM knob
+struct ADSRSpeedParamQuantity : ParamQuantity {
+    std::string getLabel() override; // Implemented later
+};
+
 // Custom Touch Strip Widget - Declaration only
 struct TouchStripWidget : Widget {
     Evocation* module;
@@ -226,10 +238,10 @@ struct Evocation : Module {
         configParam(RECORD_PARAM, 0.f, 1.f, 0.f, "Record");
         configParam(TRIGGER_PARAM, 0.f, 1.f, 0.f, "Manual Trigger");
         configParam(CLEAR_PARAM, 0.f, 1.f, 0.f, "Clear Buffer");
-        configParam(SPEED_1_PARAM, 0.1f, 16.0f, 1.0f, "Speed 1", "×");
-        configParam(SPEED_2_PARAM, 0.1f, 16.0f, 2.0f, "Speed 2", "×");
-        configParam(SPEED_3_PARAM, 0.1f, 16.0f, 4.0f, "Speed 3", "×");
-        configParam(SPEED_4_PARAM, 0.1f, 16.0f, 8.0f, "Speed 4", "×");
+        configParam(SPEED_1_PARAM, 0.0f, 16.0f, 1.0f, "Speed 1", "×");
+        configParam(SPEED_2_PARAM, 0.0f, 16.0f, 2.0f, "Speed 2", "×");
+        configParam(SPEED_3_PARAM, 0.0f, 16.0f, 4.0f, "Speed 3", "×");
+        configParam(SPEED_4_PARAM, 0.0f, 16.0f, 8.0f, "Speed 4", "×");
         configParam(LOOP_1_PARAM, 0.f, 1.f, 0.f, "Loop Output 1");
         configParam(LOOP_2_PARAM, 0.f, 1.f, 0.f, "Loop Output 2");
         configParam(LOOP_3_PARAM, 0.f, 1.f, 0.f, "Loop Output 3");
@@ -240,12 +252,59 @@ struct Evocation : Module {
         configParam(INVERT_4_PARAM, 0.f, 1.f, 0.f, "Invert Output 4");
         configButton(ENVELOPE_ADVANCE_PARAM, "Next Envelope");
         configButton(PARAM_ADVANCE_PARAM, "Next Parameter");
-        configParam(ENV_SPEED_PARAM, 0.1f, 16.0f, 1.0f, "Selected Envelope Speed", "×");
+
+        // Use custom ParamQuantity for dynamic speed knob label
+        ADSRSpeedParamQuantity* speedQ = new ADSRSpeedParamQuantity();
+        speedQ->module = this;
+        speedQ->paramId = ENV_SPEED_PARAM;
+        speedQ->name = "Selected Envelope Speed";
+        speedQ->minValue = 0.0f;  // 0-16 range to support both modes
+        speedQ->maxValue = 16.0f;
+        speedQ->defaultValue = 1.0f;
+        speedQ->unit = "×";
+        paramQuantities[ENV_SPEED_PARAM] = speedQ;
+
         configParam(ENV_PHASE_PARAM, 0.f, 1.f, 0.f, "Selected Envelope Phase");
-        configButton(ENV_SELECT_1_PARAM, "Select Envelope 1");
-        configButton(ENV_SELECT_2_PARAM, "Select Envelope 2");
-        configButton(ENV_SELECT_3_PARAM, "Select Envelope 3");
-        configButton(ENV_SELECT_4_PARAM, "Select Envelope 4");
+        // Use custom ParamQuantity for dynamic ADSR/Gesture mode labels
+        ADSRStageButtonQuantity* adsrQ1 = new ADSRStageButtonQuantity();
+        adsrQ1->stageIndex = 0;
+        adsrQ1->module = this;
+        adsrQ1->paramId = ENV_SELECT_1_PARAM;
+        adsrQ1->name = "Select Envelope 1";
+        adsrQ1->minValue = 0.f;
+        adsrQ1->maxValue = 1.f;
+        adsrQ1->defaultValue = 0.f;
+        paramQuantities[ENV_SELECT_1_PARAM] = adsrQ1;
+
+        ADSRStageButtonQuantity* adsrQ2 = new ADSRStageButtonQuantity();
+        adsrQ2->stageIndex = 1;
+        adsrQ2->module = this;
+        adsrQ2->paramId = ENV_SELECT_2_PARAM;
+        adsrQ2->name = "Select Envelope 2";
+        adsrQ2->minValue = 0.f;
+        adsrQ2->maxValue = 1.f;
+        adsrQ2->defaultValue = 0.f;
+        paramQuantities[ENV_SELECT_2_PARAM] = adsrQ2;
+
+        ADSRStageButtonQuantity* adsrQ3 = new ADSRStageButtonQuantity();
+        adsrQ3->stageIndex = 2;
+        adsrQ3->module = this;
+        adsrQ3->paramId = ENV_SELECT_3_PARAM;
+        adsrQ3->name = "Select Envelope 3";
+        adsrQ3->minValue = 0.f;
+        adsrQ3->maxValue = 1.f;
+        adsrQ3->defaultValue = 0.f;
+        paramQuantities[ENV_SELECT_3_PARAM] = adsrQ3;
+
+        ADSRStageButtonQuantity* adsrQ4 = new ADSRStageButtonQuantity();
+        adsrQ4->stageIndex = 3;
+        adsrQ4->module = this;
+        adsrQ4->paramId = ENV_SELECT_4_PARAM;
+        adsrQ4->name = "Select Envelope 4";
+        adsrQ4->minValue = 0.f;
+        adsrQ4->maxValue = 1.f;
+        adsrQ4->defaultValue = 0.f;
+        paramQuantities[ENV_SELECT_4_PARAM] = adsrQ4;
         configInput(RECORD_INPUT, "Record CV");
         configInput(TRIGGER_INPUT, "External Trigger");
         configInput(CLEAR_INPUT, "Clear Trigger");
@@ -342,13 +401,16 @@ struct Evocation : Module {
             } else {
                 // ADSR mode: ENV_SPEED_PARAM controls current stage time/level
                 float speedControl = params[ENV_SPEED_PARAM].getValue();
+                // Normalize 0-16 range to 0-1 for ADSR mode
+                speedControl = clamp(speedControl / 16.0f, 0.0f, 1.0f);
+
                 // Map 0-1 knob range to 0.01-10 seconds for times, 0-1 for sustain level
                 float targetValue;
                 if (currentEnvelopeIndex == 2) {
                     // Sustain level: 0-1
                     targetValue = speedControl;
                 } else {
-                    // Attack/Decay/Release: 0.01-10 seconds (logarithmic)
+                    // Attack/Decay/Release: 0.01-10 seconds
                     targetValue = 0.01f + speedControl * 9.99f;
                 }
 
@@ -360,12 +422,13 @@ struct Evocation : Module {
                     case 0: // Attack
                         if (std::fabs(targetValue - adsrAttackTime) > 1e-6f) {
                             adsrAttackTime = targetValue;
-                            params[SPEED_1_PARAM].setValue(speedControl);
                             changed = true;
                         } else {
-                            // Sync knob to current value (inverse of 0.01-10 mapping)
-                            float currentKnobValue = (adsrAttackTime - 0.01f) / 9.99f;
-                            if (std::fabs(currentKnobValue - speedControl) > 1e-6f) {
+                            // Sync knob to current value (inverse: 0.01-10s -> 0-1 -> 0-16)
+                            float normalized = (adsrAttackTime - 0.01f) / 9.99f;
+                            float currentKnobValue = normalized * 16.0f;
+                            float actualKnobValue = params[ENV_SPEED_PARAM].getValue();
+                            if (std::fabs(currentKnobValue - actualKnobValue) > 0.01f) {
                                 params[ENV_SPEED_PARAM].setValue(currentKnobValue);
                             }
                         }
@@ -373,11 +436,12 @@ struct Evocation : Module {
                     case 1: // Decay
                         if (std::fabs(targetValue - adsrDecayTime) > 1e-6f) {
                             adsrDecayTime = targetValue;
-                            params[SPEED_2_PARAM].setValue(speedControl);
                             changed = true;
                         } else {
-                            float currentKnobValue = (adsrDecayTime - 0.01f) / 9.99f;
-                            if (std::fabs(currentKnobValue - speedControl) > 1e-6f) {
+                            float normalized = (adsrDecayTime - 0.01f) / 9.99f;
+                            float currentKnobValue = normalized * 16.0f;
+                            float actualKnobValue = params[ENV_SPEED_PARAM].getValue();
+                            if (std::fabs(currentKnobValue - actualKnobValue) > 0.01f) {
                                 params[ENV_SPEED_PARAM].setValue(currentKnobValue);
                             }
                         }
@@ -385,22 +449,24 @@ struct Evocation : Module {
                     case 2: // Sustain
                         if (std::fabs(targetValue - adsrSustainLevel) > 1e-6f) {
                             adsrSustainLevel = clamp(targetValue, 0.0f, 1.0f);
-                            params[SPEED_3_PARAM].setValue(speedControl);
                             changed = true;
                         } else {
-                            if (std::fabs(adsrSustainLevel - speedControl) > 1e-6f) {
-                                params[ENV_SPEED_PARAM].setValue(adsrSustainLevel);
+                            float currentKnobValue = adsrSustainLevel * 16.0f;
+                            float actualKnobValue = params[ENV_SPEED_PARAM].getValue();
+                            if (std::fabs(currentKnobValue - actualKnobValue) > 0.01f) {
+                                params[ENV_SPEED_PARAM].setValue(currentKnobValue);
                             }
                         }
                         break;
                     case 3: // Release
                         if (std::fabs(targetValue - adsrReleaseTime) > 1e-6f) {
                             adsrReleaseTime = targetValue;
-                            params[SPEED_4_PARAM].setValue(speedControl);
                             changed = true;
                         } else {
-                            float currentKnobValue = (adsrReleaseTime - 0.01f) / 9.99f;
-                            if (std::fabs(currentKnobValue - speedControl) > 1e-6f) {
+                            float normalized = (adsrReleaseTime - 0.01f) / 9.99f;
+                            float currentKnobValue = normalized * 16.0f;
+                            float actualKnobValue = params[ENV_SPEED_PARAM].getValue();
+                            if (std::fabs(currentKnobValue - actualKnobValue) > 0.01f) {
                                 params[ENV_SPEED_PARAM].setValue(currentKnobValue);
                             }
                         }
@@ -482,8 +548,10 @@ struct Evocation : Module {
                 }
             }
         } else {
-            // ADSR mode: gate input triggers and sustains envelope
-            if (inputs[GATE_INPUT].isConnected() && bufferHasData) {
+            // ADSR mode: trigger button or gate input triggers envelope
+            if (triggerPressed && bufferHasData) {
+                triggerAllEnvelopes();
+            } else if (inputs[GATE_INPUT].isConnected() && bufferHasData) {
                 bool gateHigh = inputs[GATE_INPUT].getVoltage() >= 1.0f;
                 if (gateTrigger.process(inputs[GATE_INPUT].getVoltage())) {
                     if (gateHigh) {
@@ -674,11 +742,23 @@ struct Evocation : Module {
         }
 
         // Get speed from knob and CV
-        float speed = params[SPEED_1_PARAM + outputIndex].getValue();
-        if (inputs[SPEED_1_INPUT + outputIndex].isConnected()) {
-            speed += inputs[SPEED_1_INPUT + outputIndex].getVoltage(); // 1V/oct style
+        float speed;
+        if (mode == EnvelopeMode::ADSR) {
+            // ADSR mode: all outputs use 1x speed (timing baked into envelope)
+            speed = 1.0f;
+            // Still allow CV modulation if connected
+            if (inputs[SPEED_1_INPUT + outputIndex].isConnected()) {
+                speed += inputs[SPEED_1_INPUT + outputIndex].getVoltage();
+                speed = clamp(speed, 0.1f, 16.0f);
+            }
+        } else {
+            // Gesture mode: each output has individual speed
+            speed = params[SPEED_1_PARAM + outputIndex].getValue();
+            if (inputs[SPEED_1_INPUT + outputIndex].isConnected()) {
+                speed += inputs[SPEED_1_INPUT + outputIndex].getVoltage(); // 1V/oct style
+            }
+            speed = clamp(speed, 0.1f, 16.0f); // Reasonable speed limits
         }
-        speed = clamp(speed, 0.1f, 16.0f); // Reasonable speed limits
 
         // Advance phase
         float phaseIncrement = speed * sampleTime / getEnvelopeDuration();
@@ -700,9 +780,16 @@ struct Evocation : Module {
         }
 
         // Interpolate envelope value at current phase
-        float samplePhase = pb.phase + phaseOffsets[outputIndex];
-        samplePhase -= std::floor(samplePhase);
-        if (samplePhase < 0.f) samplePhase += 1.f;
+        float samplePhase;
+        if (mode == EnvelopeMode::ADSR) {
+            // ADSR mode: no phase offset, all outputs identical
+            samplePhase = pb.phase;
+        } else {
+            // Gesture mode: apply phase offset for each output
+            samplePhase = pb.phase + phaseOffsets[outputIndex];
+            samplePhase -= std::floor(samplePhase);
+            if (samplePhase < 0.f) samplePhase += 1.f;
+        }
 
         float envelopeValue = interpolateEnvelope(samplePhase);
 
@@ -858,12 +945,39 @@ struct Evocation : Module {
 
     void onEnvelopeSelectionChanged(bool flash = true) {
         currentEnvelopeIndex = clamp(currentEnvelopeIndex, 0, NUM_ENVELOPES - 1);
-        float speed = params[SPEED_1_PARAM + currentEnvelopeIndex].getValue();
-        params[ENV_SPEED_PARAM].setValue(speed);
-        envSpeedControlCache = speed;
-        float phase = phaseOffsets[currentEnvelopeIndex];
-        params[ENV_PHASE_PARAM].setValue(phase);
-        envPhaseControlCache = phase;
+
+        if (mode == EnvelopeMode::ADSR) {
+            // ADSR mode: sync knob to ADSR parameter values
+            float normalized = 0.0f;
+            switch (currentEnvelopeIndex) {
+                case 0: normalized = (adsrAttackTime - 0.01f) / 9.99f; break;
+                case 1: normalized = (adsrDecayTime - 0.01f) / 9.99f; break;
+                case 2: normalized = adsrSustainLevel; break;
+                case 3: normalized = (adsrReleaseTime - 0.01f) / 9.99f; break;
+            }
+            float knobValue = normalized * 16.0f;
+            params[ENV_SPEED_PARAM].setValue(knobValue);
+            envSpeedControlCache = knobValue;
+
+            // Sync phase knob to ADSR contour
+            float contour = 0.0f;
+            switch (currentEnvelopeIndex) {
+                case 0: contour = adsrAttackContour; break;
+                case 1: contour = adsrDecayContour; break;
+                case 2: contour = adsrSustainContour; break;
+                case 3: contour = adsrReleaseContour; break;
+            }
+            params[ENV_PHASE_PARAM].setValue(contour);
+            envPhaseControlCache = contour;
+        } else {
+            // Gesture mode: sync from SPEED_1-4 params
+            float speed = params[SPEED_1_PARAM + currentEnvelopeIndex].getValue();
+            params[ENV_SPEED_PARAM].setValue(speed);
+            envSpeedControlCache = speed;
+            float phase = phaseOffsets[currentEnvelopeIndex];
+            params[ENV_PHASE_PARAM].setValue(phase);
+            envPhaseControlCache = phase;
+        }
 
         // Update loop and invert switch states to reflect current envelope
         params[LOOP_1_PARAM].setValue(loopStates[currentEnvelopeIndex] ? 1.0f : 0.0f);
@@ -1149,6 +1263,39 @@ struct Evocation : Module {
     }
 
 };
+
+// ADSRStageButtonQuantity Implementation
+std::string ADSRStageButtonQuantity::getLabel() {
+    Evocation* evocation = dynamic_cast<Evocation*>(module);
+    if (!evocation) return ParamQuantity::getLabel();
+
+    const char* gestureLabels[] = {"Select Envelope 1", "Select Envelope 2", "Select Envelope 3", "Select Envelope 4"};
+    const char* adsrLabels[] = {"Select Attack", "Select Decay", "Select Sustain", "Select Release"};
+
+    if (evocation->mode == Evocation::EnvelopeMode::ADSR) {
+        return adsrLabels[stageIndex];
+    } else {
+        return gestureLabels[stageIndex];
+    }
+}
+
+// ADSRSpeedParamQuantity Implementation
+std::string ADSRSpeedParamQuantity::getLabel() {
+    Evocation* evocation = dynamic_cast<Evocation*>(module);
+    if (!evocation) return ParamQuantity::getLabel();
+
+    if (evocation->mode == Evocation::EnvelopeMode::ADSR) {
+        // Return label based on current envelope selection
+        int envIndex = evocation->getCurrentEnvelopeIndex();
+        const char* adsrLabels[] = {"Attack Time", "Decay Time", "Sustain Level", "Release Time"};
+        if (envIndex >= 0 && envIndex < 4) {
+            return adsrLabels[envIndex];
+        }
+        return "ADSR Parameter";
+    } else {
+        return "Selected Envelope Speed";
+    }
+}
 
 // TouchStripWidget Method Implementations (after Evocation is fully defined)
 TouchStripWidget::TouchStripWidget(Evocation* module) {
@@ -1866,14 +2013,9 @@ struct EvocationOLEDDisplay : Widget {
         envIndex = clamp(envIndex, 0, Evocation::NUM_ENVELOPES - 1);
 
         bool flash = module->isSelectionFlashActive();
-        if (flash) {
-            std::string flashText;
-            if (module->mode == Evocation::EnvelopeMode::ADSR) {
-                const char* stages[] = {"ATTACK", "DECAY", "SUSTAIN", "RELEASE"};
-                flashText = string::f("%s SELECTED", stages[envIndex]);
-            } else {
-                flashText = string::f("ENV %d SELECTED", envIndex + 1);
-            }
+        // Only show flash in Gesture mode
+        if (flash && module->mode == Evocation::EnvelopeMode::GESTURE) {
+            std::string flashText = string::f("ENV %d SELECTED", envIndex + 1);
             if (font) {
                 nvgFontFaceId(args.vg, font->handle);
 
@@ -2032,13 +2174,21 @@ struct EvocationOLEDDisplay : Widget {
                 nvgFillColor(args.vg, nvgRGBA(0, 255, 220, 200));
 
                 if (module->mode == Evocation::EnvelopeMode::ADSR) {
-                    // ADSR mode: show value for current stage
+                    // ADSR mode: show individual stage duration/level
                     std::string leftText;
                     switch (envIndex) {
-                        case 0: leftText = string::f("%.3fs", module->adsrAttackTime); break;
-                        case 1: leftText = string::f("%.3fs", module->adsrDecayTime); break;
-                        case 2: leftText = string::f("%.2f", module->adsrSustainLevel); break;
-                        case 3: leftText = string::f("%.3fs", module->adsrReleaseTime); break;
+                        case 0: // Attack
+                            leftText = string::f("%.2fs", module->adsrAttackTime);
+                            break;
+                        case 1: // Decay
+                            leftText = string::f("%.2fs", module->adsrDecayTime);
+                            break;
+                        case 2: // Sustain (level, not time)
+                            leftText = string::f("%.2f", module->adsrSustainLevel);
+                            break;
+                        case 3: // Release
+                            leftText = string::f("%.2fs", module->adsrReleaseTime);
+                            break;
                     }
                     nvgText(args.vg, sidePadding, 3.0f, leftText.c_str(), nullptr);
                 } else {
