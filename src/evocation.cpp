@@ -229,9 +229,10 @@ struct Evocation : Module {
         configButton(ENV_SELECT_2_PARAM, "Select Envelope 2");
         configButton(ENV_SELECT_3_PARAM, "Select Envelope 3");
         configButton(ENV_SELECT_4_PARAM, "Select Envelope 4");
-        
+        configInput(RECORD_INPUT, "Record CV");
         configInput(TRIGGER_INPUT, "External Trigger");
         configInput(CLEAR_INPUT, "Clear Trigger");
+        configInput(GATE_INPUT, "Gate Input");
         configInput(SPEED_1_INPUT, "Speed 1 CV");
         configInput(SPEED_2_INPUT, "Speed 2 CV");
         configInput(SPEED_3_INPUT, "Speed 3 CV");
