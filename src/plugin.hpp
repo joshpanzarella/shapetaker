@@ -1336,7 +1336,7 @@ struct CapacitiveTouchSwitch : app::SvgSwitch {
         momentary = false;
         latch = true;
         // No frames needed - visual state shown by LED
-        box.size = Vec(32, 32);
+        box.size = Vec(27.2, 27.2);
         if (shadow) shadow->visible = false;
     }
 

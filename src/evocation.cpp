@@ -91,6 +91,10 @@ struct Evocation : Module {
         TRIGGER_INPUT,
         CLEAR_INPUT,
         GATE_INPUT,
+        SPEED_1_INPUT,
+        SPEED_2_INPUT,
+        SPEED_3_INPUT,
+        SPEED_4_INPUT,
         INPUTS_LEN
     };
     enum OutputId {
@@ -119,10 +123,6 @@ struct Evocation : Module {
         INVERT_2_LIGHT,
         INVERT_3_LIGHT,
         INVERT_4_LIGHT,
-        ENV_SELECT_1_LIGHT,
-        ENV_SELECT_2_LIGHT,
-        ENV_SELECT_3_LIGHT,
-        ENV_SELECT_4_LIGHT,
         LIGHTS_LEN
     };
 
@@ -229,24 +229,22 @@ struct Evocation : Module {
         configButton(ENV_SELECT_2_PARAM, "Select Envelope 2");
         configButton(ENV_SELECT_3_PARAM, "Select Envelope 3");
         configButton(ENV_SELECT_4_PARAM, "Select Envelope 4");
-
-        configInput(RECORD_INPUT, "Record CV");
+        
         configInput(TRIGGER_INPUT, "External Trigger");
         configInput(CLEAR_INPUT, "Clear Trigger");
-        configInput(GATE_INPUT, "Gate Input");
+        configInput(SPEED_1_INPUT, "Speed 1 CV");
+        configInput(SPEED_2_INPUT, "Speed 2 CV");
+        configInput(SPEED_3_INPUT, "Speed 3 CV");
+        configInput(SPEED_4_INPUT, "Speed 4 CV");
         
         configOutput(ENV_1_OUTPUT, "Envelope 1");
         configOutput(ENV_2_OUTPUT, "Envelope 2");
-        configOutput(ENV_3_OUTPUT, "Envelope 3");
+        configOutput(ENV_3_OUTPUT, "Envelope 3");  
         configOutput(ENV_4_OUTPUT, "Envelope 4");
         configOutput(ENV_1_GATE_OUTPUT, "Envelope 1 Gate");
         configOutput(ENV_2_GATE_OUTPUT, "Envelope 2 Gate");
         configOutput(ENV_3_GATE_OUTPUT, "Envelope 3 Gate");
         configOutput(ENV_4_GATE_OUTPUT, "Envelope 4 Gate");
-        configOutput(ENV_1_EOC_OUTPUT, "Envelope 1 End of Cycle");
-        configOutput(ENV_2_EOC_OUTPUT, "Envelope 2 End of Cycle");
-        configOutput(ENV_3_EOC_OUTPUT, "Envelope 3 End of Cycle");
-        configOutput(ENV_4_EOC_OUTPUT, "Envelope 4 End of Cycle");
     }
     
     void process(const ProcessArgs& args) override {
@@ -361,9 +359,7 @@ struct Evocation : Module {
         }
 
         // Handle trigger
-        if (triggerPressed && bufferHasData) {
-            // updateLastTouched("TRIGGER", "PLAYBACK");
-        }
+        // (removed OLED display update for trigger)
 
         // Update recording
         if (isRecording) {
@@ -398,10 +394,6 @@ struct Evocation : Module {
         if (currentEnvelopeIndex >= 0 && currentEnvelopeIndex < NUM_ENVELOPES) {
             lights[LOOP_1_LIGHT].setBrightness(loopStates[currentEnvelopeIndex] ? 1.0f : 0.0f);
             lights[INVERT_1_LIGHT].setBrightness(invertStates[currentEnvelopeIndex] ? 1.0f : 0.0f);
-        }
-
-        for (int i = 0; i < 4; i++) {
-            lights[ENV_SELECT_1_LIGHT + i].setBrightness(currentEnvelopeIndex == i ? 1.f : 0.f);
         }
     }
     
@@ -569,8 +561,11 @@ struct Evocation : Module {
             return;
         }
 
-        // Get speed from knob
+        // Get speed from knob and CV
         float speed = params[SPEED_1_PARAM + outputIndex].getValue();
+        if (inputs[SPEED_1_INPUT + outputIndex].isConnected()) {
+            speed += inputs[SPEED_1_INPUT + outputIndex].getVoltage(); // 1V/oct style
+        }
         speed = clamp(speed, 0.1f, 16.0f); // Reasonable speed limits
 
         // Advance phase
@@ -720,7 +715,7 @@ struct Evocation : Module {
     void updateLastTouched(const std::string& paramName, const std::string& paramValue) {
         lastTouched.name = paramName;
         lastTouched.value = paramValue;
-        lastTouched.timer = 0.4f; // Display for 0.4 seconds
+        lastTouched.timer = 0.35f; // Display for 0.35 seconds
         lastTouched.hasParam = true;
         selectionFlashTimer = 0.f; // Clear envelope selection flash immediately
     }
@@ -1005,8 +1000,18 @@ float TouchStripWidget::computeNormalizedVoltage() const {
     if (box.size.y <= 0.f)
         return 0.f;
     const float height = box.size.y;
+    const float deadZone = height * 0.08f; // 8% dead zone at bottom for clean 0V
+
     float y = clamp(currentTouchPos.y, 0.0f, height);
-    float normalized = 1.0f - (y / height);
+
+    // If in the bottom dead zone, return 0V
+    if (y >= (height - deadZone)) {
+        return 0.0f;
+    }
+
+    // Remap the active area (excluding dead zone) to 0-1
+    float activeHeight = height - deadZone;
+    float normalized = 1.0f - (y / activeHeight);
     return clamp(normalized, 0.0f, 1.0f);
 }
 
@@ -1520,7 +1525,73 @@ struct OutputProgressIndicator : Widget {
     }
 
     void draw(const DrawArgs& args) override {
-        // Animations removed per user request.
+        if (!module)
+            return;
+
+        bool hasEnvelope = module->hasRecordedEnvelope();
+        bool active = hasEnvelope && module->isPlaybackActive(outputIndex);
+        float phase = hasEnvelope ? clamp(module->getPlaybackPhase(outputIndex), 0.0f, 1.0f) : 0.0f;
+
+        NVGcontext* vg = args.vg;
+        Vec center = box.size.div(2.0f);
+        float maxDiameter = std::min(box.size.x, box.size.y);
+        float radius = maxDiameter * 0.5f - 4.0f; // keep everything inside the bezel "screen"
+        if (radius <= 0.f)
+            return;
+
+        // Base bezel / screen border
+        NVGcolor bezelColor = hasEnvelope ? nvgRGBA(120, 110, 100, 160) : nvgRGBA(70, 60, 50, 140);
+        nvgBeginPath(vg);
+        nvgCircle(vg, center.x, center.y, radius + 3.0f);
+        nvgStrokeWidth(vg, 1.2f);
+        nvgStrokeColor(vg, bezelColor);
+        nvgStroke(vg);
+
+        // Dark faceplate area where the light lives
+        nvgBeginPath(vg);
+        nvgCircle(vg, center.x, center.y, radius + 2.0f);
+        nvgFillColor(vg, nvgRGBA(8, 8, 12, 235));
+        nvgFill(vg);
+
+        // Inner screen glow (subtle) so the port feels inset
+        NVGpaint screenGlow = nvgRadialGradient(
+            vg,
+            center.x,
+            center.y,
+            radius * 0.1f,
+            radius + 2.0f,
+            nvgRGBA(40, 30, 45, 120),
+            nvgRGBA(5, 5, 10, 0)
+        );
+        nvgBeginPath(vg);
+        nvgCircle(vg, center.x, center.y, radius + 2.0f);
+        nvgFillPaint(vg, screenGlow);
+        nvgFill(vg);
+
+        if (!hasEnvelope)
+            return;
+        if (!active)
+            return;
+
+        float angleStart = -M_PI / 2.0f;
+        float angleEnd = angleStart + phase * 2.0f * (float)M_PI;
+
+        float arcRadius = radius;
+
+        // Progress arc
+        nvgBeginPath(vg);
+        nvgArc(vg, center.x, center.y, arcRadius, angleStart, angleEnd, NVG_CW);
+        nvgStrokeWidth(vg, 3.0f);
+        nvgLineCap(vg, NVG_ROUND);
+        nvgStrokeColor(vg, nvgRGBA(255, 214, 130, 200));
+        nvgStroke(vg);
+
+        // Leading indicator
+        Vec tip = center.plus(Vec(cosf(angleEnd), sinf(angleEnd)).mult(arcRadius));
+        nvgBeginPath(vg);
+        nvgCircle(vg, tip.x, tip.y, 4.0f);
+        nvgFillColor(vg, nvgRGBA(255, 244, 200, 220));
+        nvgFill(vg);
     }
 };
 
@@ -1653,8 +1724,8 @@ struct EvocationOLEDDisplay : Widget {
                 const float graphX = sidePadding;
                 const float graphY = topPadding;
 
-                // Draw grid lines
-                nvgStrokeColor(args.vg, nvgRGBA(60, 100, 90, 40));
+                // Draw grid lines with synthwave aesthetic
+                nvgStrokeColor(args.vg, nvgRGBA(180, 64, 255, 35));
                 nvgStrokeWidth(args.vg, 0.5f);
                 // Horizontal center line (5V)
                 nvgBeginPath(args.vg);
@@ -1662,8 +1733,8 @@ struct EvocationOLEDDisplay : Widget {
                 nvgLineTo(args.vg, graphX + graphWidth, graphY + graphHeight * 0.5f);
                 nvgStroke(args.vg);
 
-                // Draw 10V line (top) and 0V line (bottom) in faint red
-                nvgStrokeColor(args.vg, nvgRGBA(180, 60, 60, 80));
+                // Draw 10V line (top) and 0V line (bottom) in magenta
+                nvgStrokeColor(args.vg, nvgRGBA(255, 0, 180, 70));
                 nvgStrokeWidth(args.vg, 0.5f);
                 // 10V line at top
                 nvgBeginPath(args.vg);
@@ -1676,13 +1747,13 @@ struct EvocationOLEDDisplay : Widget {
                 nvgLineTo(args.vg, graphX + graphWidth, graphY + graphHeight);
                 nvgStroke(args.vg);
 
-                // Draw envelope waveform, points, and playback head, clipped to graph area
-                nvgSave(args.vg);
-                nvgScissor(args.vg, graphX, graphY, graphWidth, graphHeight);
+                // Check if envelope is inverted and active
+                bool inverted = module->invertStates[envIndex];
+                bool isActive = module->isPlaybackActive(envIndex);
 
-                // Draw envelope waveform
-                nvgStrokeColor(args.vg, nvgRGBA(120, 220, 208, 200));
-                nvgStrokeWidth(args.vg, 1.5f);
+                // Draw envelope waveform (thin bright cyan)
+                nvgStrokeColor(args.vg, nvgRGBA(0, 255, 220, 255));
+                nvgStrokeWidth(args.vg, 0.3f);
                 nvgLineCap(args.vg, NVG_ROUND);
                 nvgLineJoin(args.vg, NVG_ROUND);
 
@@ -1690,8 +1761,8 @@ struct EvocationOLEDDisplay : Widget {
                 bool first = true;
                 for (const auto& point : module->envelope) {
                     float x = graphX + point.time * graphWidth;
-                    float y_val = module->invertStates[envIndex] ? 1.0f - point.y : point.y;
-                    float y = graphY + (1.0f - y_val) * graphHeight;
+                    float yValue = inverted ? point.y : (1.0f - point.y);
+                    float y = graphY + yValue * graphHeight;
 
                     if (first) {
                         nvgMoveTo(args.vg, x, y);
@@ -1702,140 +1773,88 @@ struct EvocationOLEDDisplay : Widget {
                 }
                 nvgStroke(args.vg);
 
-                // Draw envelope points as small dots
-                nvgFillColor(args.vg, nvgRGBA(180, 255, 240, 180));
+                // Draw envelope points as tiny bright dots
+                nvgFillColor(args.vg, nvgRGBA(180, 255, 255, 255));
                 for (const auto& point : module->envelope) {
                     float x = graphX + point.time * graphWidth;
-                    float y_val = module->invertStates[envIndex] ? 1.0f - point.y : point.y;
-                    float y = graphY + (1.0f - y_val) * graphHeight;
+                    float yValue = inverted ? point.y : (1.0f - point.y);
+                    float y = graphY + yValue * graphHeight;
 
                     nvgBeginPath(args.vg);
-                    nvgCircle(args.vg, x, y, 1.0f);
+                    nvgCircle(args.vg, x, y, 0.4f);
                     nvgFill(args.vg);
                 }
 
-                // Draw loop position highlight with glow
-                if (module->isPlaybackActive(envIndex)) {
+                // Draw thin scanline when envelope is active
+                if (isActive) {
                     float phase = module->getPlaybackPhase(envIndex);
-                    float value = module->interpolateEnvelope(phase);
-                    float displayValue = module->invertStates[envIndex] ? 1.0f - value : value;
+                    float playheadX = graphX + phase * graphWidth;
 
-                    float x = graphX + phase * graphWidth;
-                    float y = graphY + (1.0f - displayValue) * graphHeight;
-
-                    // Draw outer glow (larger, semi-transparent)
+                    // Draw thin bright magenta scanline
                     nvgBeginPath(args.vg);
-                    nvgCircle(args.vg, x, y, 4.0f);
-                    nvgFillColor(args.vg, nvgRGBA(180, 0, 255, 80));
-                    nvgFill(args.vg);
-
-                    // Draw middle glow
-                    nvgBeginPath(args.vg);
-                    nvgCircle(args.vg, x, y, 3.0f);
-                    nvgFillColor(args.vg, nvgRGBA(200, 50, 255, 150));
-                    nvgFill(args.vg);
-
-                    // Draw bright center
-                    nvgBeginPath(args.vg);
-                    nvgCircle(args.vg, x, y, 2.0f);
-                    nvgFillColor(args.vg, nvgRGBA(220, 100, 255, 255));
-                    nvgFill(args.vg);
+                    nvgMoveTo(args.vg, playheadX, graphY);
+                    nvgLineTo(args.vg, playheadX, graphY + graphHeight);
+                    nvgStrokeColor(args.vg, nvgRGBA(255, 100, 255, 255));
+                    nvgStrokeWidth(args.vg, 0.25f);
+                    nvgStroke(args.vg);
                 }
-                nvgRestore(args.vg);
 
-                // Draw speed in top left corner
+                // Draw speed in top left corner (cyan)
                 nvgFontFaceId(args.vg, font->handle);
                 nvgFontSize(args.vg, 7.0f);
                 nvgTextAlign(args.vg, NVG_ALIGN_LEFT | NVG_ALIGN_TOP);
-                nvgFillColor(args.vg, nvgRGBA(140, 180, 170, 200));
+                nvgFillColor(args.vg, nvgRGBA(0, 255, 220, 200));
                 float speed = module->params[Evocation::SPEED_1_PARAM + envIndex].getValue();
                 std::string speedText = string::f("%.2fx", speed);
                 nvgText(args.vg, sidePadding, 3.0f, speedText.c_str(), nullptr);
 
-                // Draw phase in top right corner
+                // Draw recorded time at top center (bright magenta)
+                nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_TOP);
+                nvgFillColor(args.vg, nvgRGBA(255, 100, 220, 220));
+                float duration = module->getEnvelopeDuration();
+                std::string timeText = string::f("%.2fs", duration);
+                nvgText(args.vg, box.size.x * 0.5f, 3.0f, timeText.c_str(), nullptr);
+
+                // Draw phase in top right corner (cyan)
                 nvgTextAlign(args.vg, NVG_ALIGN_RIGHT | NVG_ALIGN_TOP);
+                nvgFillColor(args.vg, nvgRGBA(0, 255, 220, 200));
                 float phase = module->phaseOffsets[envIndex];
                 float phaseDeg = phase * 360.0f;
                 std::string phaseText = string::f("%.0f°", phaseDeg);
                 nvgText(args.vg, box.size.x - sidePadding, 3.0f, phaseText.c_str(), nullptr);
 
-                // Draw buffer length in top middle, or REC status
-                nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_TOP);
-                if (module->isRecording) {
-                    nvgFillColor(args.vg, nvgRGBA(255, 40, 40, 220));
-                    nvgText(args.vg, box.size.x * 0.5f, 3.0f, "REC", nullptr);
-                } else {
-                    nvgFillColor(args.vg, nvgRGBA(140, 180, 170, 200));
-                    float duration = module->getRecordedDuration();
-                    std::string durationText = string::f("%.2fs", duration);
-                    nvgText(args.vg, box.size.x * 0.5f, 3.0f, durationText.c_str(), nullptr);
-                }
-
-                // Draw envelope label at bottom (below waveform)
+                // Draw envelope label at bottom center (magenta glow)
                 nvgFontSize(args.vg, 10.0f);
                 nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_BOTTOM);
-                nvgFillColor(args.vg, nvgRGBA(120, 200, 188, 220));
+                nvgFillColor(args.vg, nvgRGBA(255, 100, 220, 240));
                 std::string text = string::f("ENV %d", envIndex + 1);
                 nvgText(args.vg, box.size.x * 0.5f, box.size.y - bottomPadding, text.c_str(), nullptr);
 
-                // Draw loop and invert status
-                nvgFontSize(args.vg, 8.0f);
-                nvgFillColor(args.vg, nvgRGBA(140, 180, 170, 200));
-
-                if (module->loopStates[envIndex]) {
-                    nvgTextAlign(args.vg, NVG_ALIGN_RIGHT | NVG_ALIGN_BOTTOM);
-                    nvgText(args.vg, box.size.x - sidePadding, box.size.y - bottomPadding, "LOOP", nullptr);
+                // Draw invert status at bottom left (cyan)
+                nvgFontSize(args.vg, 7.0f);
+                nvgTextAlign(args.vg, NVG_ALIGN_LEFT | NVG_ALIGN_BOTTOM);
+                nvgFillColor(args.vg, nvgRGBA(0, 255, 220, 200));
+                std::string invertText = inverted ? "INV" : "";
+                if (!invertText.empty()) {
+                    nvgText(args.vg, sidePadding, box.size.y - bottomPadding, invertText.c_str(), nullptr);
                 }
 
-                if (module->invertStates[envIndex]) {
-                    nvgTextAlign(args.vg, NVG_ALIGN_LEFT | NVG_ALIGN_BOTTOM);
-                    nvgText(args.vg, sidePadding, box.size.y - bottomPadding, "INV", nullptr);
+                // Draw loop status at bottom right (cyan)
+                nvgTextAlign(args.vg, NVG_ALIGN_RIGHT | NVG_ALIGN_BOTTOM);
+                nvgFillColor(args.vg, nvgRGBA(0, 255, 220, 200));
+                bool looping = module->loopStates[envIndex];
+                std::string loopText = looping ? "LOOP" : "";
+                if (!loopText.empty()) {
+                    nvgText(args.vg, box.size.x - sidePadding, box.size.y - bottomPadding, loopText.c_str(), nullptr);
                 }
 
             } else {
-                if (module->isRecording) {
-                    // Show recording progress
-                    if (font) {
-                        nvgFontFaceId(args.vg, font->handle);
-                        nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-                        nvgFontSize(args.vg, 12.0f);
-                        nvgFillColor(args.vg, nvgRGBA(220, 220, 220, 240));
-                        nvgText(args.vg, box.size.x * 0.5f, box.size.y * 0.35f, "Recording", nullptr);
-                    }
-
-                    // Progress bar
-                    float progress = module->recordingTime / module->maxRecordingTime;
-                    progress = clamp(progress, 0.f, 1.f);
-                    
-                    const float barHeight = 6.f;
-                    const float barWidth = box.size.x * 0.8f;
-                    const float barX = (box.size.x - barWidth) / 2.f;
-                    const float barY = box.size.y * 0.6f;
-                    const float cornerRadius = 3.0f;
-
-                    // Background of progress bar
-                    nvgBeginPath(args.vg);
-                    nvgRoundedRect(args.vg, barX, barY, barWidth, barHeight, cornerRadius);
-                    nvgFillColor(args.vg, nvgRGBA(0, 0, 0, 128));
-                    nvgFill(args.vg);
-
-                    // Progress
-                    if (progress > 0.f) {
-                        nvgBeginPath(args.vg);
-                        nvgRoundedRect(args.vg, barX, barY, barWidth * progress, barHeight, cornerRadius);
-                        nvgFillColor(args.vg, nvgRGBA(255, 40, 40, 220));
-                        nvgFill(args.vg);
-                    }
-                } else {
-                    // No envelope recorded
-                    if (font) {
-                        nvgFontFaceId(args.vg, font->handle);
-                        nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-                        nvgFontSize(args.vg, 10.0f);
-                        nvgFillColor(args.vg, nvgRGBA(100, 160, 150, 180));
-                        nvgText(args.vg, box.size.x * 0.5f, box.size.y * 0.5f, "[ENV EMPTY]", nullptr);
-                    }
-                }
+                // No envelope recorded
+                nvgFontFaceId(args.vg, font->handle);
+                nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+                nvgFontSize(args.vg, 10.0f);
+                nvgFillColor(args.vg, nvgRGBA(100, 160, 150, 180));
+                nvgText(args.vg, box.size.x * 0.5f, box.size.y * 0.5f, "[ENV EMPTY]", nullptr);
             }
         }
 
@@ -1876,8 +1895,8 @@ struct EvocationWidget : ModuleWidget {
         constexpr float panelWidthMm = 91.44f;
         constexpr float panelHeightMm = 128.5f;
 
-        addChild(createWidget<ScrewBlack>(mm(6.5f, 0.5f)));
-        addChild(createWidget<ScrewBlack>(mm(panelWidthMm - 6.5f, 0.5f)));
+        addChild(createWidget<ScrewBlack>(mm(6.5f, 6.5f)));
+        addChild(createWidget<ScrewBlack>(mm(panelWidthMm - 6.5f, 6.5f)));
         addChild(createWidget<ScrewBlack>(mm(6.5f, panelHeightMm - 6.5f)));
         addChild(createWidget<ScrewBlack>(mm(panelWidthMm - 6.5f, panelHeightMm - 6.5f)));
 
@@ -1942,45 +1961,19 @@ struct EvocationWidget : ModuleWidget {
         // Envelope outputs (using SVG positioning)
         // Envelope 1
         Vec env1OutCenter = centerPx("env1-out", 46.216522f, 104.81236f);
-        auto* env1Port = createOutputCentered<ShapetakerBNCPort>(env1OutCenter, module, Evocation::ENV_1_OUTPUT);
-        if (module) {
-            auto* indicator = new OutputProgressIndicator(module, 0);
-            Vec pad = Vec(4.0f, 4.0f);
-            indicator->box.size = Vec(env1Port->box.size.x + pad.x * 2.0f, env1Port->box.size.y + pad.y * 2.0f);
-            indicator->box.pos = Vec(env1Port->box.pos.x - pad.x, env1Port->box.pos.y - pad.y);
-            addChild(indicator);
-        }
-        addOutput(env1Port);
+        addOutput(createOutputCentered<ShapetakerBNCPort>(env1OutCenter, module, Evocation::ENV_1_OUTPUT));
 
         // Envelope 2
         Vec env2OutCenter = centerPx("env2-out", 58.543388f, 104.81236f);
-        auto* env2Port = createOutputCentered<ShapetakerBNCPort>(env2OutCenter, module, Evocation::ENV_2_OUTPUT);
-        if (module) {
-            auto* indicator = new OutputProgressIndicator(module, 1);
-            Vec pad = Vec(4.0f, 4.0f);
-            indicator->box.size = Vec(env2Port->box.size.x + pad.x * 2.0f, env2Port->box.size.y + pad.y * 2.0f);
-            indicator->box.pos = Vec(env2Port->box.pos.x - pad.x, env2Port->box.pos.y - pad.y);
-            addChild(indicator);
-        }
-        addOutput(env2Port);
+        addOutput(createOutputCentered<ShapetakerBNCPort>(env2OutCenter, module, Evocation::ENV_2_OUTPUT));
 
         // Envelope 3
         Vec env3OutCenter = centerPx("env3-out", 70.870247f, 104.81237f);
-        auto* env3Port = createOutputCentered<ShapetakerBNCPort>(env3OutCenter, module, Evocation::ENV_3_OUTPUT);
-        if (module) {
-            auto* indicator = new OutputProgressIndicator(module, 2);
-            Vec pad = Vec(4.0f, 4.0f);
-            indicator->box.size = Vec(env3Port->box.size.x + pad.x * 2.0f, env3Port->box.size.y + pad.y * 2.0f);
-            indicator->box.pos = Vec(env3Port->box.pos.x - pad.x, env3Port->box.pos.y - pad.y);
-            addChild(indicator);
-        }
-        addOutput(env3Port);
+        addOutput(createOutputCentered<ShapetakerBNCPort>(env3OutCenter, module, Evocation::ENV_3_OUTPUT));
 
         // Envelope 4
         Vec env4OutCenter = centerPx("env4-out", 83.197113f, 104.81237f);
-        auto* env4Port = createOutputCentered<ShapetakerBNCPort>(env4OutCenter, module, Evocation::ENV_4_OUTPUT);
-
-        addOutput(env4Port);
+        addOutput(createOutputCentered<ShapetakerBNCPort>(env4OutCenter, module, Evocation::ENV_4_OUTPUT));
 
         // Gate outputs per envelope (updated positions from SVG)
         addOutput(createOutputCentered<ShapetakerBNCPort>(centerPx("env1-gate", 46.216522f, 117.38005f), module, Evocation::ENV_1_GATE_OUTPUT));

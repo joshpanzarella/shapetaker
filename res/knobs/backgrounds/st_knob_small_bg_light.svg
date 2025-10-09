@@ -24,12 +24,12 @@
      inkscape:deskcolor="#505050"
      inkscape:document-units="mm"
      inkscape:zoom="14.667839"
-     inkscape:cx="30.270309"
+     inkscape:cx="30.270308"
      inkscape:cy="30.23622"
-     inkscape:window-width="1800"
-     inkscape:window-height="1097"
+     inkscape:window-width="2560"
+     inkscape:window-height="1387"
      inkscape:window-x="0"
-     inkscape:window-y="44"
+     inkscape:window-y="25"
      inkscape:window-maximized="1"
      inkscape:current-layer="svg26" />
   <!-- Drop shadow -->
@@ -206,40 +206,4 @@
      opacity="0.4"
      id="circle24" />
   <!-- Highlight layers for 3D effect -->
-  <ellipse
-     cx="11.7"
-     cy="11.7"
-     rx="3.7"
-     ry="2.5"
-     fill="#ffffff"
-     opacity="0.12"
-     transform="rotate(-25 11.7 11.7)"
-     id="ellipse24" />
-  <ellipse
-     cx="11.3"
-     cy="11.3"
-     rx="2.3"
-     ry="1.7"
-     fill="#ffffff"
-     opacity="0.15"
-     transform="rotate(-25 11.3 11.3)"
-     id="ellipse25" />
-  <ellipse
-     cx="11.0"
-     cy="11.0"
-     rx="1.3"
-     ry="0.8"
-     fill="#ffffff"
-     opacity="0.2"
-     transform="rotate(-25 11.0 11.0)"
-     id="ellipse26" />
-  <ellipse
-     cx="5.3205848"
-     cy="14.618187"
-     rx="1.3"
-     ry="0.80000001"
-     fill="#ffffff"
-     opacity="0.2"
-     transform="rotate(-25)"
-     id="ellipse26-4" />
 </svg>

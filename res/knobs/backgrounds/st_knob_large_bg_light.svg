@@ -5,8 +5,31 @@
    viewBox="0 0 63 63"
    version="1.1"
    id="svg21"
+   sodipodi:docname="st_knob_large_bg_light.svg"
+   inkscape:version="1.4.2 (ebf0e940, 2025-05-08)"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
    xmlns="http://www.w3.org/2000/svg"
    xmlns:svg="http://www.w3.org/2000/svg">
+  <sodipodi:namedview
+     id="namedview1"
+     pagecolor="#505050"
+     bordercolor="#eeeeee"
+     borderopacity="1"
+     inkscape:showpageshadow="0"
+     inkscape:pageopacity="0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#505050"
+     inkscape:document-units="mm"
+     inkscape:zoom="9.778559"
+     inkscape:cx="45.405463"
+     inkscape:cy="45.354331"
+     inkscape:window-width="2560"
+     inkscape:window-height="1387"
+     inkscape:window-x="0"
+     inkscape:window-y="25"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="svg21" />
   <defs
      id="defs21" />
   <!-- Drop shadow -->
@@ -156,31 +179,4 @@
      stroke-width="0.35"
      id="circle19" />
   <!-- Highlight layers for 3D effect -->
-  <ellipse
-     cx="16.29"
-     cy="16.29"
-     rx="5.76"
-     ry="3.96"
-     fill="#ffffff"
-     opacity="0.12"
-     transform="rotate(-25 16.29 16.29)"
-     id="ellipse19" />
-  <ellipse
-     cx="15.75"
-     cy="15.75"
-     rx="3.69"
-     ry="2.52"
-     fill="#ffffff"
-     opacity="0.15"
-     transform="rotate(-25 15.75 15.75)"
-     id="ellipse20" />
-  <ellipse
-     cx="15.21"
-     cy="15.21"
-     rx="1.89"
-     ry="1.26"
-     fill="#ffffff"
-     opacity="0.18"
-     transform="rotate(-25 15.21 15.21)"
-     id="ellipse21" />
 </svg>
