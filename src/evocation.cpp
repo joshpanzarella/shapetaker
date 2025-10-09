@@ -40,7 +40,8 @@ struct TouchStripWidget : Widget {
     };
     std::vector<LightPulse> lightPulses;
     float lastSampleTime = -1.0f;
-    static constexpr float MIN_SAMPLE_INTERVAL = 1.f / 120.f;
+    // Capture gesture samples at ~480 Hz for higher resolution playback
+    static constexpr float MIN_SAMPLE_INTERVAL = 1.f / 480.f;
 
     TouchStripWidget(Evocation* module);
 
@@ -176,6 +177,9 @@ struct Evocation : Module {
     int currentParameterIndex = 0;
 
     std::vector<EnvelopePoint> envelope;
+    std::vector<EnvelopePoint> gestureEnvelopeBackup;
+    float gestureDurationBackup = 2.0f;
+    bool gestureBufferHasDataBackup = false;
     bool isRecording = false;
     bool bufferHasData = false;
     bool debugTouchLogging = false;
@@ -404,14 +408,14 @@ struct Evocation : Module {
                 // Normalize 0-16 range to 0-1 for ADSR mode
                 speedControl = clamp(speedControl / 16.0f, 0.0f, 1.0f);
 
-                // Map 0-1 knob range to 0.01-10 seconds for times, 0-1 for sustain level
+                // Map 0-1 knob range to 0.01-5 seconds for times, 0-1 for sustain level
                 float targetValue;
                 if (currentEnvelopeIndex == 2) {
                     // Sustain level: 0-1
                     targetValue = speedControl;
                 } else {
-                    // Attack/Decay/Release: 0.01-10 seconds
-                    targetValue = 0.01f + speedControl * 9.99f;
+                    // Attack/Decay/Release: 0.01-5 seconds
+                    targetValue = 0.01f + speedControl * 4.99f;
                 }
 
                 bool changed = false;
@@ -424,8 +428,8 @@ struct Evocation : Module {
                             adsrAttackTime = targetValue;
                             changed = true;
                         } else {
-                            // Sync knob to current value (inverse: 0.01-10s -> 0-1 -> 0-16)
-                            float normalized = (adsrAttackTime - 0.01f) / 9.99f;
+                            // Sync knob to current value (inverse: 0.01-5s -> 0-1 -> 0-16)
+                            float normalized = (adsrAttackTime - 0.01f) / 4.99f;
                             float currentKnobValue = normalized * 16.0f;
                             float actualKnobValue = params[ENV_SPEED_PARAM].getValue();
                             if (std::fabs(currentKnobValue - actualKnobValue) > 0.01f) {
@@ -438,7 +442,7 @@ struct Evocation : Module {
                             adsrDecayTime = targetValue;
                             changed = true;
                         } else {
-                            float normalized = (adsrDecayTime - 0.01f) / 9.99f;
+                            float normalized = (adsrDecayTime - 0.01f) / 4.99f;
                             float currentKnobValue = normalized * 16.0f;
                             float actualKnobValue = params[ENV_SPEED_PARAM].getValue();
                             if (std::fabs(currentKnobValue - actualKnobValue) > 0.01f) {
@@ -463,7 +467,7 @@ struct Evocation : Module {
                             adsrReleaseTime = targetValue;
                             changed = true;
                         } else {
-                            float normalized = (adsrReleaseTime - 0.01f) / 9.99f;
+                            float normalized = (adsrReleaseTime - 0.01f) / 4.99f;
                             float currentKnobValue = normalized * 16.0f;
                             float actualKnobValue = params[ENV_SPEED_PARAM].getValue();
                             if (std::fabs(currentKnobValue - actualKnobValue) > 0.01f) {
@@ -950,11 +954,12 @@ struct Evocation : Module {
             // ADSR mode: sync knob to ADSR parameter values
             float normalized = 0.0f;
             switch (currentEnvelopeIndex) {
-                case 0: normalized = (adsrAttackTime - 0.01f) / 9.99f; break;
-                case 1: normalized = (adsrDecayTime - 0.01f) / 9.99f; break;
+                case 0: normalized = (adsrAttackTime - 0.01f) / 4.99f; break;
+                case 1: normalized = (adsrDecayTime - 0.01f) / 4.99f; break;
                 case 2: normalized = adsrSustainLevel; break;
-                case 3: normalized = (adsrReleaseTime - 0.01f) / 9.99f; break;
+                case 3: normalized = (adsrReleaseTime - 0.01f) / 4.99f; break;
             }
+            normalized = clamp(normalized, 0.0f, 1.0f);
             float knobValue = normalized * 16.0f;
             params[ENV_SPEED_PARAM].setValue(knobValue);
             envSpeedControlCache = knobValue;
@@ -985,6 +990,39 @@ struct Evocation : Module {
 
         if (flash)
             selectionFlashTimer = 0.75f;
+    }
+
+    void switchToGestureMode() {
+        if (mode == EnvelopeMode::GESTURE)
+            return;
+        if (isRecording) {
+            stopRecording();
+        }
+        mode = EnvelopeMode::GESTURE;
+        if (gestureBufferHasDataBackup && !gestureEnvelopeBackup.empty()) {
+            envelope = gestureEnvelopeBackup;
+            recordedDuration = gestureDurationBackup;
+            bufferHasData = true;
+        } else {
+            bufferHasData = false;
+            envelope.clear();
+            recordedDuration = 2.0f;
+        }
+        onEnvelopeSelectionChanged(false);
+    }
+
+    void switchToADSRMode() {
+        if (mode == EnvelopeMode::ADSR)
+            return;
+        if (isRecording) {
+            stopRecording();
+        }
+        gestureEnvelopeBackup = envelope;
+        gestureDurationBackup = recordedDuration;
+        gestureBufferHasDataBackup = bufferHasData;
+        mode = EnvelopeMode::ADSR;
+        generateADSREnvelope();
+        onEnvelopeSelectionChanged(false);
     }
 
     void regenerateADSR() {
@@ -1136,6 +1174,19 @@ struct Evocation : Module {
         json_object_set_new(rootJ, "recordedDuration", json_real(recordedDuration));
         json_object_set_new(rootJ, "currentEnvelopeIndex", json_integer(currentEnvelopeIndex));
         json_object_set_new(rootJ, "currentParameterIndex", json_integer(currentParameterIndex));
+        json_object_set_new(rootJ, "gestureBufferHasDataBackup", json_boolean(gestureBufferHasDataBackup));
+        json_object_set_new(rootJ, "gestureDurationBackup", json_real(gestureDurationBackup));
+        if (gestureBufferHasDataBackup && !gestureEnvelopeBackup.empty()) {
+            json_t* gestureBackupJ = json_array();
+            for (const auto& point : gestureEnvelopeBackup) {
+                json_t* pointJ = json_object();
+                json_object_set_new(pointJ, "x", json_real(point.x));
+                json_object_set_new(pointJ, "y", json_real(point.y));
+                json_object_set_new(pointJ, "time", json_real(point.time));
+                json_array_append_new(gestureBackupJ, pointJ);
+            }
+            json_object_set_new(rootJ, "gestureEnvelopeBackup", gestureBackupJ);
+        }
 
         return rootJ;
     }
@@ -1159,6 +1210,11 @@ struct Evocation : Module {
 
         json_t* adsrReleaseTimeJ = json_object_get(rootJ, "adsrReleaseTime");
         if (adsrReleaseTimeJ) adsrReleaseTime = json_real_value(adsrReleaseTimeJ);
+
+        adsrAttackTime = clamp(adsrAttackTime, 0.01f, 5.0f);
+        adsrDecayTime = clamp(adsrDecayTime, 0.01f, 5.0f);
+        adsrReleaseTime = clamp(adsrReleaseTime, 0.01f, 5.0f);
+        adsrSustainLevel = clamp(adsrSustainLevel, 0.0f, 1.0f);
 
         json_t* adsrAttackContourJ = json_object_get(rootJ, "adsrAttackContour");
         if (adsrAttackContourJ) adsrAttackContour = json_real_value(adsrAttackContourJ);
@@ -1223,6 +1279,33 @@ struct Evocation : Module {
             }
         }
 
+        json_t* gestureBufferHasDataBackupJ = json_object_get(rootJ, "gestureBufferHasDataBackup");
+        if (gestureBufferHasDataBackupJ) gestureBufferHasDataBackup = json_boolean_value(gestureBufferHasDataBackupJ);
+
+        json_t* gestureDurationBackupJ = json_object_get(rootJ, "gestureDurationBackup");
+        if (gestureDurationBackupJ) gestureDurationBackup = json_real_value(gestureDurationBackupJ);
+
+        json_t* gestureBackupJ = json_object_get(rootJ, "gestureEnvelopeBackup");
+        bool gestureBackupLoaded = false;
+        if (gestureBackupJ) {
+            gestureEnvelopeBackup.clear();
+            size_t i;
+            json_t* pointJ;
+            json_array_foreach(gestureBackupJ, i, pointJ) {
+                EnvelopePoint point;
+                json_t* xJ = json_object_get(pointJ, "x");
+                json_t* yJ = json_object_get(pointJ, "y");
+                json_t* timeJ = json_object_get(pointJ, "time");
+
+                if (xJ) point.x = json_real_value(xJ);
+                if (yJ) point.y = json_real_value(yJ);
+                if (timeJ) point.time = json_real_value(timeJ);
+
+                gestureEnvelopeBackup.push_back(point);
+            }
+            gestureBackupLoaded = true;
+        }
+
         json_t* debugTouchJ = json_object_get(rootJ, "debugTouchLogging");
         if (debugTouchJ) {
             debugTouchLogging = json_boolean_value(debugTouchJ);
@@ -1231,6 +1314,12 @@ struct Evocation : Module {
         json_t* durationJ = json_object_get(rootJ, "recordedDuration");
         if (durationJ) {
             recordedDuration = clamp((float)json_real_value(durationJ), 1e-3f, maxRecordingTime);
+        }
+
+        if (!gestureBackupLoaded && mode == EnvelopeMode::GESTURE) {
+            gestureEnvelopeBackup = envelope;
+            gestureDurationBackup = recordedDuration;
+            gestureBufferHasDataBackup = bufferHasData;
         }
 
         json_t* currentEnvelopeIndexJ = json_object_get(rootJ, "currentEnvelopeIndex");
@@ -2412,15 +2501,14 @@ struct EvocationWidget : ModuleWidget {
         menu->addChild(createCheckMenuItem("Gesture Mode", "", [=] {
             return evocation->mode == Evocation::EnvelopeMode::GESTURE;
         }, [=] {
-            evocation->mode = Evocation::EnvelopeMode::GESTURE;
+            evocation->switchToGestureMode();
         }));
 
         // Mode selection - ADSR
         menu->addChild(createCheckMenuItem("ADSR Mode", "", [=] {
             return evocation->mode == Evocation::EnvelopeMode::ADSR;
         }, [=] {
-            evocation->mode = Evocation::EnvelopeMode::ADSR;
-            evocation->regenerateADSR();
+            evocation->switchToADSRMode();
         }));
 
         menu->addChild(new MenuSeparator);
