@@ -221,13 +221,6 @@
      ry="2.8089254"
      inkscape:label="env1-eoc" /><ellipse
      style="fill:#00ff00;fill-opacity:1;fill-rule:evenodd;stroke:none;stroke-width:0.382149;stroke-linecap:round;stroke-opacity:1;paint-order:fill markers stroke"
-     id="record-cv-in"
-     cx="49.159584"
-     cy="29.776815"
-     rx="2.809"
-     ry="2.8089254"
-     inkscape:label="record-cv-in" /><ellipse
-     style="fill:#00ff00;fill-opacity:1;fill-rule:evenodd;stroke:none;stroke-width:0.382149;stroke-linecap:round;stroke-opacity:1;paint-order:fill markers stroke"
      id="trigger-cv-in"
      cx="63.618366"
      cy="29.776815"
@@ -290,13 +283,6 @@
      rx="2.809"
      ry="2.8089254"
      inkscape:label="trigger-btn" /><ellipse
-     style="fill:#ff0000;fill-opacity:1;fill-rule:evenodd;stroke:none;stroke-width:0.382149;stroke-linecap:round;stroke-opacity:1;paint-order:fill markers stroke"
-     id="record-btn"
-     cx="49.159584"
-     cy="18.659674"
-     rx="2.809"
-     ry="2.8089254"
-     inkscape:label="record-btn" /><ellipse
      style="fill:#ff0000;fill-opacity:1;fill-rule:evenodd;stroke:none;stroke-width:0.382149;stroke-linecap:round;stroke-opacity:1;paint-order:fill markers stroke"
      id="env1-select-btn"
      cx="46.216522"

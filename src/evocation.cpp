@@ -79,7 +79,6 @@ struct TouchStripWidget : Widget {
 // Main Evocation Module
 struct Evocation : Module {
     enum ParamId {
-        RECORD_PARAM,
         TRIGGER_PARAM,
         CLEAR_PARAM,
         SPEED_1_PARAM,
@@ -105,7 +104,6 @@ struct Evocation : Module {
         PARAMS_LEN
     };
     enum InputId {
-        RECORD_INPUT,
         TRIGGER_INPUT,
         CLEAR_INPUT,
         GATE_INPUT,
@@ -213,7 +211,6 @@ struct Evocation : Module {
     dsp::SchmittTrigger triggerTrigger;
     dsp::SchmittTrigger gateTrigger;
     dsp::SchmittTrigger clearTrigger;
-    dsp::SchmittTrigger recordTrigger;
     dsp::SchmittTrigger envSelectTriggers[4];
     bool envelopeAdvanceButtonLatch = false;
     bool parameterAdvanceButtonLatch = false;
@@ -249,7 +246,6 @@ struct Evocation : Module {
     Evocation() {
         config(PARAMS_LEN, INPUTS_LEN, OUTPUTS_LEN, LIGHTS_LEN);
         
-        configParam(RECORD_PARAM, 0.f, 1.f, 0.f, "Record");
         configParam(TRIGGER_PARAM, 0.f, 1.f, 0.f, "Manual Trigger");
         configParam(CLEAR_PARAM, 0.f, 1.f, 0.f, "Clear Buffer");
         configParam(SPEED_1_PARAM, 0.0f, 16.0f, 1.0f, "Speed 1", "×");
@@ -319,7 +315,6 @@ struct Evocation : Module {
         adsrQ4->maxValue = 1.f;
         adsrQ4->defaultValue = 0.f;
         paramQuantities[ENV_SELECT_4_PARAM] = adsrQ4;
-        configInput(RECORD_INPUT, "Record CV");
         configInput(TRIGGER_INPUT, "External Trigger");
         configInput(CLEAR_INPUT, "Clear Trigger");
         configInput(GATE_INPUT, "Gate Input");
@@ -360,7 +355,6 @@ struct Evocation : Module {
             inputs[CLEAR_INPUT],
             1.f
         );
-        bool recordPressed = recordTrigger.process(params[RECORD_PARAM].getValue());
         for (int i = 0; i < 4; ++i) {
             if (envSelectTriggers[i].process(params[ENV_SELECT_1_PARAM + i].getValue())) {
                 selectEnvelope(i);
@@ -538,22 +532,9 @@ struct Evocation : Module {
             updateLastTouched("CLEAR", "BUFFER CLEARED");
         }
 
-        // Handle recording (Gesture mode only)
-        if (mode == EnvelopeMode::GESTURE) {
-            if (recordPressed) {
-                if (!isRecording) {
-                    startRecording();
-                    updateLastTouched("RECORD", "STARTED");
-                } else {
-                    stopRecording();
-                    updateLastTouched("RECORD", "STOPPED");
-                }
-            }
-
-            // Update recording
-            if (isRecording) {
-                updateRecording(args.sampleTime);
-            }
+        // Update recording during gesture capture
+        if (mode == EnvelopeMode::GESTURE && isRecording) {
+            updateRecording(args.sampleTime);
         }
 
         // Handle triggers for playback
@@ -703,6 +684,28 @@ struct Evocation : Module {
     void normalizeEnvelopeTiming() {
         if (envelope.size() < 2) return;
 
+        // Remove consecutive duplicate Y values to eliminate "flat" sections
+        // Keep first and last points always
+        std::vector<EnvelopePoint> filtered;
+        filtered.reserve(envelope.size());
+        filtered.push_back(envelope[0]);
+
+        const float minYDelta = 0.005f; // 0.5% threshold
+        for (size_t i = 1; i < envelope.size() - 1; i++) {
+            float prevY = filtered.back().y;
+            float currY = envelope[i].y;
+            float nextY = envelope[i + 1].y;
+
+            // Keep point if Y value is changing (not flat)
+            if (std::abs(currY - prevY) > minYDelta || std::abs(nextY - currY) > minYDelta) {
+                filtered.push_back(envelope[i]);
+            }
+        }
+        filtered.push_back(envelope.back());
+        envelope = filtered;
+
+        if (envelope.size() < 2) return;
+
         float startTime = envelope.front().time;
         float endTime = envelope.back().time;
         float range = std::max(endTime - startTime, 1e-3f);
@@ -717,8 +720,14 @@ struct Evocation : Module {
             lastValue = normalized;
         }
 
+        // Ensure first point is exactly at 0.0 to avoid any floating point drift
+        if (!envelope.empty()) {
+            envelope[0].time = 0.0f;
+        }
+
         if (debugTouchLogging) {
-            INFO("Evocation::normalizeEnvelopeTiming start=%.4f end=%.4f range=%.4f", startTime, endTime, range);
+            INFO("Evocation::normalizeEnvelopeTiming start=%.4f end=%.4f range=%.4f filtered=%zu->%zu",
+                 startTime, endTime, range, filtered.size(), envelope.size());
         }
     }
     
@@ -850,7 +859,12 @@ struct Evocation : Module {
     float interpolateEnvelope(float phase) {
         if (envelope.empty()) return 0.0f;
         if (envelope.size() == 1) return envelope[0].y;
-        
+
+        // If phase is before first point, return first point's value
+        if (phase <= envelope[0].time) {
+            return envelope[0].y;
+        }
+
         // Find the two points to interpolate between
         for (size_t i = 0; i < envelope.size() - 1; i++) {
             if (phase >= envelope[i].time && phase <= envelope[i + 1].time) {
@@ -858,7 +872,7 @@ struct Evocation : Module {
                 return envelope[i].y + t * (envelope[i + 1].y - envelope[i].y);
             }
         }
-        
+
         // Return last point if phase is beyond envelope
         return envelope.back().y;
     }
@@ -1724,23 +1738,9 @@ void TouchStripWidget::applyADSRTouch(bool initial) {
 
     module->generateADSREnvelope();
 
-    if (initial ||
-        std::fabs(sustainLevel - lastADSRSustainLevel) > 0.02f ||
-        std::fabs(releaseTime - lastADSRReleaseTime) > 0.05f ||
-        std::fabs(releaseContour - lastADSRReleaseContour) > 0.05f) {
-        float curveAmount = Evocation::mapContourControl(module->adsrReleaseContour);
-        const char* curveLabel = "LIN";
-        if (curveAmount > 0.1f) {
-            curveLabel = "EXP";
-        } else if (curveAmount < -0.1f) {
-            curveLabel = "LOG";
-        }
-        module->updateLastTouched("SURFACE", string::f("SUS %.2f | REL %.2fs %s",
-            sustainLevel, releaseTime, curveLabel));
-        lastADSRSustainLevel = sustainLevel;
-        lastADSRReleaseTime = releaseTime;
-        lastADSRReleaseContour = releaseContour;
-    }
+    lastADSRSustainLevel = sustainLevel;
+    lastADSRReleaseTime = releaseTime;
+    lastADSRReleaseContour = releaseContour;
 }
 
 void TouchStripWidget::step() {
@@ -2148,8 +2148,8 @@ void TouchStripWidget::drawInstructions(const DrawArgs& args) {
     nvgText(args.vg, box.size.x * 0.5f, box.size.y * 0.5f, "to cast spell", NULL);
     
     nvgFontSize(args.vg, 9);
-    nvgText(args.vg, box.size.x * 0.5f, box.size.y * 0.7f, "Hold RECORD button", NULL);
-    nvgText(args.vg, box.size.x * 0.5f, box.size.y * 0.8f, "then draw envelope", NULL);
+    nvgText(args.vg, box.size.x * 0.5f, box.size.y * 0.7f, "Tap strip to record", NULL);
+    nvgText(args.vg, box.size.x * 0.5f, box.size.y * 0.8f, "Drag to sculpt envelope", NULL);
 }
 
 struct OutputProgressIndicator : Widget {
@@ -2278,6 +2278,7 @@ struct EvocationOLEDDisplay : Widget {
         // Define safe display area (inside bezel)
         const float padding = 6.0f;
         const float safeWidth = box.size.x - (padding * 2.0f);
+        const float safeHeight = box.size.y - (padding * 2.0f);
 
         int envIndex = module->getCurrentEnvelopeIndex();
         envIndex = clamp(envIndex, 0, Evocation::NUM_ENVELOPES - 1);
@@ -2306,6 +2307,53 @@ struct EvocationOLEDDisplay : Widget {
                 nvgFillColor(args.vg, nvgRGBA(120, 220, 208, 240));
                 nvgText(args.vg, box.size.x * 0.5f, box.size.y * 0.5f, flashText.c_str(), nullptr);
             }
+            nvgRestore(args.vg);
+            return;
+        }
+
+        // Show recording indicator in Gesture mode
+        if (module->isRecording && module->mode == Evocation::EnvelopeMode::GESTURE && font) {
+            nvgFontFaceId(args.vg, font->handle);
+
+            // "RECORDING" text at top
+            float fontSize = 12.0f;
+            nvgFontSize(args.vg, fontSize);
+            float bounds[4];
+            std::string recordText = "RECORDING";
+            nvgTextBounds(args.vg, 0, 0, recordText.c_str(), nullptr, bounds);
+            float textWidth = bounds[2] - bounds[0];
+
+            // Scale down if too wide
+            if (textWidth > safeWidth) {
+                fontSize *= safeWidth / textWidth;
+                nvgFontSize(args.vg, fontSize);
+            }
+
+            nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+            nvgFillColor(args.vg, nvgRGBA(120, 220, 208, 240));
+            nvgText(args.vg, box.size.x * 0.5f, box.size.y * 0.35f, recordText.c_str(), nullptr);
+
+            // Progress bar
+            float progress = clamp(module->recordingTime / module->maxRecordingTime, 0.f, 1.f);
+            const float barWidth = safeWidth * 0.8f;
+            const float barHeight = 4.0f;
+            const float barX = padding + (safeWidth - barWidth) * 0.5f;
+            const float barY = box.size.y * 0.6f;
+
+            // Background bar (dim)
+            nvgBeginPath(args.vg);
+            nvgRoundedRect(args.vg, barX, barY, barWidth, barHeight, 2.0f);
+            nvgFillColor(args.vg, nvgRGBA(60, 120, 110, 100));
+            nvgFill(args.vg);
+
+            // Progress fill (bright cyan)
+            if (progress > 0.001f) {
+                nvgBeginPath(args.vg);
+                nvgRoundedRect(args.vg, barX, barY, barWidth * progress, barHeight, 2.0f);
+                nvgFillColor(args.vg, nvgRGBA(0, 255, 220, 255));
+                nvgFill(args.vg);
+            }
+
             nvgRestore(args.vg);
             return;
         }
@@ -2612,18 +2660,14 @@ struct EvocationWidget : ModuleWidget {
         oledDisplay->box.size = mm(oledRect.size.x, oledRect.size.y);
         addChild(oledDisplay);
 
-        // Record / trigger / clear buttons (positioned by SVG elements)
-        Vec recordBtn = parser.centerPx("record-btn", 49.159584f, 18.659674f);
-        addParam(createParamCentered<ShapetakerVintageMomentary>(recordBtn, module, Evocation::RECORD_PARAM));
-
+        // Trigger / clear buttons (positioned by SVG elements)
         Vec triggerBtn = parser.centerPx("trigger-btn-0", 63.618366f, 18.659674f);
         addParam(createParamCentered<ShapetakerVintageMomentary>(triggerBtn, module, Evocation::TRIGGER_PARAM));
 
         Vec clearBtn = parser.centerPx("clear-buffer-btn", 78.077148f, 18.659674f);
         addParam(createParamCentered<ShapetakerVintageMomentary>(clearBtn, module, Evocation::CLEAR_PARAM));
 
-        // CV inputs for record/trigger/clear
-        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("record-cv-in", 49.159584f, 29.776815f), module, Evocation::RECORD_INPUT));
+        // CV inputs for trigger/clear
         addInput(createInputCentered<ShapetakerBNCPort>(centerPx("trigger-cv-in", 63.618366f, 29.776815f), module, Evocation::TRIGGER_INPUT));
         addInput(createInputCentered<ShapetakerBNCPort>(centerPx("clear-cv-in", 78.077148f, 29.776815f), module, Evocation::CLEAR_INPUT));
         addInput(createInputCentered<ShapetakerBNCPort>(centerPx("gate-cv-in", 63.618366f, 40.893959f), module, Evocation::GATE_INPUT));
