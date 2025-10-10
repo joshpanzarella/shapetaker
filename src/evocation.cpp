@@ -81,6 +81,7 @@ struct Evocation : Module {
     enum ParamId {
         TRIGGER_PARAM,
         CLEAR_PARAM,
+        TRIM_LEAD_PARAM,
         SPEED_1_PARAM,
         SPEED_2_PARAM,
         SPEED_3_PARAM,
@@ -227,6 +228,7 @@ struct Evocation : Module {
     dsp::SchmittTrigger triggerInputTriggers[MAX_POLY_CHANNELS]; // Per-channel trigger input
     dsp::SchmittTrigger gateTrigger;
     dsp::SchmittTrigger clearTrigger;
+    dsp::SchmittTrigger trimButtonTrigger;
     dsp::SchmittTrigger envSelectTriggers[4];
     bool envelopeAdvanceButtonLatch = false;
     bool parameterAdvanceButtonLatch = false;
@@ -264,6 +266,7 @@ struct Evocation : Module {
         
         configParam(TRIGGER_PARAM, 0.f, 1.f, 0.f, "Manual Trigger");
         configParam(CLEAR_PARAM, 0.f, 1.f, 0.f, "Clear Buffer");
+        configButton(TRIM_LEAD_PARAM, "Trim Gesture Lead");
         configParam(SPEED_1_PARAM, 0.0f, 16.0f, 1.0f, "Speed 1", "×");
         configParam(SPEED_2_PARAM, 0.0f, 16.0f, 2.0f, "Speed 2", "×");
         configParam(SPEED_3_PARAM, 0.0f, 16.0f, 4.0f, "Speed 3", "×");
@@ -366,6 +369,7 @@ struct Evocation : Module {
             inputs[CLEAR_INPUT],
             1.f
         );
+        bool trimButtonPressed = trimButtonTrigger.process(params[TRIM_LEAD_PARAM].getValue());
         for (int i = 0; i < 4; ++i) {
             if (envSelectTriggers[i].process(params[ENV_SELECT_1_PARAM + i].getValue())) {
                 selectEnvelope(i);
@@ -541,6 +545,12 @@ struct Evocation : Module {
         if (clearPressed && mode == EnvelopeMode::GESTURE) {
             clearBuffer();
             updateLastTouched("CLEAR", "BUFFER CLEARED");
+        }
+
+        if (trimButtonPressed) {
+            if (!trimGestureLeadingSilence()) {
+                updateLastTouched("", "NO TRIM");
+            }
         }
 
         // Update recording during gesture capture
@@ -786,6 +796,66 @@ struct Evocation : Module {
             INFO("Evocation::normalizeEnvelopeTiming start=%.4f end=%.4f range=%.4f filtered=%zu->%zu",
                  startTime, endTime, range, filtered.size(), envelope.size());
         }
+    }
+
+    bool trimGestureLeadingSilence(float threshold = 0.01f) {
+        if (mode != EnvelopeMode::GESTURE) {
+            return false;
+        }
+        if (!bufferHasData || envelope.size() < 2) {
+            return false;
+        }
+
+        size_t firstIdx = 0;
+        while (firstIdx < envelope.size() && envelope[firstIdx].y <= threshold) {
+            firstIdx++;
+        }
+
+        if (firstIdx == 0 || firstIdx >= envelope.size()) {
+            return false;
+        }
+
+        float firstTime = envelope[firstIdx].time;
+        if (!(firstTime > 0.f && firstTime < 1.f)) {
+            return false;
+        }
+
+        float remaining = 1.0f - firstTime;
+        if (remaining <= 1e-5f) {
+            return false;
+        }
+
+        std::vector<EnvelopePoint> trimmed;
+        trimmed.reserve(envelope.size() - firstIdx + 2);
+        trimmed.push_back({0.0f, 0.0f, 0.0f});
+
+        for (size_t i = firstIdx; i < envelope.size(); ++i) {
+            EnvelopePoint point = envelope[i];
+            float shifted = (point.time - firstTime) / remaining;
+            shifted = clamp(shifted, 0.0f, 1.0f);
+            if (trimmed.size() == 1) {
+                shifted = std::max(shifted, 1e-4f);
+            }
+            point.time = shifted;
+            point.x = shifted;
+            point.y = clamp(point.y, 0.0f, 1.0f);
+            trimmed.push_back(point);
+        }
+
+        if (trimmed.size() < 2) {
+            return false;
+        }
+
+        envelope = std::move(trimmed);
+        normalizeEnvelopeTiming();
+
+        recordedDuration = std::max(recordedDuration * remaining, 1e-3f);
+        gestureEnvelopeBackup = envelope;
+        gestureDurationBackup = recordedDuration;
+        gestureBufferHasDataBackup = bufferHasData;
+
+        updateLastTouched("", "TRIMMED");
+        return true;
     }
     
     void clearBuffer() {
@@ -2882,6 +2952,26 @@ struct EvocationOLEDDisplay : Widget {
     }
 };
 
+struct TrimGestureLeadMenuItem : MenuItem {
+    Evocation* module = nullptr;
+
+    void step() override {
+        MenuItem::step();
+        bool enabled = module && module->mode == Evocation::EnvelopeMode::GESTURE && module->hasRecordedEnvelope();
+        disabled = !enabled;
+    }
+
+    void onAction(const event::Action& e) override {
+        MenuItem::onAction(e);
+        if (!module)
+            return;
+        bool trimmed = module->trimGestureLeadingSilence();
+        if (!trimmed) {
+            module->updateLastTouched("", "NO TRIM");
+        }
+    }
+};
+
 struct EvocationWidget : ModuleWidget {
     TouchStripWidget* touchStrip = nullptr;
     EvocationOLEDDisplay* oledDisplay = nullptr;
@@ -2945,6 +3035,9 @@ struct EvocationWidget : ModuleWidget {
 
         Vec clearBtn = parser.centerPx("clear-buffer-btn", 78.077148f, 18.659674f);
         addParam(createParamCentered<ShapetakerVintageMomentary>(clearBtn, module, Evocation::CLEAR_PARAM));
+
+        Vec trimBtn = parser.centerPx("trim-gesture-btn", 92.535f, 18.659674f);
+        addParam(createParamCentered<ShapetakerVintageMomentary>(trimBtn, module, Evocation::TRIM_LEAD_PARAM));
 
         // CV inputs for trigger/clear
         addInput(createInputCentered<ShapetakerBNCPort>(centerPx("trigger-cv-in", 63.618366f, 29.776815f), module, Evocation::TRIGGER_INPUT));
@@ -3025,6 +3118,11 @@ struct EvocationWidget : ModuleWidget {
         }, [=] {
             evocation->switchToADSRMode();
         }));
+
+        auto* trimItem = new TrimGestureLeadMenuItem();
+        trimItem->module = evocation;
+        trimItem->text = "Trim Gesture Lead";
+        menu->addChild(trimItem);
 
         menu->addChild(new MenuSeparator);
         menu->addChild(createCheckMenuItem("Debug Touch Logging", "", [=] {
