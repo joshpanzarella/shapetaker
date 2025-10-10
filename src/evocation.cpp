@@ -42,6 +42,9 @@ struct TouchStripWidget : Widget {
     float lastSampleTime = -1.0f;
     // Capture gesture samples at ~480 Hz for higher resolution playback
     static constexpr float MIN_SAMPLE_INTERVAL = 1.f / 480.f;
+    float lastADSRSustainLevel = -1.f;
+    float lastADSRReleaseTime = -1.f;
+    float lastADSRReleaseContour = -1.f;
 
     TouchStripWidget(Evocation* module);
 
@@ -69,6 +72,8 @@ struct TouchStripWidget : Widget {
     void drawPulses(const DrawArgs& args);
     void drawBorder(const DrawArgs& args);
     void drawInstructions(const DrawArgs& args);
+    void applyADSRTouch(bool initial);
+    float computeNormalizedHorizontal() const;
 };
 
 // Main Evocation Module
@@ -163,7 +168,7 @@ struct Evocation : Module {
 
     EnvelopeMode mode = EnvelopeMode::GESTURE;
 
-    // ADSR parameters (times in seconds, contours 0-1 where 0=linear, 1=exponential)
+    // ADSR parameters (times in seconds, contour controls stored 0-1 with 0.5 = linear)
     float adsrAttackTime = 0.01f;    // Fast attack (10ms)
     float adsrDecayTime = 0.5f;      // Medium decay (500ms)
     float adsrSustainLevel = 0.5f;   // Mid-level sustain
@@ -198,6 +203,7 @@ struct Evocation : Module {
     };
 
     PlaybackState playback[4]; // Four independent envelope players
+    bool adsrSurfaceGate = false;
 
     // Triggers
     dsp::SchmittTrigger triggerTrigger;
@@ -765,8 +771,17 @@ struct Evocation : Module {
         }
 
         // Advance phase
-        float phaseIncrement = speed * sampleTime / getEnvelopeDuration();
+        float envDuration = getEnvelopeDuration();
+        float phaseIncrement = speed * sampleTime / envDuration;
         pb.phase += phaseIncrement;
+
+        if (mode == EnvelopeMode::ADSR && adsrSurfaceGate) {
+            float sustainStart = (adsrAttackTime + adsrDecayTime) / envDuration;
+            sustainStart = clamp(sustainStart, 0.0f, 1.0f);
+            if (pb.phase >= sustainStart) {
+                pb.phase = sustainStart;
+            }
+        }
 
         // Check if envelope is complete
         if (pb.phase >= 1.0f) {
@@ -848,12 +863,23 @@ struct Evocation : Module {
         return getRecordedDuration();
     }
 
+    // Map stored 0-1 contour control to a bipolar -1 to 1 range
+    static float mapContourControl(float value) {
+        return clamp((value - 0.5f) * 2.0f, -1.0f, 1.0f);
+    }
+
     // Apply contour curve to a linear 0-1 value
     float applyContour(float linear, float contour) {
-        // contour 0 = linear, 0.5 = slight curve, 1 = exponential
-        if (contour < 0.01f) return linear;
-        float curve = 1.0f + (contour * 4.0f); // 1 to 5 range
-        return std::pow(linear, curve);
+        // contour > 0 = exponential, contour < 0 = logarithmic, 0 = linear
+        if (std::fabs(contour) < 1e-4f)
+            return linear;
+
+        float curve = 1.0f + std::fabs(contour) * 4.0f; // 1 to 5 range
+        if (contour > 0.0f) {
+            return std::pow(clamp(linear, 0.0f, 1.0f), curve);
+        }
+        // Logarithmic bend: mirror behaviour around (0,1)
+        return 1.0f - std::pow(clamp(1.0f - linear, 0.0f, 1.0f), curve);
     }
 
     // Generate ADSR envelope from current parameters
@@ -865,9 +891,10 @@ struct Evocation : Module {
 
         // Attack phase
         int attackPoints = std::max(2, (int)(adsrAttackTime * 20.0f)); // 20 points per second
+        float attackContour = mapContourControl(adsrAttackContour);
         for (int i = 0; i < attackPoints; i++) {
             float t = (float)i / (attackPoints - 1);
-            float curved = applyContour(t, adsrAttackContour);
+            float curved = applyContour(t, attackContour);
             float time = (adsrAttackTime * t) / totalTime;
             envelope.push_back({0.0f, curved, time});
         }
@@ -875,10 +902,11 @@ struct Evocation : Module {
         // Decay phase
         float decayStart = adsrAttackTime / totalTime;
         int decayPoints = std::max(2, (int)(adsrDecayTime * 20.0f));
+        float decayContour = mapContourControl(adsrDecayContour);
         float clampedSustain = clamp(adsrSustainLevel, 0.0f, 1.0f);
         for (int i = 0; i < decayPoints; i++) {
             float t = (float)i / (decayPoints - 1);
-            float curved = applyContour(t, adsrDecayContour);
+            float curved = applyContour(t, decayContour);
             float level = 1.0f - curved * (1.0f - clampedSustain);
             float time = decayStart + (adsrDecayTime * t) / totalTime;
             envelope.push_back({0.0f, level, time});
@@ -891,9 +919,10 @@ struct Evocation : Module {
         // Release phase (from sustain level to 0)
         float releaseStart = sustainStart;
         int releasePoints = std::max(2, (int)(adsrReleaseTime * 20.0f));
+        float releaseContour = mapContourControl(adsrReleaseContour);
         for (int i = 1; i < releasePoints; i++) {
             float t = (float)i / (releasePoints - 1);
-            float curved = applyContour(t, adsrReleaseContour);
+            float curved = applyContour(t, releaseContour);
             float level = clampedSustain * (1.0f - curved);
             float time = releaseStart + (adsrReleaseTime * t) / totalTime;
             envelope.push_back({0.0f, level, time});
@@ -998,6 +1027,7 @@ struct Evocation : Module {
         if (isRecording) {
             stopRecording();
         }
+        adsrSurfaceGate = false;
         mode = EnvelopeMode::GESTURE;
         if (gestureBufferHasDataBackup && !gestureEnvelopeBackup.empty()) {
             envelope = gestureEnvelopeBackup;
@@ -1020,6 +1050,7 @@ struct Evocation : Module {
         gestureEnvelopeBackup = envelope;
         gestureDurationBackup = recordedDuration;
         gestureBufferHasDataBackup = bufferHasData;
+        adsrSurfaceGate = false;
         mode = EnvelopeMode::ADSR;
         generateADSREnvelope();
         onEnvelopeSelectionChanged(false);
@@ -1029,6 +1060,14 @@ struct Evocation : Module {
         if (mode == EnvelopeMode::ADSR) {
             generateADSREnvelope();
         }
+    }
+
+    void setADSRTouchActive(bool active) {
+        if (mode != EnvelopeMode::ADSR) {
+            adsrSurfaceGate = false;
+            return;
+        }
+        adsrSurfaceGate = active;
     }
 
     void selectEnvelope(int index, bool flash = true) {
@@ -1115,6 +1154,7 @@ struct Evocation : Module {
             playback[i].active = false;
             playback[i].phase = 0.0f;
         }
+        adsrSurfaceGate = false;
         if (touchStripWidget) {
             touchStripWidget->clearPulses();
         }
@@ -1227,6 +1267,11 @@ struct Evocation : Module {
 
         json_t* adsrReleaseContourJ = json_object_get(rootJ, "adsrReleaseContour");
         if (adsrReleaseContourJ) adsrReleaseContour = json_real_value(adsrReleaseContourJ);
+
+        adsrAttackContour = clamp(adsrAttackContour, 0.0f, 1.0f);
+        adsrDecayContour = clamp(adsrDecayContour, 0.0f, 1.0f);
+        adsrSustainContour = clamp(adsrSustainContour, 0.0f, 1.0f);
+        adsrReleaseContour = clamp(adsrReleaseContour, 0.0f, 1.0f);
 
         // Load individual loop states
         json_t* loopStatesJ = json_object_get(rootJ, "loopStates");
@@ -1394,15 +1439,35 @@ TouchStripWidget::TouchStripWidget(Evocation* module) {
 }
 
 void TouchStripWidget::onButton(const event::Button& e) {
+    if (!module) {
+        Widget::onButton(e);
+        return;
+    }
+
+    if (module->mode == Evocation::EnvelopeMode::ADSR) {
+        if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_LEFT) {
+            isDragging = true;
+            showTouch = true;
+            currentTouchPos = clampToBounds(resolveMouseLocal(e.pos));
+            glowIntensity = 1.0f;
+            module->setADSRTouchActive(true);
+            if (!module->bufferHasData) {
+                module->generateADSREnvelope();
+            }
+            module->triggerAllEnvelopes();
+            applyADSRTouch(true);
+            e.consume(this);
+        }
+        Widget::onButton(e);
+        return;
+    }
+
     if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_LEFT) {
-        if (!module) return;
-        
-        // Start recording
+        // Gesture mode recording
         isDragging = true;
         showTouch = true;
         currentTouchPos = clampToBounds(resolveMouseLocal(e.pos));
 
-        // Start recording in module
         module->startRecording();
 
         lastSampleTime = -1.f;
@@ -1411,7 +1476,7 @@ void TouchStripWidget::onButton(const event::Button& e) {
         glowIntensity = 1.0f;
         e.consume(this);
     }
-    
+
     Widget::onButton(e);
 }
 
@@ -1425,6 +1490,11 @@ void TouchStripWidget::onDragMove(const event::DragMove& e) {
     if (!module || !isDragging) return;
     Vec fallbackPos = currentTouchPos.plus(e.mouseDelta);
     currentTouchPos = clampToBounds(resolveMouseLocal(fallbackPos));
+
+    if (module->mode == Evocation::EnvelopeMode::ADSR) {
+        applyADSRTouch(false);
+        return;
+    }
 
     recordSample("drag");
 }
@@ -1440,6 +1510,14 @@ void TouchStripWidget::onDragEnd(const event::DragEnd& e) {
     lightPulses.clear();
     lastSampleTime = -1.f;
 
+    if (module->mode == Evocation::EnvelopeMode::ADSR) {
+        module->setADSRTouchActive(false);
+        lastADSRSustainLevel = -1.f;
+        lastADSRReleaseTime = -1.f;
+        lastADSRReleaseContour = -1.f;
+        return;
+    }
+
     // Stop recording in module
     currentTouchPos = clampToBounds(resolveMouseLocal(currentTouchPos));
     recordSample("release", true);
@@ -1447,7 +1525,7 @@ void TouchStripWidget::onDragEnd(const event::DragEnd& e) {
         module->stopRecording();
     }
 
-    if (module && module->debugTouchLogging) {
+    if (module->debugTouchLogging) {
         INFO("TouchStripWidget::onDragEnd");
     }
 }
@@ -1469,6 +1547,12 @@ float TouchStripWidget::computeNormalizedVoltage() const {
     float activeHeight = height - deadZone;
     float normalized = 1.0f - (y / activeHeight);
     return clamp(normalized, 0.0f, 1.0f);
+}
+
+float TouchStripWidget::computeNormalizedHorizontal() const {
+    if (box.size.x <= 0.f)
+        return 0.f;
+    return clamp(currentTouchPos.x / box.size.x, 0.0f, 1.0f);
 }
 
 void TouchStripWidget::recordSample(const char* stage, bool force) {
@@ -1540,6 +1624,9 @@ void TouchStripWidget::resetForNewRecording() {
     showTouch = false;
     glowIntensity = 0.0f;
     lastSampleTime = -1.f;
+    lastADSRSustainLevel = -1.f;
+    lastADSRReleaseTime = -1.f;
+    lastADSRReleaseContour = -1.f;
 }
 
 void TouchStripWidget::logTouchDebug(const char* stage, const Vec& localPos, float normalizedTime, float normalizedVoltage) {
@@ -1562,6 +1649,68 @@ void TouchStripWidget::logTouchDebug(const char* stage, const Vec& localPos, flo
          normalizedTime, normalizedVoltage);
 }
 
+void TouchStripWidget::applyADSRTouch(bool initial) {
+    if (!module || module->mode != Evocation::EnvelopeMode::ADSR)
+        return;
+
+    float sustainLevel = computeNormalizedVoltage();
+    float releaseMix = computeNormalizedHorizontal();
+    float releaseTime = 0.01f + releaseMix * 4.99f;
+    float releaseContour = clamp(sustainLevel, 0.0f, 1.0f);
+
+    bool changed = false;
+
+    if (std::fabs(sustainLevel - module->adsrSustainLevel) > 1e-3f) {
+        module->adsrSustainLevel = sustainLevel;
+        changed = true;
+    }
+    if (std::fabs(releaseTime - module->adsrReleaseTime) > 1e-3f) {
+        module->adsrReleaseTime = releaseTime;
+        changed = true;
+    }
+    if (std::fabs(releaseContour - module->adsrReleaseContour) > 1e-3f) {
+        module->adsrReleaseContour = releaseContour;
+        changed = true;
+    }
+
+    if (!changed && !initial)
+        return;
+
+    int currentStage = module->getCurrentEnvelopeIndex();
+    if (currentStage == 2) {
+        float knobValue = clamp(sustainLevel * 16.0f, 0.0f, 16.0f);
+        module->envSpeedControlCache = knobValue;
+        module->params[Evocation::ENV_SPEED_PARAM].setValue(knobValue);
+    } else if (currentStage == 3) {
+        float normalized = clamp((module->adsrReleaseTime - 0.01f) / 4.99f, 0.0f, 1.0f);
+        float knobValue = normalized * 16.0f;
+        module->envSpeedControlCache = knobValue;
+        module->params[Evocation::ENV_SPEED_PARAM].setValue(knobValue);
+        module->envPhaseControlCache = module->adsrReleaseContour;
+        module->params[Evocation::ENV_PHASE_PARAM].setValue(module->adsrReleaseContour);
+    }
+
+    module->generateADSREnvelope();
+
+    if (initial ||
+        std::fabs(sustainLevel - lastADSRSustainLevel) > 0.02f ||
+        std::fabs(releaseTime - lastADSRReleaseTime) > 0.05f ||
+        std::fabs(releaseContour - lastADSRReleaseContour) > 0.05f) {
+        float curveAmount = Evocation::mapContourControl(module->adsrReleaseContour);
+        const char* curveLabel = "LIN";
+        if (curveAmount > 0.1f) {
+            curveLabel = "EXP";
+        } else if (curveAmount < -0.1f) {
+            curveLabel = "LOG";
+        }
+        module->updateLastTouched("SURFACE", string::f("SUS %.2f | REL %.2fs %s",
+            sustainLevel, releaseTime, curveLabel));
+        lastADSRSustainLevel = sustainLevel;
+        lastADSRReleaseTime = releaseTime;
+        lastADSRReleaseContour = releaseContour;
+    }
+}
+
 void TouchStripWidget::step() {
     Widget::step();
 
@@ -1572,7 +1721,7 @@ void TouchStripWidget::step() {
                 recordSample("frame");
             }
         } else {
-            if (isDragging) {
+            if (module->mode == Evocation::EnvelopeMode::GESTURE && isDragging) {
                 isDragging = false;
                 showTouch = false;
                 glowIntensity = 0.0f;
@@ -2307,9 +2456,14 @@ struct EvocationOLEDDisplay : Widget {
                         case 2: contour = module->adsrSustainContour; break;
                         case 3: contour = module->adsrReleaseContour; break;
                     }
-                    std::string contourText = contour < 0.33f ? "LIN" :
-                                              contour < 0.67f ? "CRV" : "EXP";
-                    nvgText(args.vg, box.size.x - sidePadding, 3.0f, contourText.c_str(), nullptr);
+                    float curveAmount = Evocation::mapContourControl(contour);
+                    const char* contourLabel = "LIN";
+                    if (curveAmount > 0.1f) {
+                        contourLabel = "EXP";
+                    } else if (curveAmount < -0.1f) {
+                        contourLabel = "LOG";
+                    }
+                    nvgText(args.vg, box.size.x - sidePadding, 3.0f, contourLabel, nullptr);
                 } else {
                     // Gesture mode: show phase
                     float phase = module->phaseOffsets[envIndex];
