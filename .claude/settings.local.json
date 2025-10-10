@@ -48,7 +48,8 @@
       "Bash(for file in nixie-char-3.svg nixie-char-4.svg nixie-char-S.svg nixie-char-L.svg nixie-char-I.svg nixie-char-P.svg)",
       "Bash(do echo \"=== $file ===\")",
       "Bash(cat:*)",
-      "Bash(head:*)"
+      "Bash(head:*)",
+      "Bash(git rebase:*)"
     ],
     "deny": [],
     "ask": []

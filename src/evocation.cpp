@@ -113,6 +113,10 @@ struct Evocation : Module {
         SPEED_2_INPUT,
         SPEED_3_INPUT,
         SPEED_4_INPUT,
+        PHASE_1_INPUT,
+        PHASE_2_INPUT,
+        PHASE_3_INPUT,
+        PHASE_4_INPUT,
         INPUTS_LEN
     };
     enum OutputId {
@@ -323,11 +327,19 @@ struct Evocation : Module {
         configInput(SPEED_2_INPUT, "Speed 2 CV");
         configInput(SPEED_3_INPUT, "Speed 3 CV");
         configInput(SPEED_4_INPUT, "Speed 4 CV");
-        
+        configInput(PHASE_1_INPUT, "Phase 1 CV");
+        configInput(PHASE_2_INPUT, "Phase 2 CV");
+        configInput(PHASE_3_INPUT, "Phase 3 CV");
+        configInput(PHASE_4_INPUT, "Phase 4 CV");
+
         configOutput(ENV_1_OUTPUT, "Envelope 1");
         configOutput(ENV_2_OUTPUT, "Envelope 2");
-        configOutput(ENV_3_OUTPUT, "Envelope 3");  
+        configOutput(ENV_3_OUTPUT, "Envelope 3");
         configOutput(ENV_4_OUTPUT, "Envelope 4");
+        configOutput(ENV_1_EOC_OUTPUT, "Envelope 1 EOC");
+        configOutput(ENV_2_EOC_OUTPUT, "Envelope 2 EOC");
+        configOutput(ENV_3_EOC_OUTPUT, "Envelope 3 EOC");
+        configOutput(ENV_4_EOC_OUTPUT, "Envelope 4 EOC");
         configOutput(ENV_1_GATE_OUTPUT, "Envelope 1 Gate");
         configOutput(ENV_2_GATE_OUTPUT, "Envelope 2 Gate");
         configOutput(ENV_3_GATE_OUTPUT, "Envelope 3 Gate");
@@ -800,12 +812,27 @@ struct Evocation : Module {
 
         // Interpolate envelope value at current phase
         float samplePhase;
+        float phaseOffset = 0.0f;
+
         if (mode == EnvelopeMode::ADSR) {
-            // ADSR mode: no phase offset, all outputs identical
-            samplePhase = pb.phase;
+            // ADSR mode: use phase CV for quantized delays
+            if (inputs[PHASE_1_INPUT + outputIndex].isConnected()) {
+                // Quantize to 16th notes (16 steps per full envelope)
+                float cv = inputs[PHASE_1_INPUT + outputIndex].getVoltage() / 10.0f; // 0-1 range
+                phaseOffset = std::floor(cv * 16.0f) / 16.0f; // Quantize to 1/16th increments
+            }
+            samplePhase = pb.phase + phaseOffset;
+            samplePhase -= std::floor(samplePhase);
         } else {
             // Gesture mode: apply phase offset for each output
-            samplePhase = pb.phase + phaseOffsets[outputIndex];
+            phaseOffset = phaseOffsets[outputIndex];
+
+            // Add CV modulation if connected (0-10V = 0-1 phase)
+            if (inputs[PHASE_1_INPUT + outputIndex].isConnected()) {
+                phaseOffset += inputs[PHASE_1_INPUT + outputIndex].getVoltage() / 10.0f;
+            }
+
+            samplePhase = pb.phase + phaseOffset;
             samplePhase -= std::floor(samplePhase);
             if (samplePhase < 0.f) samplePhase += 1.f;
         }
@@ -869,17 +896,22 @@ struct Evocation : Module {
     }
 
     // Apply contour curve to a linear 0-1 value
+    // contour 0.0 = logarithmic, 0.5 = linear, 1.0 = exponential
     float applyContour(float linear, float contour) {
-        // contour > 0 = exponential, contour < 0 = logarithmic, 0 = linear
-        if (std::fabs(contour) < 1e-4f)
+        if (std::fabs(contour - 0.5f) < 0.01f) {
+            // Near center = linear
             return linear;
-
-        float curve = 1.0f + std::fabs(contour) * 4.0f; // 1 to 5 range
-        if (contour > 0.0f) {
-            return std::pow(clamp(linear, 0.0f, 1.0f), curve);
+        } else if (contour > 0.5f) {
+            // Above 0.5 = exponential (steeper start, slower end)
+            float amount = (contour - 0.5f) * 2.0f; // 0-1 range
+            float curve = 1.0f + amount * 3.0f; // 1 to 4 exponent
+            return std::pow(linear, curve);
+        } else {
+            // Below 0.5 = logarithmic (slower start, steeper end)
+            float amount = (0.5f - contour) * 2.0f; // 0-1 range
+            float curve = 1.0f + amount * 3.0f; // 1 to 4 exponent
+            return 1.0f - std::pow(1.0f - linear, curve);
         }
-        // Logarithmic bend: mirror behaviour around (0,1)
-        return 1.0f - std::pow(clamp(1.0f - linear, 0.0f, 1.0f), curve);
     }
 
     // Generate ADSR envelope from current parameters
@@ -2553,13 +2585,13 @@ struct EvocationWidget : ModuleWidget {
             return parser.centerPx(id, defx, defy);
         };
 
-        constexpr float panelWidthMm = 91.44f;
+        constexpr float panelWidthMm = 101.6f;
         constexpr float panelHeightMm = 128.5f;
 
-        addChild(createWidget<ScrewBlack>(mm(6.5f, 6.5f)));
-        addChild(createWidget<ScrewBlack>(mm(panelWidthMm - 6.5f, 6.5f)));
-        addChild(createWidget<ScrewBlack>(mm(6.5f, panelHeightMm - 6.5f)));
-        addChild(createWidget<ScrewBlack>(mm(panelWidthMm - 6.5f, panelHeightMm - 6.5f)));
+        addChild(createWidget<ScrewBlack>(Vec(RACK_GRID_WIDTH, 0)));
+        addChild(createWidget<ScrewBlack>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, 0)));
+        addChild(createWidget<ScrewBlack>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
+        addChild(createWidget<ScrewBlack>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
         // Touch strip (positioned by SVG rectangle)
         touchStrip = new TouchStripWidget(module);
@@ -2595,6 +2627,12 @@ struct EvocationWidget : ModuleWidget {
         addInput(createInputCentered<ShapetakerBNCPort>(centerPx("trigger-cv-in", 63.618366f, 29.776815f), module, Evocation::TRIGGER_INPUT));
         addInput(createInputCentered<ShapetakerBNCPort>(centerPx("clear-cv-in", 78.077148f, 29.776815f), module, Evocation::CLEAR_INPUT));
         addInput(createInputCentered<ShapetakerBNCPort>(centerPx("gate-cv-in", 63.618366f, 40.893959f), module, Evocation::GATE_INPUT));
+
+        // Phase CV inputs (right column)
+        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("phase1-cv-in", 92.5f, 100.0f), module, Evocation::PHASE_1_INPUT));
+        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("phase2-cv-in", 92.5f, 106.5f), module, Evocation::PHASE_2_INPUT));
+        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("phase3-cv-in", 92.5f, 113.0f), module, Evocation::PHASE_3_INPUT));
+        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("phase4-cv-in", 92.5f, 119.5f), module, Evocation::PHASE_4_INPUT));
 
         // Envelope controls
         addParam(createParamCentered<ShapetakerKnobMedium>(centerPx("env-speed", 49.159584f, 47.892654f), module, Evocation::ENV_SPEED_PARAM));
