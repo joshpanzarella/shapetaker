@@ -190,25 +190,41 @@ struct Evocation : Module {
     bool isRecording = false;
     bool bufferHasData = false;
     bool debugTouchLogging = false;
-    
+
+    // Polyphony configuration
+    static const int MAX_POLY_CHANNELS = 6;
+
     // Individual loop states for each envelope player
     bool loopStates[4] = {false, false, false, false};
-    
+
     // Invert states for each speed output
     bool invertStates[4] = {false, false, false, false};
-    
-    // Playback state for each output
+
+    // Playback state for each output - now supports up to 6 voices per output
     struct PlaybackState {
-        bool active = false;
-        float phase = 0.0f;
-        dsp::PulseGenerator eocPulse;
+        bool active[MAX_POLY_CHANNELS] = {false};
+        float phase[MAX_POLY_CHANNELS] = {0.0f};
+        dsp::PulseGenerator eocPulse[MAX_POLY_CHANNELS];
+        float smoothedVoltage[MAX_POLY_CHANNELS] = {0.0f};
+        bool releaseActive[MAX_POLY_CHANNELS] = {false};
+        float releaseValue[MAX_POLY_CHANNELS] = {0.0f};
     };
 
-    PlaybackState playback[4]; // Four independent envelope players
+    PlaybackState playback[4]; // Four independent envelope players (each with 6 voices)
     bool adsrSurfaceGate = false;
+    bool previousGateHigh[MAX_POLY_CHANNELS] = {false}; // Track gate state per voice
+    bool adsrGateHeld[MAX_POLY_CHANNELS] = {false};      // Sustain hold per voice
+
+    // Track current input channel counts for output channel management
+    int currentTriggerChannels = 0;
+    int currentGateChannels = 0;
+
+    // Voice allocation for monophonic inputs
+    int nextVoiceIndex = 0; // Round-robin voice allocation
 
     // Triggers
-    dsp::SchmittTrigger triggerTrigger;
+    dsp::SchmittTrigger triggerTrigger; // For button only
+    dsp::SchmittTrigger triggerInputTriggers[MAX_POLY_CHANNELS]; // Per-channel trigger input
     dsp::SchmittTrigger gateTrigger;
     dsp::SchmittTrigger clearTrigger;
     dsp::SchmittTrigger envSelectTriggers[4];
@@ -343,12 +359,7 @@ struct Evocation : Module {
     
     void process(const ProcessArgs& args) override {
         // Handle triggers using shared helpers
-        bool triggerPressed = shapetaker::TriggerHelper::processTrigger(
-            triggerTrigger,
-            params[TRIGGER_PARAM].getValue(),
-            inputs[TRIGGER_INPUT],
-            1.f
-        );
+        bool triggerButtonPressed = triggerTrigger.process(params[TRIGGER_PARAM].getValue());
         bool clearPressed = shapetaker::TriggerHelper::processTrigger(
             clearTrigger,
             params[CLEAR_PARAM].getValue(),
@@ -538,29 +549,75 @@ struct Evocation : Module {
         }
 
         // Handle triggers for playback
-        if (mode == EnvelopeMode::GESTURE) {
-            // Gesture mode: trigger button or gate triggers playback
-            if (triggerPressed && bufferHasData) {
-                triggerAllEnvelopes();
-            } else if (inputs[GATE_INPUT].isConnected() && bufferHasData) {
-                bool gateHigh = inputs[GATE_INPUT].getVoltage() >= 1.0f;
-                if (gateHigh) {
-                    if (gateTrigger.process(inputs[GATE_INPUT].getVoltage())) {
-                        triggerAllEnvelopes();
-                    }
+        // Track connected poly channel counts each process cycle
+        int detectedTriggerChannels = inputs[TRIGGER_INPUT].isConnected()
+            ? std::min(inputs[TRIGGER_INPUT].getChannels(), MAX_POLY_CHANNELS)
+            : 0;
+        int detectedGateChannels = inputs[GATE_INPUT].isConnected()
+            ? std::min(inputs[GATE_INPUT].getChannels(), MAX_POLY_CHANNELS)
+            : 0;
+        currentTriggerChannels = detectedTriggerChannels;
+        currentGateChannels = detectedGateChannels;
+
+        // Manually pressed trigger button fires all voices
+        if (triggerButtonPressed && bufferHasData) {
+            triggerAllEnvelopes();
+        }
+
+        if (detectedTriggerChannels > 0 && bufferHasData) {
+            // Handle polyphonic trigger input
+            // Process triggers for each input channel
+            for (int c = 0; c < detectedTriggerChannels; c++) {
+                if (triggerInputTriggers[c].process(inputs[TRIGGER_INPUT].getPolyVoltage(c))) {
+                    bool forceRestart = (mode == EnvelopeMode::GESTURE);
+                    triggerEnvelope(c, forceRestart);
                 }
             }
-        } else {
-            // ADSR mode: trigger button or gate input triggers envelope
-            if (triggerPressed && bufferHasData) {
-                triggerAllEnvelopes();
-            } else if (inputs[GATE_INPUT].isConnected() && bufferHasData) {
-                bool gateHigh = inputs[GATE_INPUT].getVoltage() >= 1.0f;
-                if (gateTrigger.process(inputs[GATE_INPUT].getVoltage())) {
-                    if (gateHigh) {
-                        triggerAllEnvelopes();
-                    }
+
+            // Stop any voices beyond the current channel count
+            for (int c = detectedTriggerChannels; c < MAX_POLY_CHANNELS; c++) {
+                triggerInputTriggers[c].reset();
+                stopEnvelope(c);
+                adsrGateHeld[c] = false;
+                previousGateHigh[c] = false;
+            }
+        } else if (detectedGateChannels > 0 && bufferHasData) {
+            // Handle polyphonic gate input (for gate mode)
+            // Process each polyphonic channel
+            for (int c = 0; c < detectedGateChannels; c++) {
+                bool gateHigh = inputs[GATE_INPUT].getPolyVoltage(c) >= 1.0f;
+
+                // Start playback on gate rising edge
+                if (gateHigh && !previousGateHigh[c] && bufferHasData) {
+                    bool forceRestart = (mode == EnvelopeMode::GESTURE);
+                    triggerEnvelope(c, forceRestart);
                 }
+                // Handle gate release
+                if (!gateHigh && previousGateHigh[c]) {
+                    if (mode == EnvelopeMode::ADSR) {
+                        adsrGateHeld[c] = false;
+                    } else {
+                        startGestureRelease(c);
+                    }
+                } else if (gateHigh && mode == EnvelopeMode::ADSR) {
+                    adsrGateHeld[c] = true;
+                }
+
+                previousGateHigh[c] = gateHigh;
+            }
+
+            // Stop any voices beyond the current channel count
+            for (int c = detectedGateChannels; c < MAX_POLY_CHANNELS; c++) {
+                previousGateHigh[c] = false;
+                adsrGateHeld[c] = false;
+                stopEnvelope(c);
+            }
+        } else {
+            // No inputs connected, reset gate state
+            for (int c = 0; c < MAX_POLY_CHANNELS; c++) {
+                previousGateHigh[c] = false;
+                adsrGateHeld[c] = false;
+                triggerInputTriggers[c].reset();
             }
         }
 
@@ -751,109 +808,284 @@ struct Evocation : Module {
     
     void triggerAllEnvelopes() {
         if (!bufferHasData) return;
-        
+
         for (int i = 0; i < 4; i++) {
-            playback[i].active = true;
-            playback[i].phase = 0.0f;
+            for (int c = 0; c < MAX_POLY_CHANNELS; c++) {
+                playback[i].active[c] = true;
+                playback[i].phase[c] = 0.0f;
+                playback[i].eocPulse[c] = dsp::PulseGenerator();
+                playback[i].smoothedVoltage[c] = 0.0f;
+                playback[i].releaseActive[c] = false;
+                playback[i].releaseValue[c] = 0.0f;
+                if (i == 0) {
+                    adsrGateHeld[c] = false;
+                    previousGateHigh[c] = false;
+                }
+            }
+        }
+    }
+
+    void triggerEnvelope(int channel, bool forceRestart = false) {
+        if (!bufferHasData || channel < 0 || channel >= MAX_POLY_CHANNELS) return;
+
+        // Get current output voltage to find smooth retrigger point
+        float currentVoltage = 0.0f;
+        bool wasActive = false;
+
+        for (int i = 0; i < 4; i++) {
+            if (playback[i].active[channel]) {
+                wasActive = true;
+                // Get the current envelope value from output 0
+                if (i == 0) {
+                    float phase = playback[i].phase[channel];
+                    if (phase >= 0.0f && phase < 1.0f) {
+                        currentVoltage = interpolateEnvelope(phase);
+                        if (invertStates[i]) {
+                            currentVoltage = 1.0f - currentVoltage;
+                        }
+                    }
+                }
+            }
         }
 
+        // If retriggering, find the closest phase point to current voltage to avoid clicks
+        float startPhase = 0.0f;
+        if (!forceRestart && wasActive && currentVoltage > 0.01f) {
+            // Find the earliest phase in the envelope that matches current voltage
+            startPhase = findPhaseForVoltage(currentVoltage);
+        }
+
+        for (int i = 0; i < 4; i++) {
+            playback[i].active[channel] = true;
+            playback[i].phase[channel] = startPhase;
+            playback[i].eocPulse[channel] = dsp::PulseGenerator();
+            playback[i].releaseActive[channel] = false;
+            playback[i].releaseValue[channel] = 0.0f;
+            playback[i].smoothedVoltage[channel] = 0.0f;
+        }
+    }
+
+    // Find the phase in the envelope that best matches the target voltage
+    // This prevents clicks when retriggering
+    float findPhaseForVoltage(float targetVoltage) {
+        if (envelope.empty()) return 0.0f;
+
+        // Search for the earliest point in the envelope close to target voltage
+        float bestPhase = 0.0f;
+        float bestDiff = std::abs(envelope[0].y - targetVoltage);
+
+        for (size_t i = 0; i < envelope.size(); i++) {
+            float diff = std::abs(envelope[i].y - targetVoltage);
+            if (diff < bestDiff) {
+                bestDiff = diff;
+                bestPhase = envelope[i].time;
+            }
+            // Stop searching after we pass the target (prefer early phases)
+            if (envelope[i].y < targetVoltage && i > 0) {
+                break;
+            }
+        }
+
+        return bestPhase;
+    }
+
+    void stopEnvelope(int channel) {
+        if (channel < 0 || channel >= MAX_POLY_CHANNELS) return;
+
+        for (int i = 0; i < 4; i++) {
+            playback[i].active[channel] = false;
+            playback[i].phase[channel] = 0.0f;
+            playback[i].eocPulse[channel] = dsp::PulseGenerator();
+            playback[i].smoothedVoltage[channel] = 0.0f;
+            playback[i].releaseActive[channel] = false;
+            playback[i].releaseValue[channel] = 0.0f;
+        }
+        adsrGateHeld[channel] = false;
+        previousGateHigh[channel] = false;
+    }
+
+    void startGestureRelease(int channel) {
+        if (channel < 0 || channel >= MAX_POLY_CHANNELS)
+            return;
+        for (int i = 0; i < 4; i++) {
+            PlaybackState& pb = playback[i];
+            if (!pb.active[channel])
+                continue;
+            pb.releaseActive[channel] = true;
+            pb.releaseValue[channel] = pb.smoothedVoltage[channel];
+            pb.releaseValue[channel] = clamp(pb.releaseValue[channel], -10.0f, 10.0f);
+            pb.phase[channel] = clamp(pb.phase[channel], 0.0f, 1.0f);
+        }
     }
     
     void processPlayback(int outputIndex, float sampleTime) {
         PlaybackState& pb = playback[outputIndex];
 
-        // Process EOC pulse
-        bool eocPulse = pb.eocPulse.process(sampleTime);
-        outputs[ENV_1_EOC_OUTPUT + outputIndex].setVoltage(eocPulse ? 10.0f : 0.0f);
-
-        if (!pb.active || !bufferHasData) {
-            outputs[ENV_1_OUTPUT + outputIndex].setVoltage(0.0f);
-            outputs[ENV_1_GATE_OUTPUT + outputIndex].setVoltage(0.0f);
+        if (!bufferHasData) {
+            outputs[ENV_1_OUTPUT + outputIndex].setChannels(0);
+            outputs[ENV_1_EOC_OUTPUT + outputIndex].setChannels(0);
+            outputs[ENV_1_GATE_OUTPUT + outputIndex].setChannels(0);
             return;
         }
 
-        // Get speed from knob and CV
-        float speed;
-        if (mode == EnvelopeMode::ADSR) {
-            // ADSR mode: all outputs use 1x speed (timing baked into envelope)
-            speed = 1.0f;
-            // Still allow CV modulation if connected
-            if (inputs[SPEED_1_INPUT + outputIndex].isConnected()) {
-                speed += inputs[SPEED_1_INPUT + outputIndex].getVoltage();
-                speed = clamp(speed, 0.1f, 16.0f);
-            }
-        } else {
-            // Gesture mode: each output has individual speed
-            speed = params[SPEED_1_PARAM + outputIndex].getValue();
-            if (inputs[SPEED_1_INPUT + outputIndex].isConnected()) {
-                speed += inputs[SPEED_1_INPUT + outputIndex].getVoltage(); // 1V/oct style
-            }
-            speed = clamp(speed, 0.1f, 16.0f); // Reasonable speed limits
+        // Determine output channel count based on inputs and active voices
+        int outputChannels = std::max(currentTriggerChannels, currentGateChannels);
+        outputChannels = std::max(outputChannels, getActiveVoiceChannels(outputIndex));
+        if (outputChannels == 0) {
+            outputChannels = 1; // Always output at least 1 channel when buffer has data
         }
 
-        // Advance phase
-        float envDuration = getEnvelopeDuration();
-        float phaseIncrement = speed * sampleTime / envDuration;
-        pb.phase += phaseIncrement;
+        // Set output channel counts to match input
+        outputs[ENV_1_OUTPUT + outputIndex].setChannels(outputChannels);
+        outputs[ENV_1_EOC_OUTPUT + outputIndex].setChannels(outputChannels);
+        outputs[ENV_1_GATE_OUTPUT + outputIndex].setChannels(outputChannels);
 
-        if (mode == EnvelopeMode::ADSR && adsrSurfaceGate) {
-            float sustainStart = (adsrAttackTime + adsrDecayTime) / envDuration;
-            sustainStart = clamp(sustainStart, 0.0f, 1.0f);
-            if (pb.phase >= sustainStart) {
-                pb.phase = sustainStart;
+        // Process each polyphonic channel
+        for (int c = 0; c < outputChannels; c++) {
+            // Process EOC pulse
+            bool eocPulse = pb.eocPulse[c].process(sampleTime);
+            outputs[ENV_1_EOC_OUTPUT + outputIndex].setVoltage(eocPulse ? 10.0f : 0.0f, c);
+
+            if (!pb.active[c]) {
+                pb.smoothedVoltage[c] = 0.0f;
+                outputs[ENV_1_OUTPUT + outputIndex].setVoltage(0.0f, c);
+                outputs[ENV_1_GATE_OUTPUT + outputIndex].setVoltage(0.0f, c);
+                continue;
             }
-        }
 
-        // Check if envelope is complete
-        if (pb.phase >= 1.0f) {
-            // Trigger EOC pulse
-            pb.eocPulse.trigger(1e-3f); // 1ms pulse
+            bool gestureRelease = (mode == EnvelopeMode::GESTURE) && pb.releaseActive[c];
 
-            if (loopStates[outputIndex]) {
-                pb.phase -= 1.0f; // Wrap around for looping
+            if (gestureRelease) {
+                const float releaseTau = 0.02f; // 20 ms glide to zero
+                float decay = std::exp(-sampleTime / std::max(releaseTau, 1e-6f));
+                pb.releaseValue[c] *= decay;
+                if (std::fabs(pb.releaseValue[c]) <= 1e-3f) {
+                    pb.releaseValue[c] = 0.0f;
+                    pb.releaseActive[c] = false;
+                    pb.active[c] = false;
+                    pb.phase[c] = 0.0f;
+                    pb.smoothedVoltage[c] = 0.0f;
+                    outputs[ENV_1_OUTPUT + outputIndex].setVoltage(0.0f, c);
+                    outputs[ENV_1_GATE_OUTPUT + outputIndex].setVoltage(0.0f, c);
+                    continue;
+                }
+
+                float targetVoltage = pb.releaseValue[c];
+                float smoothingTau = 0.001f;
+                float alpha = smoothingTau <= 0.f ? 1.f : sampleTime / (smoothingTau + sampleTime);
+                alpha = clamp(alpha, 0.f, 1.f);
+                float previousVoltage = pb.smoothedVoltage[c];
+                float outputVoltage = previousVoltage + (targetVoltage - previousVoltage) * alpha;
+                pb.smoothedVoltage[c] = outputVoltage;
+                outputs[ENV_1_OUTPUT + outputIndex].setVoltage(outputVoltage, c);
+                outputs[ENV_1_GATE_OUTPUT + outputIndex].setVoltage(0.0f, c);
+                continue;
+            }
+
+            // Get speed from knob and CV
+            float speed;
+            if (mode == EnvelopeMode::ADSR) {
+                // ADSR mode: all outputs use 1x speed (timing baked into envelope)
+                speed = 1.0f;
+                // Still allow CV modulation if connected
+                if (inputs[SPEED_1_INPUT + outputIndex].isConnected()) {
+                    speed += inputs[SPEED_1_INPUT + outputIndex].getPolyVoltage(c);
+                    speed = clamp(speed, 0.1f, 16.0f);
+                }
             } else {
-                pb.active = false;
-                outputs[ENV_1_OUTPUT + outputIndex].setVoltage(0.0f);
-                outputs[ENV_1_GATE_OUTPUT + outputIndex].setVoltage(0.0f);
-                return;
-            }
-        }
-
-        // Interpolate envelope value at current phase
-        float samplePhase;
-        float phaseOffset = 0.0f;
-
-        if (mode == EnvelopeMode::ADSR) {
-            // ADSR mode: use phase CV for quantized delays
-            if (inputs[PHASE_1_INPUT + outputIndex].isConnected()) {
-                // Quantize to 16th notes (16 steps per full envelope)
-                float cv = inputs[PHASE_1_INPUT + outputIndex].getVoltage() / 10.0f; // 0-1 range
-                phaseOffset = std::floor(cv * 16.0f) / 16.0f; // Quantize to 1/16th increments
-            }
-            samplePhase = pb.phase + phaseOffset;
-            samplePhase -= std::floor(samplePhase);
-        } else {
-            // Gesture mode: apply phase offset for each output
-            phaseOffset = phaseOffsets[outputIndex];
-
-            // Add CV modulation if connected (0-10V = 0-1 phase)
-            if (inputs[PHASE_1_INPUT + outputIndex].isConnected()) {
-                phaseOffset += inputs[PHASE_1_INPUT + outputIndex].getVoltage() / 10.0f;
+                // Gesture mode: each output has individual speed
+                speed = params[SPEED_1_PARAM + outputIndex].getValue();
+                if (inputs[SPEED_1_INPUT + outputIndex].isConnected()) {
+                    speed += inputs[SPEED_1_INPUT + outputIndex].getPolyVoltage(c); // 1V/oct style
+                }
+                speed = clamp(speed, 0.1f, 16.0f); // Reasonable speed limits
             }
 
-            samplePhase = pb.phase + phaseOffset;
-            samplePhase -= std::floor(samplePhase);
-            if (samplePhase < 0.f) samplePhase += 1.f;
+            // Advance phase
+            float envDuration = getEnvelopeDuration();
+            float phaseIncrement = speed * sampleTime / envDuration;
+            pb.phase[c] += phaseIncrement;
+
+            if (mode == EnvelopeMode::ADSR) {
+                float sustainStart = (adsrAttackTime + adsrDecayTime) / envDuration;
+                sustainStart = clamp(sustainStart, 0.0f, 1.0f);
+                bool holdAtSustain = adsrSurfaceGate || adsrGateHeld[c];
+                if (holdAtSustain && pb.phase[c] >= sustainStart) {
+                    pb.phase[c] = sustainStart;
+                }
+            }
+
+            // Check if envelope is complete
+            if (pb.phase[c] >= 1.0f) {
+                // Trigger EOC pulse
+                pb.eocPulse[c].trigger(1e-3f); // 1ms pulse
+
+                if (loopStates[outputIndex]) {
+                    pb.phase[c] -= 1.0f; // Wrap around for looping
+                } else {
+                    pb.active[c] = false;
+                    outputs[ENV_1_OUTPUT + outputIndex].setVoltage(0.0f, c);
+                    outputs[ENV_1_GATE_OUTPUT + outputIndex].setVoltage(0.0f, c);
+                    continue;
+                }
+            }
+
+            // Interpolate envelope value at current phase
+            float samplePhase;
+            float phaseOffset = 0.0f;
+
+            if (mode == EnvelopeMode::ADSR) {
+                // ADSR mode: use phase CV for quantized delays
+                if (inputs[PHASE_1_INPUT + outputIndex].isConnected()) {
+                    // Quantize to 16th notes (16 steps per full envelope)
+                    float cv = inputs[PHASE_1_INPUT + outputIndex].getPolyVoltage(c) / 10.0f; // 0-1 range
+                    phaseOffset = std::floor(cv * 16.0f) / 16.0f; // Quantize to 1/16th increments
+                }
+                samplePhase = pb.phase[c] + phaseOffset;
+                samplePhase -= std::floor(samplePhase);
+            } else {
+                // Gesture mode: apply phase offset for each output
+                phaseOffset = phaseOffsets[outputIndex];
+
+                // Add CV modulation if connected (0-10V = 0-1 phase)
+                if (inputs[PHASE_1_INPUT + outputIndex].isConnected()) {
+                    phaseOffset += inputs[PHASE_1_INPUT + outputIndex].getPolyVoltage(c) / 10.0f;
+                }
+
+                samplePhase = pb.phase[c] + phaseOffset;
+                samplePhase -= std::floor(samplePhase);
+                if (samplePhase < 0.f) samplePhase += 1.f;
+            }
+
+            float envelopeValue = interpolateEnvelope(samplePhase);
+
+            if (invertStates[outputIndex]) {
+                envelopeValue = 1.0f - envelopeValue;
+            }
+
+            float targetVoltage = envelopeValue * 10.0f;
+            float outputVoltage = targetVoltage;
+
+            if (mode == EnvelopeMode::GESTURE) {
+                float speedFactor = std::max(speed, 0.1f);
+                float smoothingTau = 0.0002f / std::max(speedFactor, 1.0f); // shorter tau for higher speeds
+                smoothingTau = clamp(smoothingTau, 1e-5f, 0.0005f);
+                float alpha = smoothingTau <= 0.f ? 1.f : sampleTime / (smoothingTau + sampleTime);
+                alpha = clamp(alpha, 0.f, 1.f);
+                float previousVoltage = pb.smoothedVoltage[c];
+                outputVoltage = previousVoltage + (targetVoltage - previousVoltage) * alpha;
+                pb.smoothedVoltage[c] = outputVoltage;
+            } else {
+                pb.smoothedVoltage[c] = targetVoltage;
+            }
+
+            outputs[ENV_1_OUTPUT + outputIndex].setVoltage(outputVoltage, c); // 0-10V output
+            float gateVoltage = (pb.active[c] && mode == EnvelopeMode::GESTURE) ? 10.0f : 0.0f;
+            if (mode == EnvelopeMode::ADSR) {
+                gateVoltage = pb.active[c] ? 10.0f : 0.0f;
+            }
+            outputs[ENV_1_GATE_OUTPUT + outputIndex].setVoltage(gateVoltage, c);
         }
-
-        float envelopeValue = interpolateEnvelope(samplePhase);
-
-        if (invertStates[outputIndex]) {
-            envelopeValue = 1.0f - envelopeValue;
-        }
-
-        outputs[ENV_1_OUTPUT + outputIndex].setVoltage(envelopeValue * 10.0f); // 0-10V output
-        outputs[ENV_1_GATE_OUTPUT + outputIndex].setVoltage(pb.active ? 10.0f : 0.0f);
     }
     
     float interpolateEnvelope(float phase) {
@@ -885,16 +1117,29 @@ struct Evocation : Module {
         return std::max(recordedDuration, 1e-3f);
     }
 
-    float getPlaybackPhase(int index) const {
-        if (index < 0 || index >= 4)
+    float getPlaybackPhase(int index, int channel = 0) const {
+        if (index < 0 || index >= 4 || channel < 0 || channel >= MAX_POLY_CHANNELS)
             return 0.0f;
-        return clamp(playback[index].phase, 0.0f, 1.0f);
+        return clamp(playback[index].phase[channel], 0.0f, 1.0f);
     }
 
-    bool isPlaybackActive(int index) const {
-        if (index < 0 || index >= 4)
+    bool isPlaybackActive(int index, int channel = 0) const {
+        if (index < 0 || index >= 4 || channel < 0 || channel >= MAX_POLY_CHANNELS)
             return false;
-        return playback[index].active;
+        return playback[index].active[channel];
+    }
+
+    int getActiveVoiceChannels(int index) const {
+        if (index < 0 || index >= NUM_ENVELOPES)
+            return 0;
+        int channels = 0;
+        const PlaybackState& pb = playback[index];
+        for (int c = 0; c < MAX_POLY_CHANNELS; c++) {
+            if (pb.active[c]) {
+                channels = c + 1;
+            }
+        }
+        return channels;
     }
 
     float getEnvelopeDuration() {
@@ -1075,6 +1320,10 @@ struct Evocation : Module {
         }
         adsrSurfaceGate = false;
         mode = EnvelopeMode::GESTURE;
+        for (int c = 0; c < MAX_POLY_CHANNELS; c++) {
+            adsrGateHeld[c] = false;
+            previousGateHigh[c] = false;
+        }
         if (gestureBufferHasDataBackup && !gestureEnvelopeBackup.empty()) {
             envelope = gestureEnvelopeBackup;
             recordedDuration = gestureDurationBackup;
@@ -1085,6 +1334,13 @@ struct Evocation : Module {
             recordedDuration = 2.0f;
         }
         onEnvelopeSelectionChanged(false);
+        for (int i = 0; i < 4; i++) {
+            for (int c = 0; c < MAX_POLY_CHANNELS; c++) {
+                playback[i].smoothedVoltage[c] = 0.0f;
+                playback[i].releaseActive[c] = false;
+                playback[i].releaseValue[c] = 0.0f;
+            }
+        }
     }
 
     void switchToADSRMode() {
@@ -1098,8 +1354,19 @@ struct Evocation : Module {
         gestureBufferHasDataBackup = bufferHasData;
         adsrSurfaceGate = false;
         mode = EnvelopeMode::ADSR;
+        for (int c = 0; c < MAX_POLY_CHANNELS; c++) {
+            adsrGateHeld[c] = false;
+            previousGateHigh[c] = false;
+        }
         generateADSREnvelope();
         onEnvelopeSelectionChanged(false);
+        for (int i = 0; i < 4; i++) {
+            for (int c = 0; c < MAX_POLY_CHANNELS; c++) {
+                playback[i].smoothedVoltage[c] = 0.0f;
+                playback[i].releaseActive[c] = false;
+                playback[i].releaseValue[c] = 0.0f;
+            }
+        }
     }
 
     void regenerateADSR() {
@@ -1190,15 +1457,27 @@ struct Evocation : Module {
     
     bool isAnyPlaybackActive() {
         for (int i = 0; i < 4; i++) {
-            if (playback[i].active) return true;
+            for (int c = 0; c < MAX_POLY_CHANNELS; c++) {
+                if (playback[i].active[c]) return true;
+            }
         }
         return false;
     }
-    
+
     void stopAllPlayback() {
         for (int i = 0; i < 4; i++) {
-            playback[i].active = false;
-            playback[i].phase = 0.0f;
+            for (int c = 0; c < MAX_POLY_CHANNELS; c++) {
+                playback[i].active[c] = false;
+                playback[i].phase[c] = 0.0f;
+                playback[i].eocPulse[c] = dsp::PulseGenerator();
+                playback[i].smoothedVoltage[c] = 0.0f;
+                playback[i].releaseActive[c] = false;
+                playback[i].releaseValue[c] = 0.0f;
+            }
+        }
+        for (int c = 0; c < MAX_POLY_CHANNELS; c++) {
+            adsrGateHeld[c] = false;
+            previousGateHigh[c] = false;
         }
         adsrSurfaceGate = false;
         if (touchStripWidget) {
