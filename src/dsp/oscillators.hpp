@@ -65,6 +65,8 @@ public:
     // Sigmoid-morphed saw with subtle organic coloration
     static float organicSigmoidSaw(float phase, float shape, float freq, float sampleRate) {
         shape = rack::math::clamp(shape, 0.f, 1.f);
+        // Emphasize the midpoint so modulation sweeps feel more dramatic
+        float emphasizedShape = 1.f - std::pow(1.f - shape, 1.5f);
 
         // Linear sawtooth baseline
         float linearSaw = 2.f * phase - 1.f;
@@ -72,24 +74,24 @@ public:
             return std::tanh(linearSaw * 1.02f) * 0.98f;
         }
 
-        float range = 3.f + shape * 5.f;
+        float range = 3.f + emphasizedShape * 9.f;
         float sigmoidInput = (phase - 0.5f) * range * 2.f;
 
         // Subtle harmonic bias tied to phase
-        float harmonicBias = std::sin(phase * 2.f * M_PI * 3.f) * 0.02f * shape;
+        float harmonicBias = std::sin(phase * 2.f * M_PI * 3.f) * 0.03f * emphasizedShape;
         sigmoidInput += harmonicBias;
 
         float sigmoidOutput = std::tanh(sigmoidInput);
 
-        float blend = shape + std::sin(phase * 2.f * M_PI) * 0.01f * shape;
+        float blend = emphasizedShape * 1.25f + std::sin(phase * 2.f * M_PI) * 0.015f * emphasizedShape;
         blend = rack::math::clamp(blend, 0.f, 1.f);
 
         float result = linearSaw * (1.f - blend) + sigmoidOutput * blend;
 
         // Add airy harmonics when not near Nyquist
         float nyquist = sampleRate * 0.5f;
-        if (freq < nyquist * 0.3f) {
-            float air = std::sin(phase * 2.f * M_PI * 7.f) * 0.005f * shape;
+        if (freq < nyquist * 0.35f) {
+            float air = std::sin(phase * 2.f * M_PI * 7.f) * 0.008f * emphasizedShape;
             result += air;
         }
 
