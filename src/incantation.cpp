@@ -216,8 +216,8 @@ struct Incantation : Module {
         }
     };
 
-    // Polyphonic support (up to 6 voices like other Shapetaker modules)
-    static const int MAX_POLY_VOICES = 6;
+    // Polyphonic support (up to 8 voices like other Shapetaker modules)
+    static const int MAX_POLY_VOICES = 8;
     
     // 8 resonant filters per voice
     ResonantFilter filters[MAX_POLY_VOICES][8];

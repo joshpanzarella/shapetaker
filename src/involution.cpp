@@ -319,8 +319,7 @@ struct Involution : Module {
         // Add CV modulation to filter morph
         if (inputs[FILTER_MORPH_CV_INPUT].isConnected()) {
             float morphCv = inputs[FILTER_MORPH_CV_INPUT].getVoltage() / 10.f; // 10V -> 1.0
-            filterMorph += morphCv;
-            filterMorph = clamp(filterMorph, 0.f, 1.f);
+            filterMorph = clamp(morphCv, 0.f, 1.f);
         }
         
         // Get phaser parameters with CV modulation
@@ -365,11 +364,11 @@ struct Involution : Module {
         if (chaosPhaseA >= 2.f * M_PI) chaosPhaseA -= 2.f * M_PI;
         if (chaosPhaseB >= 2.f * M_PI) chaosPhaseB -= 2.f * M_PI;
 
-        // Determine number of polyphonic channels (up to 6)
+        // Determine number of polyphonic channels (up to 8)
         int channelsA = inputs[AUDIO_A_INPUT].getChannels();
         int channelsB = inputs[AUDIO_B_INPUT].getChannels();
         int channels = std::max(channelsA, channelsB);
-        channels = std::min(channels, 6); // Limit to 6 voices
+        channels = std::min(channels, shapetaker::PolyphonicProcessor::MAX_VOICES); // Limit to max voices
         
         // If no inputs connected, set no output channels
         if (!inputs[AUDIO_A_INPUT].isConnected() && !inputs[AUDIO_B_INPUT].isConnected()) {
@@ -1086,6 +1085,7 @@ struct InvolutionWidget : ModuleWidget {
         addInput(createInputCentered<ShapetakerBNCPort>(centerPx("resonance_b_cv", 63.794f, 70.513f), module, Involution::RESONANCE_B_CV_INPUT));
         addInput(createInputCentered<ShapetakerBNCPort>(centerPx("chaos_amount_cv", 59.794f, 103.088f), module, Involution::CHAOS_CV_INPUT));
         addInput(createInputCentered<ShapetakerBNCPort>(centerPx("chaos_lfo_cv", 30.794f, 103.088f), module, Involution::CHAOS_RATE_CV_INPUT));
+        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("filter_morph_cv", 45.166f, 112.0f), module, Involution::FILTER_MORPH_CV_INPUT));
 
         // Audio I/O - direct millimeter coordinates
         addInput(createInputCentered<ShapetakerBNCPort>(centerPx("audio_a_input", 17.579f, 117.102f), module, Involution::AUDIO_A_INPUT));

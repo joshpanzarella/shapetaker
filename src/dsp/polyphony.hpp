@@ -19,7 +19,7 @@ namespace dsp {
  */
 class PolyphonicProcessor {
 public:
-    static constexpr int MAX_VOICES = 6;  // Standard Shapetaker voice limit
+    static constexpr int MAX_VOICES = 8;  // Standard Shapetaker voice limit
     
 private:
     int currentChannels = 1;

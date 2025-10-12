@@ -1,4 +1,5 @@
 #include "plugin.hpp"
+#include "dsp/envelopes.hpp"
 #include <vector>
 #include <algorithm>
 #include <cmath>
@@ -82,6 +83,7 @@ struct Evocation : Module {
         TRIGGER_PARAM,
         CLEAR_PARAM,
         TRIM_LEAD_PARAM,
+        TRIM_TAIL_PARAM,
         SPEED_1_PARAM,
         SPEED_2_PARAM,
         SPEED_3_PARAM,
@@ -193,7 +195,7 @@ struct Evocation : Module {
     bool debugTouchLogging = false;
 
     // Polyphony configuration
-    static const int MAX_POLY_CHANNELS = 6;
+    static const int MAX_POLY_CHANNELS = 8;
 
     // Individual loop states for each envelope player
     bool loopStates[4] = {false, false, false, false};
@@ -216,6 +218,20 @@ struct Evocation : Module {
     bool previousGateHigh[MAX_POLY_CHANNELS] = {false}; // Track gate state per voice
     bool adsrGateHeld[MAX_POLY_CHANNELS] = {false};      // Sustain hold per voice
 
+    static constexpr float ADSR_TRIGGER_PULSE_TIME = 1e-3f;
+
+    struct ADSRVoiceState {
+        shapetaker::dsp::EnvelopeGenerator env;
+        shapetaker::dsp::EnvelopeGenerator::Stage prevStage = shapetaker::dsp::EnvelopeGenerator::IDLE;
+    };
+    ADSRVoiceState adsrVoices[MAX_POLY_CHANNELS];
+    dsp::PulseGenerator adsrTriggerPulses[MAX_POLY_CHANNELS];
+    bool adsrGateSignals[MAX_POLY_CHANNELS] = {false};
+    float adsrValues[MAX_POLY_CHANNELS] = {0.0f};
+    bool adsrCompleted[MAX_POLY_CHANNELS] = {false};
+    float adsrReleaseStartLevel[MAX_POLY_CHANNELS] = {0.0f};
+    float adsrPhaseNormalized[MAX_POLY_CHANNELS] = {0.0f};
+
     // Track current input channel counts for output channel management
     int currentTriggerChannels = 0;
     int currentGateChannels = 0;
@@ -228,7 +244,8 @@ struct Evocation : Module {
     dsp::SchmittTrigger triggerInputTriggers[MAX_POLY_CHANNELS]; // Per-channel trigger input
     dsp::SchmittTrigger gateTrigger;
     dsp::SchmittTrigger clearTrigger;
-    dsp::SchmittTrigger trimButtonTrigger;
+    dsp::SchmittTrigger trimLeadButtonTrigger;
+    dsp::SchmittTrigger trimTailButtonTrigger;
     dsp::SchmittTrigger envSelectTriggers[4];
     bool envelopeAdvanceButtonLatch = false;
     bool parameterAdvanceButtonLatch = false;
@@ -267,6 +284,7 @@ struct Evocation : Module {
         configParam(TRIGGER_PARAM, 0.f, 1.f, 0.f, "Manual Trigger");
         configParam(CLEAR_PARAM, 0.f, 1.f, 0.f, "Clear Buffer");
         configButton(TRIM_LEAD_PARAM, "Trim Gesture Lead");
+        configButton(TRIM_TAIL_PARAM, "Trim Gesture Tail");
         configParam(SPEED_1_PARAM, 0.0f, 16.0f, 1.0f, "Speed 1", "×");
         configParam(SPEED_2_PARAM, 0.0f, 16.0f, 2.0f, "Speed 2", "×");
         configParam(SPEED_3_PARAM, 0.0f, 16.0f, 4.0f, "Speed 3", "×");
@@ -358,6 +376,8 @@ struct Evocation : Module {
         configOutput(ENV_2_GATE_OUTPUT, "Envelope 2 Gate");
         configOutput(ENV_3_GATE_OUTPUT, "Envelope 3 Gate");
         configOutput(ENV_4_GATE_OUTPUT, "Envelope 4 Gate");
+
+        resetADSREngine();
     }
     
     void process(const ProcessArgs& args) override {
@@ -369,7 +389,8 @@ struct Evocation : Module {
             inputs[CLEAR_INPUT],
             1.f
         );
-        bool trimButtonPressed = trimButtonTrigger.process(params[TRIM_LEAD_PARAM].getValue());
+        bool trimLeadPressed = trimLeadButtonTrigger.process(params[TRIM_LEAD_PARAM].getValue());
+        bool trimTailPressed = trimTailButtonTrigger.process(params[TRIM_TAIL_PARAM].getValue());
         for (int i = 0; i < 4; ++i) {
             if (envSelectTriggers[i].process(params[ENV_SELECT_1_PARAM + i].getValue())) {
                 selectEnvelope(i);
@@ -547,8 +568,13 @@ struct Evocation : Module {
             updateLastTouched("CLEAR", "BUFFER CLEARED");
         }
 
-        if (trimButtonPressed) {
+        if (trimLeadPressed) {
             if (!trimGestureLeadingSilence()) {
+                updateLastTouched("", "NO TRIM");
+            }
+        }
+        if (trimTailPressed) {
+            if (!trimGestureTrailingSilence()) {
                 updateLastTouched("", "NO TRIM");
             }
         }
@@ -566,74 +592,80 @@ struct Evocation : Module {
         int detectedGateChannels = inputs[GATE_INPUT].isConnected()
             ? std::min(inputs[GATE_INPUT].getChannels(), MAX_POLY_CHANNELS)
             : 0;
-        currentTriggerChannels = detectedTriggerChannels;
-        currentGateChannels = detectedGateChannels;
 
-        // Manually pressed trigger button fires all voices
-        if (triggerButtonPressed && bufferHasData) {
-            triggerAllEnvelopes();
-        }
-
-        if (detectedTriggerChannels > 0 && bufferHasData) {
-            // Handle polyphonic trigger input
-            // Process triggers for each input channel
-            for (int c = 0; c < detectedTriggerChannels; c++) {
-                if (triggerInputTriggers[c].process(inputs[TRIGGER_INPUT].getPolyVoltage(c))) {
-                    bool forceRestart = (mode == EnvelopeMode::GESTURE);
-                    triggerEnvelope(c, forceRestart);
-                }
-            }
-
-            // Stop any voices beyond the current channel count
-            for (int c = detectedTriggerChannels; c < MAX_POLY_CHANNELS; c++) {
-                triggerInputTriggers[c].reset();
-                stopEnvelope(c);
-                adsrGateHeld[c] = false;
-                previousGateHigh[c] = false;
-            }
-        } else if (detectedGateChannels > 0 && bufferHasData) {
-            // Handle polyphonic gate input (for gate mode)
-            // Process each polyphonic channel
-            for (int c = 0; c < detectedGateChannels; c++) {
-                bool gateHigh = inputs[GATE_INPUT].getPolyVoltage(c) >= 1.0f;
-
-                // Start playback on gate rising edge
-                if (gateHigh && !previousGateHigh[c] && bufferHasData) {
-                    bool forceRestart = (mode == EnvelopeMode::GESTURE);
-                    triggerEnvelope(c, forceRestart);
-                }
-                // Handle gate release
-                if (!gateHigh && previousGateHigh[c]) {
-                    if (mode == EnvelopeMode::ADSR) {
-                        adsrGateHeld[c] = false;
-                    } else {
-                        startGestureRelease(c);
-                    }
-                } else if (gateHigh && mode == EnvelopeMode::ADSR) {
-                    adsrGateHeld[c] = true;
-                }
-
-                previousGateHigh[c] = gateHigh;
-            }
-
-            // Stop any voices beyond the current channel count
-            for (int c = detectedGateChannels; c < MAX_POLY_CHANNELS; c++) {
-                previousGateHigh[c] = false;
-                adsrGateHeld[c] = false;
-                stopEnvelope(c);
-            }
+        if (mode == EnvelopeMode::ADSR) {
+            processADSRTriggers(triggerButtonPressed, detectedTriggerChannels, detectedGateChannels);
+            processADSROutputs(args);
         } else {
-            // No inputs connected, reset gate state
-            for (int c = 0; c < MAX_POLY_CHANNELS; c++) {
-                previousGateHigh[c] = false;
-                adsrGateHeld[c] = false;
-                triggerInputTriggers[c].reset();
-            }
-        }
+            currentTriggerChannels = detectedTriggerChannels;
+            currentGateChannels = detectedGateChannels;
 
-        // Process each output
-        for (int i = 0; i < 4; i++) {
-            processPlayback(i, args.sampleTime);
+            // Manually pressed trigger button fires all voices
+            if (triggerButtonPressed && bufferHasData) {
+                triggerAllEnvelopes();
+            }
+
+            if (detectedTriggerChannels > 0 && bufferHasData) {
+                // Handle polyphonic trigger input
+                // Process triggers for each input channel
+                for (int c = 0; c < detectedTriggerChannels; c++) {
+                    if (triggerInputTriggers[c].process(inputs[TRIGGER_INPUT].getPolyVoltage(c))) {
+                        bool forceRestart = (mode == EnvelopeMode::GESTURE);
+                        triggerEnvelope(c, forceRestart);
+                    }
+                }
+
+                // Stop any voices beyond the current channel count
+                for (int c = detectedTriggerChannels; c < MAX_POLY_CHANNELS; c++) {
+                    triggerInputTriggers[c].reset();
+                    stopEnvelope(c);
+                    adsrGateHeld[c] = false;
+                    previousGateHigh[c] = false;
+                }
+            } else if (detectedGateChannels > 0 && bufferHasData) {
+                // Handle polyphonic gate input (for gate mode)
+                // Process each polyphonic channel
+                for (int c = 0; c < detectedGateChannels; c++) {
+                    bool gateHigh = inputs[GATE_INPUT].getPolyVoltage(c) >= 1.0f;
+
+                    // Start playback on gate rising edge
+                    if (gateHigh && !previousGateHigh[c] && bufferHasData) {
+                        bool forceRestart = (mode == EnvelopeMode::GESTURE);
+                        triggerEnvelope(c, forceRestart);
+                    }
+                    // Handle gate release
+                    if (!gateHigh && previousGateHigh[c]) {
+                        if (mode == EnvelopeMode::ADSR) {
+                            adsrGateHeld[c] = false;
+                        } else {
+                            startGestureRelease(c);
+                        }
+                    } else if (gateHigh && mode == EnvelopeMode::ADSR) {
+                        adsrGateHeld[c] = true;
+                    }
+
+                    previousGateHigh[c] = gateHigh;
+                }
+
+                // Stop any voices beyond the current channel count
+                for (int c = detectedGateChannels; c < MAX_POLY_CHANNELS; c++) {
+                    previousGateHigh[c] = false;
+                    adsrGateHeld[c] = false;
+                    stopEnvelope(c);
+                }
+            } else {
+                // No inputs connected, reset gate state
+                for (int c = 0; c < MAX_POLY_CHANNELS; c++) {
+                    previousGateHigh[c] = false;
+                    adsrGateHeld[c] = false;
+                    triggerInputTriggers[c].reset();
+                }
+            }
+
+            // Process each output
+            for (int i = 0; i < 4; i++) {
+                processPlayback(i, args.sampleTime);
+            }
         }
 
         // Update lights
@@ -857,6 +889,65 @@ struct Evocation : Module {
         updateLastTouched("", "TRIMMED");
         return true;
     }
+
+    bool trimGestureTrailingSilence(float threshold = 0.01f) {
+        if (mode != EnvelopeMode::GESTURE) {
+            return false;
+        }
+        if (!bufferHasData || envelope.size() < 2) {
+            return false;
+        }
+
+        ssize_t lastIdx = (ssize_t)envelope.size() - 1;
+        while (lastIdx >= 0 && envelope[(size_t)lastIdx].y <= threshold) {
+            --lastIdx;
+        }
+
+        if (lastIdx < 1) {
+            return false;
+        }
+
+        float lastTime = envelope[(size_t)lastIdx].time;
+        lastTime = clamp(lastTime, 1e-4f, 1.0f);
+        if (!(lastTime > 0.f && lastTime <= 1.f)) {
+            return false;
+        }
+
+        std::vector<EnvelopePoint> trimmed;
+        trimmed.reserve((size_t)lastIdx + 2);
+
+        for (size_t i = 0; i <= (size_t)lastIdx; ++i) {
+            EnvelopePoint point = envelope[i];
+            float scaled = lastTime <= 1e-6f ? 0.f : point.time / lastTime;
+            scaled = clamp(scaled, 0.0f, 1.0f);
+            if (i == (size_t)lastIdx) {
+                scaled = 1.0f;
+            }
+            point.time = scaled;
+            point.x = scaled;
+            point.y = clamp(point.y, 0.0f, 1.0f);
+            trimmed.push_back(point);
+        }
+
+        if (!trimmed.empty()) {
+            if (trimmed.back().y > threshold) {
+                trimmed.push_back({1.0f, 0.0f, 1.0f});
+            } else {
+                trimmed.back().y = 0.0f;
+            }
+        }
+
+        envelope = std::move(trimmed);
+        normalizeEnvelopeTiming();
+
+        recordedDuration = std::max(recordedDuration * lastTime, 1e-3f);
+        gestureEnvelopeBackup = envelope;
+        gestureDurationBackup = recordedDuration;
+        gestureBufferHasDataBackup = bufferHasData;
+
+        updateLastTouched("", "TRIMMED");
+        return true;
+    }
     
     void clearBuffer() {
         envelope.clear();
@@ -876,8 +967,29 @@ struct Evocation : Module {
         }
     }
     
+    void resetADSREngine() {
+        nextVoiceIndex = 0;
+        for (int voice = 0; voice < MAX_POLY_CHANNELS; ++voice) {
+            adsrVoices[voice].env.reset();
+            adsrVoices[voice].prevStage = shapetaker::dsp::EnvelopeGenerator::IDLE;
+            adsrTriggerPulses[voice] = dsp::PulseGenerator();
+            adsrGateSignals[voice] = false;
+            adsrValues[voice] = 0.f;
+            adsrCompleted[voice] = false;
+            adsrReleaseStartLevel[voice] = 0.f;
+            adsrPhaseNormalized[voice] = 0.f;
+        }
+    }
+    
     void triggerAllEnvelopes() {
         if (!bufferHasData) return;
+
+        if (mode == EnvelopeMode::ADSR) {
+            for (int voice = 0; voice < MAX_POLY_CHANNELS; ++voice) {
+                adsrTriggerPulses[voice].trigger(ADSR_TRIGGER_PULSE_TIME);
+            }
+            return;
+        }
 
         for (int i = 0; i < 4; i++) {
             for (int c = 0; c < MAX_POLY_CHANNELS; c++) {
@@ -893,6 +1005,15 @@ struct Evocation : Module {
                 }
             }
         }
+    }
+
+    int allocateTriggerVoice(int inputChannel, int totalChannels) {
+        if (totalChannels <= 1) {
+            int voice = nextVoiceIndex;
+            nextVoiceIndex = (nextVoiceIndex + 1) % MAX_POLY_CHANNELS;
+            return voice;
+        }
+        return clamp(inputChannel, 0, MAX_POLY_CHANNELS - 1);
     }
 
     void triggerEnvelope(int channel, bool forceRestart = false) {
@@ -985,6 +1106,229 @@ struct Evocation : Module {
             pb.releaseValue[channel] = pb.smoothedVoltage[channel];
             pb.releaseValue[channel] = clamp(pb.releaseValue[channel], -10.0f, 10.0f);
             pb.phase[channel] = clamp(pb.phase[channel], 0.0f, 1.0f);
+        }
+    }
+
+    void processADSRTriggers(bool manualTrigger, int detectedTriggerChannels, int detectedGateChannels) {
+        if (!bufferHasData)
+            return;
+
+        currentTriggerChannels = 0;
+        currentGateChannels = detectedGateChannels;
+
+        // Manual trigger acts as a one-shot gate
+        if (manualTrigger) {
+            int voice = allocateTriggerVoice(0, 1);
+            adsrTriggerPulses[voice].trigger(ADSR_TRIGGER_PULSE_TIME);
+            currentTriggerChannels = std::max(currentTriggerChannels, voice + 1);
+        }
+
+        // Process trigger inputs
+        for (int c = 0; c < detectedTriggerChannels; c++) {
+            if (triggerInputTriggers[c].process(inputs[TRIGGER_INPUT].getPolyVoltage(c))) {
+                int voice = allocateTriggerVoice(c, detectedTriggerChannels);
+                adsrTriggerPulses[voice].trigger(ADSR_TRIGGER_PULSE_TIME);
+                currentTriggerChannels = std::max(currentTriggerChannels, voice + 1);
+            }
+        }
+
+        for (int c = detectedTriggerChannels; c < MAX_POLY_CHANNELS; c++) {
+            triggerInputTriggers[c].reset();
+        }
+
+        // Process gate inputs
+        for (int c = 0; c < detectedGateChannels; c++) {
+            bool gateHigh = inputs[GATE_INPUT].getPolyVoltage(c) >= 1.0f;
+            int voice = (detectedGateChannels <= 1) ? 0 : clamp(c, 0, MAX_POLY_CHANNELS - 1);
+
+            if (gateHigh && !previousGateHigh[c]) {
+                adsrGateSignals[voice] = true;
+                adsrTriggerPulses[voice].trigger(ADSR_TRIGGER_PULSE_TIME);
+                currentGateChannels = std::max(currentGateChannels, voice + 1);
+            } else if (!gateHigh && previousGateHigh[c]) {
+                adsrGateSignals[voice] = false;
+            }
+
+            previousGateHigh[c] = gateHigh;
+        }
+
+        for (int c = detectedGateChannels; c < MAX_POLY_CHANNELS; c++) {
+            previousGateHigh[c] = false;
+            adsrGateSignals[c] = false;
+        }
+
+        if (detectedGateChannels == 0) {
+            for (int voice = 0; voice < MAX_POLY_CHANNELS; ++voice) {
+                adsrGateSignals[voice] = false;
+            }
+        }
+    }
+
+    void processADSROutputs(const ProcessArgs& args) {
+        float sampleTime = args.sampleTime;
+        float sampleRate = args.sampleRate > 0.f ? args.sampleRate : (sampleTime > 0.f ? 1.f / sampleTime : 44100.f);
+
+        bool anyLoopEnabled = false;
+        for (int i = 0; i < NUM_ENVELOPES; ++i) {
+            if (loopStates[i]) {
+                anyLoopEnabled = true;
+                break;
+            }
+        }
+
+        for (int voice = 0; voice < MAX_POLY_CHANNELS; ++voice) {
+            bool pulseHigh = adsrTriggerPulses[voice].process(sampleTime);
+            bool gateSignal = adsrGateSignals[voice] || pulseHigh || adsrSurfaceGate;
+
+            shapetaker::dsp::EnvelopeGenerator& env = adsrVoices[voice].env;
+            env.setAttack(adsrAttackTime, sampleRate);
+            env.setDecay(adsrDecayTime, sampleRate);
+            env.setSustain(adsrSustainLevel);
+            env.setRelease(adsrReleaseTime, sampleRate);
+            env.gate(gateSignal);
+
+            float rawValue = env.process();
+            auto stage = env.getCurrentStage();
+
+            if (stage == shapetaker::dsp::EnvelopeGenerator::RELEASE && adsrVoices[voice].prevStage != shapetaker::dsp::EnvelopeGenerator::RELEASE) {
+                adsrReleaseStartLevel[voice] = std::max(rawValue, 1e-3f);
+            }
+            if (stage == shapetaker::dsp::EnvelopeGenerator::IDLE) {
+                adsrReleaseStartLevel[voice] = 0.f;
+            }
+
+            float shapedValue = rawValue;
+            float sustain = clamp(adsrSustainLevel, 0.f, 1.f);
+            switch (stage) {
+                case shapetaker::dsp::EnvelopeGenerator::ATTACK: {
+                    shapedValue = applyContour(rawValue, adsrAttackContour);
+                    break;
+                }
+                case shapetaker::dsp::EnvelopeGenerator::DECAY: {
+                    float denom = std::max(1.f - sustain, 1e-6f);
+                    float t = (1.f - rawValue) / denom;
+                    t = clamp(t, 0.f, 1.f);
+                    float shaped = applyContour(t, adsrDecayContour);
+                    shapedValue = 1.f - shaped * (1.f - sustain);
+                    break;
+                }
+                case shapetaker::dsp::EnvelopeGenerator::SUSTAIN: {
+                    shapedValue = sustain;
+                    break;
+                }
+                case shapetaker::dsp::EnvelopeGenerator::RELEASE: {
+                    float startLevel = std::max(adsrReleaseStartLevel[voice], std::max(sustain, 1e-3f));
+                    float t = (startLevel - rawValue) / std::max(startLevel, 1e-3f);
+                    t = clamp(t, 0.f, 1.f);
+                    float shaped = applyContour(t, adsrReleaseContour);
+                    shapedValue = startLevel * (1.f - shaped);
+                    break;
+                }
+                default:
+                    break;
+            }
+
+            shapedValue = clamp(shapedValue, 0.f, 1.f);
+            adsrValues[voice] = shapedValue;
+
+            adsrCompleted[voice] = (adsrVoices[voice].prevStage != shapetaker::dsp::EnvelopeGenerator::IDLE && stage == shapetaker::dsp::EnvelopeGenerator::IDLE);
+            adsrVoices[voice].prevStage = stage;
+
+            if (anyLoopEnabled && adsrCompleted[voice] && !adsrGateSignals[voice]) {
+                adsrTriggerPulses[voice].trigger(ADSR_TRIGGER_PULSE_TIME);
+                adsrCompleted[voice] = false;
+            }
+
+            float attack = std::max(adsrAttackTime, 0.0f);
+            float decay = std::max(adsrDecayTime, 0.0f);
+            float releaseTime = std::max(adsrReleaseTime, 0.0f);
+            float total = std::max(attack + decay + releaseTime, 1e-6f);
+            float attackShare = attack / total;
+            float decayShare = decay / total;
+            float releaseShare = releaseTime / total;
+            float phaseNorm = 0.f;
+
+            switch (stage) {
+                case shapetaker::dsp::EnvelopeGenerator::ATTACK: {
+                    phaseNorm = attackShare * clamp(rawValue, 0.f, 1.f);
+                    break;
+                }
+                case shapetaker::dsp::EnvelopeGenerator::DECAY: {
+                    float denom = std::max(1.f - sustain, 1e-6f);
+                    float t = (1.f - rawValue) / denom;
+                    t = clamp(t, 0.f, 1.f);
+                    phaseNorm = attackShare + t * decayShare;
+                    break;
+                }
+                case shapetaker::dsp::EnvelopeGenerator::SUSTAIN: {
+                    phaseNorm = attackShare + decayShare;
+                    break;
+                }
+                case shapetaker::dsp::EnvelopeGenerator::RELEASE: {
+                    float startLevel = std::max(adsrReleaseStartLevel[voice], std::max(sustain, 1e-3f));
+                    float t = (startLevel > 1e-6f) ? (startLevel - rawValue) / startLevel : 1.f;
+                    t = clamp(t, 0.f, 1.f);
+                    phaseNorm = attackShare + decayShare + t * releaseShare;
+                    break;
+                }
+                case shapetaker::dsp::EnvelopeGenerator::IDLE:
+                default: {
+                    phaseNorm = (adsrGateSignals[voice] || adsrValues[voice] > 1e-3f) ? 1.f : 0.f;
+                    break;
+                }
+            }
+
+            adsrPhaseNormalized[voice] = clamp(phaseNorm, 0.f, 1.f);
+        }
+
+        int outputChannels = std::max(currentTriggerChannels, currentGateChannels);
+        if (outputChannels == 0) {
+            for (int voice = MAX_POLY_CHANNELS - 1; voice >= 0; --voice) {
+                if (adsrValues[voice] > 1e-4f || adsrGateSignals[voice]) {
+                    outputChannels = voice + 1;
+                    break;
+                }
+            }
+        }
+        if (outputChannels == 0)
+            outputChannels = 1;
+
+        for (int outputIndex = 0; outputIndex < 4; ++outputIndex) {
+            PlaybackState& pb = playback[outputIndex];
+
+            outputs[ENV_1_OUTPUT + outputIndex].setChannels(outputChannels);
+            outputs[ENV_1_EOC_OUTPUT + outputIndex].setChannels(outputChannels);
+            outputs[ENV_1_GATE_OUTPUT + outputIndex].setChannels(outputChannels);
+
+            for (int c = 0; c < outputChannels; ++c) {
+                float envValue = (c < MAX_POLY_CHANNELS) ? adsrValues[c] : 0.f;
+                envValue = clamp(envValue, 0.f, 1.f);
+
+                if (invertStates[outputIndex]) {
+                    envValue = 1.f - envValue;
+                }
+
+                float outputVoltage = envValue * 10.f;
+                outputs[ENV_1_OUTPUT + outputIndex].setVoltage(outputVoltage, c);
+
+                bool gateHigh = (c < MAX_POLY_CHANNELS) ? (adsrGateSignals[c] || adsrValues[c] > 1e-3f) : false;
+                outputs[ENV_1_GATE_OUTPUT + outputIndex].setVoltage(gateHigh ? 10.f : 0.f, c);
+
+                bool completed = (c < MAX_POLY_CHANNELS) ? adsrCompleted[c] : false;
+                if (completed) {
+                    pb.eocPulse[c].trigger(1e-3f);
+                }
+                float eocVoltage = pb.eocPulse[c].process(sampleTime) ? 10.f : 0.f;
+                outputs[ENV_1_EOC_OUTPUT + outputIndex].setVoltage(eocVoltage, c);
+
+                pb.active[c] = gateHigh;
+                pb.phase[c] = (c < MAX_POLY_CHANNELS) ? adsrPhaseNormalized[c] : 0.f;
+                pb.smoothedVoltage[c] = outputVoltage;
+            }
+        }
+
+        for (int voice = 0; voice < MAX_POLY_CHANNELS; ++voice) {
+            adsrCompleted[voice] = false;
         }
     }
     
@@ -1188,18 +1532,52 @@ struct Evocation : Module {
     }
 
     float getPlaybackPhase(int index, int channel = 0) const {
+        if (mode == EnvelopeMode::ADSR) {
+            int voice = channel;
+            if (voice < 0 || voice >= MAX_POLY_CHANNELS) {
+                voice = -1;
+                for (int v = 0; v < MAX_POLY_CHANNELS; ++v) {
+                    if (adsrGateSignals[v] || adsrValues[v] > 1e-3f) {
+                        voice = v;
+                        break;
+                    }
+                }
+                if (voice < 0)
+                    voice = 0;
+            }
+            return clamp(adsrPhaseNormalized[voice], 0.0f, 1.0f);
+        }
         if (index < 0 || index >= 4 || channel < 0 || channel >= MAX_POLY_CHANNELS)
             return 0.0f;
         return clamp(playback[index].phase[channel], 0.0f, 1.0f);
     }
 
     bool isPlaybackActive(int index, int channel = 0) const {
+        if (mode == EnvelopeMode::ADSR) {
+            if (channel >= 0 && channel < MAX_POLY_CHANNELS) {
+                return adsrGateSignals[channel] || adsrValues[channel] > 1e-3f;
+            }
+            for (int v = 0; v < MAX_POLY_CHANNELS; ++v) {
+                if (adsrGateSignals[v] || adsrValues[v] > 1e-3f)
+                    return true;
+            }
+            return false;
+        }
         if (index < 0 || index >= 4 || channel < 0 || channel >= MAX_POLY_CHANNELS)
             return false;
         return playback[index].active[channel];
     }
 
     int getActiveVoiceChannels(int index) const {
+        if (mode == EnvelopeMode::ADSR) {
+            int channels = 0;
+            for (int v = 0; v < MAX_POLY_CHANNELS; ++v) {
+                if (adsrGateSignals[v] || adsrValues[v] > 1e-3f) {
+                    channels = v + 1;
+                }
+            }
+            return channels;
+        }
         if (index < 0 || index >= NUM_ENVELOPES)
             return 0;
         int channels = 0;
@@ -1394,6 +1772,7 @@ struct Evocation : Module {
             adsrGateHeld[c] = false;
             previousGateHigh[c] = false;
         }
+        resetADSREngine();
         if (gestureBufferHasDataBackup && !gestureEnvelopeBackup.empty()) {
             envelope = gestureEnvelopeBackup;
             recordedDuration = gestureDurationBackup;
@@ -1430,6 +1809,7 @@ struct Evocation : Module {
         }
         generateADSREnvelope();
         onEnvelopeSelectionChanged(false);
+        resetADSREngine();
         for (int i = 0; i < 4; i++) {
             for (int c = 0; c < MAX_POLY_CHANNELS; c++) {
                 playback[i].smoothedVoltage[c] = 0.0f;
@@ -1526,6 +1906,13 @@ struct Evocation : Module {
     }
     
     bool isAnyPlaybackActive() {
+        if (mode == EnvelopeMode::ADSR) {
+            for (int v = 0; v < MAX_POLY_CHANNELS; ++v) {
+                if (adsrGateSignals[v] || adsrValues[v] > 1e-3f)
+                    return true;
+            }
+            return false;
+        }
         for (int i = 0; i < 4; i++) {
             for (int c = 0; c < MAX_POLY_CHANNELS; c++) {
                 if (playback[i].active[c]) return true;
@@ -1553,6 +1940,8 @@ struct Evocation : Module {
         if (touchStripWidget) {
             touchStripWidget->clearPulses();
         }
+        nextVoiceIndex = 0;
+        resetADSREngine();
     }
     
     // Save/Load state
@@ -2782,9 +3171,8 @@ struct EvocationOLEDDisplay : Widget {
                 nvgLineTo(args.vg, graphX + graphWidth, graphY + graphHeight);
                 nvgStroke(args.vg);
 
-                // Check if envelope is inverted and active
+                // Check if envelope is inverted
                 bool inverted = module->invertStates[envIndex];
-                bool isActive = module->isPlaybackActive(envIndex);
 
                 // Draw envelope waveform (thin bright cyan)
                 nvgStrokeColor(args.vg, nvgRGBA(0, 255, 220, 255));
@@ -2820,16 +3208,36 @@ struct EvocationOLEDDisplay : Widget {
                     nvgFill(args.vg);
                 }
 
-                // Draw thin scanline when envelope is active
-                if (isActive) {
-                    float phase = module->getPlaybackPhase(envIndex);
+                // Draw per-voice playback scanlines (up to 8 shades)
+                static const NVGcolor voiceColors[8] = {
+                    nvgRGBA(255, 190, 255, 255),
+                    nvgRGBA(240, 170, 250, 240),
+                    nvgRGBA(225, 150, 245, 225),
+                    nvgRGBA(210, 130, 235, 210),
+                    nvgRGBA(195, 110, 225, 195),
+                    nvgRGBA(180, 95, 215, 180),
+                    nvgRGBA(165, 80, 205, 165),
+                    nvgRGBA(150, 70, 195, 150)
+                };
+
+                std::vector<int> activeVoices;
+                const int maxVoiceVisuals = std::min(8, Evocation::MAX_POLY_CHANNELS);
+                for (int voice = 0; voice < maxVoiceVisuals; ++voice) {
+                    if (module->isPlaybackActive(envIndex, voice)) {
+                        activeVoices.push_back(voice);
+                    }
+                }
+
+                for (size_t idx = 0; idx < activeVoices.size(); ++idx) {
+                    int voice = activeVoices[idx];
+                    float phase = clamp(module->getPlaybackPhase(envIndex, voice), 0.f, 1.f);
                     float playheadX = graphX + phase * graphWidth;
 
-                    // Draw thin bright magenta scanline
+                    NVGcolor color = voiceColors[std::min(idx, (size_t)7)];
                     nvgBeginPath(args.vg);
                     nvgMoveTo(args.vg, playheadX, graphY);
                     nvgLineTo(args.vg, playheadX, graphY + graphHeight);
-                    nvgStrokeColor(args.vg, nvgRGBA(255, 100, 255, 255));
+                    nvgStrokeColor(args.vg, color);
                     nvgStrokeWidth(args.vg, 0.25f);
                     nvgStroke(args.vg);
                 }
@@ -2972,6 +3380,26 @@ struct TrimGestureLeadMenuItem : MenuItem {
     }
 };
 
+struct TrimGestureTailMenuItem : MenuItem {
+    Evocation* module = nullptr;
+
+    void step() override {
+        MenuItem::step();
+        bool enabled = module && module->mode == Evocation::EnvelopeMode::GESTURE && module->hasRecordedEnvelope();
+        disabled = !enabled;
+    }
+
+    void onAction(const event::Action& e) override {
+        MenuItem::onAction(e);
+        if (!module)
+            return;
+        bool trimmed = module->trimGestureTrailingSilence();
+        if (!trimmed) {
+            module->updateLastTouched("", "NO TRIM");
+        }
+    }
+};
+
 struct EvocationWidget : ModuleWidget {
     TouchStripWidget* touchStrip = nullptr;
     EvocationOLEDDisplay* oledDisplay = nullptr;
@@ -3038,6 +3466,8 @@ struct EvocationWidget : ModuleWidget {
 
         Vec trimBtn = parser.centerPx("trim-gesture-btn", 92.535f, 18.659674f);
         addParam(createParamCentered<ShapetakerVintageMomentary>(trimBtn, module, Evocation::TRIM_LEAD_PARAM));
+        Vec trimTailBtn = parser.centerPx("trim-gesture-tail-btn", 92.535f, 29.776815f);
+        addParam(createParamCentered<ShapetakerVintageMomentary>(trimTailBtn, module, Evocation::TRIM_TAIL_PARAM));
 
         // CV inputs for trigger/clear
         addInput(createInputCentered<ShapetakerBNCPort>(centerPx("trigger-cv-in", 63.618366f, 29.776815f), module, Evocation::TRIGGER_INPUT));
@@ -3123,6 +3553,11 @@ struct EvocationWidget : ModuleWidget {
         trimItem->module = evocation;
         trimItem->text = "Trim Gesture Lead";
         menu->addChild(trimItem);
+
+        auto* trimTailItem = new TrimGestureTailMenuItem();
+        trimTailItem->module = evocation;
+        trimTailItem->text = "Trim Gesture Tail";
+        menu->addChild(trimTailItem);
 
         menu->addChild(new MenuSeparator);
         menu->addChild(createCheckMenuItem("Debug Touch Logging", "", [=] {

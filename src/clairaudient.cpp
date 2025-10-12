@@ -61,22 +61,22 @@ struct ClairaudientModule : Module, IOscilloscopeSource {
         CROSSFADE_STEREO_SWAP = 1
     };
 
-    // Polyphonic oscillator state (up to 6 voices)
-    static constexpr int MAX_POLY_VOICES = shapetaker::PolyphonicProcessor::MAX_VOICES;
-    shapetaker::FloatVoices phase1A;  // Independent phase for osc 1A per voice
-    shapetaker::FloatVoices phase1B;  // Independent phase for osc 1B per voice
-    shapetaker::FloatVoices phase2A;  // Independent phase for osc 2A per voice
-    shapetaker::FloatVoices phase2B;  // Independent phase for osc 2B per voice
-    
+    // Polyphonic oscillator state (up to 8 voices for Clairaudient)
+    static constexpr int MAX_POLY_VOICES = 8;
+    shapetaker::dsp::VoiceArray<float, MAX_POLY_VOICES> phase1A;  // Independent phase for osc 1A per voice
+    shapetaker::dsp::VoiceArray<float, MAX_POLY_VOICES> phase1B;  // Independent phase for osc 1B per voice
+    shapetaker::dsp::VoiceArray<float, MAX_POLY_VOICES> phase2A;  // Independent phase for osc 2A per voice
+    shapetaker::dsp::VoiceArray<float, MAX_POLY_VOICES> phase2B;  // Independent phase for osc 2B per voice
+
     // Organic variation state per voice
-    shapetaker::FloatVoices drift1A;
-    shapetaker::FloatVoices drift1B;
-    shapetaker::FloatVoices drift2A;
-    shapetaker::FloatVoices drift2B;
-    shapetaker::FloatVoices noise1A;
-    shapetaker::FloatVoices noise1B;
-    shapetaker::FloatVoices noise2A;
-    shapetaker::FloatVoices noise2B;
+    shapetaker::dsp::VoiceArray<float, MAX_POLY_VOICES> drift1A;
+    shapetaker::dsp::VoiceArray<float, MAX_POLY_VOICES> drift1B;
+    shapetaker::dsp::VoiceArray<float, MAX_POLY_VOICES> drift2A;
+    shapetaker::dsp::VoiceArray<float, MAX_POLY_VOICES> drift2B;
+    shapetaker::dsp::VoiceArray<float, MAX_POLY_VOICES> noise1A;
+    shapetaker::dsp::VoiceArray<float, MAX_POLY_VOICES> noise1B;
+    shapetaker::dsp::VoiceArray<float, MAX_POLY_VOICES> noise2A;
+    shapetaker::dsp::VoiceArray<float, MAX_POLY_VOICES> noise2B;
 
     // User-adjustable oscillator noise amount (0..1), exposed via context menu slider.
     // Defaults to 0.0 (off). Controls both subtle phase jitter and added noise floor.
@@ -88,11 +88,11 @@ struct ClairaudientModule : Module, IOscilloscopeSource {
     std::atomic<int> oscilloscopeBufferIndex = {0};
     int oscilloscopeFrameCounter = 0;
 
-    // Anti-aliasing filters per voice
-    shapetaker::VoiceArray<shapetaker::dsp::OnePoleLowpass> antiAliasFilterLeft;
-    shapetaker::VoiceArray<shapetaker::dsp::OnePoleLowpass> antiAliasFilterRight;
-    shapetaker::VoiceArray<shapetaker::dsp::OnePoleLowpass> highCutFilterLeft;
-    shapetaker::VoiceArray<shapetaker::dsp::OnePoleLowpass> highCutFilterRight;
+    // Anti-aliasing filters per voice (8 voices)
+    shapetaker::dsp::VoiceArray<shapetaker::dsp::OnePoleLowpass, MAX_POLY_VOICES> antiAliasFilterLeft;
+    shapetaker::dsp::VoiceArray<shapetaker::dsp::OnePoleLowpass, MAX_POLY_VOICES> antiAliasFilterRight;
+    shapetaker::dsp::VoiceArray<shapetaker::dsp::OnePoleLowpass, MAX_POLY_VOICES> highCutFilterLeft;
+    shapetaker::dsp::VoiceArray<shapetaker::dsp::OnePoleLowpass, MAX_POLY_VOICES> highCutFilterRight;
 
     shapetaker::PolyphonicProcessor polyProcessor;
 
@@ -225,12 +225,14 @@ struct ClairaudientModule : Module, IOscilloscopeSource {
     }
 
     void process(const ProcessArgs& args) override {
-        // Determine number of polyphonic voices (max 6)
-        int channels = polyProcessor.updateChannels(
-            {inputs[VOCT1_INPUT], inputs[VOCT2_INPUT]},
-            {outputs[LEFT_OUTPUT], outputs[RIGHT_OUTPUT]});
+        // Determine number of polyphonic voices (max 8 for Clairaudient)
+        int channels = std::min(
+            polyProcessor.updateChannels(
+                {inputs[VOCT1_INPUT], inputs[VOCT2_INPUT]},
+                {outputs[LEFT_OUTPUT], outputs[RIGHT_OUTPUT]}),
+            MAX_POLY_VOICES);
         
-        // Apply the configured oversampling factor (default 2×) for smoother sound
+        // Apply the configured oversampling factor (1×, 2×, 4×, or 8×, default 2×)
         int oversample = std::max(1, oversampleFactor);
         float oversampleRate = args.sampleRate * oversample;
 
@@ -659,6 +661,7 @@ struct ClairaudientWidget : ModuleWidget {
                 }));
             };
 
+            addOversampleItem("1× (Off)", 1);
             addOversampleItem("2×", 2);
             addOversampleItem("4×", 4);
             addOversampleItem("8×", 8);

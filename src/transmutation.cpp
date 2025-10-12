@@ -785,8 +785,8 @@ struct Transmutation : Module,
         return stx::transmutation::isStepChanged(prev, curr);
     }
 
-    float lastCvA[stx::transmutation::MAX_VOICES] = {0.f,0.f,0.f,0.f,0.f,0.f};
-    float lastCvB[stx::transmutation::MAX_VOICES] = {0.f,0.f,0.f,0.f,0.f,0.f};
+    float lastCvA[stx::transmutation::MAX_VOICES] = {0.f,0.f,0.f,0.f,0.f,0.f,0.f,0.f};
+    float lastCvB[stx::transmutation::MAX_VOICES] = {0.f,0.f,0.f,0.f,0.f,0.f,0.f,0.f};
 
     // Helper: resolve a step to an effective chord step (follow TIEs backward).
     // Returns nullptr if no playable chord is found.
@@ -1268,7 +1268,7 @@ struct Transmutation : Module,
             step.alchemySymbolId = selectedSymbol;
             int ci = symbolToChordMapping[selectedSymbol];
             if (ci >= 0 && ci < (int)currentChordPack.chords.size())
-                step.voiceCount = std::min(currentChordPack.chords[ci].preferredVoices, 6);
+                step.voiceCount = std::min(currentChordPack.chords[ci].preferredVoices, stx::transmutation::MAX_VOICES);
         } else if (selectedSymbol == -1) {
             step.chordIndex = -1; step.alchemySymbolId = -1; step.voiceCount = 1;
         } else if (selectedSymbol == -2) {
@@ -1283,7 +1283,7 @@ struct Transmutation : Module,
             step.alchemySymbolId = selectedSymbol;
             int ci = symbolToChordMapping[selectedSymbol];
             if (ci >= 0 && ci < (int)currentChordPack.chords.size())
-                step.voiceCount = std::min(currentChordPack.chords[ci].preferredVoices, 6);
+                step.voiceCount = std::min(currentChordPack.chords[ci].preferredVoices, stx::transmutation::MAX_VOICES);
         } else if (selectedSymbol == -1) {
             step.chordIndex = -1; step.alchemySymbolId = -1; step.voiceCount = 1;
         } else if (selectedSymbol == -2) {
