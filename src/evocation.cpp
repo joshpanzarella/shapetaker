@@ -81,7 +81,6 @@ struct TouchStripWidget : Widget {
 struct Evocation : Module {
     enum ParamId {
         TRIGGER_PARAM,
-        CLEAR_PARAM,
         TRIM_LEAD_PARAM,
         TRIM_TAIL_PARAM,
         SPEED_1_PARAM,
@@ -108,7 +107,6 @@ struct Evocation : Module {
     };
     enum InputId {
         TRIGGER_INPUT,
-        CLEAR_INPUT,
         GATE_INPUT,
         SPEED_1_INPUT,
         SPEED_2_INPUT,
@@ -227,6 +225,7 @@ struct Evocation : Module {
     ADSRVoiceState adsrVoices[MAX_POLY_CHANNELS];
     dsp::PulseGenerator adsrTriggerPulses[MAX_POLY_CHANNELS];
     bool adsrGateSignals[MAX_POLY_CHANNELS] = {false};
+    bool adsrTriggerOneShot[MAX_POLY_CHANNELS] = {false};
     float adsrValues[MAX_POLY_CHANNELS] = {0.0f};
     bool adsrCompleted[MAX_POLY_CHANNELS] = {false};
     float adsrReleaseStartLevel[MAX_POLY_CHANNELS] = {0.0f};
@@ -243,7 +242,6 @@ struct Evocation : Module {
     dsp::SchmittTrigger triggerTrigger; // For button only
     dsp::SchmittTrigger triggerInputTriggers[MAX_POLY_CHANNELS]; // Per-channel trigger input
     dsp::SchmittTrigger gateTrigger;
-    dsp::SchmittTrigger clearTrigger;
     dsp::SchmittTrigger trimLeadButtonTrigger;
     dsp::SchmittTrigger trimTailButtonTrigger;
     dsp::SchmittTrigger envSelectTriggers[4];
@@ -282,7 +280,6 @@ struct Evocation : Module {
         config(PARAMS_LEN, INPUTS_LEN, OUTPUTS_LEN, LIGHTS_LEN);
         
         configParam(TRIGGER_PARAM, 0.f, 1.f, 0.f, "Manual Trigger");
-        configParam(CLEAR_PARAM, 0.f, 1.f, 0.f, "Clear Buffer");
         configButton(TRIM_LEAD_PARAM, "Trim Gesture Lead");
         configButton(TRIM_TAIL_PARAM, "Trim Gesture Tail");
         configParam(SPEED_1_PARAM, 0.0f, 16.0f, 1.0f, "Speed 1", "×");
@@ -353,7 +350,6 @@ struct Evocation : Module {
         adsrQ4->defaultValue = 0.f;
         paramQuantities[ENV_SELECT_4_PARAM] = adsrQ4;
         configInput(TRIGGER_INPUT, "External Trigger");
-        configInput(CLEAR_INPUT, "Clear Trigger");
         configInput(GATE_INPUT, "Gate Input");
         configInput(SPEED_1_INPUT, "Speed 1 CV");
         configInput(SPEED_2_INPUT, "Speed 2 CV");
@@ -383,12 +379,6 @@ struct Evocation : Module {
     void process(const ProcessArgs& args) override {
         // Handle triggers using shared helpers
         bool triggerButtonPressed = triggerTrigger.process(params[TRIGGER_PARAM].getValue());
-        bool clearPressed = shapetaker::TriggerHelper::processTrigger(
-            clearTrigger,
-            params[CLEAR_PARAM].getValue(),
-            inputs[CLEAR_INPUT],
-            1.f
-        );
         bool trimLeadPressed = trimLeadButtonTrigger.process(params[TRIM_LEAD_PARAM].getValue());
         bool trimTailPressed = trimTailButtonTrigger.process(params[TRIM_TAIL_PARAM].getValue());
         for (int i = 0; i < 4; ++i) {
@@ -562,12 +552,7 @@ struct Evocation : Module {
             }
         }
         
-        // Handle clear
-        if (clearPressed && mode == EnvelopeMode::GESTURE) {
-            clearBuffer();
-            updateLastTouched("CLEAR", "BUFFER CLEARED");
-        }
-
+        // Handle gesture trim buttons
         if (trimLeadPressed) {
             if (!trimGestureLeadingSilence()) {
                 updateLastTouched("", "NO TRIM");
@@ -674,8 +659,8 @@ struct Evocation : Module {
 
         // Update loop and invert lights for currently selected envelope
         if (currentEnvelopeIndex >= 0 && currentEnvelopeIndex < NUM_ENVELOPES) {
-            lights[LOOP_1_LIGHT].setBrightness(loopStates[currentEnvelopeIndex] ? 1.0f : 0.0f);
-            lights[INVERT_1_LIGHT].setBrightness(invertStates[currentEnvelopeIndex] ? 1.0f : 0.0f);
+            lights[LOOP_1_LIGHT].setBrightness(loopStates[currentEnvelopeIndex] ? 1.0f : 0.15f);
+            lights[INVERT_1_LIGHT].setBrightness(invertStates[currentEnvelopeIndex] ? 1.0f : 0.15f);
         }
     }
     
@@ -886,7 +871,7 @@ struct Evocation : Module {
         gestureDurationBackup = recordedDuration;
         gestureBufferHasDataBackup = bufferHasData;
 
-        updateLastTouched("", "TRIMMED");
+        updateLastTouched("", "LEAD TRIMMED");
         return true;
     }
 
@@ -945,7 +930,7 @@ struct Evocation : Module {
         gestureDurationBackup = recordedDuration;
         gestureBufferHasDataBackup = bufferHasData;
 
-        updateLastTouched("", "TRIMMED");
+        updateLastTouched("", "TAIL TRIMMED");
         return true;
     }
     
@@ -974,6 +959,7 @@ struct Evocation : Module {
             adsrVoices[voice].prevStage = shapetaker::dsp::EnvelopeGenerator::IDLE;
             adsrTriggerPulses[voice] = dsp::PulseGenerator();
             adsrGateSignals[voice] = false;
+            adsrTriggerOneShot[voice] = false;
             adsrValues[voice] = 0.f;
             adsrCompleted[voice] = false;
             adsrReleaseStartLevel[voice] = 0.f;
@@ -987,6 +973,9 @@ struct Evocation : Module {
         if (mode == EnvelopeMode::ADSR) {
             for (int voice = 0; voice < MAX_POLY_CHANNELS; ++voice) {
                 adsrTriggerPulses[voice].trigger(ADSR_TRIGGER_PULSE_TIME);
+                adsrGateSignals[voice] = false;
+                adsrTriggerOneShot[voice] = true;
+                adsrGateHeld[voice] = false;
             }
             return;
         }
@@ -1093,6 +1082,8 @@ struct Evocation : Module {
         }
         adsrGateHeld[channel] = false;
         previousGateHigh[channel] = false;
+        adsrTriggerOneShot[channel] = false;
+        adsrGateSignals[channel] = false;
     }
 
     void startGestureRelease(int channel) {
@@ -1120,6 +1111,9 @@ struct Evocation : Module {
         if (manualTrigger) {
             int voice = allocateTriggerVoice(0, 1);
             adsrTriggerPulses[voice].trigger(ADSR_TRIGGER_PULSE_TIME);
+            adsrGateSignals[voice] = false;
+            adsrTriggerOneShot[voice] = true;
+            adsrGateHeld[voice] = false;
             currentTriggerChannels = std::max(currentTriggerChannels, voice + 1);
         }
 
@@ -1128,6 +1122,9 @@ struct Evocation : Module {
             if (triggerInputTriggers[c].process(inputs[TRIGGER_INPUT].getPolyVoltage(c))) {
                 int voice = allocateTriggerVoice(c, detectedTriggerChannels);
                 adsrTriggerPulses[voice].trigger(ADSR_TRIGGER_PULSE_TIME);
+                adsrGateSignals[voice] = false;
+                adsrTriggerOneShot[voice] = true;
+                adsrGateHeld[voice] = false;
                 currentTriggerChannels = std::max(currentTriggerChannels, voice + 1);
             }
         }
@@ -1143,10 +1140,14 @@ struct Evocation : Module {
 
             if (gateHigh && !previousGateHigh[c]) {
                 adsrGateSignals[voice] = true;
+                adsrTriggerOneShot[voice] = false;
+                adsrGateHeld[voice] = true;
                 adsrTriggerPulses[voice].trigger(ADSR_TRIGGER_PULSE_TIME);
                 currentGateChannels = std::max(currentGateChannels, voice + 1);
             } else if (!gateHigh && previousGateHigh[c]) {
                 adsrGateSignals[voice] = false;
+                adsrTriggerOneShot[voice] = false;
+                adsrGateHeld[voice] = false;
             }
 
             previousGateHigh[c] = gateHigh;
@@ -1155,11 +1156,13 @@ struct Evocation : Module {
         for (int c = detectedGateChannels; c < MAX_POLY_CHANNELS; c++) {
             previousGateHigh[c] = false;
             adsrGateSignals[c] = false;
+            adsrGateHeld[c] = false;
         }
 
         if (detectedGateChannels == 0) {
             for (int voice = 0; voice < MAX_POLY_CHANNELS; ++voice) {
                 adsrGateSignals[voice] = false;
+                adsrGateHeld[voice] = false;
             }
         }
     }
@@ -1178,7 +1181,7 @@ struct Evocation : Module {
 
         for (int voice = 0; voice < MAX_POLY_CHANNELS; ++voice) {
             bool pulseHigh = adsrTriggerPulses[voice].process(sampleTime);
-            bool gateSignal = adsrGateSignals[voice] || pulseHigh || adsrSurfaceGate;
+            bool gateSignal = adsrGateSignals[voice] || adsrTriggerOneShot[voice] || pulseHigh || adsrSurfaceGate;
 
             shapetaker::dsp::EnvelopeGenerator& env = adsrVoices[voice].env;
             env.setAttack(adsrAttackTime, sampleRate);
@@ -1189,6 +1192,28 @@ struct Evocation : Module {
 
             float rawValue = env.process();
             auto stage = env.getCurrentStage();
+
+            if (adsrTriggerOneShot[voice]) {
+                bool releaseOneShot = false;
+                float sustainLvl = clamp(adsrSustainLevel, 0.f, 1.f);
+                switch (stage) {
+                    case shapetaker::dsp::EnvelopeGenerator::DECAY:
+                        if (rawValue <= sustainLvl + 1e-3f) {
+                            releaseOneShot = true;
+                        }
+                        break;
+                    case shapetaker::dsp::EnvelopeGenerator::SUSTAIN:
+                    case shapetaker::dsp::EnvelopeGenerator::RELEASE:
+                    case shapetaker::dsp::EnvelopeGenerator::IDLE:
+                        releaseOneShot = true;
+                        break;
+                    default:
+                        break;
+                }
+                if (releaseOneShot) {
+                    adsrTriggerOneShot[voice] = false;
+                }
+            }
 
             if (stage == shapetaker::dsp::EnvelopeGenerator::RELEASE && adsrVoices[voice].prevStage != shapetaker::dsp::EnvelopeGenerator::RELEASE) {
                 adsrReleaseStartLevel[voice] = std::max(rawValue, 1e-3f);
@@ -1236,6 +1261,9 @@ struct Evocation : Module {
 
             if (anyLoopEnabled && adsrCompleted[voice] && !adsrGateSignals[voice]) {
                 adsrTriggerPulses[voice].trigger(ADSR_TRIGGER_PULSE_TIME);
+                adsrTriggerOneShot[voice] = true;
+                adsrGateSignals[voice] = false;
+                adsrGateHeld[voice] = false;
                 adsrCompleted[voice] = false;
             }
 
@@ -1273,7 +1301,7 @@ struct Evocation : Module {
                 }
                 case shapetaker::dsp::EnvelopeGenerator::IDLE:
                 default: {
-                    phaseNorm = (adsrGateSignals[voice] || adsrValues[voice] > 1e-3f) ? 1.f : 0.f;
+                    phaseNorm = ((adsrGateSignals[voice] || adsrTriggerOneShot[voice]) || adsrValues[voice] > 1e-3f) ? 1.f : 0.f;
                     break;
                 }
             }
@@ -1284,7 +1312,7 @@ struct Evocation : Module {
         int outputChannels = std::max(currentTriggerChannels, currentGateChannels);
         if (outputChannels == 0) {
             for (int voice = MAX_POLY_CHANNELS - 1; voice >= 0; --voice) {
-                if (adsrValues[voice] > 1e-4f || adsrGateSignals[voice]) {
+                if (adsrValues[voice] > 1e-4f || adsrGateSignals[voice] || adsrTriggerOneShot[voice]) {
                     outputChannels = voice + 1;
                     break;
                 }
@@ -1311,7 +1339,7 @@ struct Evocation : Module {
                 float outputVoltage = envValue * 10.f;
                 outputs[ENV_1_OUTPUT + outputIndex].setVoltage(outputVoltage, c);
 
-                bool gateHigh = (c < MAX_POLY_CHANNELS) ? (adsrGateSignals[c] || adsrValues[c] > 1e-3f) : false;
+                bool gateHigh = (c < MAX_POLY_CHANNELS) ? (adsrGateSignals[c] || adsrTriggerOneShot[c] || adsrValues[c] > 1e-3f) : false;
                 outputs[ENV_1_GATE_OUTPUT + outputIndex].setVoltage(gateHigh ? 10.f : 0.f, c);
 
                 bool completed = (c < MAX_POLY_CHANNELS) ? adsrCompleted[c] : false;
@@ -1537,7 +1565,7 @@ struct Evocation : Module {
             if (voice < 0 || voice >= MAX_POLY_CHANNELS) {
                 voice = -1;
                 for (int v = 0; v < MAX_POLY_CHANNELS; ++v) {
-                    if (adsrGateSignals[v] || adsrValues[v] > 1e-3f) {
+                    if (adsrGateSignals[v] || adsrTriggerOneShot[v] || adsrValues[v] > 1e-3f) {
                         voice = v;
                         break;
                     }
@@ -1555,10 +1583,10 @@ struct Evocation : Module {
     bool isPlaybackActive(int index, int channel = 0) const {
         if (mode == EnvelopeMode::ADSR) {
             if (channel >= 0 && channel < MAX_POLY_CHANNELS) {
-                return adsrGateSignals[channel] || adsrValues[channel] > 1e-3f;
+                return adsrGateSignals[channel] || adsrTriggerOneShot[channel] || adsrValues[channel] > 1e-3f;
             }
             for (int v = 0; v < MAX_POLY_CHANNELS; ++v) {
-                if (adsrGateSignals[v] || adsrValues[v] > 1e-3f)
+                if (adsrGateSignals[v] || adsrTriggerOneShot[v] || adsrValues[v] > 1e-3f)
                     return true;
             }
             return false;
@@ -1572,7 +1600,7 @@ struct Evocation : Module {
         if (mode == EnvelopeMode::ADSR) {
             int channels = 0;
             for (int v = 0; v < MAX_POLY_CHANNELS; ++v) {
-                if (adsrGateSignals[v] || adsrValues[v] > 1e-3f) {
+                if (adsrGateSignals[v] || adsrTriggerOneShot[v] || adsrValues[v] > 1e-3f) {
                     channels = v + 1;
                 }
             }
@@ -1908,7 +1936,7 @@ struct Evocation : Module {
     bool isAnyPlaybackActive() {
         if (mode == EnvelopeMode::ADSR) {
             for (int v = 0; v < MAX_POLY_CHANNELS; ++v) {
-                if (adsrGateSignals[v] || adsrValues[v] > 1e-3f)
+                if (adsrGateSignals[v] || adsrTriggerOneShot[v] || adsrValues[v] > 1e-3f)
                     return true;
             }
             return false;
@@ -3120,19 +3148,41 @@ struct EvocationOLEDDisplay : Widget {
             // Parameter value (larger)
             float valueFontSize = 16.0f;
             nvgFontSize(args.vg, valueFontSize);
-            float valueBounds[4];
-            nvgTextBounds(args.vg, 0, 0, module->lastTouched.value.c_str(), nullptr, valueBounds);
-            float valueWidth = valueBounds[2] - valueBounds[0];
 
-            // Scale value if too wide
-            if (valueWidth > safeWidth) {
-                valueFontSize *= safeWidth / valueWidth;
-                nvgFontSize(args.vg, valueFontSize);
+            // Check if this is a trimmed message that should be wrapped
+            std::string valueStr = module->lastTouched.value;
+            bool isLeadTrimmed = (valueStr == "LEAD TRIMMED");
+            bool isTailTrimmed = (valueStr == "TAIL TRIMMED");
+
+            if (isLeadTrimmed || isTailTrimmed) {
+                // Split into two lines for better readability
+                std::string line1 = isLeadTrimmed ? "LEAD" : "TAIL";
+                std::string line2 = "TRIMMED";
+
+                nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+                nvgFillColor(args.vg, nvgRGBA(180, 255, 240, 255));
+
+                float lineHeight = 18.0f;
+                float centerY = box.size.y * 0.6f;
+
+                nvgText(args.vg, box.size.x * 0.5f, centerY - lineHeight * 0.5f, line1.c_str(), nullptr);
+                nvgText(args.vg, box.size.x * 0.5f, centerY + lineHeight * 0.5f, line2.c_str(), nullptr);
+            } else {
+                // Normal single-line display
+                float valueBounds[4];
+                nvgTextBounds(args.vg, 0, 0, valueStr.c_str(), nullptr, valueBounds);
+                float valueWidth = valueBounds[2] - valueBounds[0];
+
+                // Scale value if too wide
+                if (valueWidth > safeWidth) {
+                    valueFontSize *= safeWidth / valueWidth;
+                    nvgFontSize(args.vg, valueFontSize);
+                }
+
+                nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+                nvgFillColor(args.vg, nvgRGBA(180, 255, 240, 255));
+                nvgText(args.vg, box.size.x * 0.5f, box.size.y * 0.6f, valueStr.c_str(), nullptr);
             }
-
-            nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-            nvgFillColor(args.vg, nvgRGBA(180, 255, 240, 255));
-            nvgText(args.vg, box.size.x * 0.5f, box.size.y * 0.6f, module->lastTouched.value.c_str(), nullptr);
         } else if (font) {
             // Default display showing current envelope
             bool hasEnv = module->hasRecordedEnvelope();
@@ -3143,10 +3193,11 @@ struct EvocationOLEDDisplay : Widget {
                 const float topPadding = 10.0f;
                 const float bottomPadding = 6.0f;
                 const float sidePadding = 8.0f;
+                const float verticalMargin = 2.0f; // Extra margin to prevent clipping at 0V/10V
                 const float graphWidth = box.size.x - (sidePadding * 2.0f);
-                const float graphHeight = box.size.y - topPadding - bottomPadding - labelHeight;
+                const float graphHeight = box.size.y - topPadding - bottomPadding - labelHeight - (verticalMargin * 2.0f);
                 const float graphX = sidePadding;
-                const float graphY = topPadding;
+                const float graphY = topPadding + verticalMargin;
 
                 // Draw grid lines with synthwave aesthetic
                 nvgStrokeColor(args.vg, nvgRGBA(180, 64, 255, 35));
@@ -3174,9 +3225,9 @@ struct EvocationOLEDDisplay : Widget {
                 // Check if envelope is inverted
                 bool inverted = module->invertStates[envIndex];
 
-                // Draw envelope waveform (thin bright cyan)
+                // Draw envelope waveform (thicker bright cyan)
                 nvgStrokeColor(args.vg, nvgRGBA(0, 255, 220, 255));
-                nvgStrokeWidth(args.vg, 0.3f);
+                nvgStrokeWidth(args.vg, 0.9f);
                 nvgLineCap(args.vg, NVG_ROUND);
                 nvgLineJoin(args.vg, NVG_ROUND);
 
@@ -3204,7 +3255,7 @@ struct EvocationOLEDDisplay : Widget {
                     float y = graphY + yValue * graphHeight;
 
                     nvgBeginPath(args.vg);
-                    nvgCircle(args.vg, x, y, 0.4f);
+                    nvgCircle(args.vg, x, y, 0.8f);
                     nvgFill(args.vg);
                 }
 
@@ -3238,7 +3289,7 @@ struct EvocationOLEDDisplay : Widget {
                     nvgMoveTo(args.vg, playheadX, graphY);
                     nvgLineTo(args.vg, playheadX, graphY + graphHeight);
                     nvgStrokeColor(args.vg, color);
-                    nvgStrokeWidth(args.vg, 0.25f);
+                    nvgStrokeWidth(args.vg, 0.7f);
                     nvgStroke(args.vg);
                 }
 
@@ -3360,46 +3411,6 @@ struct EvocationOLEDDisplay : Widget {
     }
 };
 
-struct TrimGestureLeadMenuItem : MenuItem {
-    Evocation* module = nullptr;
-
-    void step() override {
-        MenuItem::step();
-        bool enabled = module && module->mode == Evocation::EnvelopeMode::GESTURE && module->hasRecordedEnvelope();
-        disabled = !enabled;
-    }
-
-    void onAction(const event::Action& e) override {
-        MenuItem::onAction(e);
-        if (!module)
-            return;
-        bool trimmed = module->trimGestureLeadingSilence();
-        if (!trimmed) {
-            module->updateLastTouched("", "NO TRIM");
-        }
-    }
-};
-
-struct TrimGestureTailMenuItem : MenuItem {
-    Evocation* module = nullptr;
-
-    void step() override {
-        MenuItem::step();
-        bool enabled = module && module->mode == Evocation::EnvelopeMode::GESTURE && module->hasRecordedEnvelope();
-        disabled = !enabled;
-    }
-
-    void onAction(const event::Action& e) override {
-        MenuItem::onAction(e);
-        if (!module)
-            return;
-        bool trimmed = module->trimGestureTrailingSilence();
-        if (!trimmed) {
-            module->updateLastTouched("", "NO TRIM");
-        }
-    }
-};
-
 struct EvocationWidget : ModuleWidget {
     TouchStripWidget* touchStrip = nullptr;
     EvocationOLEDDisplay* oledDisplay = nullptr;
@@ -3457,21 +3468,17 @@ struct EvocationWidget : ModuleWidget {
         oledDisplay->box.size = mm(oledRect.size.x, oledRect.size.y);
         addChild(oledDisplay);
 
-        // Trigger / clear buttons (positioned by SVG elements)
-        Vec triggerBtn = parser.centerPx("trigger-btn-0", 63.618366f, 18.659674f);
+        // Trigger / utility buttons (positioned by SVG elements)
+        Vec triggerBtn = parser.centerPx("trigger-btn-0", 63.6f, 18.7f);
         addParam(createParamCentered<ShapetakerVintageMomentary>(triggerBtn, module, Evocation::TRIGGER_PARAM));
 
-        Vec clearBtn = parser.centerPx("clear-buffer-btn", 78.077148f, 18.659674f);
-        addParam(createParamCentered<ShapetakerVintageMomentary>(clearBtn, module, Evocation::CLEAR_PARAM));
-
-        Vec trimBtn = parser.centerPx("trim-gesture-btn", 92.535f, 18.659674f);
+        Vec trimBtn = parser.centerPx("trim-lead-btn", 92.5f, 18.7f);
         addParam(createParamCentered<ShapetakerVintageMomentary>(trimBtn, module, Evocation::TRIM_LEAD_PARAM));
-        Vec trimTailBtn = parser.centerPx("trim-gesture-tail-btn", 92.535f, 29.776815f);
+        Vec trimTailBtn = parser.centerPx("trim-tail-btn", 92.5f, 29.8f);
         addParam(createParamCentered<ShapetakerVintageMomentary>(trimTailBtn, module, Evocation::TRIM_TAIL_PARAM));
 
-        // CV inputs for trigger/clear
+        // CV inputs
         addInput(createInputCentered<ShapetakerBNCPort>(centerPx("trigger-cv-in", 63.618366f, 29.776815f), module, Evocation::TRIGGER_INPUT));
-        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("clear-cv-in", 78.077148f, 29.776815f), module, Evocation::CLEAR_INPUT));
         addInput(createInputCentered<ShapetakerBNCPort>(centerPx("gate-cv-in", 63.618366f, 40.893959f), module, Evocation::GATE_INPUT));
 
         // Phase CV inputs (right column)
@@ -3484,12 +3491,44 @@ struct EvocationWidget : ModuleWidget {
         addParam(createParamCentered<ShapetakerKnobMedium>(centerPx("env-speed", 49.159584f, 47.892654f), module, Evocation::ENV_SPEED_PARAM));
         addParam(createParamCentered<ShapetakerKnobOscilloscopeSmall>(centerPx("env-phase-offset", 78.077148f, 47.892654f), module, Evocation::ENV_PHASE_PARAM));
 
-        // Loop and invert capacitive touch switches with jewel LED indicators
-        addParam(createParamCentered<CapacitiveTouchSwitch>(centerPx("loop-sw", 78.077148f, 66.94957f), module, Evocation::LOOP_1_PARAM));
-        addChild(createLightCentered<shapetaker::ui::SmallJewelLED>(centerPx("loop-sw", 78.077148f, 66.94957f), module, Evocation::LOOP_1_LIGHT));
+        // Loop and invert capacitive touch switches with outer LED rings
+        Vec loopCenter = centerPx("loop-sw", 78.077148f, 66.94957f);
+        addParam(createParamCentered<CapacitiveTouchSwitch>(loopCenter, module, Evocation::LOOP_1_PARAM));
+        auto* loopRing = new RingLight();
+        loopRing->module = module;
+        loopRing->firstLightId = Evocation::LOOP_1_LIGHT;
+        Vec loopRingSize = mm(34.0f, 34.0f);
+        loopRing->box.size = loopRingSize;
+        float pxPerMm = loopRingSize.x / 34.0f;
+        float padRadiusPx = mm(27.2f, 27.2f).x * 0.5f;
+        float outerRadiusPx = loopRingSize.x * 0.5f;
+        float desiredInner = padRadiusPx + pxPerMm * 0.5f;
+        loopRing->ringThickness = std::max(2.f, outerRadiusPx - desiredInner);
+        loopRing->glowThickness = 2.5f * pxPerMm;
+        loopRing->innerRadiusOverride = desiredInner;
+        loopRing->outerRadiusOverride = outerRadiusPx;
+        loopRing->box.pos = loopCenter.minus(loopRing->box.size.div(2.f));
+        loopRing->color = nvgRGBA(0, 255, 220, 255);
+        addChild(loopRing);
 
-        addParam(createParamCentered<CapacitiveTouchSwitch>(centerPx("invert-sw", 49.159584f, 68.657234f), module, Evocation::INVERT_1_PARAM));
-        addChild(createLightCentered<shapetaker::ui::SmallJewelLED>(centerPx("invert-sw", 49.159584f, 68.657234f), module, Evocation::INVERT_1_LIGHT));
+        Vec invertCenter = centerPx("invert-sw", 49.159584f, 68.657234f);
+        addParam(createParamCentered<CapacitiveTouchSwitch>(invertCenter, module, Evocation::INVERT_1_PARAM));
+        auto* invertRing = new RingLight();
+        invertRing->module = module;
+        invertRing->firstLightId = Evocation::INVERT_1_LIGHT;
+        Vec invertRingSize = mm(34.0f, 34.0f);
+        invertRing->box.size = invertRingSize;
+        float invertPxPerMm = invertRingSize.x / 34.0f;
+        float invertPadRadiusPx = mm(27.2f, 27.2f).x * 0.5f;
+        float invertOuterRadiusPx = invertRingSize.x * 0.5f;
+        float invertDesiredInner = invertPadRadiusPx + invertPxPerMm * 0.5f;
+        invertRing->ringThickness = std::max(2.f, invertOuterRadiusPx - invertDesiredInner);
+        invertRing->glowThickness = 2.5f * invertPxPerMm;
+        invertRing->innerRadiusOverride = invertDesiredInner;
+        invertRing->outerRadiusOverride = invertOuterRadiusPx;
+        invertRing->box.pos = invertCenter.minus(invertRing->box.size.div(2.f));
+        invertRing->color = nvgRGBA(255, 140, 255, 255);
+        addChild(invertRing);
 
         // Envelope selection buttons
         addParam(createParamCentered<ShapetakerVintageMomentary>(centerPx("env1-select-btn", 46.216522f, 92.244675f), module, Evocation::ENV_SELECT_1_PARAM));
@@ -3548,16 +3587,6 @@ struct EvocationWidget : ModuleWidget {
         }, [=] {
             evocation->switchToADSRMode();
         }));
-
-        auto* trimItem = new TrimGestureLeadMenuItem();
-        trimItem->module = evocation;
-        trimItem->text = "Trim Gesture Lead";
-        menu->addChild(trimItem);
-
-        auto* trimTailItem = new TrimGestureTailMenuItem();
-        trimTailItem->module = evocation;
-        trimTailItem->text = "Trim Gesture Tail";
-        menu->addChild(trimTailItem);
 
         menu->addChild(new MenuSeparator);
         menu->addChild(createCheckMenuItem("Debug Touch Logging", "", [=] {

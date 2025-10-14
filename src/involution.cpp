@@ -1,6 +1,7 @@
 #include "plugin.hpp"
 #include <cmath>
 #include <random>
+#include <limits>
 
 struct Involution : Module {
     enum ParamId {
@@ -1025,73 +1026,78 @@ struct InvolutionWidget : ModuleWidget {
         
         // Main Filter Section - using SVG parser for automatic positioning
         addParam(createParamCentered<ShapetakerKnobLarge>(
-            centerPx("cutoff_a", 24.027f, 25.232f),
+            centerPx("cutoff_a", 24.026f, 24.174f),
             module, Involution::CUTOFF_A_PARAM));
         addParam(createParamCentered<ShapetakerKnobOscilloscopeSmall>(
-            centerPx("resonance_a", 11.935f, 56.941f),
+            centerPx("resonance_a", 11.935f, 57.750f),
             module, Involution::RESONANCE_A_PARAM));
         addParam(createParamCentered<ShapetakerKnobLarge>(
-            centerPx("cutoff_b", 66.305f, 25.232f),
+            centerPx("cutoff_b", 66.305f, 24.174f),
             module, Involution::CUTOFF_B_PARAM));
         addParam(createParamCentered<ShapetakerKnobOscilloscopeSmall>(
-            centerPx("resonance_b", 78.397f, 56.941f),
+            centerPx("resonance_b", 78.397f, 57.750f),
             module, Involution::RESONANCE_B_PARAM));
         
         // Link switches - using SVG parser with fallbacks
         addParam(createParamCentered<ShapetakerVintageToggleSwitch>(
-            centerPx("link_cutoff", 45.166f, 26.154f),
+            centerPx("link_cutoff", 45.166f, 29.894f),
             module, Involution::LINK_CUTOFF_PARAM));
         addParam(createParamCentered<ShapetakerVintageToggleSwitch>(
-            centerPx("link_resonance", 45.166f, 82.513f),
+            centerPx("link_resonance", 45.166f, 84.630f),
             module, Involution::LINK_RESONANCE_PARAM));
 
         // Attenuverters for CV inputs
         addParam(createParamCentered<ShapetakerAttenuverterOscilloscope>(
-            centerPx("cutoff_a_atten", 9.027f, 40.232f),
+            centerPx("cutoff_a_atten", 9.027f, 41.042f),
             module, Involution::CUTOFF_A_ATTEN_PARAM));
         addParam(createParamCentered<ShapetakerAttenuverterOscilloscope>(
-            centerPx("resonance_a_atten", 13.026f, 74.513f),
+            centerPx("resonance_a_atten", 11.935f, 76.931f),
             module, Involution::RESONANCE_A_ATTEN_PARAM));
         addParam(createParamCentered<ShapetakerAttenuverterOscilloscope>(
-            centerPx("cutoff_b_atten", 81.305f, 40.232f),
+            centerPx("cutoff_b_atten", 81.305f, 41.042f),
             module, Involution::CUTOFF_B_ATTEN_PARAM));
         addParam(createParamCentered<ShapetakerAttenuverterOscilloscope>(
-            centerPx("resonance_b_atten", 79.253f, 74.513f),
+            centerPx("resonance_b_atten", 78.397f, 76.931f),
             module, Involution::RESONANCE_B_ATTEN_PARAM));
 
         // Character Controls - using SVG parser with fallbacks
         // Highpass is now static at 12Hz - no control needed
         addParam(createParamCentered<ShapetakerKnobOscilloscopeSmall>(
-            centerPx("filter_morph", 45.166f, 98.585f),
+            centerPx("filter_morph", 45.166f, 101.401f),
             module, Involution::FILTER_MORPH_PARAM));
         
         // Special Effects - using SVG parser with updated coordinates
-        addParam(createParamCentered<ShapetakerKnobOscilloscopeSmall>(centerPx("chaos_amount", 15.910f, 92.085f), module, Involution::CHAOS_AMOUNT_PARAM));
-        addParam(createParamCentered<ShapetakerKnobOscilloscopeSmall>(centerPx("chaos_rate", 71.897f, 92.085f), module, Involution::CHAOS_RATE_PARAM));
+        addParam(createParamCentered<ShapetakerKnobOscilloscopeSmall>(centerPx("chaos_amount", 15.910f, 94.088f), module, Involution::CHAOS_AMOUNT_PARAM));
+        addParam(createParamCentered<ShapetakerKnobOscilloscopeSmall>(centerPx("chaos_rate", 74.422f, 94.088f), module, Involution::CHAOS_RATE_PARAM));
         
         // Chaos Visualizer - using SVG parser for automatic positioning
         ChaosVisualizer* chaosViz = new ChaosVisualizer(module);
-        Vec screenCenter = centerPx("oscope_screen", 45.166f, 56.941f);
+        Vec screenCenter = centerPx("oscope_screen",
+                                    std::numeric_limits<float>::quiet_NaN(),
+                                    std::numeric_limits<float>::quiet_NaN());
+        if (!std::isfinite(screenCenter.x) || !std::isfinite(screenCenter.y)) {
+            screenCenter = centerPx("resonance_a_cv-1", 45.166f, 57.750f);
+        }
         chaosViz->box.pos = Vec(screenCenter.x - 86.5, screenCenter.y - 69); // Center the 173x138 screen
         addChild(chaosViz);
         
         // Chaos light - using SVG parser and custom JewelLED
-        addChild(createLightCentered<ChaosJewelLED>(centerPx("chaos_light", 30.538f, 103.088f), module, Involution::CHAOS_LIGHT));
+        addChild(createLightCentered<ChaosJewelLED>(centerPx("chaos_light", 29.559f, 103.546f), module, Involution::CHAOS_LIGHT));
 
         // CV inputs - using SVG parser with updated coordinates
-        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("cutoff_a_cv", 26.538f, 43.513f), module, Involution::CUTOFF_A_CV_INPUT));
-        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("resonance_a_cv", 26.538f, 70.513f), module, Involution::RESONANCE_A_CV_INPUT));
-        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("cutoff_b_cv", 63.794f, 43.513f), module, Involution::CUTOFF_B_CV_INPUT));
-        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("resonance_b_cv", 63.794f, 70.513f), module, Involution::RESONANCE_B_CV_INPUT));
-        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("chaos_amount_cv", 59.794f, 103.088f), module, Involution::CHAOS_CV_INPUT));
-        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("chaos_lfo_cv", 30.794f, 103.088f), module, Involution::CHAOS_RATE_CV_INPUT));
-        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("filter_morph_cv", 45.166f, 112.0f), module, Involution::FILTER_MORPH_CV_INPUT));
+        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("cutoff_a_cv", 24.027f, 44.322f), module, Involution::CUTOFF_A_CV_INPUT));
+        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("resonance_a_cv", 24.027f, 68.931f), module, Involution::RESONANCE_A_CV_INPUT));
+        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("cutoff_b_cv", 66.305f, 44.322f), module, Involution::CUTOFF_B_CV_INPUT));
+        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("resonance_b_cv", 66.305f, 68.931f), module, Involution::RESONANCE_B_CV_INPUT));
+        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("chaos_amount_cv", 29.409f, 84.630f), module, Involution::CHAOS_CV_INPUT));
+        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("chaos_lfo_cv", 60.922f, 84.630f), module, Involution::CHAOS_RATE_CV_INPUT));
+        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("filter-morph-cv", 45.166f, 119.245f), module, Involution::FILTER_MORPH_CV_INPUT));
 
         // Audio I/O - direct millimeter coordinates
-        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("audio_a_input", 17.579f, 117.102f), module, Involution::AUDIO_A_INPUT));
-        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("audio_b_input", 36.530f, 117.102f), module, Involution::AUDIO_B_INPUT));
-        addOutput(createOutputCentered<ShapetakerBNCPort>(centerPx("audio_a_output", 55.480f, 117.102f), module, Involution::AUDIO_A_OUTPUT));
-        addOutput(createOutputCentered<ShapetakerBNCPort>(centerPx("audio_b_output", 74.431f, 117.102f), module, Involution::AUDIO_B_OUTPUT));
+        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("audio_a_input", 10.276f, 118.977f), module, Involution::AUDIO_A_INPUT));
+        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("audio_b_input", 27.721f, 119.245f), module, Involution::AUDIO_B_INPUT));
+        addOutput(createOutputCentered<ShapetakerBNCPort>(centerPx("audio_a_output", 63.436f, 119.347f), module, Involution::AUDIO_A_OUTPUT));
+        addOutput(createOutputCentered<ShapetakerBNCPort>(centerPx("audio_b_output", 81.706f, 119.347f), module, Involution::AUDIO_B_OUTPUT));
     }
     
     // Draw panel background texture to match other modules

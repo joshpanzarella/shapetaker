@@ -507,30 +507,47 @@ struct ShapetakerVintageMomentary : app::SvgSwitch {
 };
 
 struct RingLight : app::ModuleLightWidget {
+    float ringThickness = 4.f;
+    float glowThickness = 2.f;
+    float innerRadiusOverride = -1.f;
+    float outerRadiusOverride = -1.f;
+
     RingLight() {
         box.size = mm2px(Vec(11.f, 11.f));
-        // A bright teal color for the selection indicator
         color = nvgRGB(0x2e, 0xea, 0xd8);
     }
 
     void draw(const DrawArgs& args) override {
-        float radius = box.size.x * 0.45f; // Make radius a bit larger
-        float cx = box.size.x * 0.5f;
-        float cy = box.size.y * 0.5f;
-
         float brightness = module ? module->lights[firstLightId].getBrightness() : 0.f;
         if (brightness <= 0.f) return;
 
-        NVGcolor baseColor = color;
-        baseColor.a = brightness;
+        float cx = box.size.x * 0.5f;
+        float cy = box.size.y * 0.5f;
+        float outerRadius = outerRadiusOverride > 0.f ? outerRadiusOverride : std::min(box.size.x, box.size.y) * 0.5f;
+        float innerRadius = innerRadiusOverride >= 0.f ? innerRadiusOverride : std::max(0.f, outerRadius - ringThickness);
+        outerRadius = std::max(innerRadius + 1.f, outerRadius);
 
-        NVGcolor transparent = nvgRGBAf(baseColor.r, baseColor.g, baseColor.b, 0.f);
+        NVGcolor ringColor = color;
+        ringColor.a *= brightness;
 
+        // Draw outer glow
+        if (glowThickness > 0.f) {
+            NVGcolor transparent = nvgRGBAf(ringColor.r, ringColor.g, ringColor.b, 0.f);
+            nvgBeginPath(args.vg);
+            nvgCircle(args.vg, cx, cy, outerRadius + glowThickness);
+            nvgCircle(args.vg, cx, cy, innerRadius);
+            nvgPathWinding(args.vg, NVG_HOLE);
+            NVGpaint glow = nvgRadialGradient(args.vg, cx, cy, innerRadius, outerRadius + glowThickness, ringColor, transparent);
+            nvgFillPaint(args.vg, glow);
+            nvgFill(args.vg);
+        }
+
+        // Draw crisp ring stroke
         nvgBeginPath(args.vg);
-        nvgRect(args.vg, 0, 0, box.size.x, box.size.y);
-        NVGpaint paint = nvgRadialGradient(args.vg, cx, cy, radius - 1.f, radius + 1.f, baseColor, transparent);
-        nvgFillPaint(args.vg, paint);
-        nvgFill(args.vg);
+        nvgCircle(args.vg, cx, cy, (innerRadius + outerRadius) * 0.5f);
+        nvgStrokeColor(args.vg, ringColor);
+        nvgStrokeWidth(args.vg, std::max(1.f, outerRadius - innerRadius));
+        nvgStroke(args.vg);
     }
 };
 
@@ -1386,4 +1403,3 @@ struct CapacitiveTouchSwitch : app::SvgSwitch {
         SvgSwitch::onChange(e);
     }
 };
-

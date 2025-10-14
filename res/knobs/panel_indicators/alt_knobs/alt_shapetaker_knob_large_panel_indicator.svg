@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg
+  width="24mm"
+  height="24mm"
+  viewBox="0 0 63 63"
+  version="1.1"
+  xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="largePanelTickGradient" x1="0.5" y1="0" x2="0.5" y2="1">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.35"/>
+      <stop offset="50%" stop-color="#c8d0df" stop-opacity="0.25"/>
+      <stop offset="100%" stop-color="#8892a4" stop-opacity="0.15"/>
+    </linearGradient>
+  </defs>
+  <g transform="translate(31.5,31.5)">
+    <!-- 20 tick marks covering 300° range (from -150° to +150°, skipping bottom 60°) -->
+    <rect x="-0.6" y="-28.5" width="1.2" height="2.6" rx="0.6" fill="url(#largePanelTickGradient)" transform="rotate(-150)"/>
+    <rect x="-0.6" y="-28.5" width="1.2" height="2.6" rx="0.6" fill="url(#largePanelTickGradient)" transform="rotate(-135)"/>
+    <rect x="-0.6" y="-28.5" width="1.2" height="2.6" rx="0.6" fill="url(#largePanelTickGradient)" transform="rotate(-120)"/>
+    <rect x="-0.6" y="-28.5" width="1.2" height="2.6" rx="0.6" fill="url(#largePanelTickGradient)" transform="rotate(-105)"/>
+    <rect x="-0.6" y="-28.5" width="1.2" height="2.6" rx="0.6" fill="url(#largePanelTickGradient)" transform="rotate(-90)"/>
+    <rect x="-0.6" y="-28.5" width="1.2" height="2.6" rx="0.6" fill="url(#largePanelTickGradient)" transform="rotate(-75)"/>
+    <rect x="-0.6" y="-28.5" width="1.2" height="2.6" rx="0.6" fill="url(#largePanelTickGradient)" transform="rotate(-60)"/>
+    <rect x="-0.6" y="-28.5" width="1.2" height="2.6" rx="0.6" fill="url(#largePanelTickGradient)" transform="rotate(-45)"/>
+    <rect x="-0.6" y="-28.5" width="1.2" height="2.6" rx="0.6" fill="url(#largePanelTickGradient)" transform="rotate(-30)"/>
+    <rect x="-0.6" y="-28.5" width="1.2" height="2.6" rx="0.6" fill="url(#largePanelTickGradient)" transform="rotate(-15)"/>
+    <rect x="-0.6" y="-28.5" width="1.2" height="2.6" rx="0.6" fill="url(#largePanelTickGradient)" transform="rotate(0)"/>
+    <rect x="-0.6" y="-28.5" width="1.2" height="2.6" rx="0.6" fill="url(#largePanelTickGradient)" transform="rotate(15)"/>
+    <rect x="-0.6" y="-28.5" width="1.2" height="2.6" rx="0.6" fill="url(#largePanelTickGradient)" transform="rotate(30)"/>
+    <rect x="-0.6" y="-28.5" width="1.2" height="2.6" rx="0.6" fill="url(#largePanelTickGradient)" transform="rotate(45)"/>
+    <rect x="-0.6" y="-28.5" width="1.2" height="2.6" rx="0.6" fill="url(#largePanelTickGradient)" transform="rotate(60)"/>
+    <rect x="-0.6" y="-28.5" width="1.2" height="2.6" rx="0.6" fill="url(#largePanelTickGradient)" transform="rotate(75)"/>
+    <rect x="-0.6" y="-28.5" width="1.2" height="2.6" rx="0.6" fill="url(#largePanelTickGradient)" transform="rotate(90)"/>
+    <rect x="-0.6" y="-28.5" width="1.2" height="2.6" rx="0.6" fill="url(#largePanelTickGradient)" transform="rotate(105)"/>
+    <rect x="-0.6" y="-28.5" width="1.2" height="2.6" rx="0.6" fill="url(#largePanelTickGradient)" transform="rotate(120)"/>
+    <rect x="-0.6" y="-28.5" width="1.2" height="2.6" rx="0.6" fill="url(#largePanelTickGradient)" transform="rotate(135)"/>
+    <rect x="-0.6" y="-28.5" width="1.2" height="2.6" rx="0.6" fill="url(#largePanelTickGradient)" transform="rotate(150)"/>
+  </g>
+</svg>

@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg
+  width="20mm"
+  height="20mm"
+  viewBox="0 0 52 52"
+  version="1.1"
+  xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="semitoneTickGradient" x1="0.5" y1="0" x2="0.5" y2="1">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.35"/>
+      <stop offset="50%" stop-color="#c8d0df" stop-opacity="0.25"/>
+      <stop offset="100%" stop-color="#8892a4" stop-opacity="0.15"/>
+    </linearGradient>
+  </defs>
+  <g transform="translate(26,26)">
+    <!-- Semitone tick marks at key positions -->
+    <!-- -24, -12, 0, +12, +24 semitones -->
+    <!-- Positioned at -150°, -75°, 0°, 75°, 150° -->
+
+    <!-- -24st at -150° (left side, -2 octaves) -->
+    <rect x="-0.5" y="-23.5" width="1.0" height="2.5" rx="0.5" fill="url(#semitoneTickGradient)" transform="rotate(-150)"/>
+    <text x="0" y="0" transform="rotate(-150) translate(0, -18.5)"
+          text-anchor="middle" font-family="Futura, 'Century Gothic', sans-serif"
+          font-size="3" font-weight="500" fill="#ffffff" opacity="0.45">-24</text>
+
+    <!-- -12st at -75° (-1 octave) -->
+    <rect x="-0.5" y="-23.5" width="1.0" height="2.5" rx="0.5" fill="url(#semitoneTickGradient)" transform="rotate(-75)"/>
+    <text x="0" y="0" transform="rotate(-75) translate(0, -18.5)"
+          text-anchor="middle" font-family="Futura, 'Century Gothic', sans-serif"
+          font-size="3" font-weight="500" fill="#ffffff" opacity="0.45">-12</text>
+
+    <!-- 0st at 0° (top) -->
+    <rect x="-0.5" y="-23.5" width="1.0" height="2.5" rx="0.5" fill="url(#semitoneTickGradient)" transform="rotate(0)"/>
+    <text x="0" y="0" transform="rotate(0) translate(0, -18.5)"
+          text-anchor="middle" font-family="Futura, 'Century Gothic', sans-serif"
+          font-size="3.5" font-weight="500" fill="#ffffff" opacity="0.5">0</text>
+
+    <!-- +12st at 75° (+1 octave) -->
+    <rect x="-0.5" y="-23.5" width="1.0" height="2.5" rx="0.5" fill="url(#semitoneTickGradient)" transform="rotate(75)"/>
+    <text x="0" y="0" transform="rotate(75) translate(0, -18.5)"
+          text-anchor="middle" font-family="Futura, 'Century Gothic', sans-serif"
+          font-size="3" font-weight="500" fill="#ffffff" opacity="0.45">+12</text>
+
+    <!-- +24st at 150° (right side, +2 octaves) -->
+    <rect x="-0.5" y="-23.5" width="1.0" height="2.5" rx="0.5" fill="url(#semitoneTickGradient)" transform="rotate(150)"/>
+    <text x="0" y="0" transform="rotate(150) translate(0, -18.5)"
+          text-anchor="middle" font-family="Futura, 'Century Gothic', sans-serif"
+          font-size="3" font-weight="500" fill="#ffffff" opacity="0.45">+24</text>
+  </g>
+</svg>

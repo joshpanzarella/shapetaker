@@ -1,6 +1,7 @@
 #pragma once
 #include <rack.hpp>
 #include <cmath>
+#include <algorithm>
 
 using namespace rack;
 
@@ -25,36 +26,72 @@ public:
 private:
     Stage currentStage = IDLE;
     float currentLevel = 0.f;
-    float attackRate = 0.001f;
-    float decayRate = 0.001f;
+    float attackTime = 0.01f;
+    float decayTime = 0.1f;
     float sustainLevel = 0.7f;
-    float releaseRate = 0.001f;
+    float releaseTime = 0.1f;
+
+    float attackCoef = 0.f;
+    float attackBase = 0.f;
+    float decayCoef = 0.f;
+    float decayBase = 0.f;
+    float releaseCoef = 0.f;
+    float releaseBase = 0.f;
+
     bool gateHigh = false;
+
+    static float calcCoef(float time, float sampleRate) {
+        time = std::max(time, 1e-6f);
+        sampleRate = std::max(sampleRate, 1.f);
+        return std::exp(-1.f / (time * sampleRate));
+    }
+
+    static float calcBase(float target, float coef) {
+        return (1.f - coef) * target;
+    }
 
 public:
     void setAttack(float seconds, float sampleRate) {
-        attackRate = (seconds > 0.f) ? 1.f / (seconds * sampleRate) : 1.f;
+        attackTime = std::max(seconds, 0.f);
+        float coef = calcCoef(attackTime, sampleRate);
+        attackCoef = coef;
+        attackBase = calcBase(1.f, coef);
     }
     
     void setDecay(float seconds, float sampleRate) {
-        decayRate = (seconds > 0.f) ? 1.f / (seconds * sampleRate) : 1.f;
+        decayTime = std::max(seconds, 0.f);
+        float coef = calcCoef(decayTime, sampleRate);
+        decayCoef = coef;
+        decayBase = calcBase(sustainLevel, coef);
     }
     
     void setSustain(float level) {
         sustainLevel = rack::math::clamp(level, 0.f, 1.f);
+        decayBase = calcBase(sustainLevel, decayCoef);
     }
     
     void setRelease(float seconds, float sampleRate) {
-        releaseRate = (seconds > 0.f) ? 1.f / (seconds * sampleRate) : 1.f;
+        releaseTime = std::max(seconds, 0.f);
+        float coef = calcCoef(releaseTime, sampleRate);
+        releaseCoef = coef;
+        releaseBase = 0.f;
     }
     
     void gate(bool high) {
         if (high && !gateHigh) {
             // Gate on: start attack
             currentStage = ATTACK;
+            if (attackTime <= 1e-6f) {
+                currentLevel = 1.f;
+                currentStage = DECAY;
+            }
         } else if (!high && gateHigh) {
             // Gate off: start release
             currentStage = RELEASE;
+            if (releaseTime <= 1e-6f) {
+                currentLevel = 0.f;
+                currentStage = IDLE;
+            }
         }
         gateHigh = high;
     }
@@ -66,18 +103,26 @@ public:
                 break;
                 
             case ATTACK:
-                currentLevel += attackRate;
-                if (currentLevel >= 1.f) {
+                currentLevel = attackBase + currentLevel * attackCoef;
+                if (currentLevel >= 0.999f) {
                     currentLevel = 1.f;
                     currentStage = DECAY;
+                    if (decayTime <= 1e-6f) {
+                        currentLevel = sustainLevel;
+                        currentStage = gateHigh ? SUSTAIN : RELEASE;
+                    }
                 }
                 break;
                 
             case DECAY:
-                currentLevel -= decayRate * (currentLevel - sustainLevel);
-                if (currentLevel <= sustainLevel + 0.001f) {
+                currentLevel = decayBase + currentLevel * decayCoef;
+                if (currentLevel <= sustainLevel + 1e-3f) {
                     currentLevel = sustainLevel;
-                    currentStage = SUSTAIN;
+                    currentStage = gateHigh ? SUSTAIN : RELEASE;
+                    if (!gateHigh && releaseTime <= 1e-6f) {
+                        currentLevel = 0.f;
+                        currentStage = IDLE;
+                    }
                 }
                 break;
                 
@@ -86,8 +131,8 @@ public:
                 break;
                 
             case RELEASE:
-                currentLevel -= releaseRate * currentLevel;
-                if (currentLevel <= 0.001f) {
+                currentLevel = releaseBase + currentLevel * releaseCoef;
+                if (currentLevel <= 1e-3f) {
                     currentLevel = 0.f;
                     currentStage = IDLE;
                 }
@@ -97,15 +142,15 @@ public:
         return currentLevel;
     }
     
-    Stage getCurrentStage() const { return currentStage; }
-    float getCurrentLevel() const { return currentLevel; }
-    bool isActive() const { return currentStage != IDLE; }
-    
     void reset() {
         currentStage = IDLE;
         currentLevel = 0.f;
         gateHigh = false;
     }
+
+    Stage getCurrentStage() const { return currentStage; }
+    float getCurrentLevel() const { return currentLevel; }
+    bool isActive() const { return currentStage != IDLE; }
 };
 
 // Simple trigger/gate utilities
