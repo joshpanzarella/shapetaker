@@ -1403,3 +1403,56 @@ struct CapacitiveTouchSwitch : app::SvgSwitch {
         SvgSwitch::onChange(e);
     }
 };
+
+// Vintage slider widget using the new slider SVGs
+struct VintageSlider : app::SvgSlider {
+    VintageSlider() {
+        // Set the background (track) SVG - 8x60px (small compact version)
+        setBackgroundSvg(
+            Svg::load(asset::plugin(pluginInstance,
+            "res/sliders/vintage_slider_track_small.svg"))
+        );
+
+        // Set the handle SVG - 12x18px (small compact version)
+        setHandleSvg(
+            Svg::load(asset::plugin(pluginInstance,
+            "res/sliders/vintage_slider_handle_small.svg"))
+        );
+
+        // SVG dimensions: track is 8x60px, handle is 12x18px
+        // Widget box size matches track width and height
+        box.size = Vec(12.f, 60.f);
+
+        // Configure the slider travel range
+        // Handle travels vertically within the track
+        // The handle is 18px tall, track is 60px tall
+        // So handle can travel (60 - 18) = 42px
+        // Position from top (0) to bottom (42)
+        maxHandlePos = Vec(-2.f, 0.f);      // Top position (param minimum = 0), offset left 2px to center
+        minHandlePos = Vec(-2.f, 42.f);     // Bottom position (param maximum = 1)
+    }
+};
+
+// Horizontal variant of the vintage slider
+struct VintageSliderHorizontal : app::SvgSlider {
+    VintageSliderHorizontal() {
+        // Set horizontal track
+        setBackgroundSvg(
+            Svg::load(asset::plugin(pluginInstance,
+            "res/sliders/vintage_slider_track_horizontal.svg"))
+        );
+
+        // Set horizontal handle
+        setHandleSvg(
+            Svg::load(asset::plugin(pluginInstance,
+            "res/sliders/vintage_slider_handle_horizontal.svg"))
+        );
+
+        // Configure horizontal travel
+        maxHandlePos = mm2px(Vec(-20, 0));  // Left position (minimum)
+        minHandlePos = mm2px(Vec(20, 0));   // Right position (maximum)
+
+        // Set widget box for horizontal orientation
+        box.size = mm2px(Vec(45, 14));
+    }
+};

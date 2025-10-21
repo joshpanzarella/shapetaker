@@ -6,247 +6,187 @@
    version="1.1"
    id="svg28"
    xml:space="preserve"
+   sodipodi:docname="Incantation.svg"
+   inkscape:version="1.4.2 (ebf0e940, 2025-05-08)"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
    xmlns="http://www.w3.org/2000/svg"
-   xmlns:svg="http://www.w3.org/2000/svg">
+   xmlns:svg="http://www.w3.org/2000/svg"><defs
+   id="defs41" /><sodipodi:namedview
+   id="namedview41"
+   pagecolor="#505050"
+   bordercolor="#eeeeee"
+   borderopacity="1"
+   inkscape:showpageshadow="0"
+   inkscape:pageopacity="0"
+   inkscape:pagecheckerboard="0"
+   inkscape:deskcolor="#505050"
+   inkscape:document-units="mm"
+   inkscape:zoom="2.0775454"
+   inkscape:cx="103.72818"
+   inkscape:cy="247.16668"
+   inkscape:window-width="2560"
+   inkscape:window-height="1387"
+   inkscape:window-x="0"
+   inkscape:window-y="25"
+   inkscape:window-maximized="1"
+   inkscape:current-layer="svg28" />
 
   <!-- Dark panel background -->
-  <rect
-     width="84"
-     height="128.5"
-     fill="#1a1a1a"
-     stroke="#0a0a0a"
-     stroke-width="0.5"
-     id="rect1"
-     x="0"
-     y="0" />
+  
 
   <!-- Module title -->
-  <path
-     d="m 8.2921297,7.745968 h -0.525391 v 0.362304 h 0.506836 v 0.213868 h -0.506836 v 0.717773 H 7.5392001 v -1.507814 h 0.7529296 z m 0.774414,0.651366 0.466796,0.642579 h -0.278321 l -0.430663,-0.617188 h -0.04101 v 0.617188 H 8.5558017 V 7.5321 h 0.266601 q 0.298828,0 0.43164,0.112305 0.146484,0.125 0.146484,0.330078 0,0.160157 -0.0918,0.27539 -0.0918,0.115235 -0.242186,0.147461 z m -0.283203,-0.172851 h 0.07226 q 0.323242,0 0.323242,-0.24707 0,-0.231445 -0.314453,-0.231445 h -0.08105 z m 1.808594,-0.478515 h -0.604492 v 0.362304 h 0.586914 v 0.213868 h -0.586914 v 0.503906 h 0.604492 v 0.213867 H 9.7599017 V 7.5321 h 0.8320333 z m 1.833005,1.321288 h -0.286131 l -0.118164,-0.121093 q -0.188477,0.121093 -0.419921,0.121093 -0.299805,0 -0.532227,-0.203125 -0.252929,-0.223633 -0.252929,-0.571289 0,-0.34082 0.239257,-0.568359 0.232422,-0.220703 0.548828,-0.220703 0.28711,0 0.514649,0.19336 0.273437,0.23242 0.273437,0.606444 0,0.292969 -0.21582,0.520508 z m -0.625976,-0.624023 0.21875,0.217773 q 0.144531,-0.15039 0.144531,-0.37207 0,-0.243164 -0.161133,-0.407227 -0.161133,-0.164062 -0.40039,-0.164062 -0.242188,0 -0.398438,0.164062 -0.157227,0.163086 -0.157227,0.413086 0,0.244141 0.16211,0.399414 0.168945,0.160157 0.385742,0.160157 0.147461,0 0.266602,-0.06738 l -0.354494,-0.34375 z"
-     id="text5"
-     style="font-size:2px;font-family:Futura, 'Futura PT', 'Century Gothic', 'Avant Garde', sans-serif;text-anchor:middle;display:inline;fill:#e8e8e8;fill-opacity:1"
-     aria-label="FREQ" />
+  
 
   <!-- Main module title -->
-  <text
-     x="42"
-     y="10"
-     id="module-title"
-     style="font-size:6px;font-family:Arial,sans-serif;font-weight:bold;text-anchor:middle;fill:#e8e0c8"
-     >INCANTATION</text>
+  
 
   <!-- Subtitle -->
-  <text
-     x="30"
-     y="14"
-     id="module-subtitle"
-     style="font-size:2.2px;font-family:Arial,sans-serif;text-anchor:middle;fill:#a8a098"
-     >ANIMATED FILTER BANK</text>
+  
 
   <!-- Top controls row -->
-  <g id="top_controls">
-    <!-- Drive knob -->
-    <circle cx="25" cy="20" r="4.5" fill="#1a1a1a" stroke="#666666" stroke-width="0.4" id="drive_param" />
-    <circle cx="25" cy="20" r="1.5" fill="#333333" stroke="none" />
-    <text x="25" y="28" text-anchor="middle" font-family="Arial, sans-serif" font-size="1.2" fill="#cccccc">DRIVE</text>
-    
-    <!-- Mix knob -->
-    <circle cx="45" cy="20" r="4.5" fill="#1a1a1a" stroke="#666666" stroke-width="0.4" id="mix_param" />
-    <circle cx="45" cy="20" r="1.5" fill="#333333" stroke="none" />
-    <text x="45" y="28" text-anchor="middle" font-family="Arial, sans-serif" font-size="1.2" fill="#cccccc">MIX</text>
-    
-    <!-- Output knob -->
-    <circle cx="65" cy="20" r="4.5" fill="#1a1a1a" stroke="#666666" stroke-width="0.4" id="output_param" />
-    <circle cx="65" cy="20" r="1.5" fill="#333333" stroke="none" />
-    <text x="65" y="28" text-anchor="middle" font-family="Arial, sans-serif" font-size="1.2" fill="#cccccc">OUTPUT</text>
-  </g>
+  
 
   <!-- Second controls row -->
-  <g id="second_controls">
-    <!-- Pattern selector (12-position) -->
-    <circle cx="25" cy="35" r="4.5" fill="#1a1a1a" stroke="#666666" stroke-width="0.4" id="pattern_param" />
-    <circle cx="25" cy="35" r="1.5" fill="#333333" stroke="none" />
-    <text x="25" y="43" text-anchor="middle" font-family="Arial, sans-serif" font-size="1.2" fill="#cccccc">PATTERN</text>
-    
-    <!-- Envelope knob -->
-    <circle cx="45" cy="35" r="4.5" fill="#1a1a1a" stroke="#666666" stroke-width="0.4" id="envelope_param" />
-    <circle cx="45" cy="35" r="1.5" fill="#333333" stroke="none" />
-    <text x="45" y="43" text-anchor="middle" font-family="Arial, sans-serif" font-size="1.2" fill="#cccccc">ENV</text>
-    
-    <!-- Rate knob -->
-    <circle cx="65" cy="35" r="4.5" fill="#1a1a1a" stroke="#666666" stroke-width="0.4" id="rate_param" />
-    <circle cx="65" cy="35" r="1.5" fill="#333333" stroke="none" />
-    <text x="65" y="43" text-anchor="middle" font-family="Arial, sans-serif" font-size="1.2" fill="#cccccc">RATE</text>
-  </g>
+  
 
   <!-- Preset buttons -->
-  <g id="preset_buttons">
-    <rect x="22" y="46" width="6" height="4" rx="1" fill="#2a2a2a" stroke="#666666" stroke-width="0.3" id="preset_zero_param" />
-    <text x="25" y="48.5" text-anchor="middle" font-family="Arial, sans-serif" font-size="1" fill="#cccccc">0%</text>
-    
-    <rect x="32" y="46" width="6" height="4" rx="1" fill="#2a2a2a" stroke="#666666" stroke-width="0.3" id="preset_half_param" />
-    <text x="35" y="48.5" text-anchor="middle" font-family="Arial, sans-serif" font-size="1" fill="#cccccc">50%</text>
-    
-    <rect x="42" y="46" width="6" height="4" rx="1" fill="#2a2a2a" stroke="#666666" stroke-width="0.3" id="preset_full_param" />
-    <text x="45" y="48.5" text-anchor="middle" font-family="Arial, sans-serif" font-size="1" fill="#cccccc">100%</text>
-  </g>
+  
 
-  <!-- Section divider -->
-  <line
-     x1="5"
-     y1="55"
-     x2="79"
-     y2="55"
-     stroke="#333333"
-     stroke-width="0.3"
-     id="line1" />
+  <!-- Section divider --><ellipse
+   style="display:none;fill:#ff0000;fill-opacity:1;fill-rule:evenodd;stroke:#ff0000;stroke-width:0.0929882;stroke-linecap:round;stroke-opacity:1;paint-order:fill markers stroke"
+   id="output-knob"
+   cx="70.621262"
+   cy="19.847269"
+   rx="6.4535055"
+   ry="6.453506" />
+  
 
   <!-- 8-Band Filter Matrix -->
-  <text
-     x="42"
-     y="59"
-     text-anchor="middle"
-     font-family="Arial, sans-serif"
-     font-size="1.8"
-     font-weight="bold"
-     fill="#e8e8e8">FILTER LEVELS</text>
+  
 
   <!-- Filter level sliders and CV inputs -->
-  <g id="filter_matrix">
-    <!-- Slider track backgrounds -->
-    <rect x="17" y="62" width="2" height="20" rx="1" fill="#0a0a0a" stroke="#666666" stroke-width="0.2" />
-    <rect x="26" y="62" width="2" height="20" rx="1" fill="#0a0a0a" stroke="#666666" stroke-width="0.2" />
-    <rect x="35" y="62" width="2" height="20" rx="1" fill="#0a0a0a" stroke="#666666" stroke-width="0.2" />
-    <rect x="44" y="62" width="2" height="20" rx="1" fill="#0a0a0a" stroke="#666666" stroke-width="0.2" />
-    <rect x="53" y="62" width="2" height="20" rx="1" fill="#0a0a0a" stroke="#666666" stroke-width="0.2" />
-    <rect x="62" y="62" width="2" height="20" rx="1" fill="#0a0a0a" stroke="#666666" stroke-width="0.2" />
-    <rect x="71" y="62" width="2" height="20" rx="1" fill="#0a0a0a" stroke="#666666" stroke-width="0.2" />
-    <rect x="80" y="62" width="2" height="20" rx="1" fill="#0a0a0a" stroke="#666666" stroke-width="0.2" />
-    
-    <!-- Slider handles (positioned at middle for now) -->
-    <rect x="16.5" y="71" width="3" height="2" rx="1" fill="#666666" stroke="#888888" stroke-width="0.2" id="filter_1_param" />
-    <rect x="25.5" y="71" width="3" height="2" rx="1" fill="#666666" stroke="#888888" stroke-width="0.2" id="filter_2_param" />
-    <rect x="34.5" y="71" width="3" height="2" rx="1" fill="#666666" stroke="#888888" stroke-width="0.2" id="filter_3_param" />
-    <rect x="43.5" y="71" width="3" height="2" rx="1" fill="#666666" stroke="#888888" stroke-width="0.2" id="filter_4_param" />
-    <rect x="52.5" y="71" width="3" height="2" rx="1" fill="#666666" stroke="#888888" stroke-width="0.2" id="filter_5_param" />
-    <rect x="61.5" y="71" width="3" height="2" rx="1" fill="#666666" stroke="#888888" stroke-width="0.2" id="filter_6_param" />
-    <rect x="70.5" y="71" width="3" height="2" rx="1" fill="#666666" stroke="#888888" stroke-width="0.2" id="filter_7_param" />
-    <rect x="79.5" y="71" width="3" height="2" rx="1" fill="#666666" stroke="#888888" stroke-width="0.2" id="filter_8_param" />
-    
-    <!-- Filter band labels -->
-    <text x="18" y="87" text-anchor="middle" font-family="Arial, sans-serif" font-size="1" fill="#cccccc">1</text>
-    <text x="27" y="87" text-anchor="middle" font-family="Arial, sans-serif" font-size="1" fill="#cccccc">2</text>
-    <text x="36" y="87" text-anchor="middle" font-family="Arial, sans-serif" font-size="1" fill="#cccccc">3</text>
-    <text x="45" y="87" text-anchor="middle" font-family="Arial, sans-serif" font-size="1" fill="#cccccc">4</text>
-    <text x="54" y="87" text-anchor="middle" font-family="Arial, sans-serif" font-size="1" fill="#cccccc">5</text>
-    <text x="63" y="87" text-anchor="middle" font-family="Arial, sans-serif" font-size="1" fill="#cccccc">6</text>
-    <text x="72" y="87" text-anchor="middle" font-family="Arial, sans-serif" font-size="1" fill="#cccccc">7</text>
-    <text x="81" y="87" text-anchor="middle" font-family="Arial, sans-serif" font-size="1" fill="#cccccc">8</text>
-    
-    <!-- CV input jacks -->
-    <circle cx="18" cy="90" r="2.5" fill="#0a0a0a" stroke="#666666" stroke-width="0.3" id="filter_1_cv_input" />
-    <circle cx="27" cy="90" r="2.5" fill="#0a0a0a" stroke="#666666" stroke-width="0.3" id="filter_2_cv_input" />
-    <circle cx="36" cy="90" r="2.5" fill="#0a0a0a" stroke="#666666" stroke-width="0.3" id="filter_3_cv_input" />
-    <circle cx="45" cy="90" r="2.5" fill="#0a0a0a" stroke="#666666" stroke-width="0.3" id="filter_4_cv_input" />
-    <circle cx="54" cy="90" r="2.5" fill="#0a0a0a" stroke="#666666" stroke-width="0.3" id="filter_5_cv_input" />
-    <circle cx="63" cy="90" r="2.5" fill="#0a0a0a" stroke="#666666" stroke-width="0.3" id="filter_6_cv_input" />
-    <circle cx="72" cy="90" r="2.5" fill="#0a0a0a" stroke="#666666" stroke-width="0.3" id="filter_7_cv_input" />
-    <circle cx="81" cy="90" r="2.5" fill="#0a0a0a" stroke="#666666" stroke-width="0.3" id="filter_8_cv_input" />
-  </g>
+  
 
   <!-- CV Bypass switch -->
-  <g id="cv_bypass">
-    <rect x="5" y="73" width="6" height="4" rx="2" fill="#2a2a2a" stroke="#666666" stroke-width="0.3" id="cv_bypass_switch_param" />
-    <text x="8" y="75.5" text-anchor="middle" font-family="Arial, sans-serif" font-size="0.8" fill="#cccccc">BYP</text>
-    <text x="8" y="81" text-anchor="middle" font-family="Arial, sans-serif" font-size="1" fill="#cccccc">CV</text>
-  </g>
+  
 
-  <!-- Section divider -->
-  <line
-     x1="5"
-     y1="97"
-     x2="79"
-     y2="97"
-     stroke="#333333"
-     stroke-width="0.3"
-     id="line2" />
+  <!-- Section divider --><ellipse
+   style="display:none;opacity:1;fill:#ff0000;fill-opacity:1;fill-rule:evenodd;stroke:#ff0000;stroke-width:0.0929882;stroke-linecap:round;stroke-opacity:1;paint-order:fill markers stroke"
+   id="drive-knob"
+   cx="14.7817"
+   cy="19.847269"
+   rx="6.4535055"
+   ry="6.453506" /><ellipse
+   style="display:none;fill:#ff0000;fill-opacity:1;fill-rule:evenodd;stroke:#ff0000;stroke-width:0.0929882;stroke-linecap:round;stroke-opacity:1;paint-order:fill markers stroke"
+   id="mix-knob"
+   cx="42.701481"
+   cy="19.847269"
+   rx="6.4535055"
+   ry="6.453506" /><ellipse
+   style="display:none;fill:#ff0000;fill-opacity:1;fill-rule:evenodd;stroke:#ff0000;stroke-width:0.0929882;stroke-linecap:round;stroke-opacity:1;paint-order:fill markers stroke"
+   id="rate-knob"
+   cx="70.621262"
+   cy="42.299805"
+   rx="6.4535055"
+   ry="6.453506" /><ellipse
+   style="display:none;fill:#ff0000;fill-opacity:1;fill-rule:evenodd;stroke:#ff0000;stroke-width:0.0929882;stroke-linecap:round;stroke-opacity:1;paint-order:fill markers stroke"
+   id="pattern-knob"
+   cx="14.7817"
+   cy="42.299805"
+   rx="6.4535055"
+   ry="6.453506" /><ellipse
+   style="display:none;fill:#ff0000;fill-opacity:1;fill-rule:evenodd;stroke:#ff0000;stroke-width:0.0501734;stroke-linecap:round;stroke-opacity:1;paint-order:fill markers stroke"
+   id="all-to-0-sw"
+   cx="28.75742"
+   cy="58.05085"
+   rx="3.4820983"
+   ry="3.4820986" /><ellipse
+   style="display:none;fill:#ff0000;fill-opacity:1;fill-rule:evenodd;stroke:#ff0000;stroke-width:0.0501734;stroke-linecap:round;stroke-opacity:1;paint-order:fill markers stroke"
+   id="all-to-50-sw"
+   cx="42"
+   cy="58.05085"
+   rx="3.4820983"
+   ry="3.4820986" /><ellipse
+   style="display:none;fill:#ff0000;fill-opacity:1;fill-rule:evenodd;stroke:#ff0000;stroke-width:0.0501734;stroke-linecap:round;stroke-opacity:1;paint-order:fill markers stroke"
+   id="all-to-100-sw"
+   cx="55.24258"
+   cy="58.05085"
+   rx="3.4820983"
+   ry="3.4820986" /><ellipse
+   style="display:none;fill:#ff0000;fill-opacity:1;fill-rule:evenodd;stroke:#ff0000;stroke-width:0.0929882;stroke-linecap:round;stroke-opacity:1;paint-order:fill markers stroke"
+   id="envelope-knob"
+   cx="42"
+   cy="42.299805"
+   rx="6.4535055"
+   ry="6.453506" />
+  
 
   <!-- Mode switches -->
-  <g id="mode_switches">
-    <!-- Bass/Mids switch -->
-    <rect x="17" y="98" width="6" height="4" rx="2" fill="#2a2a2a" stroke="#666666" stroke-width="0.3" id="freq_switch_param" />
-    <text x="20" y="100.5" text-anchor="middle" font-family="Arial, sans-serif" font-size="0.8" fill="#cccccc">BASS</text>
-    <text x="20" y="105" text-anchor="middle" font-family="Arial, sans-serif" font-size="0.8" fill="#cccccc">MIDS</text>
-    
-    <!-- LFO switch -->
-    <rect x="37" y="98" width="6" height="4" rx="2" fill="#2a2a2a" stroke="#666666" stroke-width="0.3" id="lfo_switch_param" />
-    <text x="40" y="100.5" text-anchor="middle" font-family="Arial, sans-serif" font-size="0.8" fill="#cccccc">LFO</text>
-    
-    <!-- Q Factor switch -->
-    <rect x="57" y="98" width="6" height="4" rx="2" fill="#2a2a2a" stroke="#666666" stroke-width="0.3" id="q_factor_switch_param" />
-    <text x="60" y="100.5" text-anchor="middle" font-family="Arial, sans-serif" font-size="0.8" fill="#cccccc">Q</text>
-  </g>
+  
 
   <!-- Section divider -->
-  <line
-     x1="5"
-     y1="108"
-     x2="79"
-     y2="108"
-     stroke="#333333"
-     stroke-width="0.3"
-     id="line3" />
+  
 
   <!-- I/O Section -->
-  <text
-     x="42"
-     y="112"
-     text-anchor="middle"
-     font-family="Arial, sans-serif"
-     font-size="1.8"
-     font-weight="bold"
-     fill="#e8e8e8">AUDIO &amp; CV</text>
+  
 
   <!-- First I/O row -->
-  <g id="io_row1">
-    <!-- Audio L input -->
-    <circle cx="10" cy="115" r="2.5" fill="#0a0a0a" stroke="#666666" stroke-width="0.3" id="audio_left_input" />
-    <text x="10" y="121" text-anchor="middle" font-family="Arial, sans-serif" font-size="0.8" fill="#cccccc">L IN</text>
-    
-    <!-- Audio R input -->
-    <circle cx="20" cy="115" r="2.5" fill="#0a0a0a" stroke="#666666" stroke-width="0.3" id="audio_right_input" />
-    <text x="20" y="121" text-anchor="middle" font-family="Arial, sans-serif" font-size="0.8" fill="#cccccc">R IN</text>
-    
-    <!-- Envelope CV -->
-    <circle cx="35" cy="115" r="2.5" fill="#0a0a0a" stroke="#666666" stroke-width="0.3" id="envelope_cv_input" />
-    <text x="35" y="121" text-anchor="middle" font-family="Arial, sans-serif" font-size="0.8" fill="#cccccc">ENV</text>
-    
-    <!-- Rate CV -->
-    <circle cx="50" cy="115" r="2.5" fill="#0a0a0a" stroke="#666666" stroke-width="0.3" id="rate_cv_input" />
-    <text x="50" y="121" text-anchor="middle" font-family="Arial, sans-serif" font-size="0.8" fill="#cccccc">RATE</text>
-    
-    <!-- LFO Sweep CV -->
-    <circle cx="65" cy="115" r="2.5" fill="#0a0a0a" stroke="#666666" stroke-width="0.3" id="lfo_sweep_cv_input" />
-    <text x="65" y="121" text-anchor="middle" font-family="Arial, sans-serif" font-size="0.8" fill="#cccccc">LFO</text>
-  </g>
+  
 
   <!-- Second I/O row -->
-  <g id="io_row2">
-    <!-- Mix CV input -->
-    <circle cx="10" cy="125" r="2.5" fill="#0a0a0a" stroke="#666666" stroke-width="0.3" id="mix_cv_input" />
-    <text x="10" y="131" text-anchor="middle" font-family="Arial, sans-serif" font-size="0.8" fill="#cccccc">MIX</text>
-    
-    <!-- Tap/Step input -->
-    <circle cx="25" cy="125" r="2.5" fill="#0a0a0a" stroke="#666666" stroke-width="0.3" id="tap_step_input" />
-    <text x="25" y="131" text-anchor="middle" font-family="Arial, sans-serif" font-size="0.8" fill="#cccccc">TAP</text>
-    
-    <!-- Left/Mono output -->
-    <circle cx="50" cy="125" r="2.5" fill="#0a0a0a" stroke="#ff6666" stroke-width="0.3" id="left_mono_output" />
-    <text x="50" y="131" text-anchor="middle" font-family="Arial, sans-serif" font-size="0.8" fill="#cccccc">L/M</text>
-    
-    <!-- Right output -->
-    <circle cx="65" cy="125" r="2.5" fill="#0a0a0a" stroke="#ff6666" stroke-width="0.3" id="right_output" />
-    <text x="65" y="131" text-anchor="middle" font-family="Arial, sans-serif" font-size="0.8" fill="#cccccc">R</text>
-  </g>
+  
 
-</svg>
+<path
+   d="m 16.924927,2.5527563 v -0.3429 h 2.159 v 0.3429 h -0.8763 v 3.9814499 h 0.8763 v 0.3429 h -2.159 v -0.3429 h 0.8763 V 2.5527563 Z m 7.113052,-0.3429 h 0.3937 v 4.6354999 l -0.0762,0.0381 -3.4798,-3.8227 v 3.81635 h -0.3937 V 2.2416063 l 0.06985,-0.03175 3.48615,3.8163499 z m 2.306104,2.3367999 q 0,0.4318 0.15875,0.80645 0.15875,0.3683 0.4318,0.64135 0.2794,0.27305 0.64135,0.4318 0.3683,0.1524 0.7874,0.1524 0.42545,0 0.78105,-0.15875 0.36195,-0.1651 0.6477,-0.43815 l 0.254,0.2667 q -0.32385,0.32385 -0.75565,0.51435 -0.4318,0.18415 -0.9398,0.18415 -0.508,0 -0.94615,-0.18415 -0.43815,-0.1905 -0.762,-0.51435 -0.32385,-0.32385 -0.508,-0.762 -0.18415,-0.43815 -0.18415,-0.9398 0,-0.50165 0.1778,-0.9398 0.18415,-0.43815 0.508,-0.7619999 0.32385,-0.3302 0.762,-0.51435 0.43815,-0.1905 0.9525,-0.1905 0.51435,0 0.9398,0.1905 0.4318,0.18415 0.75565,0.508 l -0.254,0.2666999 q -0.27305,-0.2730499 -0.64135,-0.4317999 -0.3683,-0.15875 -0.7874,-0.15875 -0.4318,0 -0.8001,0.15875 -0.3683,0.1524 -0.64135,0.4317999 -0.2667,0.27305 -0.42545,0.6477 -0.1524,0.3683 -0.1524,0.79375 z m 8.351303,2.33045 -0.42545,-1.03505 h -2.5146 l -0.42545,1.03505 h -0.4064 l 1.8669,-4.6672499 h 0.43815 l 1.87325,4.6672499 z m -1.68275,-4.2227499 -1.12395,2.8447999 h 2.25425 z m 6.84,-0.4445 h 0.3937 v 4.6354999 l -0.0762,0.0381 -3.4798,-3.8227 v 3.81635 h -0.3937 V 2.2416063 l 0.06985,-0.03175 3.48615,3.8163499 z m 4.757204,0 v 0.3429 h -1.3462 v 4.3243499 h -0.3937 V 2.5527563 h -1.35255 v -0.3429 z m 4.153956,4.6672499 -0.42545,-1.03505 h -2.5146 l -0.42545,1.03505 h -0.4064 l 1.8669,-4.6672499 h 0.43815 l 1.873249,4.6672499 z m -1.68275,-4.2227499 -1.12395,2.8447999 h 2.25425 z m 5.563657,-0.4445 v 0.3429 h -1.3462 v 4.3243499 h -0.3937 V 2.5527563 h -1.35255 v -0.3429 z m 1.029754,0.3429 v -0.3429 h 2.159 v 0.3429 h -0.8763 v 3.9814499 h 0.8763 v 0.3429 h -2.159 v -0.3429 h 0.8763 V 2.5527563 Z m 3.207798,1.9875499 q 0,-0.4953 0.1905,-0.93345 0.1905,-0.4445 0.51435,-0.7683499 0.3302,-0.3302 0.76835,-0.5207 0.4445,-0.1905 0.9398,-0.1905 0.4953,0 0.93345,0.1905 0.4445,0.1905 0.76835,0.5207 0.3302,0.3238499 0.5207,0.7683499 0.1905,0.43815 0.1905,0.93345 0,0.4953 -0.1905,0.9398 -0.1905,0.43815 -0.5207,0.76835 -0.32385,0.32385 -0.76835,0.51435 -0.43815,0.1905 -0.93345,0.1905 -0.4953,0 -0.9398,-0.1905 -0.43815,-0.1905 -0.76835,-0.51435 -0.32385,-0.3302 -0.51435,-0.76835 -0.1905,-0.4445 -0.1905,-0.9398 z m 0.40005,0 q 0,0.41275 0.15875,0.78105 0.15875,0.3683 0.4318,0.64135 0.27305,0.27305 0.64135,0.4318 0.3683,0.15875 0.78105,0.15875 0.41275,0 0.78105,-0.15875 0.3683,-0.15875 0.64135,-0.4318 0.27305,-0.27305 0.4318,-0.64135 0.15875,-0.3683 0.15875,-0.78105 0,-0.41275 -0.15875,-0.78105 -0.15875,-0.3683 -0.4318,-0.64135 -0.27305,-0.2730499 -0.64135,-0.4317999 -0.3683,-0.15875 -0.78105,-0.15875 -0.41275,0 -0.78105,0.15875 -0.3683,0.15875 -0.64135,0.4317999 -0.27305,0.27305 -0.4318,0.64135 -0.15875,0.3683 -0.15875,0.78105 z m 9.399059,-2.3304499 h 0.3937 v 4.6354999 l -0.0762,0.0381 -3.4798,-3.8227 v 3.81635 h -0.3937 V 2.2416063 l 0.06985,-0.03175 3.48615,3.8163499 z"
+   id="text41"
+   style="font-weight:300;font-size:6.35px;line-height:0;font-family:'Liber Grotesque Family';-inkscape-font-specification:'Liber Grotesque Family, Light';text-align:center;letter-spacing:0.661458px;word-spacing:0.254px;text-anchor:middle;display:none;opacity:0.579176;fill:#e8e0c8;fill-rule:evenodd;stroke:#ebe1cd;stroke-width:0.078;stroke-linecap:round;stroke-opacity:0.980836;paint-order:fill markers stroke"
+   aria-label="INCANTATION" /><ellipse
+   style="display:none;fill:#ff0000;fill-opacity:1;fill-rule:evenodd;stroke:#ff0000;stroke-width:0.0501734;stroke-linecap:round;stroke-opacity:1;paint-order:fill markers stroke"
+   id="filt-1-cv"
+   cx="7.3272448"
+   cy="97.652138"
+   rx="3.4820983"
+   ry="3.4820986" /><ellipse
+   style="display:none;fill:#ff0000;fill-opacity:1;fill-rule:evenodd;stroke:#ff0000;stroke-width:0.0501734;stroke-linecap:round;stroke-opacity:1;paint-order:fill markers stroke"
+   id="filt-2-cv"
+   cx="17.291718"
+   cy="97.652138"
+   rx="3.4820983"
+   ry="3.4820986" /><ellipse
+   style="display:none;fill:#ff0000;fill-opacity:1;fill-rule:evenodd;stroke:#ff0000;stroke-width:0.0501734;stroke-linecap:round;stroke-opacity:1;paint-order:fill markers stroke"
+   id="filt-3-cv"
+   cx="27.256187"
+   cy="97.652138"
+   rx="3.4820983"
+   ry="3.4820986" /><ellipse
+   style="display:none;fill:#ff0000;fill-opacity:1;fill-rule:evenodd;stroke:#ff0000;stroke-width:0.0501734;stroke-linecap:round;stroke-opacity:1;paint-order:fill markers stroke"
+   id="filt-4-cv"
+   cx="37.220661"
+   cy="97.652138"
+   rx="3.4820983"
+   ry="3.4820986" /><ellipse
+   style="display:none;fill:#ff0000;fill-opacity:1;fill-rule:evenodd;stroke:#ff0000;stroke-width:0.0501734;stroke-linecap:round;stroke-opacity:1;paint-order:fill markers stroke"
+   id="filt-5-cv"
+   cx="47.185131"
+   cy="97.652138"
+   rx="3.4820983"
+   ry="3.4820986" /><ellipse
+   style="display:none;fill:#ff0000;fill-opacity:1;fill-rule:evenodd;stroke:#ff0000;stroke-width:0.0501734;stroke-linecap:round;stroke-opacity:1;paint-order:fill markers stroke"
+   id="filt-6-cv"
+   cx="57.149601"
+   cy="97.652138"
+   rx="3.4820983"
+   ry="3.4820986" /><ellipse
+   style="display:none;fill:#ff0000;fill-opacity:1;fill-rule:evenodd;stroke:#ff0000;stroke-width:0.0501734;stroke-linecap:round;stroke-opacity:1;paint-order:fill markers stroke"
+   id="filt-7-cv"
+   cx="67.114075"
+   cy="97.652138"
+   rx="3.4820983"
+   ry="3.4820986" /><ellipse
+   style="display:none;fill:#ff0000;fill-opacity:1;fill-rule:evenodd;stroke:#ff0000;stroke-width:0.0501734;stroke-linecap:round;stroke-opacity:1;paint-order:fill markers stroke"
+   id="filt-8-cv"
+   cx="77.078545"
+   cy="97.652138"
+   rx="3.4820983"
+   ry="3.4820986" /></svg>

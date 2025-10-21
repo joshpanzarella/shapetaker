@@ -1,0 +1,198 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg
+  width="24"
+  height="40"
+  viewBox="0 0 24 40"
+  version="1.1"
+  xmlns="http://www.w3.org/2000/svg">
+  <title>Vintage Slider Handle</title>
+  <desc>Chrome and brass slider handle inspired by vintage radio controls</desc>
+
+  <defs>
+    <!-- Drop shadow for depth -->
+    <radialGradient id="sliderHandleShadow" cx="0.5" cy="0.6" r="0.6">
+      <stop offset="0%" stop-color="#000000" stop-opacity="0.45"/>
+      <stop offset="70%" stop-color="#000000" stop-opacity="0.22"/>
+      <stop offset="100%" stop-color="#000000" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- Main handle body - chrome/silver -->
+    <linearGradient id="handleBody" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#4a4e58"/>
+      <stop offset="15%" stop-color="#b8bcc8"/>
+      <stop offset="30%" stop-color="#6b707d"/>
+      <stop offset="50%" stop-color="#959aa8"/>
+      <stop offset="70%" stop-color="#4f5460"/>
+      <stop offset="85%" stop-color="#a8adb8"/>
+      <stop offset="100%" stop-color="#3d4148"/>
+    </linearGradient>
+
+    <!-- Handle top highlight -->
+    <radialGradient id="handleHighlight" cx="0.5" cy="0.35" r="0.55">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.85"/>
+      <stop offset="50%" stop-color="#d5dae5" stop-opacity="0.4"/>
+      <stop offset="100%" stop-color="#6b707d" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- Brass center strip -->
+    <linearGradient id="brassStrip" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#7a5a2a"/>
+      <stop offset="25%" stop-color="#d4a857"/>
+      <stop offset="50%" stop-color="#9a7536"/>
+      <stop offset="75%" stop-color="#c9a34d"/>
+      <stop offset="100%" stop-color="#6b4d24"/>
+    </linearGradient>
+
+    <!-- Edge darkening -->
+    <linearGradient id="edgeDark" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#0a0b0d" stop-opacity="0.7"/>
+      <stop offset="50%" stop-color="#0a0b0d" stop-opacity="0"/>
+      <stop offset="100%" stop-color="#0a0b0d" stop-opacity="0.8"/>
+    </linearGradient>
+
+    <!-- Knurling texture -->
+    <linearGradient id="knurlingGrad" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#1a1d22"/>
+      <stop offset="50%" stop-color="#4a4e58"/>
+      <stop offset="100%" stop-color="#1a1d22"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Shadow beneath handle -->
+  <ellipse
+    cx="12"
+    cy="23"
+    rx="10"
+    ry="4"
+    fill="url(#sliderHandleShadow)"/>
+
+  <!-- Main handle body -->
+  <g id="handle-body">
+    <!-- Base shape with rounded ends -->
+    <rect
+      x="2"
+      y="5"
+      width="20"
+      height="30"
+      rx="10"
+      ry="10"
+      fill="url(#handleBody)"
+      stroke="#1a1d24"
+      stroke-width="0.6"/>
+
+    <!-- Chrome highlight overlay -->
+    <rect
+      x="2"
+      y="5"
+      width="20"
+      height="30"
+      rx="10"
+      ry="10"
+      fill="url(#handleHighlight)"
+      opacity="0.75"/>
+
+    <!-- Edge darkening for depth -->
+    <rect
+      x="2"
+      y="5"
+      width="20"
+      height="30"
+      rx="10"
+      ry="10"
+      fill="url(#edgeDark)"
+      opacity="0.4"/>
+
+    <!-- Left edge highlight -->
+    <path
+      d="M 5.5 12 Q 4 15 4 20 Q 4 25 5.5 28"
+      fill="none"
+      stroke="#ffffff"
+      stroke-width="0.8"
+      opacity="0.35"/>
+
+    <!-- Right edge shadow -->
+    <path
+      d="M 18.5 12 Q 20 15 20 20 Q 20 25 18.5 28"
+      fill="none"
+      stroke="#0a0b0d"
+      stroke-width="1.2"
+      opacity="0.45"/>
+  </g>
+
+  <!-- Brass center stripe -->
+  <g id="brass-detail">
+    <rect
+      x="8"
+      y="10"
+      width="8"
+      height="20"
+      rx="1.5"
+      fill="url(#brassStrip)"
+      stroke="#3d2a12"
+      stroke-width="0.4"/>
+
+    <!-- Brass highlight -->
+    <rect
+      x="9"
+      y="11"
+      width="2.5"
+      height="18"
+      rx="0.8"
+      fill="#f4d882"
+      opacity="0.25"/>
+
+    <!-- Brass shadow -->
+    <rect
+      x="14"
+      y="11"
+      width="1.5"
+      height="18"
+      rx="0.6"
+      fill="#2b1c13"
+      opacity="0.4"/>
+  </g>
+
+  <!-- Knurling texture (horizontal lines for grip) -->
+  <g id="knurling" opacity="0.65">
+    <line x1="3" y1="8" x2="21" y2="8" stroke="url(#knurlingGrad)" stroke-width="0.4"/>
+    <line x1="3" y1="10" x2="21" y2="10" stroke="url(#knurlingGrad)" stroke-width="0.4"/>
+    <line x1="3" y1="12" x2="21" y2="12" stroke="url(#knurlingGrad)" stroke-width="0.4"/>
+    <line x1="3" y1="14" x2="21" y2="14" stroke="url(#knurlingGrad)" stroke-width="0.4"/>
+    <line x1="3" y1="16" x2="21" y2="16" stroke="url(#knurlingGrad)" stroke-width="0.4"/>
+    <line x1="3" y1="18" x2="21" y2="18" stroke="url(#knurlingGrad)" stroke-width="0.4"/>
+    <line x1="3" y1="20" x2="21" y2="20" stroke="url(#knurlingGrad)" stroke-width="0.5" opacity="0.8"/>
+    <line x1="3" y1="22" x2="21" y2="22" stroke="url(#knurlingGrad)" stroke-width="0.4"/>
+    <line x1="3" y1="24" x2="21" y2="24" stroke="url(#knurlingGrad)" stroke-width="0.4"/>
+    <line x1="3" y1="26" x2="21" y2="26" stroke="url(#knurlingGrad)" stroke-width="0.4"/>
+    <line x1="3" y1="28" x2="21" y2="28" stroke="url(#knurlingGrad)" stroke-width="0.4"/>
+    <line x1="3" y1="30" x2="21" y2="30" stroke="url(#knurlingGrad)" stroke-width="0.4"/>
+    <line x1="3" y1="32" x2="21" y2="32" stroke="url(#knurlingGrad)" stroke-width="0.4"/>
+  </g>
+
+  <!-- Top cap detail -->
+  <ellipse
+    cx="12"
+    cy="6"
+    rx="5"
+    ry="2"
+    fill="#a8adb8"
+    opacity="0.5"/>
+
+  <!-- Bottom cap detail -->
+  <ellipse
+    cx="12"
+    cy="34"
+    rx="5"
+    ry="2"
+    fill="#2a2d34"
+    opacity="0.6"/>
+
+  <!-- Center shine -->
+  <ellipse
+    cx="12"
+    cy="18"
+    rx="4"
+    ry="8"
+    fill="#ffffff"
+    opacity="0.15"/>
+</svg>

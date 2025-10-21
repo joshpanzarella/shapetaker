@@ -50,7 +50,8 @@
       "Bash(cat:*)",
       "Bash(head:*)",
       "Bash(git rebase:*)",
-      "Bash(for file in src/incantation.cpp src/evocation.cpp src/fatebinder.cpp src/specula.cpp)"
+      "Bash(for file in src/incantation.cpp src/evocation.cpp src/fatebinder.cpp src/specula.cpp)",
+      "Bash(mkdir:*)"
     ],
     "deny": [],
     "ask": []

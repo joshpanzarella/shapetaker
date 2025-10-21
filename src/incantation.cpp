@@ -731,7 +731,7 @@ struct IncantationWidget : ModuleWidget {
         // Filter sliders - more spacing between them
         float sliderY = 65.f;
         for (int i = 0; i < 8; i++) {
-            addParam(createParamCentered<VCVSlider>(mm2px(Vec(18 + i * 9, sliderY)), module, Incantation::FILTER_1_PARAM + i));
+            addParam(createParamCentered<VintageSlider>(mm2px(Vec(18 + i * 9, sliderY)), module, Incantation::FILTER_1_PARAM + i));
         }
         
         // Filter CV inputs - aligned below sliders with same spacing
