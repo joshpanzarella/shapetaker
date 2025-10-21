@@ -1141,6 +1141,16 @@ struct UnifiedDisplayWidget : TransparentWidget {
 
         snprintf(buf, sizeof(buf), "ROT:%d", rotation);
         nvgText(vg, col1X, col1Y, buf, NULL);
+        col1Y += lineHeight;
+
+        nvgFillColor(vg, terminalDim);
+        nvgText(vg, col1X, col1Y, "MODE", NULL);
+        col1Y += lineHeight;
+
+        const char* rhythmName = (module->rhythmMode == LSYSTEM_MODE) ? "L-SYSTEM" : "EUCLIDEAN";
+        nvgFillColor(vg, terminalPurple);
+        snprintf(buf, sizeof(buf), "%s", rhythmName);
+        nvgText(vg, col1X, col1Y, buf, NULL);
         col1Y += lineHeight * 1.1f;
 
         // Layers
