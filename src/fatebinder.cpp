@@ -2,6 +2,8 @@
 #include "random.hpp"
 #include <vector>
 #include <cmath>
+#include <string>
+#include <algorithm>
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
@@ -402,6 +404,7 @@ struct Fatebinder : Module {
     MutatingPattern layers[kNumLayers];
     int currentStep[kNumLayers] = {0, 0, 0};
     int clockDivCounter[kNumLayers] = {0, 0, 0};
+    float layerHitLevel[kNumLayers] = {0.f, 0.f, 0.f};
 
     dsp::SchmittTrigger clockTrigger;
     dsp::SchmittTrigger resetTrigger;
@@ -483,6 +486,7 @@ struct Fatebinder : Module {
         for (int i = 0; i < kNumLayers; i++) {
             currentStep[i] = 0;
             clockDivCounter[i] = 0;
+            layerHitLevel[i] = 0.f;
         }
         internalClock = 0.f;
         frozen = false;
@@ -559,6 +563,9 @@ struct Fatebinder : Module {
 
         // Update display time for blinking
         displayTime += dt;
+        for (int i = 0; i < kNumLayers; i++) {
+            layerHitLevel[i] = std::max(0.f, layerHitLevel[i] - dt * 3.f);
+        }
 
         // Update pattern mutations
         for (int i = 0; i < kNumLayers; i++) {
@@ -726,6 +733,7 @@ struct Fatebinder : Module {
         }
 
         if (shouldTrigger) {
+            layerHitLevel[layer] = 1.f;
             // Find inactive envelope
             Envelope* env = nullptr;
             for (auto& e : envelopes) {
@@ -798,20 +806,21 @@ struct UnifiedDisplayWidget : TransparentWidget {
 
     // Radar colors
     NVGcolor layerColors[3] = {
-        nvgRGB(0xff, 0x55, 0x00),  // Orange
-        nvgRGB(0xff, 0xaa, 0x00),  // Amber
-        nvgRGB(0xff, 0x11, 0x00)   // Red
+        nvgRGB(0x45, 0xec, 0xff),  // Teal
+        nvgRGB(0xb0, 0x6b, 0xff),  // Violet
+        nvgRGB(0x58, 0x9c, 0xff)   // Azure
     };
 
     NVGcolor layerDim[3] = {
-        nvgRGB(0x99, 0x33, 0x00),
-        nvgRGB(0x99, 0x66, 0x00),
-        nvgRGB(0x88, 0x0a, 0x00)
+        nvgRGB(0x1d, 0x84, 0x9a),
+        nvgRGB(0x5e, 0x3a, 0x8f),
+        nvgRGB(0x2c, 0x59, 0x92)
     };
 
     // Terminal colors
-    NVGcolor terminalGreen = nvgRGB(0x00, 0xff, 0x41);
-    NVGcolor terminalDim = nvgRGB(0x00, 0x99, 0x22);
+    NVGcolor terminalGreen = nvgRGB(0x45, 0xec, 0xff);
+    NVGcolor terminalDim = nvgRGB(0x60, 0xc5, 0xd8);
+    NVGcolor terminalPurple = nvgRGB(0xc8, 0x84, 0xff);
 
     float scanlinePhase = 0.f;
 
@@ -827,37 +836,67 @@ struct UnifiedDisplayWidget : TransparentWidget {
         // Outer bezel (raised edge)
         nvgBeginPath(args.vg);
         nvgRect(args.vg, 0, 0, box.size.x, box.size.y);
-        NVGpaint bezelOuter = nvgLinearGradient(args.vg, 0, 0, box.size.x, box.size.y,
-            nvgRGB(0x55, 0x55, 0x55), nvgRGB(0x22, 0x22, 0x22));
+        NVGcolor bezelLight = nvgRGB(0x6b, 0x42, 0x28);
+        NVGcolor bezelDark = nvgRGB(0x1c, 0x11, 0x08);
+        NVGcolor bezelEdge = nvgRGB(0xaa, 0x72, 0x3a);
+
+        // Outer bezel with gentle curvature
+        float outerRadius = 8.f;
+        nvgBeginPath(args.vg);
+        nvgRoundedRect(args.vg, 0.f, 0.f, box.size.x, box.size.y, outerRadius);
+        NVGpaint bezelOuter = nvgLinearGradient(args.vg, 0.f, 0.f, box.size.x * 0.2f, box.size.y,
+            bezelLight, bezelDark);
         nvgFillPaint(args.vg, bezelOuter);
         nvgFill(args.vg);
 
-        // Inner bezel (darker inset)
+        // Polished edge
+        nvgBeginPath(args.vg);
+        nvgRoundedRect(args.vg, 1.2f, 1.2f, box.size.x - 2.4f, box.size.y - 2.4f, outerRadius - 1.2f);
+        nvgStrokeWidth(args.vg, 1.4f);
+        nvgStrokeColor(args.vg, bezelEdge);
+        nvgStroke(args.vg);
+
+        // Inner bezel inset
         float bezelWidth = 6.f;
         nvgBeginPath(args.vg);
-        nvgRect(args.vg, bezelWidth, bezelWidth, box.size.x - bezelWidth * 2, box.size.y - bezelWidth * 2);
-        nvgFillColor(args.vg, nvgRGB(0x18, 0x18, 0x18));
+        nvgRoundedRect(args.vg, bezelWidth, bezelWidth, box.size.x - bezelWidth * 2, box.size.y - bezelWidth * 2, outerRadius - 2.5f);
+        NVGpaint bezelInner = nvgLinearGradient(args.vg, bezelWidth, bezelWidth, box.size.x - bezelWidth, box.size.y - bezelWidth,
+            nvgRGB(0x15, 0x0d, 0x08), nvgRGB(0x04, 0x02, 0x01));
+        nvgFillPaint(args.vg, bezelInner);
         nvgFill(args.vg);
 
-        // Screen area
-        float screenX = bezelWidth + 2;
-        float screenY = bezelWidth + 2;
-        float screenW = box.size.x - (bezelWidth + 2) * 2;
-        float screenH = box.size.y - (bezelWidth + 2) * 2;
+        // Screen area with slight inset
+        float screenMargin = bezelWidth + 2.2f;
+        float screenX = screenMargin;
+        float screenY = screenMargin;
+        float screenW = box.size.x - screenMargin * 2;
+        float screenH = box.size.y - screenMargin * 2;
 
-        // Dark screen background
+        // Dark screen background with amber tint
         nvgBeginPath(args.vg);
-        nvgRect(args.vg, screenX, screenY, screenW, screenH);
-        nvgFillColor(args.vg, nvgRGB(0x00, 0x00, 0x00));
+        nvgRoundedRect(args.vg, screenX, screenY, screenW, screenH, 6.f);
+        NVGpaint glassFill = nvgLinearGradient(args.vg, screenX, screenY, screenX + screenW, screenY + screenH,
+            nvgRGB(0x05, 0x02, 0x01), nvgRGB(0x12, 0x08, 0x03));
+        nvgFillPaint(args.vg, glassFill);
+        nvgFill(args.vg);
+
+        // Corner highlight for curved glass
+        // Minimal subtle highlight to avoid color shift
+        NVGpaint glassHighlight = nvgRadialGradient(args.vg,
+            screenX + screenW * 0.5f, screenY + screenH * 0.15f, 5.f, screenW * 0.8f,
+            nvgRGBA(0x22, 0x44, 0x55, 18), nvgRGBA(0, 0, 0, 0));
+        nvgBeginPath(args.vg);
+        nvgRoundedRect(args.vg, screenX, screenY, screenW, screenH, 6.f);
+        nvgFillPaint(args.vg, glassHighlight);
         nvgFill(args.vg);
 
         // ================================================================
         // RADAR SECTION (Left side of screen)
         // ================================================================
 
-        float radarSize = screenH;  // Square radar
+        float radarSize = screenH * 1.05f;  // Square radar
         float radarX = screenX + radarSize * 0.5f;
-        float radarY = screenY + radarSize * 0.5f;
+        float radarY = screenY + radarSize * 0.46f;
         float radius = radarSize * 0.42f;
 
         // Draw radar (simplified from ParticleDisplayWidget)
@@ -868,7 +907,7 @@ struct UnifiedDisplayWidget : TransparentWidget {
         // ================================================================
 
         float termX = screenX + radarSize + 4;
-        float termY = screenY;
+        float termY = screenY - 2.f;
         float termW = screenW - radarSize - 4;
         float termH = screenH;
 
@@ -880,11 +919,22 @@ struct UnifiedDisplayWidget : TransparentWidget {
         // SCREEN EFFECTS (over everything)
         // ================================================================
 
+        scanlinePhase += APP->window->getLastFrameDuration() * 24.f;
+        float phosphorDrift = std::fmod(scanlinePhase, 6.f);
+
         // Scanlines
         for (float y = screenY; y < screenY + screenH; y += 2.f) {
             nvgBeginPath(args.vg);
-            nvgRect(args.vg, screenX, y, screenW, 1.f);
-            nvgFillColor(args.vg, nvgRGBA(0, 0, 0, 60));
+            nvgRect(args.vg, screenX, y, screenW, 0.6f);
+            nvgFillColor(args.vg, nvgRGBA(0, 0, 0, 55));
+            nvgFill(args.vg);
+        }
+
+        // Occasional phosphor separation lines
+        for (float y = screenY + phosphorDrift; y < screenY + screenH; y += 6.f) {
+            nvgBeginPath(args.vg);
+            nvgRect(args.vg, screenX, y, screenW, 1.0f);
+            nvgFillColor(args.vg, nvgRGBA(0x45, 0xec, 0xff, 20));
             nvgFill(args.vg);
         }
 
@@ -935,21 +985,20 @@ struct UnifiedDisplayWidget : TransparentWidget {
 
         for (int lay = 0; lay < 3; lay++) {
             float ringRadius = ringRadii[lay];
-            NVGcolor color = layerColors[lay];
             NVGcolor dimColor = layerDim[lay];
 
             for (int i = 0; i < steps; i++) {
+                if (!module->layers[lay].getStep(i)) continue;
+
                 float angle = (float)i / (float)steps * 2.f * M_PI - M_PI * 0.5f;
                 float x = cx + std::cos(angle) * ringRadius;
                 float y = cy + std::sin(angle) * ringRadius;
 
-                if (module->layers[lay].getStep(i)) {
-                    // Inactive hits: very dim dots
-                    nvgBeginPath(vg);
-                    nvgCircle(vg, x, y, 1.5f);
-                    nvgFillColor(vg, nvgRGBA(dimColor.r * 255, dimColor.g * 255, dimColor.b * 255, 100));
-                    nvgFill(vg);
-                }
+                // Dim dot for stored pattern hit
+                nvgBeginPath(vg);
+                nvgCircle(vg, x, y, 1.5f);
+                nvgFillColor(vg, nvgRGBA(dimColor.r * 255, dimColor.g * 255, dimColor.b * 255, 100));
+                nvgFill(vg);
             }
         }
 
@@ -982,8 +1031,8 @@ struct UnifiedDisplayWidget : TransparentWidget {
                 float ringRadius = ringRadii[lay];
                 int currentStep = module->currentStep[lay];
                 float angle = (float)currentStep / (float)steps * 2.f * M_PI - M_PI * 0.5f;
-                float x = cx + std::cos(angle) * ringRadius;
-                float y = cy + std::sin(angle) * ringRadius;
+                float tipX = cx + std::cos(angle) * ringRadius;
+                float tipY = cy + std::sin(angle) * ringRadius;
                 NVGcolor color = layerColors[lay];
 
                 bool isHit = module->layers[lay].getStep(currentStep);
@@ -991,28 +1040,28 @@ struct UnifiedDisplayWidget : TransparentWidget {
                 // Sweep line from center
                 nvgBeginPath(vg);
                 nvgMoveTo(vg, cx, cy);
-                nvgLineTo(vg, x, y);
+                nvgLineTo(vg, tipX, tipY);
                 nvgStrokeColor(vg, nvgRGBA(color.r * 0.5f, color.g * 0.5f, color.b * 0.5f, 0.3f));
                 nvgStrokeWidth(vg, 1.5f);
                 nvgStroke(vg);
 
                 if (isHit) {
-                    // Hit: Small bright dot
-                    nvgBeginPath(vg);
-                    nvgCircle(vg, x, y, 2.f);
-                    nvgFillColor(vg, color);
-                    nvgFill(vg);
-                } else {
-                    // No hit: Small crosshair indicator
+                    // Hit: crosshair indicator
                     float crossSize = 3.f;
                     nvgBeginPath(vg);
-                    nvgMoveTo(vg, x - crossSize, y);
-                    nvgLineTo(vg, x + crossSize, y);
-                    nvgMoveTo(vg, x, y - crossSize);
-                    nvgLineTo(vg, x, y + crossSize);
+                    nvgMoveTo(vg, tipX - crossSize, tipY);
+                    nvgLineTo(vg, tipX + crossSize, tipY);
+                    nvgMoveTo(vg, tipX, tipY - crossSize);
+                    nvgLineTo(vg, tipX, tipY + crossSize);
                     nvgStrokeColor(vg, color);
-                    nvgStrokeWidth(vg, 0.75f);
+                    nvgStrokeWidth(vg, 0.9f);
                     nvgStroke(vg);
+                } else {
+                    // No hit: bright dot
+                    nvgBeginPath(vg);
+                    nvgCircle(vg, tipX, tipY, 2.f);
+                    nvgFillColor(vg, color);
+                    nvgFill(vg);
                 }
             }
         }
@@ -1023,10 +1072,10 @@ struct UnifiedDisplayWidget : TransparentWidget {
         if (!font) return;
 
         nvgFontFaceId(vg, font->handle);
-        nvgFontSize(vg, 7.5f);
+        nvgFontSize(vg, 7.0f);
         nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_TOP);
 
-        float lineHeight = 9.0f;
+        float lineHeight = 8.4f;
         char buf[64];
 
         // Header - title and subtitle
@@ -1035,10 +1084,30 @@ struct UnifiedDisplayWidget : TransparentWidget {
         nvgText(vg, x + 3.f, headerY, "FATEBINDER", NULL);
         nvgFillColor(vg, terminalDim);
         nvgText(vg, x + 49.f, headerY, "RHYTHM COMPUTER", NULL);
-        nvgFillColor(vg, nvgRGB(0xff, 0x66, 0x33));
+        nvgFillColor(vg, nvgRGB(0xb0, 0x6b, 0xff));
         nvgText(vg, x + 3.f, headerY + lineHeight * 0.9f, u8"運命結束機", NULL);
         nvgFillColor(vg, terminalDim);
         nvgText(vg, x + 49.f, headerY + lineHeight * 0.9f, u8"シェイプテイカー", NULL);
+
+        {
+            std::shared_ptr<Font> futura = APP->window->loadFont(asset::system("res/fonts/FuturaLT-Bold.ttf"));
+            if (futura) {
+                nvgFontFaceId(vg, futura->handle);
+                nvgFontSize(vg, 7.5f);
+            } else {
+                nvgFontFaceId(vg, font->handle);
+                nvgFontSize(vg, 7.5f);
+            }
+            nvgTextAlign(vg, NVG_ALIGN_RIGHT | NVG_ALIGN_TOP);
+            nvgFillColor(vg, nvgRGB(0x45, 0xec, 0xff));
+            nvgText(vg, x + w - 1.5f, headerY - 1.f, "shape", NULL);
+            nvgFillColor(vg, nvgRGB(0xb0, 0x6b, 0xff));
+            nvgText(vg, x + w - 1.5f, headerY + 6.5f, "taker", NULL);
+
+            nvgFontFaceId(vg, font->handle);
+            nvgFontSize(vg, 7.0f);
+            nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_TOP);
+        }
 
         if (!module) {
             nvgFillColor(vg, terminalGreen);
@@ -1048,8 +1117,8 @@ struct UnifiedDisplayWidget : TransparentWidget {
 
         // 3-column layout
         float col1X = x + 3.f;
-        float col2X = x + w * 0.36f;
-        float col3X = x + w * 0.68f;
+        float col2X = x + w * 0.28f;
+        float col3X = x + w * 0.66f;
         float col1Y = headerY + lineHeight * 2.3f;
 
         int steps = (int)module->params[Fatebinder::STEPS_PARAM].getValue();
@@ -1058,40 +1127,40 @@ struct UnifiedDisplayWidget : TransparentWidget {
 
         // Column 1: Pattern
         nvgFillColor(vg, terminalDim);
-        nvgText(vg, col1X, col1Y, "PATTERN:", NULL);
+        nvgText(vg, col1X, col1Y, "PATTERN", NULL);
         col1Y += lineHeight;
 
         nvgFillColor(vg, terminalGreen);
-        snprintf(buf, sizeof(buf), "%02d HITS", hits);
+        snprintf(buf, sizeof(buf), "HIT:%d", hits);
         nvgText(vg, col1X, col1Y, buf, NULL);
         col1Y += lineHeight;
 
-        snprintf(buf, sizeof(buf), "%02d STEP", steps);
+        snprintf(buf, sizeof(buf), "STP:%d", steps);
         nvgText(vg, col1X, col1Y, buf, NULL);
         col1Y += lineHeight;
 
-        snprintf(buf, sizeof(buf), "%02d ROT", rotation);
+        snprintf(buf, sizeof(buf), "ROT:%d", rotation);
         nvgText(vg, col1X, col1Y, buf, NULL);
-        col1Y += lineHeight * 1.2f;
+        col1Y += lineHeight * 1.1f;
 
         // Layers
         int div2 = (int)module->params[Fatebinder::LAYER_2_DIV_PARAM].getValue();
         int div3 = (int)module->params[Fatebinder::LAYER_3_DIV_PARAM].getValue();
 
         nvgFillColor(vg, terminalDim);
-        nvgText(vg, col1X, col1Y, "LAYER:", NULL);
+        nvgText(vg, col1X, col1Y, "DIV", NULL);
         col1Y += lineHeight;
 
-        nvgFillColor(vg, nvgRGB(0xff, 0x55, 0x00));
+        nvgFillColor(vg, nvgRGB(0x45, 0xec, 0xff));
         nvgText(vg, col1X, col1Y, "1/1", NULL);
         col1Y += lineHeight;
 
-        nvgFillColor(vg, nvgRGB(0xff, 0xaa, 0x00));
+        nvgFillColor(vg, nvgRGB(0xb0, 0x6b, 0xff));
         snprintf(buf, sizeof(buf), "1/%d", div2);
         nvgText(vg, col1X, col1Y, buf, NULL);
         col1Y += lineHeight;
 
-        nvgFillColor(vg, nvgRGB(0xff, 0x11, 0x00));
+        nvgFillColor(vg, nvgRGB(0x58, 0x9c, 0xff));
         snprintf(buf, sizeof(buf), "1/%d", div3);
         nvgText(vg, col1X, col1Y, buf, NULL);
 
@@ -1103,30 +1172,112 @@ struct UnifiedDisplayWidget : TransparentWidget {
         float curve = module->params[Fatebinder::CURVE_PARAM].getValue();
         int overlapMode = (int)module->params[Fatebinder::OVERLAP_MODE_PARAM].getValue();
 
-        nvgFillColor(vg, terminalDim);
-        nvgText(vg, col2X, col2Y, "ENV:", NULL);
-        col2Y += lineHeight;
+        auto drawLine = [&](float xPos, float& yPos, const char* text,
+                            NVGcolor color = nvgRGB(0x00, 0xff, 0x41)) {
+            nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_TOP);
+            std::string line(text ? text : "");
+            size_t colonPos = line.find(':');
+            if (colonPos != std::string::npos) {
+                std::string label = line.substr(0, colonPos + 1);
+                std::string value = line.substr(colonPos + 1);
 
-        nvgFillColor(vg, terminalGreen);
-        snprintf(buf, sizeof(buf), "A:%03d", (int)(attack * 100));
-        nvgText(vg, col2X, col2Y, buf, NULL);
-        col2Y += lineHeight;
+                NVGcolor labelColor = color;
+                labelColor.r *= 0.6f;
+                labelColor.g *= 0.6f;
+                labelColor.b *= 0.6f;
+                nvgFillColor(vg, labelColor);
+                nvgText(vg, xPos, yPos, label.c_str(), NULL);
 
-        snprintf(buf, sizeof(buf), "D:%03d", (int)(decay * 100));
-        nvgText(vg, col2X, col2Y, buf, NULL);
-        col2Y += lineHeight;
+                float bounds[4];
+                nvgTextBounds(vg, 0.f, 0.f, label.c_str(), NULL, bounds);
+                float labelWidth = bounds[2] - bounds[0];
 
-        snprintf(buf, sizeof(buf), "C:%+03d", (int)(curve * 100));
-        nvgText(vg, col2X, col2Y, buf, NULL);
-        col2Y += lineHeight * 1.2f;
+                NVGcolor valueColor = color;
+                valueColor.r = std::min(valueColor.r * 1.1f + 0.05f, 1.f);
+                valueColor.g = std::min(valueColor.g * 1.1f + 0.05f, 1.f);
+                valueColor.b = std::min(valueColor.b * 1.1f + 0.05f, 1.f);
+                nvgFillColor(vg, valueColor);
+                nvgText(vg, xPos + labelWidth + 2.f, yPos, value.c_str(), NULL);
+            } else {
+                nvgFillColor(vg, color);
+                nvgText(vg, xPos, yPos, line.c_str(), NULL);
+            }
+            yPos += lineHeight;
+        };
 
-        nvgFillColor(vg, terminalDim);
-        nvgText(vg, col2X, col2Y, "MODE:", NULL);
-        col2Y += lineHeight;
+        snprintf(buf, sizeof(buf), "ATK:%dms", (int)std::round(attack * 1000.f));
+        drawLine(col2X, col2Y, buf, terminalPurple);
 
-        nvgFillColor(vg, terminalGreen);
+        snprintf(buf, sizeof(buf), "DEC:%dms", (int)std::round(decay * 1000.f));
+        drawLine(col2X, col2Y, buf, terminalPurple);
+
+        snprintf(buf, sizeof(buf), "CUR:%+d%%", (int)std::round(curve * 100.f));
+        drawLine(col2X, col2Y, buf, terminalPurple);
+
+        float shape = module->params[Fatebinder::SHAPE_PARAM].getValue();
+        const char* shapeNames[] = {"SINE", "TRI", "SAW", "SQR"};
+        int shapeIndex = rack::math::clamp((int)std::round(shape * 3.f), 0, 3);
+        snprintf(buf, sizeof(buf), "WAV:%s", shapeNames[shapeIndex]);
+        drawLine(col2X, col2Y, buf, terminalPurple);
+
+        col2Y += lineHeight * 0.2f;
+
         const char* modeNames[] = {"ADD", "MAX", "RING"};
-        nvgText(vg, col2X, col2Y, modeNames[overlapMode % 3], NULL);
+        snprintf(buf, sizeof(buf), "BLD:%s", modeNames[overlapMode % 3]);
+        drawLine(col2X, col2Y, buf, terminalPurple);
+
+        // Activity indicators for each layer
+        col2Y += lineHeight * 0.4f;
+        nvgFillColor(vg, terminalDim);
+        nvgText(vg, col2X, col2Y, "ACT", NULL);
+        if (module) {
+            NVGcolor activityColors[3] = {
+                nvgRGB(0x45, 0xec, 0xff),
+                nvgRGB(0xb0, 0x6b, 0xff),
+                nvgRGB(0x58, 0x9c, 0xff)
+            };
+
+            float dotX = col2X + 24.f;
+            float dotY = col2Y + 3.2f;
+            for (int i = 0; i < Fatebinder::kNumLayers; i++) {
+                float level = rack::math::clamp(module->layerHitLevel[i], 0.f, 1.f);
+                float brightness = 0.4f + level * 0.6f;
+                float alpha = 0.2f + level * 0.8f;
+
+                NVGcolor fill = activityColors[i];
+                fill.r = rack::math::clamp(fill.r * brightness, 0.f, 1.f);
+                fill.g = rack::math::clamp(fill.g * brightness, 0.f, 1.f);
+                fill.b = rack::math::clamp(fill.b * brightness, 0.f, 1.f);
+                fill.a = rack::math::clamp(alpha, 0.f, 1.f);
+
+                nvgBeginPath(vg);
+                nvgCircle(vg, dotX + i * 7.f, dotY, 2.3f);
+                nvgFillColor(vg, fill);
+                nvgFill(vg);
+
+                NVGcolor outline = activityColors[i];
+                outline.a = 0.55f;
+                nvgBeginPath(vg);
+                nvgCircle(vg, dotX + i * 7.f, dotY, 2.3f);
+                nvgStrokeColor(vg, outline);
+                nvgStrokeWidth(vg, 0.6f);
+                nvgStroke(vg);
+            }
+        }
+        col2Y += lineHeight * 0.9f;
+
+        // Tracking indicator placeholder in column 2
+        col2Y += lineHeight * 0.4f;
+        float trackingRowY = col2Y;
+        if (module && module->clockTicksSinceChange < 3 && !module->useInternalClock) {
+            float timeBlink = std::fmod(module->displayTime, 1.0f);
+            if (timeBlink < 0.5f) {
+                nvgFillColor(vg, nvgRGB(0xff, 0xa0, 0x40));
+                nvgText(vg, col2X, trackingRowY, "TRACKING", NULL);
+            }
+        }
+
+        col2Y += lineHeight * 0.4f;
 
         // Column 3: Mutation & State
         float col3Y = headerY + lineHeight * 2.3f;
@@ -1134,50 +1285,36 @@ struct UnifiedDisplayWidget : TransparentWidget {
         float chaos = module->params[Fatebinder::CHAOS_PARAM].getValue();
         float mutation = module->params[Fatebinder::MUTATION_RATE_PARAM].getValue();
         float probability = module->params[Fatebinder::PROBABILITY_PARAM].getValue();
+        float tempo = module->params[Fatebinder::TEMPO_PARAM].getValue();
+        float density = module->params[Fatebinder::DENSITY_PARAM].getValue();
 
-        nvgFillColor(vg, terminalDim);
-        nvgText(vg, col3X, col3Y, "MOD:", NULL);
-        col3Y += lineHeight;
+        snprintf(buf, sizeof(buf), "SET:%d BPM", (int)tempo);
+        drawLine(col3X, col3Y, buf, nvgRGB(0xff, 0xa0, 0x40));
 
-        nvgFillColor(vg, chaos > 0.7f ? nvgRGB(0xff, 0x22, 0x00) : terminalGreen);
-        snprintf(buf, sizeof(buf), "C%03d", (int)(chaos * 100));
-        nvgText(vg, col3X, col3Y, buf, NULL);
-        col3Y += lineHeight;
+        snprintf(buf, sizeof(buf), "CLK:%d BPM", (int)module->bpm);
+        drawLine(col3X, col3Y, buf, nvgRGB(0xff, 0xa0, 0x40));
 
-        nvgFillColor(vg, terminalGreen);
-        snprintf(buf, sizeof(buf), "M%03d", (int)(mutation * 100));
-        nvgText(vg, col3X, col3Y, buf, NULL);
-        col3Y += lineHeight;
+        snprintf(buf, sizeof(buf), "PRB:%d%%", (int)(probability * 100.f));
+        drawLine(col3X, col3Y, buf, terminalGreen);
 
-        snprintf(buf, sizeof(buf), "P%03d", (int)(probability * 100));
-        nvgText(vg, col3X, col3Y, buf, NULL);
-        col3Y += lineHeight * 1.2f;
+        snprintf(buf, sizeof(buf), "CHA:%d%%", (int)(chaos * 100.f));
+        drawLine(col3X, col3Y, buf, chaos > 0.7f ? nvgRGB(0xff, 0x33, 0x22) : terminalGreen);
 
-        nvgFillColor(vg, terminalDim);
-        if (module->frozen) {
-            nvgFillColor(vg, nvgRGB(0x00, 0xcc, 0xff));
-            nvgText(vg, col3X, col3Y, "FROZEN", NULL);
-        } else {
-            nvgFillColor(vg, terminalGreen);
-            nvgText(vg, col3X, col3Y, "ACTIVE", NULL);
-        }
-        col3Y += lineHeight * 1.2f;
+        snprintf(buf, sizeof(buf), "DEN:%d%%", (int)(density * 100.f));
+        drawLine(col3X, col3Y, buf, terminalGreen);
 
-        // BPM display at bottom right
-        nvgFillColor(vg, terminalGreen);
-        snprintf(buf, sizeof(buf), "%03d BPM", (int)module->bpm);
-        nvgText(vg, col3X, col3Y, buf, NULL);
+        snprintf(buf, sizeof(buf), "MUT:%d%%", (int)(mutation * 100.f));
+        drawLine(col3X, col3Y, buf, terminalGreen);
 
-        // Show TRACKING indicator if BPM hasn't settled (needs 3+ stable ticks)
-        if (module->clockTicksSinceChange < 3 && !module->useInternalClock) {
-            col3Y += lineHeight;
-            // Blink every 0.5 seconds
-            float time = std::fmod(module->displayTime, 1.0f);
-            if (time < 0.5f) {
-                nvgFillColor(vg, nvgRGB(0xff, 0xaa, 0x00)); // Amber
-                nvgText(vg, col3X, col3Y, "TRACKING", NULL);
-            }
-        }
+        snprintf(buf, sizeof(buf), "RNG:%s", module->bipolarOutputs ? "-5/+5V" : "0/+10V");
+        drawLine(col3X, col3Y, buf, nvgRGB(0x45, 0xec, 0xff));
+
+        snprintf(buf, sizeof(buf), "STS:%s", module->frozen ? "FROZEN" : "ACTIVE");
+        drawLine(col3X, col3Y, buf, module->frozen ? nvgRGB(0xb0, 0x6b, 0xff) : terminalGreen);
+
+        col3Y += lineHeight * 0.2f;
+
+        // Column 2 tracking indicator handled above
     }
 };
 
@@ -1188,8 +1325,9 @@ struct UnifiedDisplayWidget : TransparentWidget {
 struct TerminalDisplayWidget : TransparentWidget {
     Fatebinder* module = nullptr;
 
-    NVGcolor terminalGreen = nvgRGB(0x00, 0xff, 0x41);
-    NVGcolor terminalDim = nvgRGB(0x00, 0x99, 0x22);
+    NVGcolor terminalGreen = nvgRGB(0x45, 0xec, 0xff);
+    NVGcolor terminalDim = nvgRGB(0x60, 0xc5, 0xd8);
+    NVGcolor terminalPurple = nvgRGB(0xc8, 0x84, 0xff);
     NVGcolor bgColor = nvgRGBA(0x00, 0x00, 0x00, 0xff);
 
     void drawLayer(const DrawArgs& args, int layer) override {
