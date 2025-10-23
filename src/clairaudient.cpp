@@ -489,7 +489,7 @@ struct ClairaudientWidget : ModuleWidget {
             return parser.centerPx(id, defx, defy);
         };
 
-        // V/Z oscillator large frequency knobs
+        // V/Z oscillator large frequency knobs (oscilloscope style)
         addParam(createParamCentered<ShapetakerKnobOscilloscopeMedium>(centerPx("freq_v", 13.422475f, 25.464647f), module, ClairaudientModule::FREQ1_PARAM));
         addParam(createParamCentered<ShapetakerKnobOscilloscopeMedium>(centerPx("freq_z", 68.319061f, 25.695415f), module, ClairaudientModule::FREQ2_PARAM));
 
@@ -504,7 +504,7 @@ struct ClairaudientWidget : ModuleWidget {
             addParam(sw2);
         }
 
-        // V/Z fine tune controls
+        // V/Z fine tune controls (oscilloscope style)
         addParam(createParamCentered<ShapetakerKnobOscilloscopeSmall>(centerPx("fine_v", 19.023623f, 45.841431f), module, ClairaudientModule::FINE1_PARAM));
         addParam(createParamCentered<ShapetakerKnobOscilloscopeSmall>(centerPx("fine_z", 62.717918f, 45.883205f), module, ClairaudientModule::FINE2_PARAM));
 
@@ -515,7 +515,7 @@ struct ClairaudientWidget : ModuleWidget {
         // (Removed decorative teal hexagon indicators for fine attenuverters)
         
         
-        // Crossfade control (center)
+        // Crossfade control (center) (oscilloscope style)
         addParam(createParamCentered<ShapetakerKnobOscilloscopeMedium>(centerPx("x_fade_knob", 40.87077f, 57.091526f), module, ClairaudientModule::XFADE_PARAM));
 
         // Crossfade attenuverter (center)
@@ -524,7 +524,7 @@ struct ClairaudientWidget : ModuleWidget {
         // (Removed decorative teal hexagon indicator for crossfade attenuverters)
         
         
-        // V/Z shape controls
+        // V/Z shape controls (oscilloscope style)
         addParam(createParamCentered<ShapetakerKnobOscilloscopeSmall>(centerPx("sh_knob_v", 13.422475f, 79.825134f), module, ClairaudientModule::SHAPE1_PARAM));
         addParam(createParamCentered<ShapetakerKnobOscilloscopeSmall>(centerPx("sh_knob_z", 68.319061f, 79.825134f), module, ClairaudientModule::SHAPE2_PARAM));
         

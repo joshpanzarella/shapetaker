@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg id="ch-rot" viewBox="0 0 52 52" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+        <radialGradient id="kg4r" cx="30%" cy="30%">
+            <stop offset="0%" style="stop-color:#2a2a2a"/>
+            <stop offset="70%" style="stop-color:#1a1a1a"/>
+            <stop offset="100%" style="stop-color:#0a0a0a"/>
+        </radialGradient>
+    </defs>
+    <ellipse cx="26" cy="11.8" rx="3.8" ry="8.5" fill="#1a1a1a"/>
+    <ellipse cx="26" cy="11.8" rx="3.3" ry="8" fill="#2a2a2a"/>
+    <ellipse cx="25.5" cy="11.3" rx="2.8" ry="7.1" fill="url(#kg4r)"/>
+    <ellipse cx="25.1" cy="10.8" rx="1.4" ry="5.7" fill="#404040" opacity="0.6"/>
+</svg>

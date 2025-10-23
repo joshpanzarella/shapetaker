@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg id="sm-rot" viewBox="0 0 52 52" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+        <linearGradient id="pg3" x1="0%" y1="0%" x2="0%" y2="100%">
+            <stop offset="0%" style="stop-color:#e8e8e8"/>
+            <stop offset="100%" style="stop-color:#c0c0c0"/>
+        </linearGradient>
+    </defs>
+    <rect x="24.9" y="9" width="2.2" height="9" fill="url(#pg3)" rx="1.1"/>
+    <g opacity="0.15">
+        <line x1="26" y1="7" x2="26" y2="11" stroke="#fff" stroke-width="0.6"/>
+        <line x1="39.5" y1="12.5" x2="36.5" y2="15.5" stroke="#fff" stroke-width="0.6"/>
+        <line x1="45" y1="26" x2="41" y2="26" stroke="#fff" stroke-width="0.6"/>
+        <line x1="39.5" y1="39.5" x2="36.5" y2="36.5" stroke="#fff" stroke-width="0.6"/>
+        <line x1="26" y1="45" x2="26" y2="41" stroke="#fff" stroke-width="0.6"/>
+        <line x1="12.5" y1="39.5" x2="15.5" y2="36.5" stroke="#fff" stroke-width="0.6"/>
+        <line x1="7" y1="26" x2="11" y2="26" stroke="#fff" stroke-width="0.6"/>
+        <line x1="12.5" y1="12.5" x2="15.5" y2="15.5" stroke="#fff" stroke-width="0.6"/>
+    </g>
+</svg>

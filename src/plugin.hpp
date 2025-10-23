@@ -347,6 +347,316 @@ struct ShapetakerKnobOscilloscopeHuge : app::SvgKnob {
     }
 };
 
+// ============================================================================
+// CHARRED KNOBS (for testing alternative aesthetics)
+// ============================================================================
+
+struct ShapetakerKnobCharredSmall : app::SvgKnob {
+    widget::SvgWidget* bg;
+    Vec nativeSize = Vec(100.f, 100.f);
+
+    ShapetakerKnobCharredSmall() {
+        minAngle = -0.75 * M_PI;
+        maxAngle = 0.75 * M_PI;
+
+        setSvg(Svg::load(asset::plugin(pluginInstance, "res/knobs/indicators/shapetaker_knob_ROTATE_charred_S.svg")));
+
+        bg = new widget::SvgWidget;
+        bg->setSvg(Svg::load(asset::plugin(pluginInstance, "res/knobs/backgrounds/shapetaker_knob_BASE_charred_S.svg")));
+        nativeSize = bg->box.size;
+        if (fb && tw) fb->addChildBelow(bg, tw);
+        box.size = mm2px(Vec(16.f, 16.f));
+
+        if (shadow && sw) {
+            shadow->visible = true;
+            shadow->blurRadius = 0.f;
+            shadow->opacity = 0.15f;
+            Vec s = sw->box.size;
+            float f = 0.80f;
+            Vec shr = Vec(s.x * f, s.y * f);
+            shadow->box.size = shr;
+            shadow->box.pos = Vec((s.x - shr.x) * 0.5f,
+                                   (s.y - shr.y) * 0.5f + s.y * 0.10f);
+        }
+    }
+    void draw(const DrawArgs& args) override {
+        nvgSave(args.vg);
+        float svgW = std::max(1.f, nativeSize.x);
+        float svgH = std::max(1.f, nativeSize.y);
+        float sx = box.size.x / svgW;
+        float sy = box.size.y / svgH;
+        float s = std::min(sx, sy);
+        float tx = (box.size.x - svgW * s) * 0.5f;
+        float ty = (box.size.y - svgH * s) * 0.5f;
+        nvgTranslate(args.vg, tx, ty);
+        nvgScale(args.vg, s, s);
+        app::SvgKnob::draw(args);
+        nvgRestore(args.vg);
+    }
+};
+
+struct ShapetakerKnobCharredMedium : app::SvgKnob {
+    widget::SvgWidget* bg;
+    Vec nativeSize = Vec(100.f, 100.f);
+
+    ShapetakerKnobCharredMedium() {
+        minAngle = -0.75 * M_PI;
+        maxAngle = 0.75 * M_PI;
+
+        setSvg(Svg::load(asset::plugin(pluginInstance, "res/knobs/indicators/shapetaker_knob_ROTATE_charred_M.svg")));
+
+        bg = new widget::SvgWidget;
+        bg->setSvg(Svg::load(asset::plugin(pluginInstance, "res/knobs/backgrounds/shapetaker_knob_BASE_charred_M.svg")));
+        nativeSize = bg->box.size;
+        if (fb && tw) fb->addChildBelow(bg, tw);
+        box.size = mm2px(Vec(18.f, 18.f));
+
+        if (shadow && sw) {
+            shadow->visible = true;
+            shadow->blurRadius = 0.f;
+            shadow->opacity = 0.15f;
+            Vec s = sw->box.size;
+            float f = 0.82f;
+            Vec shr = Vec(s.x * f, s.y * f);
+            shadow->box.size = shr;
+            shadow->box.pos = Vec((s.x - shr.x) * 0.5f,
+                                   (s.y - shr.y) * 0.5f + s.y * 0.10f);
+        }
+    }
+    void draw(const DrawArgs& args) override {
+        nvgSave(args.vg);
+        float svgW = std::max(1.f, nativeSize.x);
+        float svgH = std::max(1.f, nativeSize.y);
+        float sx = box.size.x / svgW;
+        float sy = box.size.y / svgH;
+        float s = std::min(sx, sy);
+        float tx = (box.size.x - svgW * s) * 0.5f;
+        float ty = (box.size.y - svgH * s) * 0.5f;
+        nvgTranslate(args.vg, tx, ty);
+        nvgScale(args.vg, s, s);
+        app::SvgKnob::draw(args);
+        nvgRestore(args.vg);
+    }
+};
+
+// ============================================================================
+// VINTAGE CHUNKY KNOBS (tactile oscilloscope style)
+// ============================================================================
+
+struct ShapetakerKnobVintageSmall : app::SvgKnob {
+    widget::SvgWidget* bg;
+    Vec nativeSize = Vec(100.f, 100.f);
+
+    ShapetakerKnobVintageSmall() {
+        minAngle = -0.75 * M_PI;
+        maxAngle = 0.75 * M_PI;
+
+        setSvg(Svg::load(asset::plugin(pluginInstance, "res/knobs/indicators/shapetaker_knob_ROTATE_vintage_S.svg")));
+
+        bg = new widget::SvgWidget;
+        bg->setSvg(Svg::load(asset::plugin(pluginInstance, "res/knobs/backgrounds/shapetaker_knob_BASE_vintage_S.svg")));
+        nativeSize = bg->box.size;
+        if (fb && tw) fb->addChildBelow(bg, tw);
+        box.size = mm2px(Vec(20.f, 20.f));  // Much bigger! (was 16mm)
+
+        // Disable shadow since indicator is on outer edge
+        if (shadow) {
+            shadow->visible = false;
+        }
+    }
+    void draw(const DrawArgs& args) override {
+        nvgSave(args.vg);
+        float svgW = std::max(1.f, nativeSize.x);
+        float svgH = std::max(1.f, nativeSize.y);
+        float sx = box.size.x / svgW;
+        float sy = box.size.y / svgH;
+        float s = std::min(sx, sy);
+        float tx = (box.size.x - svgW * s) * 0.5f;
+        float ty = (box.size.y - svgH * s) * 0.5f;
+        nvgTranslate(args.vg, tx, ty);
+        nvgScale(args.vg, s, s);
+        app::SvgKnob::draw(args);
+        nvgRestore(args.vg);
+    }
+};
+
+struct ShapetakerKnobVintageMedium : app::SvgKnob {
+    widget::SvgWidget* bg;
+    Vec nativeSize = Vec(100.f, 100.f);
+
+    ShapetakerKnobVintageMedium() {
+        minAngle = -0.75 * M_PI;
+        maxAngle = 0.75 * M_PI;
+
+        setSvg(Svg::load(asset::plugin(pluginInstance, "res/knobs/indicators/shapetaker_knob_ROTATE_vintage_M.svg")));
+
+        bg = new widget::SvgWidget;
+        bg->setSvg(Svg::load(asset::plugin(pluginInstance, "res/knobs/backgrounds/shapetaker_knob_BASE_vintage_M.svg")));
+        nativeSize = bg->box.size;
+        if (fb && tw) fb->addChildBelow(bg, tw);
+        box.size = mm2px(Vec(22.f, 22.f));  // Much bigger! (was 18mm)
+
+        // Disable shadow since indicator is on outer edge
+        if (shadow) {
+            shadow->visible = false;
+        }
+    }
+
+    void draw(const DrawArgs& args) override {
+        nvgSave(args.vg);
+        Vec c = box.size.div(2);
+        float scale = box.size.x / nativeSize.x;
+        nvgTranslate(args.vg, c.x, c.y);
+        nvgScale(args.vg, scale, scale);
+        nvgTranslate(args.vg, -c.x, -c.y);
+        app::SvgKnob::draw(args);
+        nvgRestore(args.vg);
+    }
+};
+
+// ============================================================================
+// DARK KNOBS (new charred aesthetic)
+// ============================================================================
+
+struct ShapetakerKnobDarkSmall : app::SvgKnob {
+    widget::SvgWidget* bg;
+    Vec nativeSize = Vec(100.f, 100.f);
+
+    ShapetakerKnobDarkSmall() {
+        minAngle = -0.75 * M_PI;
+        maxAngle = 0.75 * M_PI;
+
+        setSvg(Svg::load(asset::plugin(pluginInstance, "res/knobs/indicators/small-dark-rotating.svg")));
+
+        bg = new widget::SvgWidget;
+        bg->setSvg(Svg::load(asset::plugin(pluginInstance, "res/knobs/backgrounds/small-dark-stationary.svg")));
+        nativeSize = bg->box.size;
+        if (fb && tw) fb->addChildBelow(bg, tw);
+        box.size = mm2px(Vec(8.f, 8.f));
+
+        // Disable shadow for clean dark aesthetic
+        if (shadow) {
+            shadow->visible = false;
+        }
+    }
+
+    void draw(const DrawArgs& args) override {
+        nvgSave(args.vg);
+        Vec c = box.size.div(2);
+        float scale = box.size.x / nativeSize.x;
+        nvgTranslate(args.vg, c.x, c.y);
+        nvgScale(args.vg, scale, scale);
+        nvgTranslate(args.vg, -c.x, -c.y);
+        app::SvgKnob::draw(args);
+        nvgRestore(args.vg);
+    }
+};
+
+struct ShapetakerKnobDarkMedium : app::SvgKnob {
+    widget::SvgWidget* bg;
+    Vec nativeSize = Vec(100.f, 100.f);
+
+    ShapetakerKnobDarkMedium() {
+        minAngle = -0.75 * M_PI;
+        maxAngle = 0.75 * M_PI;
+
+        setSvg(Svg::load(asset::plugin(pluginInstance, "res/knobs/indicators/medium-dark-rotating.svg")));
+
+        bg = new widget::SvgWidget;
+        bg->setSvg(Svg::load(asset::plugin(pluginInstance, "res/knobs/backgrounds/medium-dark-stationary.svg")));
+        nativeSize = bg->box.size;
+        if (fb && tw) fb->addChildBelow(bg, tw);
+        box.size = mm2px(Vec(18.f, 18.f));
+
+        // Disable shadow for clean dark aesthetic
+        if (shadow) {
+            shadow->visible = false;
+        }
+    }
+
+    void draw(const DrawArgs& args) override {
+        nvgSave(args.vg);
+        Vec c = box.size.div(2);
+        float scale = box.size.x / nativeSize.x;
+        nvgTranslate(args.vg, c.x, c.y);
+        nvgScale(args.vg, scale, scale);
+        nvgTranslate(args.vg, -c.x, -c.y);
+        app::SvgKnob::draw(args);
+        nvgRestore(args.vg);
+    }
+};
+
+struct ShapetakerKnobDarkLarge : app::SvgKnob {
+    widget::SvgWidget* bg;
+    Vec nativeSize = Vec(100.f, 100.f);
+
+    ShapetakerKnobDarkLarge() {
+        minAngle = -0.75 * M_PI;
+        maxAngle = 0.75 * M_PI;
+
+        setSvg(Svg::load(asset::plugin(pluginInstance, "res/knobs/indicators/large-dark-rotating.svg")));
+
+        bg = new widget::SvgWidget;
+        bg->setSvg(Svg::load(asset::plugin(pluginInstance, "res/knobs/backgrounds/large-dark-stationary.svg")));
+        nativeSize = bg->box.size;
+        if (fb && tw) fb->addChildBelow(bg, tw);
+        box.size = mm2px(Vec(22.f, 22.f));
+
+        // Disable shadow for clean dark aesthetic
+        if (shadow) {
+            shadow->visible = false;
+        }
+    }
+
+    void draw(const DrawArgs& args) override {
+        nvgSave(args.vg);
+        Vec c = box.size.div(2);
+        float scale = box.size.x / nativeSize.x;
+        nvgTranslate(args.vg, c.x, c.y);
+        nvgScale(args.vg, scale, scale);
+        nvgTranslate(args.vg, -c.x, -c.y);
+        app::SvgKnob::draw(args);
+        nvgRestore(args.vg);
+    }
+};
+
+struct ShapetakerKnobDarkChicken : app::SvgKnob {
+    widget::SvgWidget* bg;
+    Vec nativeSize = Vec(100.f, 100.f);
+
+    ShapetakerKnobDarkChicken() {
+        minAngle = -0.75 * M_PI;
+        maxAngle = 0.75 * M_PI;
+
+        setSvg(Svg::load(asset::plugin(pluginInstance, "res/knobs/indicators/chicken-dark-rotating.svg")));
+
+        bg = new widget::SvgWidget;
+        bg->setSvg(Svg::load(asset::plugin(pluginInstance, "res/knobs/backgrounds/chicken-dark-stationary.svg")));
+        nativeSize = bg->box.size;
+        if (fb && tw) fb->addChildBelow(bg, tw);
+        box.size = mm2px(Vec(22.f, 22.f));
+
+        // Disable shadow for clean dark aesthetic
+        if (shadow) {
+            shadow->visible = false;
+        }
+    }
+    void draw(const DrawArgs& args) override {
+        nvgSave(args.vg);
+        float svgW = std::max(1.f, nativeSize.x);
+        float svgH = std::max(1.f, nativeSize.y);
+        float sx = box.size.x / svgW;
+        float sy = box.size.y / svgH;
+        float s = std::min(sx, sy);
+        float tx = (box.size.x - svgW * s) * 0.5f;
+        float ty = (box.size.y - svgH * s) * 0.5f;
+        nvgTranslate(args.vg, tx, ty);
+        nvgScale(args.vg, s, s);
+        app::SvgKnob::draw(args);
+        nvgRestore(args.vg);
+    }
+};
+
 struct ShapetakerOscilloscopeSwitch : app::SvgSwitch {
     ShapetakerOscilloscopeSwitch() {
         addFrame(Svg::load(asset::plugin(pluginInstance, "res/switches/shuttle-toggle-switch-off.svg")));

@@ -838,23 +838,70 @@ struct UnifiedDisplayWidget : TransparentWidget {
         nvgRect(args.vg, 0, 0, box.size.x, box.size.y);
         NVGcolor bezelLight = nvgRGB(0x6b, 0x42, 0x28);
         NVGcolor bezelDark = nvgRGB(0x1c, 0x11, 0x08);
-        NVGcolor bezelEdge = nvgRGB(0xaa, 0x72, 0x3a);
 
         // Outer bezel with gentle curvature
         float outerRadius = 8.f;
+
+        // Panel recess shading to seat the bezel flush with the panel
+        nvgBeginPath(args.vg);
+        nvgRoundedRect(args.vg, -2.0f, -2.0f, box.size.x + 4.0f, box.size.y + 4.0f, outerRadius + 2.0f);
+        nvgRoundedRect(args.vg, 0.f, 0.f, box.size.x, box.size.y, outerRadius);
+        nvgPathWinding(args.vg, NVG_HOLE);
+        NVGpaint topInsetShadow = nvgLinearGradient(args.vg,
+            0.f, -2.0f, 0.f, 6.0f,
+            nvgRGBA(0, 0, 0, 90), nvgRGBA(0, 0, 0, 0));
+        nvgFillPaint(args.vg, topInsetShadow);
+        nvgFill(args.vg);
+
+        nvgBeginPath(args.vg);
+        nvgRoundedRect(args.vg, -2.0f, -2.0f, box.size.x + 4.0f, box.size.y + 4.0f, outerRadius + 2.0f);
+        nvgRoundedRect(args.vg, 0.f, 0.f, box.size.x, box.size.y, outerRadius);
+        nvgPathWinding(args.vg, NVG_HOLE);
+        NVGpaint panelGlow = nvgLinearGradient(args.vg,
+            0.f, box.size.y - 6.0f, 0.f, box.size.y + 2.0f,
+            nvgRGBA(0, 0, 0, 0), nvgRGBA(0xc8, 0x8f, 0x55, 60));
+        nvgFillPaint(args.vg, panelGlow);
+        nvgFill(args.vg);
+
+        nvgBeginPath(args.vg);
+        nvgRoundedRect(args.vg, -0.5f, -0.5f, box.size.x + 1.0f, box.size.y + 1.0f, outerRadius + 0.5f);
+        nvgRoundedRect(args.vg, 0.f, 0.f, box.size.x, box.size.y, outerRadius);
+        nvgPathWinding(args.vg, NVG_HOLE);
+        NVGpaint bezelShadow = nvgBoxGradient(args.vg,
+            -0.5f, -0.5f, box.size.x + 1.0f, box.size.y + 1.0f,
+            outerRadius + 0.5f, 4.0f,
+            nvgRGBA(0, 0, 0, 70), nvgRGBA(0, 0, 0, 0));
+        nvgFillPaint(args.vg, bezelShadow);
+        nvgFill(args.vg);
+
+        // Bezel body with warm metallic gradient
         nvgBeginPath(args.vg);
         nvgRoundedRect(args.vg, 0.f, 0.f, box.size.x, box.size.y, outerRadius);
-        NVGpaint bezelOuter = nvgLinearGradient(args.vg, 0.f, 0.f, box.size.x * 0.2f, box.size.y,
-            bezelLight, bezelDark);
+        NVGpaint bezelOuter = nvgLinearGradient(args.vg, 0.f, 0.f, box.size.x * 0.25f, box.size.y * 1.05f,
+            bezelDark, bezelLight);
         nvgFillPaint(args.vg, bezelOuter);
         nvgFill(args.vg);
 
-        // Polished edge
+        // Polished edge rendered as gradient chamfer
         nvgBeginPath(args.vg);
-        nvgRoundedRect(args.vg, 1.2f, 1.2f, box.size.x - 2.4f, box.size.y - 2.4f, outerRadius - 1.2f);
-        nvgStrokeWidth(args.vg, 1.4f);
-        nvgStrokeColor(args.vg, bezelEdge);
-        nvgStroke(args.vg);
+        nvgRoundedRect(args.vg, 0.9f, 0.9f, box.size.x - 1.8f, box.size.y - 1.8f, outerRadius - 0.9f);
+        nvgRoundedRect(args.vg, 2.8f, 2.8f, box.size.x - 5.6f, box.size.y - 5.6f, outerRadius - 2.8f);
+        nvgPathWinding(args.vg, NVG_HOLE);
+        NVGpaint bezelEdgePaint = nvgLinearGradient(args.vg, 0.f, 0.f, box.size.x, box.size.y,
+            nvgRGBA(0xe0, 0xb0, 0x6a, 200), nvgRGBA(0x18, 0x0d, 0x06, 230));
+        nvgFillPaint(args.vg, bezelEdgePaint);
+        nvgFill(args.vg);
+
+        // Subtle top highlight to catch ambient light
+        nvgBeginPath(args.vg);
+        nvgRoundedRect(args.vg, 1.8f, 1.8f, box.size.x - 3.6f, box.size.y - 3.6f, outerRadius - 1.8f);
+        nvgRoundedRect(args.vg, 4.4f, 4.4f, box.size.x - 8.8f, box.size.y - 8.8f, outerRadius - 4.4f);
+        nvgPathWinding(args.vg, NVG_HOLE);
+        NVGpaint bezelSheen = nvgLinearGradient(args.vg,
+            0.f, box.size.y * 0.35f, 0.f, box.size.y,
+            nvgRGBA(0, 0, 0, 0), nvgRGBA(255, 220, 150, 35));
+        nvgFillPaint(args.vg, bezelSheen);
+        nvgFill(args.vg);
 
         // Inner bezel inset
         float bezelWidth = 6.f;
@@ -871,6 +918,31 @@ struct UnifiedDisplayWidget : TransparentWidget {
         float screenY = screenMargin;
         float screenW = box.size.x - screenMargin * 2;
         float screenH = box.size.y - screenMargin * 2;
+
+        // Embedded screen appearance - inset shadow for depth
+        float insetSize = 3.f;
+
+        // Dark shadow on top and left edges (recessed look)
+        nvgBeginPath(args.vg);
+        nvgRoundedRect(args.vg, screenX - insetSize, screenY - insetSize,
+                       screenW + insetSize * 2, screenH + insetSize * 2, 6.f);
+        NVGpaint topShadow = nvgLinearGradient(args.vg,
+            screenX - insetSize, screenY - insetSize,
+            screenX + insetSize * 2, screenY + insetSize * 2,
+            nvgRGBA(0, 0, 0, 140), nvgRGBA(0, 0, 0, 0));
+        nvgFillPaint(args.vg, topShadow);
+        nvgFill(args.vg);
+
+        // Light highlight on bottom and right edges (depth)
+        nvgBeginPath(args.vg);
+        nvgRoundedRect(args.vg, screenX - insetSize, screenY - insetSize,
+                       screenW + insetSize * 2, screenH + insetSize * 2, 6.f);
+        NVGpaint bottomHighlight = nvgLinearGradient(args.vg,
+            screenX + screenW - insetSize * 2, screenY + screenH - insetSize * 2,
+            screenX + screenW + insetSize, screenY + screenH + insetSize,
+            nvgRGBA(0, 0, 0, 0), nvgRGBA(90, 70, 50, 50));
+        nvgFillPaint(args.vg, bottomHighlight);
+        nvgFill(args.vg);
 
         // Dark screen background with amber tint
         nvgBeginPath(args.vg);
@@ -894,10 +966,10 @@ struct UnifiedDisplayWidget : TransparentWidget {
         // RADAR SECTION (Left side of screen)
         // ================================================================
 
-        float radarSize = screenH * 1.05f;  // Square radar
+        float radarSize = std::min(screenH * 0.9f, screenW * 0.55f);
         float radarX = screenX + radarSize * 0.5f;
-        float radarY = screenY + radarSize * 0.46f;
-        float radius = radarSize * 0.42f;
+        float radarY = screenY + screenH * 0.5f;
+        float radius = radarSize * 0.45f;
 
         // Draw radar (simplified from ParticleDisplayWidget)
         drawRadar(args.vg, radarX, radarY, radius);
@@ -919,22 +991,35 @@ struct UnifiedDisplayWidget : TransparentWidget {
         // SCREEN EFFECTS (over everything)
         // ================================================================
 
-        scanlinePhase += APP->window->getLastFrameDuration() * 24.f;
-        float phosphorDrift = std::fmod(scanlinePhase, 6.f);
-
-        // Scanlines
-        for (float y = screenY; y < screenY + screenH; y += 2.f) {
+        // Scanlines (animated and finer for CRT feel)
+        const float scanSpacing = 1.45f;
+        const float scanThickness = 0.12f;
+        const float scanSpeed = 14.f; // pixels per second
+        float timeNow = (float)rack::system::getTime();
+        float animatedPhase = std::fmod(timeNow * scanSpeed, scanSpacing);
+        if (animatedPhase < 0.f) {
+            animatedPhase += scanSpacing;
+        }
+        scanlinePhase = animatedPhase;
+        for (float y = screenY + scanlinePhase; y < screenY + screenH; y += scanSpacing) {
             nvgBeginPath(args.vg);
-            nvgRect(args.vg, screenX, y, screenW, 0.6f);
-            nvgFillColor(args.vg, nvgRGBA(0, 0, 0, 55));
+            nvgRect(args.vg, screenX, y, screenW, scanThickness);
+            nvgFillColor(args.vg, nvgRGBA(0, 0, 0, 32));
             nvgFill(args.vg);
         }
 
-        // Occasional phosphor separation lines
-        for (float y = screenY + phosphorDrift; y < screenY + screenH; y += 6.f) {
+        // Phosphor separation lines (subtle, drifting)
+        const float separationSpacing = 6.f;
+        const float separationThickness = 0.35f;
+        const float separationSpeed = 2.5f; // pixels per second
+        float separationPhase = std::fmod(timeNow * separationSpeed, separationSpacing);
+        if (separationPhase < 0.f) {
+            separationPhase += separationSpacing;
+        }
+        for (float y = screenY + separationPhase; y < screenY + screenH; y += separationSpacing) {
             nvgBeginPath(args.vg);
-            nvgRect(args.vg, screenX, y, screenW, 1.0f);
-            nvgFillColor(args.vg, nvgRGBA(0x45, 0xec, 0xff, 20));
+            nvgRect(args.vg, screenX, y, screenW, separationThickness);
+            nvgFillColor(args.vg, nvgRGBA(0x45, 0xec, 0xff, 14));
             nvgFill(args.vg);
         }
 
@@ -960,8 +1045,8 @@ struct UnifiedDisplayWidget : TransparentWidget {
             float ringRadius = radius * (ring / 4.0f);
             nvgBeginPath(vg);
             nvgCircle(vg, cx, cy, ringRadius);
-            nvgStrokeColor(vg, nvgRGBA(0x44, 0x22, 0x00, 0x60));
-            nvgStrokeWidth(vg, 0.75f);
+            nvgStrokeColor(vg, nvgRGBA(0x44, 0x1c, 0x00, 0x66));
+            nvgStrokeWidth(vg, 0.65f);
             nvgStroke(vg);
         }
 
@@ -971,16 +1056,16 @@ struct UnifiedDisplayWidget : TransparentWidget {
             nvgBeginPath(vg);
             nvgMoveTo(vg, cx, cy);
             nvgLineTo(vg, cx + std::cos(angle) * radius, cy + std::sin(angle) * radius);
-            nvgStrokeColor(vg, nvgRGBA(0x33, 0x18, 0x00, 0x30));
+            nvgStrokeColor(vg, nvgRGBA(0x33, 0x15, 0x00, 0x4c));
             nvgStrokeWidth(vg, 0.5f);
             nvgStroke(vg);
         }
 
         // Pattern rings - spread out with more spacing
         float ringRadii[3] = {
-            radius * 0.45f,  // Layer 0 (Orange) - innermost
-            radius * 0.70f,  // Layer 1 (Amber) - middle
-            radius * 0.95f   // Layer 2 (Red) - outermost
+            radius * 0.25f,  // Align with first range ring
+            radius * 0.50f,  // Align with second range ring
+            radius * 0.75f   // Align with third range ring
         };
 
         for (int lay = 0; lay < 3; lay++) {
@@ -1081,11 +1166,11 @@ struct UnifiedDisplayWidget : TransparentWidget {
         // Header - title and subtitle
         float headerY = y + 2.f;
         nvgFillColor(vg, terminalGreen);
-        nvgText(vg, x + 3.f, headerY, "FATEBINDER", NULL);
+        nvgText(vg, x + 4.f, headerY, "FATEBINDER", NULL);
         nvgFillColor(vg, terminalDim);
         nvgText(vg, x + 49.f, headerY, "RHYTHM COMPUTER", NULL);
         nvgFillColor(vg, nvgRGB(0xb0, 0x6b, 0xff));
-        nvgText(vg, x + 3.f, headerY + lineHeight * 0.9f, u8"運命結束機", NULL);
+        nvgText(vg, x + 4.f, headerY + lineHeight * 0.9f, u8"運命結束機", NULL);
         nvgFillColor(vg, terminalDim);
         nvgText(vg, x + 49.f, headerY + lineHeight * 0.9f, u8"シェイプテイカー", NULL);
 
@@ -1116,9 +1201,10 @@ struct UnifiedDisplayWidget : TransparentWidget {
         }
 
         // 3-column layout
-        float col1X = x + 3.f;
-        float col2X = x + w * 0.28f;
-        float col3X = x + w * 0.66f;
+        float col1X = x + 2.5f;
+        float col2ParamsX = x + w * 0.33f + 2.0f;
+        float col2ActivityX = x + w * 0.27f + 2.0f;
+        float col3X = x + w * 0.64f + 2.0f;
         float col1Y = headerY + lineHeight * 2.3f;
 
         int steps = (int)module->params[Fatebinder::STEPS_PARAM].getValue();
@@ -1126,8 +1212,10 @@ struct UnifiedDisplayWidget : TransparentWidget {
         int rotation = (int)module->params[Fatebinder::ROTATION_PARAM].getValue();
 
         // Column 1: Pattern
-        nvgFillColor(vg, terminalDim);
-        nvgText(vg, col1X, col1Y, "PATTERN", NULL);
+        const char* rhythmName = (module->rhythmMode == LSYSTEM_MODE) ? "L-SYSTEM" : "EUCLIDEAN";
+        nvgFillColor(vg, terminalPurple);
+        snprintf(buf, sizeof(buf), "%s", rhythmName);
+        nvgText(vg, col1X, col1Y, buf, NULL);
         col1Y += lineHeight;
 
         nvgFillColor(vg, terminalGreen);
@@ -1141,24 +1229,18 @@ struct UnifiedDisplayWidget : TransparentWidget {
 
         snprintf(buf, sizeof(buf), "ROT:%d", rotation);
         nvgText(vg, col1X, col1Y, buf, NULL);
-        col1Y += lineHeight;
-
-        nvgFillColor(vg, terminalDim);
-        nvgText(vg, col1X, col1Y, "MODE", NULL);
-        col1Y += lineHeight;
-
-        const char* rhythmName = (module->rhythmMode == LSYSTEM_MODE) ? "L-SYSTEM" : "EUCLIDEAN";
-        nvgFillColor(vg, terminalPurple);
-        snprintf(buf, sizeof(buf), "%s", rhythmName);
-        nvgText(vg, col1X, col1Y, buf, NULL);
         col1Y += lineHeight * 1.1f;
 
         // Layers
         int div2 = (int)module->params[Fatebinder::LAYER_2_DIV_PARAM].getValue();
         int div3 = (int)module->params[Fatebinder::LAYER_3_DIV_PARAM].getValue();
 
-        nvgFillColor(vg, terminalDim);
-        nvgText(vg, col1X, col1Y, "DIV", NULL);
+        NVGcolor divLabel = terminalPurple;
+        divLabel.r *= 0.6f;
+        divLabel.g *= 0.6f;
+        divLabel.b *= 0.6f;
+        nvgFillColor(vg, divLabel);
+        nvgText(vg, col1X, col1Y, "DIV:", NULL);
         col1Y += lineHeight;
 
         nvgFillColor(vg, nvgRGB(0x45, 0xec, 0xff));
@@ -1216,30 +1298,31 @@ struct UnifiedDisplayWidget : TransparentWidget {
         };
 
         snprintf(buf, sizeof(buf), "ATK:%dms", (int)std::round(attack * 1000.f));
-        drawLine(col2X, col2Y, buf, terminalPurple);
+        drawLine(col2ParamsX, col2Y, buf, terminalPurple);
 
         snprintf(buf, sizeof(buf), "DEC:%dms", (int)std::round(decay * 1000.f));
-        drawLine(col2X, col2Y, buf, terminalPurple);
+        drawLine(col2ParamsX, col2Y, buf, terminalPurple);
 
         snprintf(buf, sizeof(buf), "CUR:%+d%%", (int)std::round(curve * 100.f));
-        drawLine(col2X, col2Y, buf, terminalPurple);
+        drawLine(col2ParamsX, col2Y, buf, terminalPurple);
 
         float shape = module->params[Fatebinder::SHAPE_PARAM].getValue();
         const char* shapeNames[] = {"SINE", "TRI", "SAW", "SQR"};
         int shapeIndex = rack::math::clamp((int)std::round(shape * 3.f), 0, 3);
         snprintf(buf, sizeof(buf), "WAV:%s", shapeNames[shapeIndex]);
-        drawLine(col2X, col2Y, buf, terminalPurple);
+        drawLine(col2ParamsX, col2Y, buf, terminalPurple);
 
         col2Y += lineHeight * 0.2f;
 
         const char* modeNames[] = {"ADD", "MAX", "RING"};
         snprintf(buf, sizeof(buf), "BLD:%s", modeNames[overlapMode % 3]);
-        drawLine(col2X, col2Y, buf, terminalPurple);
+        drawLine(col2ParamsX, col2Y, buf, terminalPurple);
 
         // Activity indicators for each layer
         col2Y += lineHeight * 0.4f;
         nvgFillColor(vg, terminalDim);
-        nvgText(vg, col2X, col2Y, "ACT", NULL);
+        float activityLabelY = col2Y;
+        nvgText(vg, col2ActivityX, activityLabelY, "ACT", NULL);
         if (module) {
             NVGcolor activityColors[3] = {
                 nvgRGB(0x45, 0xec, 0xff),
@@ -1247,8 +1330,8 @@ struct UnifiedDisplayWidget : TransparentWidget {
                 nvgRGB(0x58, 0x9c, 0xff)
             };
 
-            float dotX = col2X + 24.f;
-            float dotY = col2Y + 3.2f;
+            float dotX = col2ActivityX + 16.f;
+            float dotY = activityLabelY + 3.2f;
             for (int i = 0; i < Fatebinder::kNumLayers; i++) {
                 float level = rack::math::clamp(module->layerHitLevel[i], 0.f, 1.f);
                 float brightness = 0.4f + level * 0.6f;
@@ -1283,7 +1366,7 @@ struct UnifiedDisplayWidget : TransparentWidget {
             float timeBlink = std::fmod(module->displayTime, 1.0f);
             if (timeBlink < 0.5f) {
                 nvgFillColor(vg, nvgRGB(0xff, 0xa0, 0x40));
-                nvgText(vg, col2X, trackingRowY, "TRACKING", NULL);
+                nvgText(vg, col2ParamsX, trackingRowY, "TRACKING", NULL);
             }
         }
 
@@ -1689,13 +1772,13 @@ struct ParticleDisplayWidget : TransparentWidget {
         // CRT SCANLINES
         // ================================================================
 
-        scanlinePhase += 0.5f;
-        if (scanlinePhase > box.size.y) scanlinePhase = 0.f;
+        scanlinePhase += 0.15f;
+        if (scanlinePhase > 1.5f) scanlinePhase = 0.f;
 
-        for (float y = 0; y < box.size.y; y += 3.f) {
+        for (float y = scanlinePhase; y < box.size.y; y += 1.5f) {
             nvgBeginPath(args.vg);
-            nvgRect(args.vg, 0, y, box.size.x, 1.f);
-            nvgFillColor(args.vg, nvgRGBA(0, 0, 0, 40));
+            nvgRect(args.vg, 0, y, box.size.x, 0.5f);
+            nvgFillColor(args.vg, nvgRGBA(0, 0, 0, 25));
             nvgFill(args.vg);
         }
 
