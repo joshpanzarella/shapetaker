@@ -1566,21 +1566,29 @@ struct VintageOscilloscopeWidget : widget::Widget {
             nvgSave(vg);
             nvgScissor(vg, 0, 0, box.size.x, box.size.y);
 
-            float margin = 0;
+            // Add margin to keep signal away from bezel edge (10% margin on each side)
+            float margin = box.size.x * 0.10f;
             float screenLeft = margin;
             float screenRight = box.size.x - margin;
             float screenTop = margin;
             float screenBottom = box.size.y - margin;
             float screenWidth = screenRight - screenLeft;
             float screenHeight = screenBottom - screenTop;
-            
+
+            // Maximum voltage before hard clipping (prevents signal from reaching bezel)
+            const float MAX_DISPLAY_VOLTAGE = 6.0f;
+
             // Function to map voltage to screen coordinates
             auto voltageToScreen = [&](Vec voltage) {
-                // Normalize voltage from -10V..+10V to -1..+1
-                float x_norm = clamp(voltage.x / 7.0f, -1.f, 1.f);
-                float y_norm = clamp(voltage.y / 7.0f, -1.f, 1.f);
-                
-                // Map normalized coordinates to screen space
+                // Hard clamp voltage to prevent exceeding screen bounds
+                float clampedX = clamp(voltage.x, -MAX_DISPLAY_VOLTAGE, MAX_DISPLAY_VOLTAGE);
+                float clampedY = clamp(voltage.y, -MAX_DISPLAY_VOLTAGE, MAX_DISPLAY_VOLTAGE);
+
+                // Normalize voltage to -1..+1 range
+                float x_norm = clampedX / MAX_DISPLAY_VOLTAGE;
+                float y_norm = clampedY / MAX_DISPLAY_VOLTAGE;
+
+                // Map normalized coordinates to screen space with margin
                 float screenX = screenLeft + (x_norm + 1.f) * 0.5f * screenWidth;
                 float screenY = screenTop + (1.f - (y_norm + 1.f) * 0.5f) * screenHeight;
 
@@ -1588,7 +1596,7 @@ struct VintageOscilloscopeWidget : widget::Widget {
                 float fuzz_amount = 0.4f; // pixels of random noise
                 float fuzz_x = (random::uniform() - 0.5f) * fuzz_amount;
                 float fuzz_y = (random::uniform() - 0.5f) * fuzz_amount;
-                
+
                 return Vec(screenX + fuzz_x, screenY + fuzz_y);
             };
             
@@ -1603,6 +1611,9 @@ struct VintageOscilloscopeWidget : widget::Widget {
             nvgLineJoin(vg, NVG_ROUND);
             nvgLineCap(vg, NVG_ROUND);
 
+            // Threshold for detecting discontinuities (prevents swastika-like patterns in PWM)
+            const float DISCONTINUITY_THRESHOLD = 3.5f; // volts
+
             for (int c = 0; c < numChunks; c++) {
                 // Calculate age and alpha for this chunk (0.0=newest, 1.0=oldest)
                 float age = (float)c / (numChunks - 1);
@@ -1615,6 +1626,7 @@ struct VintageOscilloscopeWidget : widget::Widget {
 
                 nvgBeginPath(vg);
                 bool firstPointInChunk = true;
+                Vec lastVoltage = Vec(0, 0);
 
                 // Iterate through points in this chunk, from newest to oldest
                 for (int i = 0; i < chunkSize; i++) {
@@ -1629,7 +1641,20 @@ struct VintageOscilloscopeWidget : widget::Widget {
                         continue;
                     }
 
-                    Vec p = voltageToScreen(buffer[buffer_idx]);
+                    Vec currentVoltage = buffer[buffer_idx];
+                    Vec p = voltageToScreen(currentVoltage);
+
+                    // Detect large voltage jumps (PWM edges, glitches, etc.)
+                    // Break the line to avoid connecting discontinuous points
+                    if (!firstPointInChunk) {
+                        float deltaX = std::abs(currentVoltage.x - lastVoltage.x);
+                        float deltaY = std::abs(currentVoltage.y - lastVoltage.y);
+
+                        // If either channel has a large jump, start a new line segment
+                        if (deltaX > DISCONTINUITY_THRESHOLD || deltaY > DISCONTINUITY_THRESHOLD) {
+                            firstPointInChunk = true;
+                        }
+                    }
 
                     if (firstPointInChunk) {
                         nvgMoveTo(vg, p.x, p.y);
@@ -1637,6 +1662,8 @@ struct VintageOscilloscopeWidget : widget::Widget {
                     } else {
                         nvgLineTo(vg, p.x, p.y);
                     }
+
+                    lastVoltage = currentVoltage;
                 }
 
                 // Stroke the entire chunk path with the calculated alpha

@@ -5,7 +5,17 @@
 #include <functional>
 
 struct ClairaudientModule : Module, IOscilloscopeSource {
-    
+
+    // DSP Constants
+    static constexpr float MIDDLE_C_HZ = 261.626f;
+    static constexpr float CV_FINE_SCALE = 1.f / 50.f;
+    static constexpr float CV_SHAPE_SCALE = 1.f / 10.f;
+    static constexpr float CV_XFADE_SCALE = 1.f / 10.f;
+    static constexpr float OUTPUT_GAIN = 5.f;
+    static constexpr float NOISE_V_PEAK = 0.45f;
+    static constexpr float HIGH_CUT_HZ = 10000.f;
+    static constexpr float ANTI_ALIAS_CUTOFF = 0.45f;
+
     // Quantize voltage to discrete octave steps for oscillator V
     float quantizeToOctave(float voltage) {
         // Clamp to -2 to +2 octaves, then round to nearest octave
@@ -61,6 +71,11 @@ struct ClairaudientModule : Module, IOscilloscopeSource {
         CROSSFADE_STEREO_SWAP = 1
     };
 
+    enum WaveformMode {
+        WAVEFORM_SIGMOID_SAW = 0,
+        WAVEFORM_PWM = 1
+    };
+
     // Polyphonic oscillator state (up to 8 voices for Clairaudient)
     static constexpr int MAX_POLY_VOICES = 8;
     shapetaker::dsp::VoiceArray<float, MAX_POLY_VOICES> phase1A;  // Independent phase for osc 1A per voice
@@ -100,6 +115,7 @@ struct ClairaudientModule : Module, IOscilloscopeSource {
     bool quantizeOscV = true;  // V oscillator quantized to octaves by default
     bool quantizeOscZ = true;  // Z oscillator quantized to semitones by default
     int crossfadeMode = CROSSFADE_EQUAL_POWER;
+    int waveformMode = WAVEFORM_SIGMOID_SAW;
     int oversampleFactor = 2;
     bool highCutEnabled = false;
     float driftAmount = 0.0f;
@@ -185,6 +201,7 @@ struct ClairaudientModule : Module, IOscilloscopeSource {
         json_object_set_new(rootJ, "quantizeOscZ", json_boolean(quantizeOscZ));
         json_object_set_new(rootJ, "oscNoiseAmount", json_real(oscNoiseAmount));
         json_object_set_new(rootJ, "crossfadeMode", json_integer(crossfadeMode));
+        json_object_set_new(rootJ, "waveformMode", json_integer(waveformMode));
         json_object_set_new(rootJ, "oversampleFactor", json_integer(oversampleFactor));
         json_object_set_new(rootJ, "highCutEnabled", json_boolean(highCutEnabled));
         json_object_set_new(rootJ, "driftAmount", json_real(driftAmount));
@@ -207,6 +224,10 @@ struct ClairaudientModule : Module, IOscilloscopeSource {
         json_t* xfadeModeJ = json_object_get(rootJ, "crossfadeMode");
         if (xfadeModeJ)
             crossfadeMode = clamp((int)json_integer_value(xfadeModeJ), CROSSFADE_EQUAL_POWER, CROSSFADE_STEREO_SWAP);
+
+        json_t* waveformModeJ = json_object_get(rootJ, "waveformMode");
+        if (waveformModeJ)
+            waveformMode = clamp((int)json_integer_value(waveformModeJ), WAVEFORM_SIGMOID_SAW, WAVEFORM_PWM);
 
         json_t* oversampleJ = json_object_get(rootJ, "oversampleFactor");
         if (oversampleJ)
@@ -231,10 +252,15 @@ struct ClairaudientModule : Module, IOscilloscopeSource {
                 {inputs[VOCT1_INPUT], inputs[VOCT2_INPUT]},
                 {outputs[LEFT_OUTPUT], outputs[RIGHT_OUTPUT]}),
             MAX_POLY_VOICES);
-        
+
         // Apply the configured oversampling factor (1×, 2×, 4×, or 8×, default 2×)
         int oversample = std::max(1, oversampleFactor);
         float oversampleRate = args.sampleRate * oversample;
+
+        // Pre-calculate constants that are the same for all voices and oversample iterations
+        float shapedNoise = std::pow(clamp(oscNoiseAmount, 0.f, 1.f), 0.65f);
+        float antiAliasCutoffHz = args.sampleRate * ANTI_ALIAS_CUTOFF;
+        float invOversampleRate = 1.f / oversampleRate; // Pre-compute reciprocal for faster multiplication
 
         // Process each voice
         for (int ch = 0; ch < channels; ch++) {
@@ -263,13 +289,17 @@ struct ClairaudientModule : Module, IOscilloscopeSource {
             float fineTune1 = params[FINE1_PARAM].getValue();
             if (inputs[FINE1_CV_INPUT].isConnected()) {
                 float cvAmount = params[FINE1_ATTEN_PARAM].getValue();
-                fineTune1 = clamp(fineTune1 + inputs[FINE1_CV_INPUT].getPolyVoltage(ch) * cvAmount / 50.f, -0.2f, 0.2f);
+                fineTune1 = clamp(fineTune1 + inputs[FINE1_CV_INPUT].getPolyVoltage(ch) * cvAmount * CV_FINE_SCALE, -0.2f, 0.2f);
             }
-            
+
+            // Fine 2 normalizes to Fine 1 if not connected
             float fineTune2 = params[FINE2_PARAM].getValue();
             if (inputs[FINE2_CV_INPUT].isConnected()) {
                 float cvAmount = params[FINE2_ATTEN_PARAM].getValue();
-                fineTune2 = clamp(fineTune2 + inputs[FINE2_CV_INPUT].getPolyVoltage(ch) * cvAmount / 50.f, -0.2f, 0.2f);
+                fineTune2 = clamp(fineTune2 + inputs[FINE2_CV_INPUT].getPolyVoltage(ch) * cvAmount * CV_FINE_SCALE, -0.2f, 0.2f);
+            } else {
+                // Normalize to Fine 1: use Fine 1's knob value and CV if present
+                fineTune2 = fineTune1;
             }
 
             // Convert semitone offsets to octaves
@@ -280,57 +310,83 @@ struct ClairaudientModule : Module, IOscilloscopeSource {
             float shape1 = params[SHAPE1_PARAM].getValue();
             if (inputs[SHAPE1_CV_INPUT].isConnected()) {
                 float cvAmount = params[SHAPE1_ATTEN_PARAM].getValue();
-                shape1 = clamp(shape1 + inputs[SHAPE1_CV_INPUT].getPolyVoltage(ch) * cvAmount / 10.f, 0.f, 1.f);
+                shape1 = clamp(shape1 + inputs[SHAPE1_CV_INPUT].getPolyVoltage(ch) * cvAmount * CV_SHAPE_SCALE, 0.f, 1.f);
             }
-            
+
+            // Shape 2 normalizes to Shape 1 if not connected
             float shape2 = params[SHAPE2_PARAM].getValue();
             if (inputs[SHAPE2_CV_INPUT].isConnected()) {
                 float cvAmount = params[SHAPE2_ATTEN_PARAM].getValue();
-                shape2 = clamp(shape2 + inputs[SHAPE2_CV_INPUT].getPolyVoltage(ch) * cvAmount / 10.f, 0.f, 1.f);
+                shape2 = clamp(shape2 + inputs[SHAPE2_CV_INPUT].getPolyVoltage(ch) * cvAmount * CV_SHAPE_SCALE, 0.f, 1.f);
+            } else {
+                // Normalize to Shape 1: use Shape 1's knob value and CV if present
+                shape2 = shape1;
             }
 
             // Get crossfade parameter with attenuverter
             float xfade = params[XFADE_PARAM].getValue();
             if (inputs[XFADE_CV_INPUT].isConnected()) {
                 float cvAmount = params[XFADE_ATTEN_PARAM].getValue();
-                xfade = clamp(xfade + inputs[XFADE_CV_INPUT].getPolyVoltage(ch) * cvAmount / 10.f, 0.f, 1.f);
+                xfade = clamp(xfade + inputs[XFADE_CV_INPUT].getPolyVoltage(ch) * cvAmount * CV_XFADE_SCALE, 0.f, 1.f);
             }
             float xfadeClamped = clamp(xfade, 0.f, 1.f);
 
-            // Shape the user noise amount so the audible noise ramps up sooner
-            float shapedNoise = std::pow(clamp(oscNoiseAmount, 0.f, 1.f), 0.65f);
+            // Add organic frequency drift (very subtle) for this voice - once per process() call
+            updateOrganicDrift(ch, args.sampleTime * oversample, driftAmount);
+
+            // Pre-calculate frequencies outside oversample loop (major optimization)
+            float freq1A = MIDDLE_C_HZ * std::pow(2.f, pitch1 + drift1A[ch]);
+            float freq1B = MIDDLE_C_HZ * std::pow(2.f, pitch1 + fineTune1 + drift1B[ch]);
+            float freq2A = MIDDLE_C_HZ * std::pow(2.f, pitch2 + drift2A[ch]);
+            float freq2B = MIDDLE_C_HZ * std::pow(2.f, pitch2 + fineTune2 + drift2B[ch]);
+
+            // Check sync switches once (doesn't change during oversampling)
+            bool sync1 = params[SYNC1_PARAM].getValue() > 0.5f;
+            bool sync2 = params[SYNC2_PARAM].getValue() > 0.5f;
+
+            // Pre-calculate phase deltas using multiplication instead of division (faster)
+            float deltaPhase1A = freq1A * invOversampleRate;
+            float deltaPhase1B = freq1B * invOversampleRate;
+            float deltaPhase2A = freq2A * invOversampleRate;
+            float deltaPhase2B = freq2B * invOversampleRate;
+
+            // Pre-calculate crossfade coefficients outside loop to avoid repeated sin/cos
+            float xfadeAngle = xfadeClamped * (float)M_PI_2;
+            float xfadeCos = std::cos(xfadeAngle);
+            float xfadeSin = std::sin(xfadeAngle);
+
+            // Pre-calculate stereo swap crossfade coefficients if needed
+            float swapT = 0.f, swapAngle1 = 0.f, swapAngle2 = 0.f;
+            float swapCos1 = 0.f, swapSin1 = 0.f, swapCos2 = 0.f, swapSin2 = 0.f;
+            bool useFirstHalf = (xfadeClamped <= 0.5f);
+            if (crossfadeMode == CROSSFADE_STEREO_SWAP) {
+                if (useFirstHalf) {
+                    swapT = xfadeClamped * 2.f;
+                    swapAngle1 = swapT * (float)M_PI_2;
+                    swapCos1 = std::cos(swapAngle1);
+                    swapSin1 = std::sin(swapAngle1);
+                } else {
+                    swapT = (xfadeClamped - 0.5f) * 2.f;
+                    swapAngle2 = swapT * (float)M_PI_2;
+                    swapCos2 = std::cos(swapAngle2);
+                    swapSin2 = std::sin(swapAngle2);
+                }
+            }
 
             for (int os = 0; os < oversample; os++) {
-                // Add organic frequency drift (very subtle) for this voice
-                updateOrganicDrift(ch, args.sampleTime * oversample, driftAmount);
-                
-                float freq1A = 261.626f * std::pow(2.f, pitch1 + drift1A[ch]);
-                float freq1B = 261.626f * std::pow(2.f, pitch1 + fineTune1 + drift1B[ch]);
-                float freq2A = 261.626f * std::pow(2.f, pitch2 + drift2A[ch]);
-                float freq2B = 261.626f * std::pow(2.f, pitch2 + fineTune2 + drift2B[ch]);
-                
-                // Check sync switches
-                bool sync1 = params[SYNC1_PARAM].getValue() > 0.5f;
-                bool sync2 = params[SYNC2_PARAM].getValue() > 0.5f;
-                
-                // Update phases (with sync logic) for this voice
-                float deltaPhase1A = freq1A / oversampleRate; // Master oscillator increment
-                float deltaPhase1B = freq1B / oversampleRate; // Slave runs at its own frequency
-                float deltaPhase2A = freq2A / oversampleRate; // Master oscillator increment
-                float deltaPhase2B = freq2B / oversampleRate; // Slave runs at its own frequency
-                
+
                 // Add subtle phase noise for organic character (scaled by shaped user amount)
                 const float noiseScale = 0.00005f * shapedNoise;
                 phase1A[ch] += deltaPhase1A + noise1A[ch] * noiseScale;
                 phase1B[ch] += deltaPhase1B + noise1B[ch] * noiseScale;
                 phase2A[ch] += deltaPhase2A + noise2A[ch] * noiseScale;
                 phase2B[ch] += deltaPhase2B + noise2B[ch] * noiseScale;
-                
+
                 if (phase1A[ch] >= 1.f) phase1A[ch] -= 1.f;
                 if (phase1B[ch] >= 1.f) phase1B[ch] -= 1.f;
                 if (phase2A[ch] >= 1.f) phase2A[ch] -= 1.f;
                 if (phase2B[ch] >= 1.f) phase2B[ch] -= 1.f;
-                
+
                 // Apply sync - reset B oscillator to match A when synced
                 if (sync1 && phase1A[ch] < deltaPhase1A) {
                     phase1B[ch] = phase1A[ch];
@@ -338,46 +394,55 @@ struct ClairaudientModule : Module, IOscilloscopeSource {
                 if (sync2 && phase2A[ch] < deltaPhase2A) {
                     phase2B[ch] = phase2A[ch];
                 }
-                
-                // Generate sigmoid-morphed oscillators with anti-aliasing
-                float osc1A = shapetaker::dsp::OscillatorHelper::organicSigmoidSaw(phase1A[ch], shape1, freq1A, oversampleRate);
-                float osc1B = shapetaker::dsp::OscillatorHelper::organicSigmoidSaw(phase1B[ch], shape1, freq1B, oversampleRate);
-                float osc2A = shapetaker::dsp::OscillatorHelper::organicSigmoidSaw(phase2A[ch], shape2, freq2A, oversampleRate);
-                float osc2B = shapetaker::dsp::OscillatorHelper::organicSigmoidSaw(phase2B[ch], shape2, freq2B, oversampleRate);
-                
+
+                // Generate oscillator outputs based on waveform mode
+                float osc1A, osc1B, osc2A, osc2B;
+
+                if (waveformMode == WAVEFORM_PWM) {
+                    // PWM mode - shape parameter controls pulse width
+                    osc1A = generatePWM(phase1A[ch], shape1, freq1A, oversampleRate);
+                    osc1B = generatePWM(phase1B[ch], shape1, freq1B, oversampleRate);
+                    osc2A = generatePWM(phase2A[ch], shape2, freq2A, oversampleRate);
+                    osc2B = generatePWM(phase2B[ch], shape2, freq2B, oversampleRate);
+                } else {
+                    // Sigmoid saw mode (default)
+                    osc1A = shapetaker::dsp::OscillatorHelper::organicSigmoidSaw(phase1A[ch], shape1, freq1A, oversampleRate);
+                    osc1B = shapetaker::dsp::OscillatorHelper::organicSigmoidSaw(phase1B[ch], shape1, freq1B, oversampleRate);
+                    osc2A = shapetaker::dsp::OscillatorHelper::organicSigmoidSaw(phase2A[ch], shape2, freq2A, oversampleRate);
+                    osc2B = shapetaker::dsp::OscillatorHelper::organicSigmoidSaw(phase2B[ch], shape2, freq2B, oversampleRate);
+                }
+
                 float leftOutput;
                 float rightOutput;
 
+                // Use pre-calculated trig values to avoid sin/cos in hot loop
                 if (crossfadeMode == CROSSFADE_EQUAL_POWER) {
-                    leftOutput = shapetaker::dsp::OscillatorHelper::equalPowerMix(osc1A, osc2A, xfadeClamped);
-                    rightOutput = shapetaker::dsp::OscillatorHelper::equalPowerMix(osc1B, osc2B, xfadeClamped);
+                    leftOutput = osc1A * xfadeCos + osc2A * xfadeSin;
+                    rightOutput = osc1B * xfadeCos + osc2B * xfadeSin;
                 } else {
-                    if (xfadeClamped <= 0.5f) {
-                        float t = xfadeClamped * 2.f;
-                        leftOutput = shapetaker::dsp::OscillatorHelper::equalPowerMix(osc1A, osc2B, t);
-                        rightOutput = shapetaker::dsp::OscillatorHelper::equalPowerMix(osc1B, osc1A, t);
+                    if (useFirstHalf) {
+                        leftOutput = osc1A * swapCos1 + osc2B * swapSin1;
+                        rightOutput = osc1B * swapCos1 + osc1A * swapSin1;
                     } else {
-                        float t = (xfadeClamped - 0.5f) * 2.f;
-                        leftOutput = shapetaker::dsp::OscillatorHelper::equalPowerMix(osc2B, osc2A, t);
-                        rightOutput = shapetaker::dsp::OscillatorHelper::equalPowerMix(osc1A, osc2B, t);
+                        leftOutput = osc2B * swapCos2 + osc2A * swapSin2;
+                        rightOutput = osc1A * swapCos2 + osc2B * swapSin2;
                     }
                 }
 
                 // Apply anti-aliasing filter to each channel separately for true stereo
-                float filteredLeft = antiAliasFilterLeft[ch].process(leftOutput, args.sampleRate * 0.45f, oversampleRate);
-                float filteredRight = antiAliasFilterRight[ch].process(rightOutput, args.sampleRate * 0.45f, oversampleRate);
+                float filteredLeft = antiAliasFilterLeft[ch].process(leftOutput, antiAliasCutoffHz, oversampleRate);
+                float filteredRight = antiAliasFilterRight[ch].process(rightOutput, antiAliasCutoffHz, oversampleRate);
 
                 finalLeft += filteredLeft;
                 finalRight += filteredRight;
             }
             
             // Average the oversampled result for this voice
-            float outL = std::tanh(finalLeft / oversample) * 5.f;
-            float outR = std::tanh(finalRight / oversample) * 5.f;
+            float outL = std::tanh(finalLeft / oversample) * OUTPUT_GAIN;
+            float outR = std::tanh(finalRight / oversample) * OUTPUT_GAIN;
 
             // Add audible white noise floor scaled by user amount (post waveshaping, in volts)
             if (shapedNoise > 0.f) {
-                const float NOISE_V_PEAK = 0.45f; // ~±0.45 V at 100%
                 float nL = (rack::random::uniform() - 0.5f) * 2.f * NOISE_V_PEAK * shapedNoise;
                 float nR = (rack::random::uniform() - 0.5f) * 2.f * NOISE_V_PEAK * shapedNoise;
                 outL += nL;
@@ -385,7 +450,6 @@ struct ClairaudientModule : Module, IOscilloscopeSource {
             }
 
             if (highCutEnabled) {
-                const float HIGH_CUT_HZ = 10000.f;
                 outL = highCutFilterLeft[ch].process(outL, HIGH_CUT_HZ, args.sampleRate);
                 outR = highCutFilterRight[ch].process(outR, HIGH_CUT_HZ, args.sampleRate);
             }
@@ -397,8 +461,8 @@ struct ClairaudientModule : Module, IOscilloscopeSource {
             if (ch == 0) {
                 // --- Adaptive Oscilloscope Timescale ---
                 // Determine the dominant frequency based on the crossfader position
-                float baseFreq1 = 261.626f * std::pow(2.f, pitch1);
-                float baseFreq2 = 261.626f * std::pow(2.f, pitch2);
+                float baseFreq1 = MIDDLE_C_HZ * std::pow(2.f, pitch1);
+                float baseFreq2 = MIDDLE_C_HZ * std::pow(2.f, pitch2);
                 float dominantFreq = (xfade < 0.5f) ? baseFreq1 : baseFreq2;
                 dominantFreq = std::max(dominantFreq, 1.f); // Prevent division by zero or very small numbers
 
@@ -427,6 +491,30 @@ struct ClairaudientModule : Module, IOscilloscopeSource {
     int getOscilloscopeBufferSize() const override { return OSCILLOSCOPE_BUFFER_SIZE; }
 
 private:
+    // Generate PWM waveform with anti-aliasing
+    float generatePWM(float phase, float pulseWidth, float freq, float sampleRate) {
+        pulseWidth = clamp(pulseWidth, 0.05f, 0.95f); // Prevent stuck DC
+
+        // Simple polyBLEP anti-aliasing for pulse wave
+        float output = (phase < pulseWidth) ? 1.f : -1.f;
+
+        // Pre-calculate freq/sampleRate (eliminates repeated division)
+        float dt = freq / sampleRate;
+
+        // PolyBLEP at rising edge (phase = 0)
+        if (phase < dt) {
+            float t = phase / dt;
+            output -= (t + t - t * t - 1.f);
+        }
+        // PolyBLEP at falling edge (phase = pulseWidth)
+        else if (phase > pulseWidth && phase < pulseWidth + dt) {
+            float t = (phase - pulseWidth) / dt;
+            output += (t + t - t * t - 1.f);
+        }
+
+        return output;
+    }
+
     // Update organic drift and noise for more natural sound (per voice)
     void updateOrganicDrift(int voice, float sampleTime, float amount) {
         amount = clamp(amount, 0.f, 1.f);
@@ -666,6 +754,18 @@ struct ClairaudientWidget : ModuleWidget {
             addOversampleItem("4×", 4);
             addOversampleItem("8×", 8);
         }));
+
+        menu->addChild(new MenuSeparator);
+        menu->addChild(createMenuLabel("Waveform Mode"));
+
+        auto addWaveformModeItem = [&](const std::string& label, int mode) {
+            menu->addChild(createCheckMenuItem(label, "", [=] { return module->waveformMode == mode; }, [=] {
+                module->waveformMode = mode;
+            }));
+        };
+
+        addWaveformModeItem("Sigmoid Saw", ClairaudientModule::WAVEFORM_SIGMOID_SAW);
+        addWaveformModeItem("PWM", ClairaudientModule::WAVEFORM_PWM);
 
         menu->addChild(new MenuSeparator);
         menu->addChild(createMenuLabel("Crossfade Curve"));
