@@ -15,6 +15,7 @@ struct ChaosVisualizer : Widget {
     shapetaker::FastSmoother visualCutoffASmoother, visualCutoffBSmoother;
     shapetaker::FastSmoother visualResonanceASmoother, visualResonanceBSmoother;
     shapetaker::FastSmoother visualFilterMorphSmoother, visualChaosAmountSmoother;
+    shapetaker::FastSmoother visualOrbitSmoother, visualTideSmoother;
 
     ChaosVisualizer(Involution* module) : module(module) {
         box.size = Vec(173, 138);
@@ -26,6 +27,7 @@ struct ChaosVisualizer : Widget {
 private:
     void drawSquareChaos(NVGcontext* vg, float cx, float cy, float maxRadius,
                         float chaosAmount, float chaosPhase, float filterMorph,
+                        float orbitAmount, float tideAmount,
                         float cutoffA, float cutoffB, float resonanceA, float resonanceB,
                         float filterMorphPhase, float cutoffPhase, float resonancePhase);
 };

@@ -2,6 +2,9 @@
 #include <cmath>
 #include <random>
 #include <limits>
+#include <array>
+#include <algorithm>
+#include <vector>
 #include "involution/liquid_filter.hpp"
 
 struct Involution : Module {
@@ -13,7 +16,9 @@ struct Involution : Module {
         // New magical parameters
         CHAOS_AMOUNT_PARAM,
         CHAOS_RATE_PARAM,
-        FILTER_MORPH_PARAM,
+        AURA_PARAM,
+        ORBIT_PARAM,
+        TIDE_PARAM,
         // Link switches
         LINK_CUTOFF_PARAM,
         LINK_RESONANCE_PARAM,
@@ -31,9 +36,10 @@ struct Involution : Module {
         RESONANCE_A_CV_INPUT,
         CUTOFF_B_CV_INPUT,
         RESONANCE_B_CV_INPUT,
-        CHAOS_CV_INPUT,
         CHAOS_RATE_CV_INPUT,
-        FILTER_MORPH_CV_INPUT,
+        AURA_CV_INPUT,
+        ORBIT_CV_INPUT,
+        TIDE_CV_INPUT,
         INPUTS_LEN
     };
     enum OutputId {
@@ -45,17 +51,96 @@ struct Involution : Module {
         CHAOS_LIGHT,
         CHAOS_LIGHT_GREEN,
         CHAOS_LIGHT_BLUE,
+        AURA_LIGHT,
+        ORBIT_LIGHT,
+        TIDE_LIGHT,
         LIGHTS_LEN
     };
     // Liquid 6th-order filters - one per voice per channel
     shapetaker::dsp::VoiceArray<LiquidFilter> filtersA;
     shapetaker::dsp::VoiceArray<LiquidFilter> filtersB;
 
+    static constexpr int ETHEREAL_STAGES = 4;
+    static constexpr float ETHEREAL_MAX_DELAY_SEC = 0.45f;
+
+    struct EtherealDelay {
+        std::vector<float> buffer;
+        int size = 0;
+        int writePos = 0;
+        float lastOutput = 0.f;
+
+        void configure(float sampleRate) {
+            size = std::max(16, static_cast<int>(std::ceil(sampleRate * ETHEREAL_MAX_DELAY_SEC)) + 4);
+            buffer.assign(size, 0.f);
+            writePos = 0;
+            lastOutput = 0.f;
+        }
+
+        float process(float input, float delaySamples, float feedback) {
+            if (size < 2) {
+                return input;
+            }
+            delaySamples = rack::math::clamp(delaySamples, 1.f, static_cast<float>(size - 2));
+            float readPos = static_cast<float>(writePos) - delaySamples;
+            while (readPos < 0.f) {
+                readPos += static_cast<float>(size);
+            }
+            int i0 = static_cast<int>(readPos);
+            int i1 = (i0 + 1) % size;
+            float frac = readPos - static_cast<float>(i0);
+            float s0 = buffer[i0];
+            float s1 = buffer[i1];
+            float output = s0 + (s1 - s0) * frac;
+            buffer[writePos] = input + output * rack::math::clamp(feedback, -0.95f, 0.95f);
+            writePos = (writePos + 1) % size;
+            lastOutput = output;
+            return output;
+        }
+
+        void reset() {
+            std::fill(buffer.begin(), buffer.end(), 0.f);
+            writePos = 0;
+            lastOutput = 0.f;
+        }
+
+        float maxDelaySamples() const {
+            return size > 2 ? static_cast<float>(size - 2) : 0.f;
+        }
+    };
+
+    struct EtherealVoiceState {
+        std::array<EtherealDelay, ETHEREAL_STAGES> delays;
+        std::array<float, ETHEREAL_STAGES> modPhase{};
+        std::array<float, ETHEREAL_STAGES> phaseOffset{};
+        std::array<float, ETHEREAL_STAGES> drift{};
+
+        void reset() {
+            for (auto& d : delays) {
+                d.reset();
+            }
+            modPhase.fill(0.f);
+        }
+    };
+
+    std::array<EtherealVoiceState, shapetaker::PolyphonicProcessor::MAX_VOICES> etherealVoicesA{};
+    std::array<EtherealVoiceState, shapetaker::PolyphonicProcessor::MAX_VOICES> etherealVoicesB{};
+    float etherealPhase = 0.f;
+
+    // Chaos rate configuration
+    static constexpr float CHAOS_RATE_MIN_HZ = 0.01f;
+    static constexpr float CHAOS_RATE_MAX_HZ = 20.f;
+    static constexpr float CHAOS_CLOCK_TIMEOUT = 2.f;
+
+    rack::dsp::SchmittTrigger chaosClockTrigger;
+    float chaosClockElapsed = 0.f;
+    float chaosClockPeriod = 0.f;
+    float chaosTargetRate = 0.5f;
+
     // Parameter smoothing
     
     shapetaker::FastSmoother cutoffASmooth, cutoffBSmooth, resonanceASmooth, resonanceBSmooth;
+    shapetaker::FastSmoother auraSmooth, orbitSmooth, tideSmooth;
     shapetaker::FastSmoother chaosRateSmooth;
-    shapetaker::FastSmoother morphSmooth;
     
     // Parameter change tracking for bidirectional linking
     float lastCutoffA = -1.f, lastCutoffB = -1.f;
@@ -79,7 +164,26 @@ struct Involution : Module {
         
         // Drive / character controls
         configParam(CHAOS_AMOUNT_PARAM, 0.f, 1.f, 1.f, "Drive", "%", 0.f, 100.f);
-        configParam(CHAOS_RATE_PARAM, 0.01f, 10.f, 0.5f, "Chaos LFO Rate", " Hz", 0.f, 0.f);
+        configParam(AURA_PARAM, 0.f, 1.f, 0.35f, "Aura", "%", 0.f, 100.f);
+        configParam(ORBIT_PARAM, 0.f, 1.f, 0.4f, "Orbit", "%", 0.f, 100.f);
+        configParam(TIDE_PARAM, 0.f, 1.f, 0.5f, "Tide", "%", 0.f, 100.f);
+        configParam(CHAOS_RATE_PARAM, 0.01f, 20.f, 0.5f, "Chaos LFO Rate", " Hz", 0.f, 0.f);
+
+        chaosTargetRate = clamp(params[CHAOS_RATE_PARAM].getValue(), CHAOS_RATE_MIN_HZ, CHAOS_RATE_MAX_HZ);
+        smoothedChaosRate = chaosTargetRate;
+        chaosRateSmooth.reset(chaosTargetRate);
+
+        std::mt19937 etherealRng(rack::random::u32());
+        std::uniform_real_distribution<float> phaseDistrib(0.f, 2.f * static_cast<float>(M_PI));
+        std::uniform_real_distribution<float> driftDistrib(0.65f, 1.45f);
+        for (int v = 0; v < shapetaker::PolyphonicProcessor::MAX_VOICES; ++v) {
+            for (int s = 0; s < ETHEREAL_STAGES; ++s) {
+                etherealVoicesA[v].phaseOffset[s] = phaseDistrib(etherealRng);
+                etherealVoicesB[v].phaseOffset[s] = phaseDistrib(etherealRng);
+                etherealVoicesA[v].drift[s] = driftDistrib(etherealRng);
+                etherealVoicesB[v].drift[s] = driftDistrib(etherealRng);
+            }
+        }
 
         // Custom parameter quantity to show real-time chaos rate including CV modulation
         struct ChaosRateQuantity : engine::ParamQuantity {
@@ -87,15 +191,11 @@ struct Involution : Module {
                 if (!module) return ParamQuantity::getDisplayValue();
 
                 Involution* inv = static_cast<Involution*>(module);
-                // Use the same calculation as the main process function
-                float displayRate = getValue(); // Base knob value
-                if (inv->inputs[Involution::CHAOS_RATE_CV_INPUT].isConnected()) {
-                    float rateCv = inv->inputs[Involution::CHAOS_RATE_CV_INPUT].getVoltage();
-                    displayRate += rateCv * 0.5f; // Same CV scaling as main module
+                float currentRate = inv->smoothedChaosRate;
+                if (!std::isfinite(currentRate) || currentRate <= 0.f) {
+                    currentRate = getValue();
                 }
-                displayRate = clamp(displayRate, 0.001f, 20.0f);
-
-                return displayRate;
+                return clamp(currentRate, Involution::CHAOS_RATE_MIN_HZ, Involution::CHAOS_RATE_MAX_HZ);
             }
         };
 
@@ -104,11 +204,10 @@ struct Involution : Module {
         paramQuantities[CHAOS_RATE_PARAM]->module = this;
         paramQuantities[CHAOS_RATE_PARAM]->paramId = CHAOS_RATE_PARAM;
         paramQuantities[CHAOS_RATE_PARAM]->minValue = 0.01f;
-        paramQuantities[CHAOS_RATE_PARAM]->maxValue = 10.f;
+        paramQuantities[CHAOS_RATE_PARAM]->maxValue = 20.f;
         paramQuantities[CHAOS_RATE_PARAM]->defaultValue = 0.5f;
         paramQuantities[CHAOS_RATE_PARAM]->name = "Chaos LFO Rate";
         paramQuantities[CHAOS_RATE_PARAM]->unit = " Hz";
-        configParam(FILTER_MORPH_PARAM, 0.f, 1.f, 0.f, "Filter Type Morph");
 
         // Link switches
         configSwitch(LINK_CUTOFF_PARAM, 0.f, 1.f, 0.f, "Link Cutoff Frequencies", {"Independent", "Linked"});
@@ -126,17 +225,25 @@ struct Involution : Module {
         configInput(RESONANCE_A_CV_INPUT, "Filter A Resonance CV");
         configInput(CUTOFF_B_CV_INPUT, "Filter B Cutoff CV");
         configInput(RESONANCE_B_CV_INPUT, "Filter B Resonance CV");
-        configInput(CHAOS_CV_INPUT, "Drive CV (Inactive)");
         configInput(CHAOS_RATE_CV_INPUT, "Chaos Rate CV");
-        configInput(FILTER_MORPH_CV_INPUT, "Filter Morph CV");
+        configInput(AURA_CV_INPUT, "Aura CV");
+        configInput(ORBIT_CV_INPUT, "Orbit CV");
+        configInput(TIDE_CV_INPUT, "Tide CV");
 
         configOutput(AUDIO_A_OUTPUT, "Audio A");
         configOutput(AUDIO_B_OUTPUT, "Audio B");
 
         configLight(CHAOS_LIGHT, "Drive Activity");
+        configLight(AURA_LIGHT, "Aura Activity");
+        configLight(ORBIT_LIGHT, "Orbit Activity");
+        configLight(TIDE_LIGHT, "Tide Activity");
 
         // Initialize filters with default sample rate
         onSampleRateChange();
+
+        auraSmooth.reset(params[AURA_PARAM].getValue());
+        orbitSmooth.reset(params[ORBIT_PARAM].getValue());
+        tideSmooth.reset(params[TIDE_PARAM].getValue());
     }
 
     void onSampleRateChange() override {
@@ -146,6 +253,27 @@ struct Involution : Module {
         for (int v = 0; v < shapetaker::PolyphonicProcessor::MAX_VOICES; v++) {
             filtersA[v].setSampleRate(sr);
             filtersB[v].setSampleRate(sr);
+            for (int s = 0; s < ETHEREAL_STAGES; ++s) {
+                etherealVoicesA[v].delays[s].configure(sr);
+                etherealVoicesB[v].delays[s].configure(sr);
+            }
+            etherealVoicesA[v].reset();
+            etherealVoicesB[v].reset();
+        }
+    }
+
+    void onReset() override {
+        etherealPhase = 0.f;
+        onSampleRateChange();
+        chaosClockTrigger.reset();
+        chaosClockElapsed = 0.f;
+        chaosClockPeriod = 0.f;
+        chaosTargetRate = clamp(params[CHAOS_RATE_PARAM].getValue(), CHAOS_RATE_MIN_HZ, CHAOS_RATE_MAX_HZ);
+        smoothedChaosRate = chaosTargetRate;
+        chaosRateSmooth.reset(chaosTargetRate);
+        for (int v = 0; v < shapetaker::PolyphonicProcessor::MAX_VOICES; ++v) {
+            etherealVoicesA[v].reset();
+            etherealVoicesB[v].reset();
         }
     }
 
@@ -233,22 +361,74 @@ struct Involution : Module {
         float resonanceB = resonanceBSmooth.process(currentResonanceB, args.sampleTime);
         
         // Magical parameters - smoothed for immediate response
-        // Drive is now fixed at its maximum value for a permanently saturated character
+        // Drive is locked at maximum; Aura/Orbit/Tide sculpt the ethereal diffusion.
         constexpr float DRIVE_FIXED_NORMALIZED = 1.f;
         constexpr float DRIVE_FIXED_AMOUNT = 1.f + DRIVE_FIXED_NORMALIZED * 4.f;
-        float driveLight = DRIVE_FIXED_NORMALIZED;
-        float baseChaosRate = chaosRateSmooth.process(params[CHAOS_RATE_PARAM].getValue(), args.sampleTime);
 
-        // Add CV modulation to chaos rate (additive, ±5Hz range)
-        float chaosRate = baseChaosRate;
-        if (inputs[CHAOS_RATE_CV_INPUT].isConnected()) {
-            float rateCv = inputs[CHAOS_RATE_CV_INPUT].getVoltage(); // ±10V
-            chaosRate += rateCv * 0.5f; // ±5Hz range when using ±10V CV
+        float auraAmount = auraSmooth.process(params[AURA_PARAM].getValue(), args.sampleTime);
+        float orbitAmount = orbitSmooth.process(params[ORBIT_PARAM].getValue(), args.sampleTime);
+        float tideAmount = tideSmooth.process(params[TIDE_PARAM].getValue(), args.sampleTime);
+
+        if (inputs[AURA_CV_INPUT].isConnected()) {
+            auraAmount += inputs[AURA_CV_INPUT].getVoltage(0) / 10.f;
         }
-        chaosRate = clamp(chaosRate, 0.001f, 20.0f); // Keep within reasonable bounds
+        if (inputs[ORBIT_CV_INPUT].isConnected()) {
+            orbitAmount += inputs[ORBIT_CV_INPUT].getVoltage(0) / 10.f;
+        }
+        if (inputs[TIDE_CV_INPUT].isConnected()) {
+            tideAmount += inputs[TIDE_CV_INPUT].getVoltage(0) / 10.f;
+        }
+        auraAmount = clamp(auraAmount, 0.f, 1.f);
+        orbitAmount = clamp(orbitAmount, 0.f, 1.f);
+        tideAmount = clamp(tideAmount, 0.f, 1.f);
+
+        float driveLight = DRIVE_FIXED_NORMALIZED;
+        float auraLight = auraAmount;
+        float orbitLight = orbitAmount;
+        float tideLight = tideAmount;
+
+        float knobChaosRate = clamp(params[CHAOS_RATE_PARAM].getValue(), CHAOS_RATE_MIN_HZ, CHAOS_RATE_MAX_HZ);
+        float chaosTarget = knobChaosRate;
+        bool chaosClockConnected = inputs[CHAOS_RATE_CV_INPUT].isConnected();
+
+        if (chaosClockConnected) {
+            float clockVoltage = inputs[CHAOS_RATE_CV_INPUT].getVoltage();
+            chaosClockElapsed += args.sampleTime;
+            if (chaosClockTrigger.process(clockVoltage)) {
+                if (chaosClockElapsed > 1e-5f) {
+                    chaosClockPeriod = chaosClockElapsed;
+                }
+                chaosClockElapsed = 0.f;
+            }
+
+            if (chaosClockPeriod > 0.f) {
+                chaosTarget = clamp(1.f / chaosClockPeriod, CHAOS_RATE_MIN_HZ, CHAOS_RATE_MAX_HZ);
+            } else if (chaosClockElapsed > CHAOS_CLOCK_TIMEOUT) {
+                chaosClockPeriod = 0.f;
+                chaosTarget = knobChaosRate;
+            } else {
+                chaosTarget = chaosTargetRate;
+            }
+        } else {
+            chaosClockTrigger.reset();
+            chaosClockElapsed = 0.f;
+            chaosClockPeriod = 0.f;
+        }
+
+        chaosTargetRate = chaosTarget;
+        float chaosRate = chaosRateSmooth.process(chaosTargetRate, args.sampleTime);
+        chaosRate = clamp(chaosRate, CHAOS_RATE_MIN_HZ, CHAOS_RATE_MAX_HZ);
 
         // Store smoothed chaos rate for visualizer access
         smoothedChaosRate = chaosRate;
+
+        float tideRateHz = 0.4f + tideAmount * 6.5f + chaosRate * 0.25f;
+        tideRateHz = clamp(tideRateHz, 0.01f, 25.f);
+        etherealPhase += tideRateHz * args.sampleTime * 2.f * M_PI;
+        if (etherealPhase > 2.f * M_PI) {
+            etherealPhase = std::fmod(etherealPhase, 2.f * M_PI);
+        }
+        float swirlSeed = etherealPhase;
 
         // Store effective resonance values for visualizer (always calculate, even without inputs)
         float displayResonanceA = resonanceA;
@@ -288,14 +468,6 @@ struct Involution : Module {
         effectiveCutoffA = displayCutoffA;
         effectiveCutoffB = displayCutoffB;
 
-        [[maybe_unused]] float filterMorph = morphSmooth.process(params[FILTER_MORPH_PARAM].getValue(), args.sampleTime);
-        
-        // Add CV modulation to filter morph
-        if (inputs[FILTER_MORPH_CV_INPUT].isConnected()) {
-            float morphCv = inputs[FILTER_MORPH_CV_INPUT].getVoltage() / 10.f; // 10V -> 1.0
-            filterMorph = clamp(morphCv, 0.f, 1.f);
-        }
-
         // Determine number of polyphonic channels (up to 8)
         int channelsA = inputs[AUDIO_A_INPUT].getChannels();
         int channelsB = inputs[AUDIO_B_INPUT].getChannels();
@@ -327,7 +499,6 @@ struct Involution : Module {
                     audioA = audioB = inputs[AUDIO_B_INPUT].getVoltage(c);
                 }
                 
-
                 // ============================================================================
                 // LIQUID 6TH-ORDER FILTER PROCESSING
                 // ============================================================================
@@ -372,6 +543,65 @@ struct Involution : Module {
                     // Process through liquid filters with fixed drive amount
                     processedA = filtersA[c].process(audioA, cutoffAHz, voiceResonanceA, DRIVE_FIXED_AMOUNT);
                     processedB = filtersB[c].process(audioB, cutoffBHz, voiceResonanceB, DRIVE_FIXED_AMOUNT);
+
+                    float resonanceNormA = clamp((voiceResonanceA - 0.707f) / (1.5f - 0.707f), 0.f, 1.f);
+                    float resonanceNormB = clamp((voiceResonanceB - 0.707f) / (1.5f - 0.707f), 0.f, 1.f);
+
+                    constexpr float baseDelaySeconds[ETHEREAL_STAGES] = {0.018f, 0.031f, 0.047f, 0.085f};
+                    constexpr float stageWeights[ETHEREAL_STAGES] = {0.55f, 0.38f, 0.26f, 0.19f};
+
+                    auto processEthereal = [&](float input, float cutoffNorm, float resonanceNorm,
+                                                EtherealVoiceState& state, float stereoSkew) {
+                        float cutoffDrama = clamp(cutoffNorm, 0.f, 1.f);
+                        float resonanceInfluence = clamp(resonanceNorm, 0.f, 1.f);
+                        float effectIntensity = std::max(auraAmount, std::max(orbitAmount, tideAmount));
+
+                        if (effectIntensity < 0.01f && resonanceInfluence < 0.05f && cutoffDrama < 0.05f) {
+                            return input;
+                        }
+
+                        float diffusionBase = 0.02f + auraAmount * 0.45f + tideAmount * 0.35f + cutoffDrama * 0.18f;
+                        float diffusion = clamp(diffusionBase, 0.f, 0.9f);
+                        float feedbackBase = 0.015f + orbitAmount * 0.5f + resonanceInfluence * 0.28f + cutoffDrama * 0.2f;
+                        float feedback = clamp(feedbackBase, 0.f, 0.78f);
+                        float shimmerLift = clamp(tideAmount * 0.65f + auraAmount * 0.4f + resonanceInfluence * 0.25f, 0.f, 1.4f);
+                        float haloBlendBase = 0.05f + auraAmount * 0.5f + orbitAmount * 0.3f + resonanceInfluence * 0.25f;
+                        float haloBlend = clamp(haloBlendBase, 0.f, 0.95f);
+                        float modulationDepthSamples = (0.0015f + 0.0035f * tideAmount + 0.003f * auraAmount + 0.0015f * effectIntensity) * args.sampleRate;
+                        float driftRate = clamp(0.05f + chaosRate * (0.35f + tideAmount * 0.35f) + 0.1f * cutoffDrama + 0.04f * stereoSkew, 0.02f, 6.5f);
+                        float phaseIncrement = driftRate * args.sampleTime * 2.f * static_cast<float>(M_PI);
+
+                        float feed = input;
+                        float cloud = 0.f;
+
+                        for (int s = 0; s < ETHEREAL_STAGES; ++s) {
+                            state.modPhase[s] += phaseIncrement * (state.drift[s] + 0.15f * s);
+                            if (state.modPhase[s] > 2.f * static_cast<float>(M_PI)) {
+                                state.modPhase[s] -= 2.f * static_cast<float>(M_PI);
+                            }
+
+                            float baseDelay = baseDelaySeconds[s] * args.sampleRate;
+                            float stereoBias = 1.f + stereoSkew * 0.08f * (s + 1);
+                            float tonalBias = 0.8f + 0.35f * cutoffDrama + 0.1f * resonanceNorm;
+                            float modulation = std::sin(state.modPhase[s] + state.phaseOffset[s] + swirlSeed * 0.5f);
+                            float delaySamples = baseDelay * tonalBias * stereoBias + modulation * modulationDepthSamples * (1.f + 0.25f * s);
+                            float maxDelaySamples = std::max(state.delays[s].maxDelaySamples(), 16.f);
+                            delaySamples = clamp(delaySamples, 12.f, maxDelaySamples);
+
+                            float stageBlend = clamp(0.05f + effectIntensity * (0.12f + 0.08f * s) + auraAmount * 0.12f, 0.f, 0.6f);
+                            float stageInput = rack::math::crossfade(feed, cloud, stageBlend);
+                            float stageOutput = state.delays[s].process(stageInput, delaySamples, feedback);
+                            cloud += stageOutput * stageWeights[s];
+                            feed = rack::math::crossfade(feed, stageOutput, diffusion);
+                        }
+
+                        float halo = cloud * (1.f + shimmerLift * 0.6f);
+                        halo = rack::math::clamp(halo, -12.f, 12.f);
+                        return rack::math::clamp(rack::math::crossfade(input, halo, haloBlend), -12.f, 12.f);
+                    };
+
+                    processedA = processEthereal(processedA, voiceCutoffA, resonanceNormA, etherealVoicesA[c], -0.6f);
+                    processedB = processEthereal(processedB, voiceCutoffB, resonanceNormB, etherealVoicesB[c], 0.6f);
                 }
                 
                 
@@ -387,16 +617,14 @@ struct Involution : Module {
         const float base_brightness = 0.4f;
         const float max_brightness = base_brightness;
         
-        // Drive light with Chiaroscuro progression
+        // Drive light retains the original Chiaroscuro color morph
         float driveValue = driveLight;
         float drive_red, drive_green, drive_blue;
         if (driveValue <= 0.5f) {
-            // 0 to 0.5: Teal to bright blue-purple
             drive_red = driveValue * 2.0f * max_brightness;
             drive_green = max_brightness;
             drive_blue = max_brightness;
         } else {
-            // 0.5 to 1.0: Bright blue-purple to dark purple
             drive_red = max_brightness;
             drive_green = 2.0f * (1.0f - driveValue) * max_brightness;
             drive_blue = max_brightness * (1.7f - driveValue * 0.7f);
@@ -404,6 +632,10 @@ struct Involution : Module {
         lights[CHAOS_LIGHT].setBrightness(drive_red);
         lights[CHAOS_LIGHT + 1].setBrightness(drive_green);
         lights[CHAOS_LIGHT + 2].setBrightness(drive_blue);
+
+        lights[AURA_LIGHT].setBrightness(auraLight);
+        lights[ORBIT_LIGHT].setBrightness(orbitLight);
+        lights[TIDE_LIGHT].setBrightness(tideLight);
     }
     
     // Integrate with Rack's default "Randomize" menu item
@@ -425,15 +657,21 @@ struct Involution : Module {
         
         // Drive is fixed at maximum saturation; keep the stored parameter at 1.0
         params[CHAOS_AMOUNT_PARAM].setValue(1.f);
+        std::uniform_real_distribution<float> auraDist(0.2f, 0.8f);
+        std::uniform_real_distribution<float> orbitDist(0.1f, 0.7f);
+        std::uniform_real_distribution<float> tideDist(0.2f, 0.9f);
+        params[AURA_PARAM].setValue(auraDist(rng));
+        params[ORBIT_PARAM].setValue(orbitDist(rng));
+        params[TIDE_PARAM].setValue(tideDist(rng));
         
         // Rate parameters - varied but not too extreme
         std::uniform_real_distribution<float> rateDist(0.2f, 0.8f);
         params[CHAOS_RATE_PARAM].setValue(rateDist(rng));
-        
-        // Filter morph - full range for variety
-        std::uniform_real_distribution<float> morphDist(0.0f, 1.0f);
-        params[FILTER_MORPH_PARAM].setValue(morphDist(rng));
+        chaosTargetRate = clamp(params[CHAOS_RATE_PARAM].getValue(), CHAOS_RATE_MIN_HZ, CHAOS_RATE_MAX_HZ);
+        smoothedChaosRate = chaosTargetRate;
+        chaosRateSmooth.reset(chaosTargetRate);
 
+        // Filter morph - full range for variety
         // Link switches - randomly enable/disable
         std::uniform_int_distribution<int> linkDist(0, 1);
         params[LINK_CUTOFF_PARAM].setValue((float)linkDist(rng));
@@ -542,13 +780,11 @@ struct InvolutionWidget : ModuleWidget {
 
         // Character Controls - using SVG parser with fallbacks
         // Highpass is now static at 12Hz - no control needed
-        addParam(createParamCentered<ShapetakerKnobOscilloscopeSmall>(
-            centerPx("filter_morph", 45.166f, 101.401f),
-            module, Involution::FILTER_MORPH_PARAM));
-        
-        // Drive and chaos controls - using SVG parser with updated coordinates
-        addParam(createParamCentered<ShapetakerKnobOscilloscopeSmall>(centerPx("chaos_amount", 15.910f, 94.088f), module, Involution::CHAOS_AMOUNT_PARAM));
-        addParam(createParamCentered<ShapetakerKnobOscilloscopeSmall>(centerPx("chaos_rate", 74.422f, 94.088f), module, Involution::CHAOS_RATE_PARAM));
+        // Drive knob is fixed; reuse area for Aura/Orbit/Tide controls
+        addParam(createParamCentered<ShapetakerKnobOscilloscopeSmall>(centerPx("aura", 15.910f, 94.088f), module, Involution::AURA_PARAM));
+        addParam(createParamCentered<ShapetakerKnobOscilloscopeSmall>(centerPx("orbit", 45.166f, 94.088f), module, Involution::ORBIT_PARAM));
+        addParam(createParamCentered<ShapetakerKnobOscilloscopeSmall>(centerPx("tide", 74.422f, 94.088f), module, Involution::TIDE_PARAM));
+        addParam(createParamCentered<ShapetakerKnobOscilloscopeSmall>(centerPx("chaos_rate", 60.922f, 108.088f), module, Involution::CHAOS_RATE_PARAM));
         
         // Chaos Visualizer - using SVG parser for automatic positioning
         ChaosVisualizer* chaosViz = new ChaosVisualizer(module);
@@ -563,16 +799,19 @@ struct InvolutionWidget : ModuleWidget {
         
         // Chaos light - using SVG parser and custom JewelLED
         addChild(createLightCentered<ChaosJewelLED>(centerPx("chaos_light", 29.559f, 103.546f), module, Involution::CHAOS_LIGHT));
+        addChild(createLightCentered<MediumLight<BlueLight>>(centerPx("aura_light", 15.910f, 103.546f), module, Involution::AURA_LIGHT));
+        addChild(createLightCentered<MediumLight<RedLight>>(centerPx("orbit_light", 45.166f, 103.546f), module, Involution::ORBIT_LIGHT));
+        addChild(createLightCentered<MediumLight<GreenLight>>(centerPx("tide_light", 74.422f, 103.546f), module, Involution::TIDE_LIGHT));
 
         // CV inputs - using SVG parser with updated coordinates
         addInput(createInputCentered<ShapetakerBNCPort>(centerPx("cutoff_a_cv", 24.027f, 44.322f), module, Involution::CUTOFF_A_CV_INPUT));
         addInput(createInputCentered<ShapetakerBNCPort>(centerPx("resonance_a_cv", 24.027f, 68.931f), module, Involution::RESONANCE_A_CV_INPUT));
         addInput(createInputCentered<ShapetakerBNCPort>(centerPx("cutoff_b_cv", 66.305f, 44.322f), module, Involution::CUTOFF_B_CV_INPUT));
         addInput(createInputCentered<ShapetakerBNCPort>(centerPx("resonance_b_cv", 66.305f, 68.931f), module, Involution::RESONANCE_B_CV_INPUT));
-        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("chaos_amount_cv", 29.409f, 84.630f), module, Involution::CHAOS_CV_INPUT));
+        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("aura_cv", 15.910f, 84.630f), module, Involution::AURA_CV_INPUT));
+        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("orbit_cv", 45.166f, 84.630f), module, Involution::ORBIT_CV_INPUT));
+        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("tide_cv", 74.422f, 84.630f), module, Involution::TIDE_CV_INPUT));
         addInput(createInputCentered<ShapetakerBNCPort>(centerPx("chaos_lfo_cv", 60.922f, 84.630f), module, Involution::CHAOS_RATE_CV_INPUT));
-        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("filter-morph-cv", 45.166f, 119.245f), module, Involution::FILTER_MORPH_CV_INPUT));
-
         // Audio I/O - direct millimeter coordinates
         addInput(createInputCentered<ShapetakerBNCPort>(centerPx("audio_a_input", 10.276f, 118.977f), module, Involution::AUDIO_A_INPUT));
         addInput(createInputCentered<ShapetakerBNCPort>(centerPx("audio_b_input", 27.721f, 119.245f), module, Involution::AUDIO_B_INPUT));

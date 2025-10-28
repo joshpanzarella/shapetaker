@@ -7,18 +7,16 @@ inline void ChaosVisualizer::step() {
     time += deltaTime;
 
     if (module) {
-        float rawChaosRate = module->params[Involution::CHAOS_RATE_PARAM].getValue();
-        if (module->inputs[Involution::CHAOS_RATE_CV_INPUT].isConnected()) {
-            float rateCv = module->inputs[Involution::CHAOS_RATE_CV_INPUT].getVoltage();
-            rawChaosRate += rateCv * 0.5f;
-        }
-        rawChaosRate = clamp(rawChaosRate, 0.001f, 20.0f);
+        float rawChaosRate = clamp(module->smoothedChaosRate, Involution::CHAOS_RATE_MIN_HZ, Involution::CHAOS_RATE_MAX_HZ);
         float smoothedChaosRate = visualChaosRateSmoother.process(rawChaosRate, deltaTime);
         chaosPhase += smoothedChaosRate * deltaTime;
 
         float smoothedFilterMorph = visualFilterMorphSmoother.process(
-            module->params[Involution::FILTER_MORPH_PARAM].getValue(), deltaTime);
+            module->params[Involution::AURA_PARAM].getValue(), deltaTime);
         filterMorphPhase += (smoothedFilterMorph + 0.1f) * 0.5f * deltaTime;
+
+        visualOrbitSmoother.process(module->params[Involution::ORBIT_PARAM].getValue(), deltaTime);
+        visualTideSmoother.process(module->params[Involution::TIDE_PARAM].getValue(), deltaTime);
 
         float smoothedCutoffA = visualCutoffASmoother.process(module->effectiveCutoffA, deltaTime);
         float smoothedCutoffB = visualCutoffBSmoother.process(module->effectiveCutoffB, deltaTime);
@@ -125,16 +123,17 @@ inline void ChaosVisualizer::drawLayer(const DrawArgs& args, int layer) {
 
         float chaosAmount = visualChaosAmountSmoother.process(
             module->params[Involution::CHAOS_AMOUNT_PARAM].getValue(), deltaTime);
-        // The former chaos amount now behaves as the drive control; keep visual naming for continuity.
-        float filterMorph = visualFilterMorphSmoother.process(
-            module->params[Involution::FILTER_MORPH_PARAM].getValue(), deltaTime);
+        float filterMorph = visualFilterMorphSmoother.getValue();
+        float orbitAmount = visualOrbitSmoother.getValue();
+        float tideAmount = visualTideSmoother.getValue();
         float cutoffA = visualCutoffASmoother.process(module->effectiveCutoffA, deltaTime);
         float cutoffB = visualCutoffBSmoother.process(module->effectiveCutoffB, deltaTime);
         float resonanceA = visualResonanceASmoother.process(module->effectiveResonanceA, deltaTime);
         float resonanceB = visualResonanceBSmoother.process(module->effectiveResonanceB, deltaTime);
 
         drawSquareChaos(vg, centerX, centerY, screenSize * 0.4f, chaosAmount, chaosPhase,
-                      filterMorph, cutoffA, cutoffB, resonanceA, resonanceB,
+                      filterMorph, orbitAmount, tideAmount,
+                      cutoffA, cutoffB, resonanceA, resonanceB,
                       filterMorphPhase, cutoffPhase, resonancePhase);
     }
 
@@ -202,9 +201,10 @@ inline void ChaosVisualizer::drawLayer(const DrawArgs& args, int layer) {
 }
 
 inline void ChaosVisualizer::drawSquareChaos(NVGcontext* vg, float cx, float cy, float maxRadius,
-                    float chaosAmount, float chaosPhase, float filterMorph,
+                    float chaosAmount, float chaosPhase, float auraAmount,
+                    float orbitAmount, float tideAmount,
                     float cutoffA, float cutoffB, float resonanceA, float resonanceB,
-                    float filterMorphPhase, float cutoffPhase, float resonancePhase) {
+                    float auraPhase, float cutoffPhase, float resonancePhase) {
 
     float totalActivity = chaosAmount + (cutoffA + cutoffB) * 0.2f;
 
@@ -215,14 +215,14 @@ inline void ChaosVisualizer::drawSquareChaos(NVGcontext* vg, float cx, float cy,
 
     totalActivity = std::max(totalActivity, 0.35f);
 
-    int baseSquares = 45 + (int)(filterMorph * 20);
+    int baseSquares = 45 + (int)(auraAmount * 20);
     int resonanceSquares = (int)(resonanceActivity * 80);
     int activitySquares = (int)(totalActivity * 120);
     int numSquares = baseSquares + activitySquares + resonanceSquares;
     numSquares = clamp(numSquares, 45, 220);
 
     for (int i = 0; i < numSquares; i++) {
-        float angle = (i / (float)numSquares) * 2.0f * M_PI * 3.7f;
+        float angle = (i / (float)numSquares) * 2.0f * M_PI * (3.4f + orbitAmount * 0.6f);
 
         angle += time * 0.3f;
         angle += chaosPhase * 1.0f;
@@ -232,7 +232,7 @@ inline void ChaosVisualizer::drawSquareChaos(NVGcontext* vg, float cx, float cy,
         angle += resonancePhase;
 
         float baseRadius = (i / (float)numSquares) * maxRadius;
-        float radiusVar = sinf(time * 3.0f + i * 0.2f) * maxRadius * 0.2f * chaosAmount;
+        float radiusVar = sinf(time * (3.0f + tideAmount * 1.5f) + i * 0.2f) * maxRadius * 0.2f * chaosAmount * (1.f + orbitAmount * 0.4f);
         float resonancePulse = sinf(time * 4.0f + i * 0.5f) * maxRadius * 0.15f * resonanceActivity;
         float radius = baseRadius + radiusVar + resonancePulse;
         radius *= (0.8f + cutoffA * 0.2f + cutoffB * 0.2f + resonanceActivity * 0.1f);
@@ -250,41 +250,70 @@ inline void ChaosVisualizer::drawSquareChaos(NVGcontext* vg, float cx, float cy,
             y = cy + (y - cy) * scale;
         }
 
-        float baseSize = 1.5f + chaosAmount * 3.0f;
-        float sizeVar = sinf(time * 4.0f + i * 0.3f + filterMorph * 5.0f) * 1.0f;
-        float resonanceSize = resonanceActivity * 2.0f + sinf(time * 6.0f + i * 0.4f) * resonanceActivity * 1.5f;
-        float squareSize = baseSize + sizeVar + resonanceSize;
-        squareSize = clamp(squareSize, 0.5f, 6.0f);
+        float baseSize = 0.35f + chaosAmount * 0.6f + orbitAmount * 0.2f;
+        float sizeVar = sinf(time * (4.0f + tideAmount * 1.5f) + i * 0.32f + auraPhase * 0.5f) * (0.18f + orbitAmount * 0.1f);
+        float resonanceScale = 0.2f + 0.4f * (1.f - resonanceActivity);
+        float resonanceSize = resonanceScale * 0.45f + sinf(time * 5.5f + i * 0.3f) * resonanceScale * 0.32f;
+        float dotRadius = clamp(baseSize + sizeVar + resonanceSize, 0.18f, 1.4f);
 
-        float hue = fmodf(time * 30.0f + i * 15.0f + filterMorph * 180.0f + resonanceActivity * 120.0f, 360.0f);
+        float hue = fmodf(time * (30.0f + tideAmount * 12.f) + i * (15.0f + auraAmount * 6.f)
+                          + auraAmount * 140.0f + orbitAmount * 150.0f + resonanceActivity * 120.0f, 360.0f);
 
-        float baseBrightness = 0.3f;
-        float activityBrightness = chaosAmount * 0.7f;
-        float filterBrightness = (cutoffA + cutoffB) * 0.1f;
-        float resonanceBrightness = resonanceActivity * 0.5f + sinf(time * 8.0f + i * 0.6f) * resonanceActivity * 0.3f;
+        float baseBrightness = 0.55f;
+        float activityBrightness = chaosAmount * 0.85f;
+        float filterBrightness = (cutoffA + cutoffB) * 0.12f;
+        float resonanceBrightness = resonanceActivity * 0.22f;
+        float orbitBrightness = orbitAmount * 0.45f;
 
-        float brightness = baseBrightness + activityBrightness + filterBrightness + resonanceBrightness;
-        brightness = clamp(brightness, 0.2f, 1.2f);
-        brightness *= (1.0f - (radius / maxRadius) * 0.3f);
+        float brightness = baseBrightness + activityBrightness + filterBrightness + resonanceBrightness + orbitBrightness;
+        brightness = clamp(brightness, 0.7f, 2.2f);
+        float radiusNorm = radius / maxRadius;
+        brightness *= (1.0f - radiusNorm * 0.18f);
+        if (radiusNorm < 0.25f) {
+            float boost = (0.25f - radiusNorm);
+            brightness += boost * (2.7f + orbitAmount * 1.4f + auraAmount * 0.9f + tideAmount * 0.9f);
+            dotRadius += boost * 0.9f;
+        }
+        brightness = clamp(brightness, 0.75f, 2.3f);
 
         NVGcolor color;
         if (hue < 120.0f) {
             float t = hue / 120.0f;
-            color = nvgRGBA((int)(0 * brightness), (int)((100 + t * 155) * brightness),
+            color = nvgRGBA((int)(0 * brightness), (int)((100 + t * 155 + auraAmount * 40) * brightness),
                            (int)(255 * brightness), (int)(brightness * 255));
         } else if (hue < 240.0f) {
             float t = (hue - 120.0f) / 120.0f;
-            color = nvgRGBA((int)(t * 100 * brightness), (int)((255 - t * 100) * brightness),
+            color = nvgRGBA((int)((t * 100 + auraAmount * 40) * brightness), (int)((255 - t * 100) * brightness),
                            (int)(255 * brightness), (int)(brightness * 255));
         } else {
             float t = (hue - 240.0f) / 120.0f;
-            color = nvgRGBA((int)((150 - t * 150) * brightness), (int)(0 * brightness),
+            color = nvgRGBA((int)((150 - t * 150 + auraAmount * 30) * brightness), (int)(40 * brightness),
                            (int)(255 * brightness), (int)(brightness * 255));
         }
 
         nvgBeginPath(vg);
-        nvgRect(vg, x - squareSize/2, y - squareSize/2, squareSize, squareSize);
+        nvgCircle(vg, x, y, dotRadius);
         nvgFillColor(vg, color);
         nvgFill(vg);
+
+        NVGcolor coreColor = color;
+        coreColor.a = clamp(coreColor.a + 0.4f, 0.0f, 1.0f);
+        nvgBeginPath(vg);
+        nvgCircle(vg, x, y, dotRadius * 0.42f);
+        nvgFillColor(vg, coreColor);
+        nvgFill(vg);
+
+        nvgSave(vg);
+        nvgGlobalCompositeOperation(vg, NVG_LIGHTER);
+        NVGcolor haloInner = color;
+        haloInner.a = clamp(color.a * 0.65f + 0.25f, 0.25f, 0.95f);
+        NVGcolor haloOuter = color;
+        haloOuter.a = 0.0f;
+        NVGpaint halo = nvgRadialGradient(vg, x, y, dotRadius * 0.3f, dotRadius * 2.4f, haloInner, haloOuter);
+        nvgBeginPath(vg);
+        nvgCircle(vg, x, y, dotRadius * 2.3f);
+        nvgFillPaint(vg, halo);
+        nvgFill(vg);
+        nvgRestore(vg);
     }
 }
