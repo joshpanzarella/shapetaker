@@ -116,6 +116,27 @@ private:
         return rack::math::clamp(output, -12.f, 12.f);
     }
 
+    float driveSaturate(float input, float drive) {
+        drive = rack::math::clamp(drive, 1.f, 8.f);
+        float driveMix = rack::math::clamp((drive - 1.f) / 7.f, 0.f, 1.f);
+
+        // Pre-emphasis: add a small boost before saturation to get character.
+        auto lerp = [](float a, float b, float t) {
+            return a + (b - a) * t;
+        };
+
+        float driven = input * lerp(1.f, drive * 0.8f + 0.2f, driveMix);
+        float shaped = saturate(driven, 1.f);
+
+        // Drive-dependent gain scaling keeps unity at low settings and normalises hot drive.
+        float makeup = lerp(1.f, 1.0f / (drive * 0.6f + 0.4f), driveMix);
+        float wet = lerp(0.25f, 0.85f, driveMix);
+        float dry = 1.f - wet;
+
+        float result = dry * input + wet * shaped * makeup;
+        return rack::math::clamp(result, -12.f, 12.f);
+    }
+
 public:
     LiquidFilter() : decimator(0.9f), upsampler(0.9f) {
         // Initialize to default sample rate
@@ -176,7 +197,7 @@ public:
             float x = upsampledBuffer[i];
 
             // Pre-filter saturation (input drive)
-            x = saturate(x, drive);
+            x = driveSaturate(x, drive);
 
             // Calculate filter coefficients at oversampled rate
             float g = std::tan(M_PI * cutoff / oversampledRate);

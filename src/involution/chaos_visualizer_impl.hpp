@@ -125,6 +125,7 @@ inline void ChaosVisualizer::drawLayer(const DrawArgs& args, int layer) {
 
         float chaosAmount = visualChaosAmountSmoother.process(
             module->params[Involution::CHAOS_AMOUNT_PARAM].getValue(), deltaTime);
+        // The former chaos amount now behaves as the drive control; keep visual naming for continuity.
         float filterMorph = visualFilterMorphSmoother.process(
             module->params[Involution::FILTER_MORPH_PARAM].getValue(), deltaTime);
         float cutoffA = visualCutoffASmoother.process(module->effectiveCutoffA, deltaTime);

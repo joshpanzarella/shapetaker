@@ -54,7 +54,7 @@ struct Involution : Module {
     // Parameter smoothing
     
     shapetaker::FastSmoother cutoffASmooth, cutoffBSmooth, resonanceASmooth, resonanceBSmooth;
-    shapetaker::FastSmoother chaosSmooth, chaosRateSmooth;
+    shapetaker::FastSmoother chaosRateSmooth;
     shapetaker::FastSmoother morphSmooth;
     
     // Parameter change tracking for bidirectional linking
@@ -77,8 +77,8 @@ struct Involution : Module {
         configParam(CUTOFF_B_PARAM, 0.f, 1.f, 1.f, "Filter B Cutoff", " Hz", std::pow(2.f, 10.f), 20.f);
         configParam(RESONANCE_B_PARAM, 0.707f, 1.5f, 0.707f, "Filter B Resonance");
         
-        // New magical parameters
-        configParam(CHAOS_AMOUNT_PARAM, 0.f, 1.f, 0.15f, "Chaos Amount", "%", 0.f, 100.f);
+        // Drive / character controls
+        configParam(CHAOS_AMOUNT_PARAM, 0.f, 1.f, 1.f, "Drive", "%", 0.f, 100.f);
         configParam(CHAOS_RATE_PARAM, 0.01f, 10.f, 0.5f, "Chaos LFO Rate", " Hz", 0.f, 0.f);
 
         // Custom parameter quantity to show real-time chaos rate including CV modulation
@@ -126,14 +126,14 @@ struct Involution : Module {
         configInput(RESONANCE_A_CV_INPUT, "Filter A Resonance CV");
         configInput(CUTOFF_B_CV_INPUT, "Filter B Cutoff CV");
         configInput(RESONANCE_B_CV_INPUT, "Filter B Resonance CV");
-        configInput(CHAOS_CV_INPUT, "Chaos CV");
+        configInput(CHAOS_CV_INPUT, "Drive CV (Inactive)");
         configInput(CHAOS_RATE_CV_INPUT, "Chaos Rate CV");
         configInput(FILTER_MORPH_CV_INPUT, "Filter Morph CV");
 
         configOutput(AUDIO_A_OUTPUT, "Audio A");
         configOutput(AUDIO_B_OUTPUT, "Audio B");
 
-        configLight(CHAOS_LIGHT, "Chaos Activity");
+        configLight(CHAOS_LIGHT, "Drive Activity");
 
         // Initialize filters with default sample rate
         onSampleRateChange();
@@ -233,7 +233,10 @@ struct Involution : Module {
         float resonanceB = resonanceBSmooth.process(currentResonanceB, args.sampleTime);
         
         // Magical parameters - smoothed for immediate response
-        float chaosAmount = chaosSmooth.process(params[CHAOS_AMOUNT_PARAM].getValue(), args.sampleTime);
+        // Drive is now fixed at its maximum value for a permanently saturated character
+        constexpr float DRIVE_FIXED_NORMALIZED = 1.f;
+        constexpr float DRIVE_FIXED_AMOUNT = 1.f + DRIVE_FIXED_NORMALIZED * 4.f;
+        float driveLight = DRIVE_FIXED_NORMALIZED;
         float baseChaosRate = chaosRateSmooth.process(params[CHAOS_RATE_PARAM].getValue(), args.sampleTime);
 
         // Add CV modulation to chaos rate (additive, ±5Hz range)
@@ -248,18 +251,18 @@ struct Involution : Module {
         smoothedChaosRate = chaosRate;
 
         // Store effective resonance values for visualizer (always calculate, even without inputs)
-        float displayResonanceA = resonanceASmooth.process(params[RESONANCE_A_PARAM].getValue(), args.sampleTime);
-        float displayResonanceB = resonanceBSmooth.process(params[RESONANCE_B_PARAM].getValue(), args.sampleTime);
+        float displayResonanceA = resonanceA;
+        float displayResonanceB = resonanceB;
 
         if (inputs[RESONANCE_A_CV_INPUT].isConnected()) {
             float attenA = params[RESONANCE_A_ATTEN_PARAM].getValue();
-            displayResonanceA += inputs[RESONANCE_A_CV_INPUT].getVoltage(0) * attenA / 10.f;
+            displayResonanceA += inputs[RESONANCE_A_CV_INPUT].getPolyVoltage(0) * attenA / 10.f;
         }
         displayResonanceA = clamp(displayResonanceA, 0.707f, 1.5f);
 
         if (inputs[RESONANCE_B_CV_INPUT].isConnected()) {
             float attenB = params[RESONANCE_B_ATTEN_PARAM].getValue();
-            displayResonanceB += inputs[RESONANCE_B_CV_INPUT].getVoltage(0) * attenB / 10.f;
+            displayResonanceB += inputs[RESONANCE_B_CV_INPUT].getPolyVoltage(0) * attenB / 10.f;
         }
         displayResonanceB = clamp(displayResonanceB, 0.707f, 1.5f);
 
@@ -267,25 +270,25 @@ struct Involution : Module {
         effectiveResonanceB = displayResonanceB;
 
         // Store effective cutoff values for visualizer (always calculate, even without inputs)
-        float displayCutoffA = cutoffASmooth.process(params[CUTOFF_A_PARAM].getValue(), args.sampleTime);
-        float displayCutoffB = cutoffBSmooth.process(params[CUTOFF_B_PARAM].getValue(), args.sampleTime);
+        float displayCutoffA = cutoffA;
+        float displayCutoffB = cutoffB;
 
         if (inputs[CUTOFF_A_CV_INPUT].isConnected()) {
             float attenA = params[CUTOFF_A_ATTEN_PARAM].getValue();
-            displayCutoffA += inputs[CUTOFF_A_CV_INPUT].getVoltage(0) * attenA / 10.f;
+            displayCutoffA += inputs[CUTOFF_A_CV_INPUT].getPolyVoltage(0) * attenA / 10.f;
         }
         displayCutoffA = clamp(displayCutoffA, 0.f, 1.f);
 
         if (inputs[CUTOFF_B_CV_INPUT].isConnected()) {
             float attenB = params[CUTOFF_B_ATTEN_PARAM].getValue();
-            displayCutoffB += inputs[CUTOFF_B_CV_INPUT].getVoltage(0) * attenB / 10.f;
+            displayCutoffB += inputs[CUTOFF_B_CV_INPUT].getPolyVoltage(0) * attenB / 10.f;
         }
         displayCutoffB = clamp(displayCutoffB, 0.f, 1.f);
 
         effectiveCutoffA = displayCutoffA;
         effectiveCutoffB = displayCutoffB;
 
-        float filterMorph = morphSmooth.process(params[FILTER_MORPH_PARAM].getValue(), args.sampleTime);
+        [[maybe_unused]] float filterMorph = morphSmooth.process(params[FILTER_MORPH_PARAM].getValue(), args.sampleTime);
         
         // Add CV modulation to filter morph
         if (inputs[FILTER_MORPH_CV_INPUT].isConnected()) {
@@ -333,16 +336,42 @@ struct Involution : Module {
 
                 // Only process if we have valid, finite audio input
                 if (std::isfinite(audioA) && std::isfinite(audioB)) {
+                    float voiceCutoffA = cutoffA;
+                    float voiceCutoffB = cutoffB;
+                    float voiceResonanceA = resonanceA;
+                    float voiceResonanceB = resonanceB;
+
+                    if (inputs[CUTOFF_A_CV_INPUT].isConnected()) {
+                        float attenA = params[CUTOFF_A_ATTEN_PARAM].getValue();
+                        voiceCutoffA += inputs[CUTOFF_A_CV_INPUT].getPolyVoltage(c) * attenA / 10.f;
+                    }
+                    voiceCutoffA = clamp(voiceCutoffA, 0.f, 1.f);
+
+                    if (inputs[CUTOFF_B_CV_INPUT].isConnected()) {
+                        float attenB = params[CUTOFF_B_ATTEN_PARAM].getValue();
+                        voiceCutoffB += inputs[CUTOFF_B_CV_INPUT].getPolyVoltage(c) * attenB / 10.f;
+                    }
+                    voiceCutoffB = clamp(voiceCutoffB, 0.f, 1.f);
+
+                    if (inputs[RESONANCE_A_CV_INPUT].isConnected()) {
+                        float attenA = params[RESONANCE_A_ATTEN_PARAM].getValue();
+                        voiceResonanceA += inputs[RESONANCE_A_CV_INPUT].getPolyVoltage(c) * attenA / 10.f;
+                    }
+                    voiceResonanceA = clamp(voiceResonanceA, 0.707f, 1.5f);
+
+                    if (inputs[RESONANCE_B_CV_INPUT].isConnected()) {
+                        float attenB = params[RESONANCE_B_ATTEN_PARAM].getValue();
+                        voiceResonanceB += inputs[RESONANCE_B_CV_INPUT].getPolyVoltage(c) * attenB / 10.f;
+                    }
+                    voiceResonanceB = clamp(voiceResonanceB, 0.707f, 1.5f);
+
                     // Convert cutoff from normalized (0-1) to Hz (20Hz - 20480Hz)
-                    float cutoffAHz = 20.f * std::pow(2.f, cutoffA * 10.f);
-                    float cutoffBHz = 20.f * std::pow(2.f, cutoffB * 10.f);
+                    float cutoffAHz = 20.f * std::pow(2.f, voiceCutoffA * 10.f);
+                    float cutoffBHz = 20.f * std::pow(2.f, voiceCutoffB * 10.f);
 
-                    // Drive amount from chaos for character (1.0 = clean, higher = more saturated)
-                    float driveAmount = 1.f + chaosAmount * 2.f;
-
-                    // Process through liquid filters
-                    processedA = filtersA[c].process(audioA, cutoffAHz, resonanceA, driveAmount);
-                    processedB = filtersB[c].process(audioB, cutoffBHz, resonanceB, driveAmount);
+                    // Process through liquid filters with fixed drive amount
+                    processedA = filtersA[c].process(audioA, cutoffAHz, voiceResonanceA, DRIVE_FIXED_AMOUNT);
+                    processedB = filtersB[c].process(audioB, cutoffBHz, voiceResonanceB, DRIVE_FIXED_AMOUNT);
                 }
                 
                 
@@ -358,23 +387,23 @@ struct Involution : Module {
         const float base_brightness = 0.4f;
         const float max_brightness = base_brightness;
         
-        // Chaos light with Chiaroscuro progression
-        float chaosValue = params[CHAOS_AMOUNT_PARAM].getValue();
-        float chaos_red, chaos_green, chaos_blue;
-        if (chaosValue <= 0.5f) {
+        // Drive light with Chiaroscuro progression
+        float driveValue = driveLight;
+        float drive_red, drive_green, drive_blue;
+        if (driveValue <= 0.5f) {
             // 0 to 0.5: Teal to bright blue-purple
-            chaos_red = chaosValue * 2.0f * max_brightness;
-            chaos_green = max_brightness;
-            chaos_blue = max_brightness;
+            drive_red = driveValue * 2.0f * max_brightness;
+            drive_green = max_brightness;
+            drive_blue = max_brightness;
         } else {
             // 0.5 to 1.0: Bright blue-purple to dark purple
-            chaos_red = max_brightness;
-            chaos_green = 2.0f * (1.0f - chaosValue) * max_brightness;
-            chaos_blue = max_brightness * (1.7f - chaosValue * 0.7f);
+            drive_red = max_brightness;
+            drive_green = 2.0f * (1.0f - driveValue) * max_brightness;
+            drive_blue = max_brightness * (1.7f - driveValue * 0.7f);
         }
-        lights[CHAOS_LIGHT].setBrightness(chaos_red);
-        lights[CHAOS_LIGHT + 1].setBrightness(chaos_green);
-        lights[CHAOS_LIGHT + 2].setBrightness(chaos_blue);
+        lights[CHAOS_LIGHT].setBrightness(drive_red);
+        lights[CHAOS_LIGHT + 1].setBrightness(drive_green);
+        lights[CHAOS_LIGHT + 2].setBrightness(drive_blue);
     }
     
     // Integrate with Rack's default "Randomize" menu item
@@ -394,9 +423,8 @@ struct Involution : Module {
         
         // Highpass is now static at 12Hz - no randomization needed
         
-        // Magical parameters - moderate amounts for musicality
-        std::uniform_real_distribution<float> magicDist(0.0f, 0.6f);
-        params[CHAOS_AMOUNT_PARAM].setValue(magicDist(rng));
+        // Drive is fixed at maximum saturation; keep the stored parameter at 1.0
+        params[CHAOS_AMOUNT_PARAM].setValue(1.f);
         
         // Rate parameters - varied but not too extreme
         std::uniform_real_distribution<float> rateDist(0.2f, 0.8f);
@@ -518,7 +546,7 @@ struct InvolutionWidget : ModuleWidget {
             centerPx("filter_morph", 45.166f, 101.401f),
             module, Involution::FILTER_MORPH_PARAM));
         
-        // Special Effects - using SVG parser with updated coordinates
+        // Drive and chaos controls - using SVG parser with updated coordinates
         addParam(createParamCentered<ShapetakerKnobOscilloscopeSmall>(centerPx("chaos_amount", 15.910f, 94.088f), module, Involution::CHAOS_AMOUNT_PARAM));
         addParam(createParamCentered<ShapetakerKnobOscilloscopeSmall>(centerPx("chaos_rate", 74.422f, 94.088f), module, Involution::CHAOS_RATE_PARAM));
         
