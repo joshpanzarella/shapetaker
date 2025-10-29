@@ -3,6 +3,7 @@
 #include <cmath>
 #include <atomic>
 #include <functional>
+#include <algorithm>
 
 struct ClairaudientModule : Module, IOscilloscopeSource {
 
@@ -548,6 +549,46 @@ private:
     }
 };
 
+struct KnobShadowWidget : widget::TransparentWidget {
+    float padding = 6.f;
+    float alpha = 0.32f;
+    float offset = 0.f;
+    float verticalScale = 0.7f;
+
+    KnobShadowWidget(const Vec& knobSize, float paddingPx, float alpha_) {
+        padding = paddingPx;
+        alpha = alpha_;
+        box.size = knobSize.plus(Vec(padding * 2.f, padding * 2.f));
+        offset = padding * 0.48f;
+        verticalScale = 0.6f;
+    }
+
+    void draw(const DrawArgs& args) override {
+        Vec center = box.size.div(2.f);
+        float outerR = std::max(box.size.x, box.size.y) * 0.5f;
+        float innerR = std::max(0.f, outerR - padding);
+
+        nvgSave(args.vg);
+        nvgTranslate(args.vg, center.x, center.y + offset);
+        nvgScale(args.vg, 1.f, verticalScale);
+
+        NVGpaint paint = nvgRadialGradient(
+            args.vg,
+            0.f,
+            0.f,
+            innerR * 0.25f,
+            outerR,
+            nvgRGBAf(0.f, 0.f, 0.f, alpha),
+            nvgRGBAf(0.f, 0.f, 0.f, 0.f));
+        nvgBeginPath(args.vg);
+        nvgCircle(args.vg, 0.f, 0.f, outerR);
+        nvgFillPaint(args.vg, paint);
+        nvgFill(args.vg);
+
+        nvgRestore(args.vg);
+    }
+};
+
 struct ClairaudientWidget : ModuleWidget {
     // Draw panel background texture to match Transmutation
     void draw(const DrawArgs& args) override {
@@ -577,9 +618,56 @@ struct ClairaudientWidget : ModuleWidget {
             return parser.centerPx(id, defx, defy);
         };
 
-        // V/Z oscillator large frequency knobs (oscilloscope style)
-        addParam(createParamCentered<ShapetakerKnobOscilloscopeMedium>(centerPx("freq_v", 13.422475f, 25.464647f), module, ClairaudientModule::FREQ1_PARAM));
-        addParam(createParamCentered<ShapetakerKnobOscilloscopeMedium>(centerPx("freq_z", 68.319061f, 25.695415f), module, ClairaudientModule::FREQ2_PARAM));
+        auto addKnobWithShadow = [&](app::ParamWidget* knob) {
+            if (!knob) {
+                return;
+            }
+            float diameter = std::max(knob->box.size.x, knob->box.size.y);
+            float padding = std::max(6.f, std::min(diameter * 0.26f, 14.f));
+            float alpha = std::max(0.26f, std::min(0.42f, 0.2f + diameter * 0.0035f));
+            auto* shadow = new KnobShadowWidget(knob->box.size, padding, alpha);
+            shadow->box.pos = knob->box.pos.minus(Vec(padding, padding));
+            addChild(shadow);
+            addParam(knob);
+        };
+
+        // V/Z oscillator large frequency knobs (alt style)
+        Vec freqVCenter = centerPx("freq_v", 13.422475f, 25.464647f);
+        auto* freqVKnob = createParamCentered<ShapetakerKnobAltLarge>(
+            freqVCenter,
+            module,
+            ClairaudientModule::FREQ1_PARAM);
+        if (freqVKnob) {
+            Vec defaultSize = freqVKnob->box.size;
+            freqVKnob->setSvg(Svg::load(asset::plugin(
+                pluginInstance,
+                "res/knobs/indicators/clairaudient_freq_v_indicator.svg")));
+
+            freqVKnob->box.size = defaultSize;
+            if (freqVKnob->fb) {
+                freqVKnob->fb->setDirty();
+            }
+            freqVKnob->box.pos = freqVCenter.minus(defaultSize.div(2.f));
+        }
+        addKnobWithShadow(freqVKnob);
+        Vec freqZCenter = centerPx("freq_z", 68.319061f, 25.695415f);
+        auto* freqZKnob = createParamCentered<ShapetakerKnobAltLarge>(
+            freqZCenter,
+            module,
+            ClairaudientModule::FREQ2_PARAM);
+        if (freqZKnob) {
+            Vec defaultSize = freqZKnob->box.size;
+            freqZKnob->setSvg(Svg::load(asset::plugin(
+                pluginInstance,
+                "res/knobs/indicators/clairaudient_freq_z_indicator.svg")));
+            // Preserve the medium knob footprint after swapping in the custom indicator.
+            freqZKnob->box.size = defaultSize;
+            if (freqZKnob->fb) {
+                freqZKnob->fb->setDirty();
+            }
+            freqZKnob->box.pos = freqZCenter.minus(defaultSize.div(2.f));
+        }
+        addKnobWithShadow(freqZKnob);
 
         // V/Z sync switches (vintage toggle)
         {
@@ -592,33 +680,32 @@ struct ClairaudientWidget : ModuleWidget {
             addParam(sw2);
         }
 
-        // V/Z fine tune controls (oscilloscope style)
-        addParam(createParamCentered<ShapetakerKnobOscilloscopeSmall>(centerPx("fine_v", 19.023623f, 45.841431f), module, ClairaudientModule::FINE1_PARAM));
-        addParam(createParamCentered<ShapetakerKnobOscilloscopeSmall>(centerPx("fine_z", 62.717918f, 45.883205f), module, ClairaudientModule::FINE2_PARAM));
+        // V/Z fine tune controls (alt style)
+        addKnobWithShadow(createParamCentered<ShapetakerKnobAltSmall>(centerPx("fine_v", 19.023623f, 45.841431f), module, ClairaudientModule::FINE1_PARAM));
+        addKnobWithShadow(createParamCentered<ShapetakerKnobAltSmall>(centerPx("fine_z", 62.717918f, 45.883205f), module, ClairaudientModule::FINE2_PARAM));
 
         // V/Z fine tune attenuverters
-        addParam(createParamCentered<ShapetakerAttenuverterOscilloscope>(centerPx("fine_atten_v", 12.023623f, 61.744068f), module, ClairaudientModule::FINE1_ATTEN_PARAM));
-        addParam(createParamCentered<ShapetakerAttenuverterOscilloscope>(centerPx("fine_atten_z", 69.621849f, 61.744068f), module, ClairaudientModule::FINE2_ATTEN_PARAM));
+        addKnobWithShadow(createParamCentered<ShapetakerAttenuverterOscilloscope>(centerPx("fine_atten_v", 12.023623f, 61.744068f), module, ClairaudientModule::FINE1_ATTEN_PARAM));
+        addKnobWithShadow(createParamCentered<ShapetakerAttenuverterOscilloscope>(centerPx("fine_atten_z", 69.621849f, 61.744068f), module, ClairaudientModule::FINE2_ATTEN_PARAM));
         
         // (Removed decorative teal hexagon indicators for fine attenuverters)
         
         
-        // Crossfade control (center) (oscilloscope style)
-        addParam(createParamCentered<ShapetakerKnobOscilloscopeMedium>(centerPx("x_fade_knob", 40.87077f, 57.091526f), module, ClairaudientModule::XFADE_PARAM));
+        // Crossfade control (center) (alt style)
+        addKnobWithShadow(createParamCentered<ShapetakerKnobAltMedium>(centerPx("x_fade_knob", 40.87077f, 57.091526f), module, ClairaudientModule::XFADE_PARAM));
 
         // Crossfade attenuverter (center)
-        addParam(createParamCentered<ShapetakerAttenuverterOscilloscope>(centerPx("x_fade_atten", 40.639999f, 75.910126f), module, ClairaudientModule::XFADE_ATTEN_PARAM));
+        addKnobWithShadow(createParamCentered<ShapetakerAttenuverterOscilloscope>(centerPx("x_fade_atten", 40.639999f, 75.910126f), module, ClairaudientModule::XFADE_ATTEN_PARAM));
         
         // (Removed decorative teal hexagon indicator for crossfade attenuverters)
         
-        
-        // V/Z shape controls (oscilloscope style)
-        addParam(createParamCentered<ShapetakerKnobOscilloscopeSmall>(centerPx("sh_knob_v", 13.422475f, 79.825134f), module, ClairaudientModule::SHAPE1_PARAM));
-        addParam(createParamCentered<ShapetakerKnobOscilloscopeSmall>(centerPx("sh_knob_z", 68.319061f, 79.825134f), module, ClairaudientModule::SHAPE2_PARAM));
+        // V/Z shape controls (alt style)
+        addKnobWithShadow(createParamCentered<ShapetakerKnobAltSmall>(centerPx("sh_knob_v", 13.422475f, 79.825134f), module, ClairaudientModule::SHAPE1_PARAM));
+        addKnobWithShadow(createParamCentered<ShapetakerKnobAltSmall>(centerPx("sh_knob_z", 68.319061f, 79.825134f), module, ClairaudientModule::SHAPE2_PARAM));
         
         // V/Z shape attenuverters
-        addParam(createParamCentered<ShapetakerAttenuverterOscilloscope>(centerPx("sh_cv_v", 22.421556f, 93.003937f), module, ClairaudientModule::SHAPE1_ATTEN_PARAM));
-        addParam(createParamCentered<ShapetakerAttenuverterOscilloscope>(centerPx("sh_cv_z", 58.858444f, 93.003937f), module, ClairaudientModule::SHAPE2_ATTEN_PARAM));
+        addKnobWithShadow(createParamCentered<ShapetakerAttenuverterOscilloscope>(centerPx("sh_cv_v", 22.421556f, 93.003937f), module, ClairaudientModule::SHAPE1_ATTEN_PARAM));
+        addKnobWithShadow(createParamCentered<ShapetakerAttenuverterOscilloscope>(centerPx("sh_cv_z", 58.858444f, 93.003937f), module, ClairaudientModule::SHAPE2_ATTEN_PARAM));
 
         // Vintage oscilloscope display showing real-time waveform (circular)
         // The module itself is the source for the oscilloscope data

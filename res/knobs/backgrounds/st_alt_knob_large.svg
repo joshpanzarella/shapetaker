@@ -1,0 +1,334 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg
+   width="24mm"
+   height="24mm"
+   viewBox="0 0 100 100"
+   version="1.1"
+   id="svg37"
+   sodipodi:docname="st_alt_knob_large.svg"
+   inkscape:version="1.4.2 (ebf0e940, 2025-05-08)"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns:xlink="http://www.w3.org/1999/xlink"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <sodipodi:namedview
+     id="namedview37"
+     pagecolor="#505050"
+     bordercolor="#eeeeee"
+     borderopacity="1"
+     inkscape:showpageshadow="0"
+     inkscape:pageopacity="0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#505050"
+     inkscape:document-units="mm"
+     inkscape:zoom="5.6194756"
+     inkscape:cx="60.503866"
+     inkscape:cy="52.05112"
+     inkscape:window-width="1800"
+     inkscape:window-height="1097"
+     inkscape:window-x="0"
+     inkscape:window-y="44"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="svg37" />
+  <defs
+     id="defs27">
+    <linearGradient
+       id="linearGradient39"
+       inkscape:collect="always">
+      <stop
+         style="stop-color:#1a1a1a;stop-opacity:1;"
+         offset="0"
+         id="stop39" />
+      <stop
+         style="stop-color:#1a1a1a;stop-opacity:0.90196078;"
+         offset="0.53470093"
+         id="stop41" />
+      <stop
+         style="stop-color:#1a1a1a;stop-opacity:0.79607843;"
+         offset="0.75916767"
+         id="stop42" />
+      <stop
+         style="stop-color:#1a1a1a;stop-opacity:0;"
+         offset="1"
+         id="stop40" />
+    </linearGradient>
+    <radialGradient
+       id="shadow"
+       cx="50"
+       cy="52"
+       r="45"
+       gradientUnits="userSpaceOnUse">
+      <stop
+         offset="0.6"
+         stop-color="#000000"
+         stop-opacity="0"
+         id="stop1" />
+      <stop
+         offset="0.9"
+         stop-color="#000000"
+         stop-opacity="0.45"
+         id="stop2" />
+      <stop
+         offset="1"
+         stop-color="#000000"
+         stop-opacity="0"
+         id="stop3" />
+    </radialGradient>
+    <linearGradient
+       id="skirtBase"
+       x1="50"
+       y1="5"
+       x2="50"
+       y2="95"
+       gradientUnits="userSpaceOnUse">
+      <stop
+         offset="0%"
+         stop-color="#4b4b4b"
+         id="stop4" />
+      <stop
+         offset="38%"
+         stop-color="#3a3a3a"
+         id="stop5" />
+      <stop
+         offset="74%"
+         stop-color="#262626"
+         id="stop6" />
+      <stop
+         offset="100%"
+         stop-color="#161616"
+         id="stop7" />
+    </linearGradient>
+    <radialGradient
+       id="skirtHighlight"
+       cx="50"
+       cy="32"
+       r="34"
+       gradientUnits="userSpaceOnUse">
+      <stop
+         offset="0%"
+         stop-color="#f5f2e6"
+         stop-opacity="0.18"
+         id="stop8" />
+      <stop
+         offset="60%"
+         stop-color="#f5f2e6"
+         stop-opacity="0.05"
+         id="stop9" />
+      <stop
+         offset="100%"
+         stop-color="#f5f2e6"
+         stop-opacity="0"
+         id="stop10" />
+    </radialGradient>
+    <radialGradient
+       id="skirtShadow"
+       cx="50"
+       cy="72"
+       r="34"
+       gradientUnits="userSpaceOnUse">
+      <stop
+         offset="0%"
+         stop-color="#000000"
+         stop-opacity="0.22"
+         id="stop11" />
+      <stop
+         offset="70%"
+         stop-color="#000000"
+         stop-opacity="0.08"
+         id="stop12" />
+      <stop
+         offset="100%"
+         stop-color="#000000"
+         stop-opacity="0"
+         id="stop13" />
+    </radialGradient>
+    <linearGradient
+       id="knobBase"
+       x1="50"
+       y1="18"
+       x2="50"
+       y2="82"
+       gradientUnits="userSpaceOnUse">
+      <stop
+         offset="0%"
+         stop-color="#222222"
+         id="stop14" />
+      <stop
+         offset="40%"
+         stop-color="#1d1d1d"
+         id="stop15" />
+      <stop
+         offset="70%"
+         stop-color="#1a1a1a"
+         id="stop16" />
+      <stop
+         offset="100%"
+         stop-color="#151515"
+         id="stop17" />
+    </linearGradient>
+    <radialGradient
+       id="knobHighlight"
+       cx="50"
+       cy="36"
+       r="22"
+       gradientUnits="userSpaceOnUse">
+      <stop
+         offset="0%"
+         stop-color="#f5f2e6"
+         stop-opacity="0.035"
+         id="stop18" />
+      <stop
+         offset="65%"
+         stop-color="#f5f2e6"
+         stop-opacity="0.012"
+         id="stop19" />
+      <stop
+         offset="100%"
+         stop-color="#f5f2e6"
+         stop-opacity="0"
+         id="stop20" />
+    </radialGradient>
+    <radialGradient
+       id="knobShadow"
+       cx="50"
+       cy="70"
+       r="22"
+       gradientUnits="userSpaceOnUse">
+      <stop
+         offset="0%"
+         stop-color="#000000"
+         stop-opacity="0.06"
+         id="stop21" />
+      <stop
+         offset="70%"
+         stop-color="#000000"
+         stop-opacity="0.02"
+         id="stop22" />
+      <stop
+         offset="100%"
+         stop-color="#000000"
+         stop-opacity="0"
+         id="stop23" />
+    </radialGradient>
+    <linearGradient
+       id="rimHighlight"
+       x1="50"
+       y1="28"
+       x2="50"
+       y2="72"
+       gradientUnits="userSpaceOnUse">
+      <stop
+         offset="0%"
+         stop-color="#fefcf4"
+         stop-opacity="0.06"
+         id="stop24" />
+      <stop
+         offset="45%"
+         stop-color="#fefcf4"
+         stop-opacity="0.015"
+         id="stop25" />
+      <stop
+         offset="75%"
+         stop-color="#fefcf4"
+         stop-opacity="0"
+         id="stop26" />
+      <stop
+         offset="100%"
+         stop-color="#fefcf4"
+         stop-opacity="0.03"
+         id="stop27" />
+    </linearGradient>
+    <linearGradient
+       inkscape:collect="always"
+       xlink:href="#linearGradient39"
+       id="linearGradient40"
+       x1="50.500221"
+       y1="50.507484"
+       x2="51.521984"
+       y2="92.655998"
+       gradientUnits="userSpaceOnUse" />
+  </defs>
+  <g
+     id="g37">
+    <circle
+       cx="50"
+       cy="50"
+       r="46"
+       fill="url(#shadow)"
+       id="circle27"
+       style="display:inline" />
+    <circle
+       cx="50"
+       cy="50"
+       r="45"
+       fill="url(#skirtBase)"
+       id="circle28"
+       style="display:inline" />
+    <circle
+       cx="50"
+       cy="50"
+       r="45"
+       fill="url(#skirtHighlight)"
+       id="circle29"
+       style="display:inline" />
+    <circle
+       cx="50"
+       cy="50"
+       r="45"
+       fill="url(#skirtShadow)"
+       id="circle30"
+       style="display:none" />
+    <ellipse
+       cx="50"
+       cy="50"
+       fill="#1a1a1a"
+       id="circle31"
+       style="display:inline;stroke-width:0.977083"
+       rx="35.450623"
+       ry="34.901543" />
+    <circle
+       cx="50"
+       cy="50"
+       r="34.5"
+       fill="url(#knobBase)"
+       id="circle32"
+       style="display:inline" />
+    <circle
+       cx="50"
+       cy="50"
+       r="34.5"
+       fill="url(#rimHighlight)"
+       opacity="0.35"
+       id="circle33"
+       style="display:inline" />
+    <circle
+       cx="50"
+       cy="50"
+       r="34.5"
+       fill="url(#knobHighlight)"
+       id="circle34"
+       style="display:inline" />
+    <circle
+       cx="50"
+       cy="50"
+       r="34.5"
+       fill="url(#knobShadow)"
+       id="circle35"
+       style="display:inline" />
+    <circle
+       cx="50"
+       cy="50"
+       r="26"
+       fill="#050505"
+       id="circle36"
+       style="display:inline" />
+    <circle
+       cx="50"
+       cy="50"
+       r="18.5"
+       fill="#101010"
+       id="circle37"
+       style="display:inline;fill:url(#linearGradient40);fill-opacity:1" />
+  </g>
+</svg>
