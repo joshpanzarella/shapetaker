@@ -1,69 +1,374 @@
-<svg width="20" height="20" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg
+   width="20"
+   height="20"
+   viewBox="0 0 20 20"
+   version="1.1"
+   id="svg36"
+   sodipodi:docname="st_bnc_connector.svg"
+   inkscape:version="1.4.2 (ebf0e940, 2025-05-08)"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <defs
+     id="defs36" />
+  <sodipodi:namedview
+     id="namedview36"
+     pagecolor="#505050"
+     bordercolor="#eeeeee"
+     borderopacity="1"
+     inkscape:showpageshadow="0"
+     inkscape:pageopacity="0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#505050"
+     inkscape:zoom="24.46123"
+     inkscape:cx="13.736022"
+     inkscape:cy="14.655845"
+     inkscape:window-width="1800"
+     inkscape:window-height="1097"
+     inkscape:window-x="0"
+     inkscape:window-y="44"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="svg36" />
   <!-- Outer mounting ring - chrome/silver -->
-  <circle cx="10" cy="10" r="9.5" fill="#c0c0c0" stroke="#a0a0a0" stroke-width="0.4"/>
-  <circle cx="10" cy="10" r="8.8" fill="#d0d0d0" stroke="#b0b0b0" stroke-width="0.25"/>
-
+  <circle
+     cx="10"
+     cy="10"
+     r="9.5"
+     fill="#c0c0c0"
+     stroke="#a0a0a0"
+     stroke-width="0.4"
+     id="circle1"
+     style="display:inline;fill:#3c3c3c;fill-opacity:1;stroke:#343434;stroke-opacity:1" />
+  <circle
+     cx="10"
+     cy="10"
+     r="8.8000002"
+     fill="#d0d0d0"
+     stroke="#b0b0b0"
+     stroke-width="0.25"
+     id="circle2"
+     style="display:inline;fill:#494949;fill-opacity:1;stroke:#383838;stroke-opacity:1" />
   <!-- Knurled bezel (dark, rough, smaller so patch plugs cover it) -->
-  <g id="knurl" fill="#2f2f2f" stroke="#141414" stroke-width="0.2" opacity="0.85">
+  <g
+     id="knurl"
+     fill="#2f2f2f"
+     stroke="#141414"
+     stroke-width="0.2"
+     opacity="0.85"
+     style="display:inline">
     <!-- Base dark ring behind knurl teeth (smaller radius) -->
-    <circle cx="10" cy="10" r="8.2" fill="#232323" stroke="#121212" stroke-width="0.3"/>
+    <circle
+       cx="10"
+       cy="10"
+       r="8.1999998"
+       fill="#232323"
+       stroke="#121212"
+       stroke-width="0.3"
+       id="circle3" />
     <!-- Teeth around the perimeter -->
     <!-- 24 teeth, rotated around center -->
-    <g transform="translate(10,10)">
-      <rect x="-0.25" y="-8.2" width="0.5" height="0.9" rx="0.12"/>
-      <rect x="-0.25" y="-8.2" width="0.5" height="0.9" rx="0.12" transform="rotate(15)"/>
-      <rect x="-0.25" y="-8.2" width="0.5" height="0.9" rx="0.12" transform="rotate(30)"/>
-      <rect x="-0.25" y="-8.2" width="0.5" height="0.9" rx="0.12" transform="rotate(45)"/>
-      <rect x="-0.25" y="-8.2" width="0.5" height="0.9" rx="0.12" transform="rotate(60)"/>
-      <rect x="-0.25" y="-8.2" width="0.5" height="0.9" rx="0.12" transform="rotate(75)"/>
-      <rect x="-0.25" y="-8.2" width="0.5" height="0.9" rx="0.12" transform="rotate(90)"/>
-      <rect x="-0.25" y="-8.2" width="0.5" height="0.9" rx="0.12" transform="rotate(105)"/>
-      <rect x="-0.25" y="-8.2" width="0.5" height="0.9" rx="0.12" transform="rotate(120)"/>
-      <rect x="-0.25" y="-8.2" width="0.5" height="0.9" rx="0.12" transform="rotate(135)"/>
-      <rect x="-0.25" y="-8.2" width="0.5" height="0.9" rx="0.12" transform="rotate(150)"/>
-      <rect x="-0.25" y="-8.2" width="0.5" height="0.9" rx="0.12" transform="rotate(165)"/>
-      <rect x="-0.25" y="-8.2" width="0.5" height="0.9" rx="0.12" transform="rotate(180)"/>
-      <rect x="-0.25" y="-8.2" width="0.5" height="0.9" rx="0.12" transform="rotate(195)"/>
-      <rect x="-0.25" y="-8.2" width="0.5" height="0.9" rx="0.12" transform="rotate(210)"/>
-      <rect x="-0.25" y="-8.2" width="0.5" height="0.9" rx="0.12" transform="rotate(225)"/>
-      <rect x="-0.25" y="-8.2" width="0.5" height="0.9" rx="0.12" transform="rotate(240)"/>
-      <rect x="-0.25" y="-8.2" width="0.5" height="0.9" rx="0.12" transform="rotate(255)"/>
-      <rect x="-0.25" y="-8.2" width="0.5" height="0.9" rx="0.12" transform="rotate(270)"/>
-      <rect x="-0.25" y="-8.2" width="0.5" height="0.9" rx="0.12" transform="rotate(285)"/>
-      <rect x="-0.25" y="-8.2" width="0.5" height="0.9" rx="0.12" transform="rotate(300)"/>
-      <rect x="-0.25" y="-8.2" width="0.5" height="0.9" rx="0.12" transform="rotate(315)"/>
-      <rect x="-0.25" y="-8.2" width="0.5" height="0.9" rx="0.12" transform="rotate(330)"/>
-      <rect x="-0.25" y="-8.2" width="0.5" height="0.9" rx="0.12" transform="rotate(345)"/>
+    <g
+       transform="translate(10,10)"
+       id="g26">
+      <rect
+         x="-0.25"
+         y="-8.1999998"
+         width="0.5"
+         height="0.89999998"
+         rx="0.12"
+         id="rect3" />
+      <rect
+         x="-0.25"
+         y="-8.1999998"
+         width="0.5"
+         height="0.89999998"
+         rx="0.12"
+         transform="rotate(15)"
+         id="rect4" />
+      <rect
+         x="-0.25"
+         y="-8.1999998"
+         width="0.5"
+         height="0.89999998"
+         rx="0.12"
+         transform="rotate(30)"
+         id="rect5" />
+      <rect
+         x="-0.25"
+         y="-8.1999998"
+         width="0.5"
+         height="0.89999998"
+         rx="0.12"
+         transform="rotate(45)"
+         id="rect6" />
+      <rect
+         x="-0.25"
+         y="-8.1999998"
+         width="0.5"
+         height="0.89999998"
+         rx="0.12"
+         transform="rotate(60)"
+         id="rect7" />
+      <rect
+         x="-0.25"
+         y="-8.1999998"
+         width="0.5"
+         height="0.89999998"
+         rx="0.12"
+         transform="rotate(75)"
+         id="rect8" />
+      <rect
+         x="-0.25"
+         y="-8.1999998"
+         width="0.5"
+         height="0.89999998"
+         rx="0.12"
+         transform="rotate(90)"
+         id="rect9" />
+      <rect
+         x="-0.25"
+         y="-8.1999998"
+         width="0.5"
+         height="0.89999998"
+         rx="0.12"
+         transform="rotate(105)"
+         id="rect10" />
+      <rect
+         x="-0.25"
+         y="-8.1999998"
+         width="0.5"
+         height="0.89999998"
+         rx="0.12"
+         transform="rotate(120)"
+         id="rect11" />
+      <rect
+         x="-0.25"
+         y="-8.1999998"
+         width="0.5"
+         height="0.89999998"
+         rx="0.12"
+         transform="rotate(135)"
+         id="rect12" />
+      <rect
+         x="-0.25"
+         y="-8.1999998"
+         width="0.5"
+         height="0.89999998"
+         rx="0.12"
+         transform="rotate(150)"
+         id="rect13" />
+      <rect
+         x="-0.25"
+         y="-8.1999998"
+         width="0.5"
+         height="0.89999998"
+         rx="0.12"
+         transform="rotate(165)"
+         id="rect14" />
+      <rect
+         x="-0.25"
+         y="-8.1999998"
+         width="0.5"
+         height="0.89999998"
+         rx="0.12"
+         transform="scale(-1)"
+         id="rect15" />
+      <rect
+         x="-0.25"
+         y="-8.1999998"
+         width="0.5"
+         height="0.89999998"
+         rx="0.12"
+         transform="rotate(-165)"
+         id="rect16" />
+      <rect
+         x="-0.25"
+         y="-8.1999998"
+         width="0.5"
+         height="0.89999998"
+         rx="0.12"
+         transform="rotate(-150)"
+         id="rect17" />
+      <rect
+         x="-0.25"
+         y="-8.1999998"
+         width="0.5"
+         height="0.89999998"
+         rx="0.12"
+         transform="rotate(-135)"
+         id="rect18" />
+      <rect
+         x="-0.25"
+         y="-8.1999998"
+         width="0.5"
+         height="0.89999998"
+         rx="0.12"
+         transform="rotate(-120)"
+         id="rect19" />
+      <rect
+         x="-0.25"
+         y="-8.1999998"
+         width="0.5"
+         height="0.89999998"
+         rx="0.12"
+         transform="rotate(-105)"
+         id="rect20" />
+      <rect
+         x="-0.25"
+         y="-8.1999998"
+         width="0.5"
+         height="0.89999998"
+         rx="0.12"
+         transform="rotate(-90)"
+         id="rect21" />
+      <rect
+         x="-0.25"
+         y="-8.1999998"
+         width="0.5"
+         height="0.89999998"
+         rx="0.12"
+         transform="rotate(-75)"
+         id="rect22" />
+      <rect
+         x="-0.25"
+         y="-8.1999998"
+         width="0.5"
+         height="0.89999998"
+         rx="0.12"
+         transform="rotate(-60)"
+         id="rect23" />
+      <rect
+         x="-0.25"
+         y="-8.1999998"
+         width="0.5"
+         height="0.89999998"
+         rx="0.12"
+         transform="rotate(-45)"
+         id="rect24" />
+      <rect
+         x="-0.25"
+         y="-8.1999998"
+         width="0.5"
+         height="0.89999998"
+         rx="0.12"
+         transform="rotate(-30)"
+         id="rect25" />
+      <rect
+         x="-0.25"
+         y="-8.1999998"
+         width="0.5"
+         height="0.89999998"
+         rx="0.12"
+         transform="rotate(-15)"
+         id="rect26" />
     </g>
     <!-- Subtle inner shadow under knurl to separate from body -->
-    <circle cx="10" cy="10" r="7.6" fill="none" stroke="#0d0d0d" stroke-width="0.4" opacity="0.85"/>
+    <circle
+       cx="10"
+       cy="10"
+       r="7.5999999"
+       fill="none"
+       stroke="#0d0d0d"
+       stroke-width="0.4"
+       opacity="0.85"
+       id="circle26" />
   </g>
-  
   <!-- BNC bayonet slots -->
-  <g stroke="#808080" stroke-width="0.6" fill="none">
+  <g
+     stroke="#808080"
+     stroke-width="0.6"
+     fill="none"
+     id="g29"
+     style="display:inline">
     <!-- Top slot -->
-    <path d="M 10 1.5 L 10 3.8 M 9.2 2.6 L 10.8 2.6"/>
+    <path
+       d="M 10,1.5 V 3.8 M 9.2,2.6 h 1.6"
+       id="path26" />
     <!-- Right slot -->
-    <path d="M 18.5 10 L 16.2 10 M 17.4 9.2 L 17.4 10.8"/>
+    <path
+       d="m 18.5,10 h -2.3 m 1.2,-0.8 v 1.6"
+       id="path27" />
     <!-- Bottom slot -->
-    <path d="M 10 18.5 L 10 16.2 M 9.2 17.4 L 10.8 17.4"/>
+    <path
+       d="m 10,18.5 v -2.3 m -0.8,1.2 h 1.6"
+       id="path28" />
     <!-- Left slot -->
-    <path d="M 1.5 10 L 3.8 10 M 2.6 9.2 L 2.6 10.8"/>
+    <path
+       d="M 1.5,10 H 3.8 M 2.6,9.2 v 1.6"
+       id="path29" />
   </g>
-  
   <!-- Inner connector body -->
-  <circle cx="10" cy="10" r="7.2" fill="#2a2a2a" stroke="#1a1a1a" stroke-width="0.4"/>
-  <circle cx="10" cy="10" r="6.6" fill="#333333" stroke="#555555" stroke-width="0.25"/>
-  
+  <circle
+     cx="10"
+     cy="10"
+     r="7.1999998"
+     fill="#2a2a2a"
+     stroke="#1a1a1a"
+     stroke-width="0.4"
+     id="circle29"
+     style="display:inline" />
+  <circle
+     cx="10"
+     cy="10"
+     r="6.6"
+     fill="#333333"
+     stroke="#555555"
+     stroke-width="0.25"
+     id="circle30" />
   <!-- Center pin/socket (slightly larger black center) -->
-  <circle cx="10" cy="10" r="2.8" fill="#1a1a1a" stroke="#0a0a0a" stroke-width="0.25"/>
-  <circle cx="10" cy="10" r="2.5" fill="#000000"/>
-  
+  <circle
+     cx="10"
+     cy="10"
+     r="2.8"
+     fill="#1a1a1a"
+     stroke="#0a0a0a"
+     stroke-width="0.25"
+     id="circle31"
+     style="display:inline" />
+  <circle
+     cx="10"
+     cy="10"
+     r="2.5"
+     fill="#000000"
+     id="circle32"
+     style="display:inline" />
   <!-- Pin highlight for depth -->
-  <circle cx="9.2" cy="9.2" r="1" fill="#333333" opacity="0.4"/>
-  
+  <circle
+     cx="9.2"
+     cy="9.2"
+     r="1"
+     fill="#333333"
+     opacity="0.4"
+     id="circle33" />
   <!-- Connector threads/ridges -->
-  <circle cx="10" cy="10" r="6" fill="none" stroke="#555555" stroke-width="0.15" opacity="0.6"/>
-  <circle cx="10" cy="10" r="5.4" fill="none" stroke="#555555" stroke-width="0.15" opacity="0.6"/>
-  <circle cx="10" cy="10" r="4.8" fill="none" stroke="#555555" stroke-width="0.15" opacity="0.6"/>
+  <circle
+     cx="10"
+     cy="10"
+     r="6"
+     fill="none"
+     stroke="#555555"
+     stroke-width="0.15"
+     opacity="0.6"
+     id="circle34" />
+  <circle
+     cx="10"
+     cy="10"
+     r="5.4"
+     fill="none"
+     stroke="#555555"
+     stroke-width="0.15"
+     opacity="0.6"
+     id="circle35" />
+  <circle
+     cx="10"
+     cy="10"
+     r="4.8000002"
+     fill="none"
+     stroke="#555555"
+     stroke-width="0.15"
+     opacity="0.6"
+     id="circle36"
+     style="display:inline" />
 </svg>

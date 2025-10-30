@@ -620,6 +620,162 @@ struct ShapetakerKnobDarkLarge : app::SvgKnob {
     }
 };
 
+struct ShapetakerKnobAltHuge : app::SvgKnob {
+    widget::SvgWidget* bg;
+    Vec nativeSize = Vec(100.f, 100.f);
+
+    ShapetakerKnobAltHuge() {
+        minAngle = -0.75 * M_PI;
+        maxAngle = 0.75 * M_PI;
+
+        // Use blank indicator for now - will be replaced piecemeal later
+        setSvg(Svg::load(asset::plugin(pluginInstance, "res/knobs/indicators/blank_indicator.svg")));
+
+        bg = new widget::SvgWidget;
+        bg->setSvg(Svg::load(asset::plugin(pluginInstance, "res/knobs/backgrounds/st_alt_knob_huge.svg")));
+        nativeSize = bg->box.size;
+        if (fb && tw) fb->addChildBelow(bg, tw);
+        box.size = mm2px(Vec(30.f, 30.f));
+
+        // Disable shadow for clean aesthetic
+        if (shadow) {
+            shadow->visible = false;
+        }
+    }
+
+    void draw(const DrawArgs& args) override {
+        nvgSave(args.vg);
+        float svgW = std::max(1.f, nativeSize.x);
+        float svgH = std::max(1.f, nativeSize.y);
+        float sx = box.size.x / svgW;
+        float sy = box.size.y / svgH;
+        float s = std::min(sx, sy);
+        float tx = (box.size.x - svgW * s) * 0.5f;
+        float ty = (box.size.y - svgH * s) * 0.5f;
+        nvgTranslate(args.vg, tx, ty);
+        nvgScale(args.vg, s, s);
+        app::SvgKnob::draw(args);
+        nvgRestore(args.vg);
+    }
+};
+
+struct ShapetakerKnobAltLarge : app::SvgKnob {
+    widget::SvgWidget* bg;
+    Vec nativeSize = Vec(100.f, 100.f);
+
+    ShapetakerKnobAltLarge() {
+        minAngle = -0.75 * M_PI;
+        maxAngle = 0.75 * M_PI;
+
+        // Use blank indicator for now - will be replaced piecemeal later
+        setSvg(Svg::load(asset::plugin(pluginInstance, "res/knobs/indicators/blank_indicator.svg")));
+
+        bg = new widget::SvgWidget;
+        bg->setSvg(Svg::load(asset::plugin(pluginInstance, "res/knobs/backgrounds/st_alt_knob_large.svg")));
+        nativeSize = bg->box.size;
+        if (fb && tw) fb->addChildBelow(bg, tw);
+        box.size = mm2px(Vec(24.f, 24.f));
+
+        // Disable shadow for clean aesthetic
+        if (shadow) {
+            shadow->visible = false;
+        }
+    }
+
+    void draw(const DrawArgs& args) override {
+        nvgSave(args.vg);
+        float svgW = std::max(1.f, nativeSize.x);
+        float svgH = std::max(1.f, nativeSize.y);
+        float sx = box.size.x / svgW;
+        float sy = box.size.y / svgH;
+        float s = std::min(sx, sy);
+        float tx = (box.size.x - svgW * s) * 0.5f;
+        float ty = (box.size.y - svgH * s) * 0.5f;
+        nvgTranslate(args.vg, tx, ty);
+        nvgScale(args.vg, s, s);
+        app::SvgKnob::draw(args);
+        nvgRestore(args.vg);
+    }
+};
+
+struct ShapetakerKnobAltMedium : app::SvgKnob {
+    widget::SvgWidget* bg;
+    Vec nativeSize = Vec(100.f, 100.f);
+
+    ShapetakerKnobAltMedium() {
+        minAngle = -0.75 * M_PI;
+        maxAngle = 0.75 * M_PI;
+
+        // Use blank indicator for now - will be replaced piecemeal later
+        setSvg(Svg::load(asset::plugin(pluginInstance, "res/knobs/indicators/blank_indicator.svg")));
+
+        bg = new widget::SvgWidget;
+        bg->setSvg(Svg::load(asset::plugin(pluginInstance, "res/knobs/backgrounds/st_alt_knob_medium.svg")));
+        nativeSize = bg->box.size;
+        if (fb && tw) fb->addChildBelow(bg, tw);
+        box.size = mm2px(Vec(20.f, 20.f));
+
+        // Disable shadow for clean aesthetic
+        if (shadow) {
+            shadow->visible = false;
+        }
+    }
+
+    void draw(const DrawArgs& args) override {
+        nvgSave(args.vg);
+        float svgW = std::max(1.f, nativeSize.x);
+        float svgH = std::max(1.f, nativeSize.y);
+        float sx = box.size.x / svgW;
+        float sy = box.size.y / svgH;
+        float s = std::min(sx, sy);
+        float tx = (box.size.x - svgW * s) * 0.5f;
+        float ty = (box.size.y - svgH * s) * 0.5f;
+        nvgTranslate(args.vg, tx, ty);
+        nvgScale(args.vg, s, s);
+        app::SvgKnob::draw(args);
+        nvgRestore(args.vg);
+    }
+};
+
+struct ShapetakerKnobAltSmall : app::SvgKnob {
+    widget::SvgWidget* bg;
+    Vec nativeSize = Vec(100.f, 100.f);
+
+    ShapetakerKnobAltSmall() {
+        minAngle = -0.75 * M_PI;
+        maxAngle = 0.75 * M_PI;
+
+        // Use blank indicator for now - will be replaced piecemeal later
+        setSvg(Svg::load(asset::plugin(pluginInstance, "res/knobs/indicators/blank_indicator.svg")));
+
+        bg = new widget::SvgWidget;
+        bg->setSvg(Svg::load(asset::plugin(pluginInstance, "res/knobs/backgrounds/st_alt_knob_small.svg")));
+        nativeSize = bg->box.size;
+        if (fb && tw) fb->addChildBelow(bg, tw);
+        box.size = mm2px(Vec(16.f, 16.f));
+
+        // Disable shadow for clean aesthetic
+        if (shadow) {
+            shadow->visible = false;
+        }
+    }
+
+    void draw(const DrawArgs& args) override {
+        nvgSave(args.vg);
+        float svgW = std::max(1.f, nativeSize.x);
+        float svgH = std::max(1.f, nativeSize.y);
+        float sx = box.size.x / svgW;
+        float sy = box.size.y / svgH;
+        float s = std::min(sx, sy);
+        float tx = (box.size.x - svgW * s) * 0.5f;
+        float ty = (box.size.y - svgH * s) * 0.5f;
+        nvgTranslate(args.vg, tx, ty);
+        nvgScale(args.vg, s, s);
+        app::SvgKnob::draw(args);
+        nvgRestore(args.vg);
+    }
+};
+
 struct ShapetakerKnobDarkChicken : app::SvgKnob {
     widget::SvgWidget* bg;
     Vec nativeSize = Vec(100.f, 100.f);
@@ -663,10 +819,10 @@ struct ShapetakerOscilloscopeSwitch : app::SvgSwitch {
         addFrame(Svg::load(asset::plugin(pluginInstance, "res/switches/shuttle-toggle-switch-on.svg")));
         // Disable the shadow by setting it to transparent
         shadow->visible = false;
-        // Target widget box size (mm-driven) — approx previous 36px ≈ 9.5 mm
-        box.size = mm2px(Vec(9.5f, 9.5f));
+        // Target widget box size increased by 50%: 9.5mm → 14.25mm (very noticeable change)
+        box.size = mm2px(Vec(14.25f, 14.25f));
     }
-    
+
     void draw(const DrawArgs& args) override {
         nvgSave(args.vg);
         // Scale SVG frames (200x200) to fit our current box and center them
@@ -681,51 +837,215 @@ struct ShapetakerOscilloscopeSwitch : app::SvgSwitch {
     }
 };
 
-struct ShapetakerVintageToggleSwitch : app::SvgSwitch {
-    // Cache the native SVG size so we don't assume 40x80; this adapts if the SVG page size changes
-    Vec offSize = Vec(40.f, 80.f);
-    Vec onSize  = Vec(40.f, 80.f);
-    ShapetakerVintageToggleSwitch() {
-        // Load frames and capture intrinsic size from the OFF frame
-        auto offSvg = Svg::load(asset::plugin(pluginInstance, "res/switches/vintage_toggle_switch_off.svg"));
-        auto onSvg  = Svg::load(asset::plugin(pluginInstance, "res/switches/vintage_toggle_switch_on.svg"));
-        // Measure intrinsic sizes via a temporary SvgWidget (portable across SDK versions)
-        if (offSvg) {
-            widget::SvgWidget probe;
-            probe.setSvg(offSvg);
-            if (probe.box.size.x > 0.f && probe.box.size.y > 0.f)
-                offSize = probe.box.size;
-        }
-        if (onSvg) {
-            widget::SvgWidget probe;
-            probe.setSvg(onSvg);
-            if (probe.box.size.x > 0.f && probe.box.size.y > 0.f)
-                onSize = probe.box.size;
-        }
-        addFrame(offSvg);
-        addFrame(onSvg);
-        // House size in mm: another -5% from 8.55x17.1 → 8.1225 x 16.245 mm
-        box.size = mm2px(Vec(8.1225f, 16.245f));
-        if (shadow) shadow->visible = false;
+struct ShapetakerVintageRussianToggle : app::SvgSwitch {
+    ShapetakerVintageRussianToggle() {
+        addFrame(Svg::load(asset::plugin(pluginInstance, "res/switches/vintage_toggle_switch_off.svg")));
+        addFrame(Svg::load(asset::plugin(pluginInstance, "res/switches/vintage_toggle_switch_on.svg")));
+        shadow->visible = false;
+        // Sized appropriately for vintage aesthetic: 12mm
+        box.size = mm2px(Vec(12.0f, 12.0f));
     }
+
     void draw(const DrawArgs& args) override {
-        // Scale the native SVG frames to fit our current box while preserving aspect
-        // Use the intrinsic size of the current frame (OFF/ON)
-        int state = 0;
-        if (getParamQuantity()) state = (int) std::round(getParamQuantity()->getValue());
-        Vec ns = state == 0 ? offSize : onSize;
-        float svgW = std::max(1.f, ns.x);
-        float svgH = std::max(1.f, ns.y);
-        float sx = box.size.x / svgW;
-        float sy = box.size.y / svgH;
-        float s = std::min(sx, sy);
-        float tx = (box.size.x - svgW * s) * 0.5f;
-        float ty = (box.size.y - svgH * s) * 0.5f;
         nvgSave(args.vg);
+        // Scale SVG frames (22.592 x 32) to fit our current box and center them
+        const float svgWidth = 22.592375f;
+        const float svgHeight = 32.0f;
+        float sx = box.size.x / svgWidth;
+        float sy = box.size.y / svgHeight;
+        float s = std::min(sx, sy);
+        float tx = (box.size.x - svgWidth * s) * 0.5f;
+        float ty = (box.size.y - svgHeight * s) * 0.5f;
         nvgTranslate(args.vg, tx, ty);
         nvgScale(args.vg, s, s);
-        app::SvgSwitch::draw(args);
+        SvgSwitch::draw(args);
         nvgRestore(args.vg);
+    }
+};
+
+struct ShapetakerVintageToggleSwitch : app::Switch {
+    ShapetakerVintageToggleSwitch() {
+        momentary = false;
+        box.size = mm2px(Vec(2.99475f, 6.32225f));
+    }
+
+    void draw(const DrawArgs& args) override {
+        NVGcontext* vg = args.vg;
+        float w = box.size.x;
+        float h = box.size.y;
+
+        nvgSave(vg);
+
+        // Drop shadow for depth
+        nvgBeginPath(vg);
+        float shadowRadius = h * 0.35f;
+        nvgRoundedRect(vg, w * 0.08f, h * 0.06f, w * 0.84f, h * 0.88f, shadowRadius);
+        NVGpaint shadowPaint = nvgBoxGradient(vg, w * 0.5f, h * 0.5f, w * 0.7f, h * 0.8f, shadowRadius, w * 0.3f,
+            nvgRGBA(0, 0, 0, 80), nvgRGBA(0, 0, 0, 0));
+        nvgFillPaint(vg, shadowPaint);
+        nvgFill(vg);
+
+        // Base plate - more realistic metal texture
+        float radius = h * 0.3f;
+        float inset = w * 0.08f;
+        float insetY = h * 0.04f;
+        nvgBeginPath(vg);
+        nvgRoundedRect(vg, inset, insetY, w - inset * 2.f, h - insetY * 2.f, radius);
+        NVGpaint basePaint = nvgLinearGradient(vg, inset, insetY, inset, h - insetY,
+            nvgRGBA(52, 54, 58, 255),
+            nvgRGBA(32, 33, 36, 255));
+        nvgFillPaint(vg, basePaint);
+        nvgFill(vg);
+
+        // Outer rim shadow for depth
+        nvgStrokeColor(vg, nvgRGBA(0, 0, 0, 200));
+        nvgStrokeWidth(vg, 0.8f);
+        nvgStroke(vg);
+
+        // Inner bevel highlight
+        nvgBeginPath(vg);
+        nvgRoundedRect(vg, inset + 0.6f, insetY + 0.5f, (w - inset * 2.f) - 1.2f, (h - insetY * 2.f) - 1.0f, radius * 0.85f);
+        nvgStrokeColor(vg, nvgRGBA(75, 77, 82, 180));
+        nvgStrokeWidth(vg, 0.5f);
+        nvgStroke(vg);
+
+        // Top sheen - subtler, more realistic
+        nvgBeginPath(vg);
+        nvgRoundedRect(vg, inset + 0.8f, insetY + 0.7f, (w - inset * 2.f) - 1.6f, (h - insetY * 2.f) * 0.45f, radius * 0.7f);
+        NVGpaint sheen = nvgLinearGradient(vg, inset, insetY, inset, insetY + (h - insetY * 2.f) * 0.4f,
+            nvgRGBA(255, 255, 255, 25),
+            nvgRGBA(255, 255, 255, 0));
+        nvgFillPaint(vg, sheen);
+        nvgFill(vg);
+
+        // Mounting screws - smaller and more realistic
+        auto drawScrew = [&](float x, float y) {
+            float sr = w * 0.11f;
+            // Screw shadow
+            nvgBeginPath(vg);
+            nvgCircle(vg, x + 0.15f, y + 0.15f, sr * 0.95f);
+            nvgFillColor(vg, nvgRGBA(0, 0, 0, 60));
+            nvgFill(vg);
+
+            // Screw body
+            nvgBeginPath(vg);
+            nvgCircle(vg, x, y, sr);
+            NVGpaint screwPaint = nvgRadialGradient(vg, x - sr * 0.3f, y - sr * 0.3f,
+                sr * 0.1f, sr * 1.1f,
+                nvgRGBA(195, 192, 185, 255),
+                nvgRGBA(85, 85, 85, 255));
+            nvgFillPaint(vg, screwPaint);
+            nvgFill(vg);
+            nvgStrokeColor(vg, nvgRGBA(0, 0, 0, 180));
+            nvgStrokeWidth(vg, 0.35f);
+            nvgStroke(vg);
+
+            // Screw slot
+            nvgBeginPath(vg);
+            nvgRect(vg, x - sr * 0.65f, y - sr * 0.12f, sr * 1.3f, sr * 0.24f);
+            nvgFillColor(vg, nvgRGBA(30, 30, 30, 200));
+            nvgFill(vg);
+        };
+        drawScrew(inset + (w - inset * 2.f) * 0.32f, insetY + (h - insetY * 2.f) * 0.25f);
+        drawScrew(inset + (w - inset * 2.f) * 0.68f, insetY + (h - insetY * 2.f) * 0.75f);
+
+        // Determine lever angle (blend between -30° and +30°)
+        float value = 0.f;
+        if (auto* pq = getParamQuantity()) {
+            value = rack::math::clamp(pq->getValue(), 0.f, 1.f);
+        }
+        float theta = 30.f * (M_PI / 180.f);
+        float angle = -theta + (2.f * theta) * value;
+
+        float pivotX = w * 0.5f;
+        float pivotY = insetY + (h - insetY * 2.f) * 0.63f;
+        nvgTranslate(vg, pivotX, pivotY);
+        nvgRotate(vg, angle);
+
+        // Lever shadow
+        nvgBeginPath(vg);
+        float stemWidth = w * 0.26f;
+        float stemLength = (h - insetY * 2.f) * 0.94f;
+        nvgRoundedRect(vg, -stemWidth * 0.5f + 0.3f, -stemLength + 0.3f, stemWidth, stemLength, stemWidth * 0.4f);
+        nvgFillColor(vg, nvgRGBA(0, 0, 0, 50));
+        nvgFill(vg);
+
+        // Lever stem - realistic aluminum/steel finish
+        nvgBeginPath(vg);
+        nvgRoundedRect(vg, -stemWidth * 0.5f, -stemLength, stemWidth, stemLength, stemWidth * 0.4f);
+        NVGpaint leverPaint = nvgLinearGradient(vg, -stemWidth * 0.5f, -stemLength, stemWidth * 0.5f, -stemLength,
+            nvgRGBA(185, 185, 182, 255),
+            nvgRGBA(145, 145, 142, 255));
+        nvgFillPaint(vg, leverPaint);
+        nvgFill(vg);
+
+        // Lever edge highlights
+        nvgStrokeColor(vg, nvgRGBA(210, 210, 208, 180));
+        nvgStrokeWidth(vg, 0.4f);
+        nvgStroke(vg);
+
+        // Lever tip - black plastic/rubber material
+        float tipR = stemWidth * 0.92f;
+        // Tip shadow
+        nvgBeginPath(vg);
+        nvgCircle(vg, 0.2f, -stemLength + 0.2f, tipR);
+        nvgFillColor(vg, nvgRGBA(0, 0, 0, 60));
+        nvgFill(vg);
+
+        // Tip body - black with subtle gradient
+        nvgBeginPath(vg);
+        nvgCircle(vg, 0.f, -stemLength, tipR);
+        NVGpaint tipPaint = nvgRadialGradient(vg,
+            -tipR * 0.35f, -stemLength - tipR * 0.35f,
+            tipR * 0.15f, tipR * 1.15f,
+            nvgRGBA(45, 45, 45, 255),
+            nvgRGBA(18, 18, 18, 255));
+        nvgFillPaint(vg, tipPaint);
+        nvgFill(vg);
+
+        // Tip rim - dark edge
+        nvgStrokeColor(vg, nvgRGBA(8, 8, 8, 220));
+        nvgStrokeWidth(vg, 0.4f);
+        nvgStroke(vg);
+
+        // Tip highlight - subtle shine on black plastic
+        nvgBeginPath(vg);
+        nvgCircle(vg, -tipR * 0.3f, -stemLength - tipR * 0.3f, tipR * 0.35f);
+        nvgFillColor(vg, nvgRGBA(255, 255, 255, 35));
+        nvgFill(vg);
+
+        // Pivot collar - brushed metal appearance
+        float collarR = stemWidth * 0.85f;
+        // Collar shadow
+        nvgBeginPath(vg);
+        nvgCircle(vg, 0.15f, 0.15f, collarR);
+        nvgFillColor(vg, nvgRGBA(0, 0, 0, 70));
+        nvgFill(vg);
+
+        // Collar body
+        nvgBeginPath(vg);
+        nvgCircle(vg, 0.f, 0.f, collarR);
+        NVGpaint pivotPaint = nvgRadialGradient(vg,
+            -collarR * 0.3f, -collarR * 0.3f,
+            collarR * 0.15f, collarR * 1.1f,
+            nvgRGBA(175, 175, 175, 255),
+            nvgRGBA(95, 95, 95, 255));
+        nvgFillPaint(vg, pivotPaint);
+        nvgFill(vg);
+        nvgStrokeColor(vg, nvgRGBA(0, 0, 0, 210));
+        nvgStrokeWidth(vg, 0.45f);
+        nvgStroke(vg);
+
+        // Inner collar detail
+        nvgBeginPath(vg);
+        nvgCircle(vg, 0.f, 0.f, collarR * 0.6f);
+        nvgStrokeColor(vg, nvgRGBA(65, 65, 65, 150));
+        nvgStrokeWidth(vg, 0.3f);
+        nvgStroke(vg);
+
+        nvgRestore(vg);
+
+        app::Switch::draw(args);
     }
 };
 

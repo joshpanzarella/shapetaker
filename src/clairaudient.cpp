@@ -669,20 +669,33 @@ struct ClairaudientWidget : ModuleWidget {
         }
         addKnobWithShadow(freqZKnob);
 
-        // V/Z sync switches (vintage toggle)
+        // V/Z sync switches (vintage Russian toggle)
         {
             Vec pos1 = centerPx("sync_v", 26.023623f, 66.637276f);
-            auto* sw1 = createParamCentered<ShapetakerVintageToggleSwitch>(pos1, module, ClairaudientModule::SYNC1_PARAM);
+            auto* sw1 = createParamCentered<ShapetakerVintageRussianToggle>(pos1, module, ClairaudientModule::SYNC1_PARAM);
             addParam(sw1);
 
             Vec pos2 = centerPx("sync_z", 55.676144f, 66.637276f);
-            auto* sw2 = createParamCentered<ShapetakerVintageToggleSwitch>(pos2, module, ClairaudientModule::SYNC2_PARAM);
+            auto* sw2 = createParamCentered<ShapetakerVintageRussianToggle>(pos2, module, ClairaudientModule::SYNC2_PARAM);
             addParam(sw2);
         }
 
         // V/Z fine tune controls (alt style)
-        addKnobWithShadow(createParamCentered<ShapetakerKnobAltSmall>(centerPx("fine_v", 19.023623f, 45.841431f), module, ClairaudientModule::FINE1_PARAM));
-        addKnobWithShadow(createParamCentered<ShapetakerKnobAltSmall>(centerPx("fine_z", 62.717918f, 45.883205f), module, ClairaudientModule::FINE2_PARAM));
+        auto* fineVKnob = createParamCentered<ShapetakerKnobAltSmall>(centerPx("fine_v", 19.023623f, 45.841431f), module, ClairaudientModule::FINE1_PARAM);
+        if (fineVKnob) {
+            fineVKnob->setSvg(Svg::load(asset::plugin(
+                pluginInstance,
+                "res/knobs/indicators/clairaudient_fine_indicator_small.svg")));
+        }
+        addKnobWithShadow(fineVKnob);
+
+        auto* fineZKnob = createParamCentered<ShapetakerKnobAltSmall>(centerPx("fine_z", 62.717918f, 45.883205f), module, ClairaudientModule::FINE2_PARAM);
+        if (fineZKnob) {
+            fineZKnob->setSvg(Svg::load(asset::plugin(
+                pluginInstance,
+                "res/knobs/indicators/clairaudient_fine_indicator_small.svg")));
+        }
+        addKnobWithShadow(fineZKnob);
 
         // V/Z fine tune attenuverters
         addKnobWithShadow(createParamCentered<ShapetakerAttenuverterOscilloscope>(centerPx("fine_atten_v", 12.023623f, 61.744068f), module, ClairaudientModule::FINE1_ATTEN_PARAM));
@@ -692,7 +705,13 @@ struct ClairaudientWidget : ModuleWidget {
         
         
         // Crossfade control (center) (alt style)
-        addKnobWithShadow(createParamCentered<ShapetakerKnobAltMedium>(centerPx("x_fade_knob", 40.87077f, 57.091526f), module, ClairaudientModule::XFADE_PARAM));
+        auto* xFadeKnob = createParamCentered<ShapetakerKnobAltMedium>(centerPx("x_fade_knob", 40.87077f, 57.091526f), module, ClairaudientModule::XFADE_PARAM);
+        if (xFadeKnob) {
+            xFadeKnob->setSvg(Svg::load(asset::plugin(
+                pluginInstance,
+                "res/knobs/indicators/clairaudient_xfade_indicator.svg")));
+        }
+        addKnobWithShadow(xFadeKnob);
 
         // Crossfade attenuverter (center)
         addKnobWithShadow(createParamCentered<ShapetakerAttenuverterOscilloscope>(centerPx("x_fade_atten", 40.639999f, 75.910126f), module, ClairaudientModule::XFADE_ATTEN_PARAM));
@@ -700,8 +719,21 @@ struct ClairaudientWidget : ModuleWidget {
         // (Removed decorative teal hexagon indicator for crossfade attenuverters)
         
         // V/Z shape controls (alt style)
-        addKnobWithShadow(createParamCentered<ShapetakerKnobAltSmall>(centerPx("sh_knob_v", 13.422475f, 79.825134f), module, ClairaudientModule::SHAPE1_PARAM));
-        addKnobWithShadow(createParamCentered<ShapetakerKnobAltSmall>(centerPx("sh_knob_z", 68.319061f, 79.825134f), module, ClairaudientModule::SHAPE2_PARAM));
+        auto* shapeVKnob = createParamCentered<ShapetakerKnobAltSmall>(centerPx("sh_knob_v", 13.422475f, 79.825134f), module, ClairaudientModule::SHAPE1_PARAM);
+        if (shapeVKnob) {
+            shapeVKnob->setSvg(Svg::load(asset::plugin(
+                pluginInstance,
+                "res/knobs/indicators/clairaudient_shape_indicator_small.svg")));
+        }
+        addKnobWithShadow(shapeVKnob);
+
+        auto* shapeZKnob = createParamCentered<ShapetakerKnobAltSmall>(centerPx("sh_knob_z", 68.319061f, 79.825134f), module, ClairaudientModule::SHAPE2_PARAM);
+        if (shapeZKnob) {
+            shapeZKnob->setSvg(Svg::load(asset::plugin(
+                pluginInstance,
+                "res/knobs/indicators/clairaudient_shape_indicator_small.svg")));
+        }
+        addKnobWithShadow(shapeZKnob);
         
         // V/Z shape attenuverters
         addKnobWithShadow(createParamCentered<ShapetakerAttenuverterOscilloscope>(centerPx("sh_cv_v", 22.421556f, 93.003937f), module, ClairaudientModule::SHAPE1_ATTEN_PARAM));

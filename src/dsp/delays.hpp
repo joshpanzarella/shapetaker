@@ -235,18 +235,25 @@ private:
     bool initialized = false;
 
 public:
-    float process(float target, float sampleTime) {
+    float process(float target, float sampleTime, float timeConstant) {
         if (!initialized) {
             value = target;
             initialized = true;
             return value;
         }
         
-        // Very fast smoothing: 1ms time constant for immediate response
-        float timeConstant = 0.001f;
+        if (timeConstant < 1e-6f) {
+            timeConstant = 1e-6f;
+        }
+
         float alpha = sampleTime / (timeConstant + sampleTime);
         value += alpha * (target - value);
         return value;
+    }
+
+    float process(float target, float sampleTime) {
+        // Default to very fast smoothing (1ms time constant)
+        return process(target, sampleTime, 0.001f);
     }
 
     void reset(float initialValue = 0.f) {

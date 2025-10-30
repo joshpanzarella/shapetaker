@@ -113,12 +113,28 @@ struct Involution : Module {
         std::array<float, ETHEREAL_STAGES> modPhase{};
         std::array<float, ETHEREAL_STAGES> phaseOffset{};
         std::array<float, ETHEREAL_STAGES> drift{};
+        std::array<float, ETHEREAL_STAGES> smoothedStageBlend{};
+        std::array<float, ETHEREAL_STAGES> smoothedDelay{};
+        float smoothedDiffusion = 0.f;
+        float smoothedFeedback = 0.f;
+        float smoothedHaloMix = 0.f;
+        float smoothedShimmer = 0.f;
+        float smoothedModDepth = 0.f;
+        float smoothedStereoSkew = 0.f;
 
         void reset() {
             for (auto& d : delays) {
                 d.reset();
             }
             modPhase.fill(0.f);
+            smoothedStageBlend.fill(0.f);
+            smoothedDelay.fill(12.f);
+            smoothedDiffusion = 0.f;
+            smoothedFeedback = 0.f;
+            smoothedHaloMix = 0.f;
+            smoothedShimmer = 0.f;
+            smoothedModDepth = 0.f;
+            smoothedStereoSkew = 0.f;
         }
     };
 
@@ -141,6 +157,11 @@ struct Involution : Module {
     shapetaker::FastSmoother cutoffASmooth, cutoffBSmooth, resonanceASmooth, resonanceBSmooth;
     shapetaker::FastSmoother auraSmooth, orbitSmooth, tideSmooth;
     shapetaker::FastSmoother chaosRateSmooth;
+    shapetaker::FastSmoother effectGateSmooth;
+
+    static constexpr float CHARACTER_SMOOTH_TC = 0.015f;
+    static constexpr float EFFECT_GATE_SMOOTH_TC = 0.04f;
+    static constexpr float ETHEREAL_PARAM_SMOOTH_TC = 0.05f;
     
     // Parameter change tracking for bidirectional linking
     float lastCutoffA = -1.f, lastCutoffB = -1.f;
@@ -244,6 +265,7 @@ struct Involution : Module {
         auraSmooth.reset(params[AURA_PARAM].getValue());
         orbitSmooth.reset(params[ORBIT_PARAM].getValue());
         tideSmooth.reset(params[TIDE_PARAM].getValue());
+        effectGateSmooth.reset(0.f);
     }
 
     void onSampleRateChange() override {
@@ -271,6 +293,7 @@ struct Involution : Module {
         chaosTargetRate = clamp(params[CHAOS_RATE_PARAM].getValue(), CHAOS_RATE_MIN_HZ, CHAOS_RATE_MAX_HZ);
         smoothedChaosRate = chaosTargetRate;
         chaosRateSmooth.reset(chaosTargetRate);
+        effectGateSmooth.reset(0.f);
         for (int v = 0; v < shapetaker::PolyphonicProcessor::MAX_VOICES; ++v) {
             etherealVoicesA[v].reset();
             etherealVoicesB[v].reset();
@@ -365,9 +388,9 @@ struct Involution : Module {
         constexpr float DRIVE_FIXED_NORMALIZED = 1.f;
         constexpr float DRIVE_FIXED_AMOUNT = 1.f + DRIVE_FIXED_NORMALIZED * 4.f;
 
-        float auraAmount = auraSmooth.process(params[AURA_PARAM].getValue(), args.sampleTime);
-        float orbitAmount = orbitSmooth.process(params[ORBIT_PARAM].getValue(), args.sampleTime);
-        float tideAmount = tideSmooth.process(params[TIDE_PARAM].getValue(), args.sampleTime);
+        float auraAmount = auraSmooth.process(params[AURA_PARAM].getValue(), args.sampleTime, CHARACTER_SMOOTH_TC);
+        float orbitAmount = orbitSmooth.process(params[ORBIT_PARAM].getValue(), args.sampleTime, CHARACTER_SMOOTH_TC);
+        float tideAmount = tideSmooth.process(params[TIDE_PARAM].getValue(), args.sampleTime, CHARACTER_SMOOTH_TC);
 
         if (inputs[AURA_CV_INPUT].isConnected()) {
             auraAmount += inputs[AURA_CV_INPUT].getVoltage(0) / 10.f;
@@ -381,6 +404,10 @@ struct Involution : Module {
         auraAmount = clamp(auraAmount, 0.f, 1.f);
         orbitAmount = clamp(orbitAmount, 0.f, 1.f);
         tideAmount = clamp(tideAmount, 0.f, 1.f);
+
+        float rawEffectIntensity = std::max(auraAmount, std::max(orbitAmount, tideAmount));
+        float effectGateTarget = rack::math::clamp(rawEffectIntensity, 0.f, 1.f);
+        float effectBlend = effectGateSmooth.process(effectGateTarget, args.sampleTime, EFFECT_GATE_SMOOTH_TC);
 
         float driveLight = DRIVE_FIXED_NORMALIZED;
         float auraLight = auraAmount;
@@ -554,21 +581,41 @@ struct Involution : Module {
                                                 EtherealVoiceState& state, float stereoSkew) {
                         float cutoffDrama = clamp(cutoffNorm, 0.f, 1.f);
                         float resonanceInfluence = clamp(resonanceNorm, 0.f, 1.f);
-                        float effectIntensity = std::max(auraAmount, std::max(orbitAmount, tideAmount));
+                        const float paramAlpha = args.sampleTime / (ETHEREAL_PARAM_SMOOTH_TC + args.sampleTime);
+                        auto smoothScalar = [&](float& slot, float target, float minVal, float maxVal) -> float {
+                            slot += paramAlpha * (target - slot);
+                            slot = rack::math::clamp(slot, minVal, maxVal);
+                            return slot;
+                        };
 
-                        if (effectIntensity < 0.01f && resonanceInfluence < 0.05f && cutoffDrama < 0.05f) {
-                            return input;
-                        }
+                        float effectAmount = effectBlend;
+                        float lowFreqBlend = rack::math::clamp((cutoffDrama - 0.18f) / 0.22f, 0.f, 1.f);
+                        lowFreqBlend = lowFreqBlend * lowFreqBlend * (3.f - 2.f * lowFreqBlend);
 
-                        float diffusionBase = 0.02f + auraAmount * 0.45f + tideAmount * 0.35f + cutoffDrama * 0.18f;
-                        float diffusion = clamp(diffusionBase, 0.f, 0.9f);
-                        float feedbackBase = 0.015f + orbitAmount * 0.5f + resonanceInfluence * 0.28f + cutoffDrama * 0.2f;
-                        float feedback = clamp(feedbackBase, 0.f, 0.78f);
-                        float shimmerLift = clamp(tideAmount * 0.65f + auraAmount * 0.4f + resonanceInfluence * 0.25f, 0.f, 1.4f);
-                        float haloBlendBase = 0.05f + auraAmount * 0.5f + orbitAmount * 0.3f + resonanceInfluence * 0.25f;
-                        float haloBlend = clamp(haloBlendBase, 0.f, 0.95f);
-                        float modulationDepthSamples = (0.0015f + 0.0035f * tideAmount + 0.003f * auraAmount + 0.0015f * effectIntensity) * args.sampleRate;
-                        float driftRate = clamp(0.05f + chaosRate * (0.35f + tideAmount * 0.35f) + 0.1f * cutoffDrama + 0.04f * stereoSkew, 0.02f, 6.5f);
+                        float diffusionTarget = effectAmount * (0.15f + auraAmount * 0.55f);
+                        diffusionTarget = clamp(diffusionTarget, 0.f, 0.85f);
+                        float diffusion = smoothScalar(state.smoothedDiffusion, diffusionTarget, 0.f, 0.85f);
+
+                        float feedbackTarget = effectAmount * (0.08f + orbitAmount * 0.6f);
+                        feedbackTarget = clamp(feedbackTarget, 0.f, 0.7f);
+                        float feedback = smoothScalar(state.smoothedFeedback, feedbackTarget, 0.f, 0.7f);
+
+                        float shimmerTarget = effectAmount * tideAmount * 0.65f;
+                        float shimmerLift = smoothScalar(state.smoothedShimmer, shimmerTarget, 0.f, 0.8f);
+
+                        float haloBlendTarget = effectAmount * (0.25f + auraAmount * 0.45f);
+                        haloBlendTarget = clamp(haloBlendTarget, 0.f, 0.8f);
+                        float haloBlend = smoothScalar(state.smoothedHaloMix, haloBlendTarget, 0.f, 0.8f);
+
+                        float modulationDepthTarget = effectAmount * (0.0008f + tideAmount * 0.0025f) * args.sampleRate;
+                        float modDepth = smoothScalar(state.smoothedModDepth, modulationDepthTarget, 0.f, args.sampleRate * 0.03f);
+
+                        float stereoWidthTarget = stereoSkew * (0.25f + orbitAmount * 0.5f);
+                        stereoWidthTarget += (orbitAmount - 0.5f) * 0.2f;
+                        stereoWidthTarget = rack::math::clamp(stereoWidthTarget, -1.f, 1.f);
+                        float effectiveStereoSkew = smoothScalar(state.smoothedStereoSkew, stereoWidthTarget, -1.f, 1.f);
+
+                        float driftRate = clamp(0.15f + chaosRate * (0.25f + tideAmount * 0.2f) + 0.05f * cutoffDrama, 0.05f, 5.f);
                         float phaseIncrement = driftRate * args.sampleTime * 2.f * static_cast<float>(M_PI);
 
                         float feed = input;
@@ -581,23 +628,33 @@ struct Involution : Module {
                             }
 
                             float baseDelay = baseDelaySeconds[s] * args.sampleRate;
-                            float stereoBias = 1.f + stereoSkew * 0.08f * (s + 1);
-                            float tonalBias = 0.8f + 0.35f * cutoffDrama + 0.1f * resonanceNorm;
-                            float modulation = std::sin(state.modPhase[s] + state.phaseOffset[s] + swirlSeed * 0.5f);
-                            float delaySamples = baseDelay * tonalBias * stereoBias + modulation * modulationDepthSamples * (1.f + 0.25f * s);
+                            float sizeScale = 1.f + auraAmount * 0.35f + tideAmount * 0.25f;
+                            float stereoBias = 1.f + effectiveStereoSkew * 0.08f * (s + 1);
+                            float tonalBias = 0.85f + 0.25f * cutoffDrama + 0.1f * resonanceNorm;
+                            float modulation = std::sin(state.modPhase[s] + state.phaseOffset[s] + swirlSeed * (0.3f + 0.15f * s));
+                            float delayTarget = baseDelay * sizeScale * tonalBias * stereoBias + modulation * modDepth * (1.f + 0.2f * s);
                             float maxDelaySamples = std::max(state.delays[s].maxDelaySamples(), 16.f);
-                            delaySamples = clamp(delaySamples, 12.f, maxDelaySamples);
+                            float smoothedDelay = smoothScalar(state.smoothedDelay[s], delayTarget, 12.f, maxDelaySamples);
 
-                            float stageBlend = clamp(0.05f + effectIntensity * (0.12f + 0.08f * s) + auraAmount * 0.12f, 0.f, 0.6f);
-                            float stageInput = rack::math::crossfade(feed, cloud, stageBlend);
-                            float stageOutput = state.delays[s].process(stageInput, delaySamples, feedback);
+                            float stageBlendBase =
+                                effectAmount * (0.12f + 0.06f * s)
+                                + auraAmount * 0.1f;
+                            float stageBlendTarget = clamp(stageBlendBase, 0.f, 0.55f);
+                            stageBlendTarget = smoothScalar(state.smoothedStageBlend[s], stageBlendTarget, 0.f, 0.55f);
+                            float stageBlend = stageBlendTarget;
+
+                            float stageInputDry = rack::math::crossfade(feed, cloud, stageBlend);
+                            float stageInput = stageInputDry + shimmerLift * cloud * 0.2f;
+                            float stageOutputRaw = state.delays[s].process(stageInput, smoothedDelay, feedback);
+                            float stageOutput = stageOutputRaw;
                             cloud += stageOutput * stageWeights[s];
                             feed = rack::math::crossfade(feed, stageOutput, diffusion);
                         }
 
-                        float halo = cloud * (1.f + shimmerLift * 0.6f);
+                        float halo = cloud * (1.f + shimmerLift * 0.5f);
                         halo = rack::math::clamp(halo, -12.f, 12.f);
-                        return rack::math::clamp(rack::math::crossfade(input, halo, haloBlend), -12.f, 12.f);
+                        float haloMix = clamp(haloBlend, 0.f, 0.85f);
+                        return rack::math::clamp(rack::math::crossfade(input, halo, haloMix), -12.f, 12.f);
                     };
 
                     processedA = processEthereal(processedA, voiceCutoffA, resonanceNormA, etherealVoicesA[c], -0.6f);
@@ -743,17 +800,17 @@ struct InvolutionWidget : ModuleWidget {
         };
         
         // Main Filter Section - using SVG parser for automatic positioning
-        addParam(createParamCentered<ShapetakerKnobLarge>(
-            centerPx("cutoff_a", 24.026f, 24.174f),
+        addParam(createParamCentered<ShapetakerKnobAltHuge>(
+            centerPx("cutoff_v", 24.026f, 24.174f),
             module, Involution::CUTOFF_A_PARAM));
-        addParam(createParamCentered<ShapetakerKnobOscilloscopeSmall>(
-            centerPx("resonance_a", 11.935f, 57.750f),
+        addParam(createParamCentered<ShapetakerKnobAltSmall>(
+            centerPx("resonance_v", 11.935f, 57.750f),
             module, Involution::RESONANCE_A_PARAM));
-        addParam(createParamCentered<ShapetakerKnobLarge>(
-            centerPx("cutoff_b", 66.305f, 24.174f),
+        addParam(createParamCentered<ShapetakerKnobAltHuge>(
+            centerPx("cutoff_z", 66.305f, 24.174f),
             module, Involution::CUTOFF_B_PARAM));
-        addParam(createParamCentered<ShapetakerKnobOscilloscopeSmall>(
-            centerPx("resonance_b", 78.397f, 57.750f),
+        addParam(createParamCentered<ShapetakerKnobAltSmall>(
+            centerPx("resonance_z", 78.397f, 57.750f),
             module, Involution::RESONANCE_B_PARAM));
         
         // Link switches - using SVG parser with fallbacks
@@ -766,25 +823,25 @@ struct InvolutionWidget : ModuleWidget {
 
         // Attenuverters for CV inputs
         addParam(createParamCentered<ShapetakerAttenuverterOscilloscope>(
-            centerPx("cutoff_a_atten", 9.027f, 41.042f),
+            centerPx("cutoff_v_atten", 9.027f, 41.042f),
             module, Involution::CUTOFF_A_ATTEN_PARAM));
         addParam(createParamCentered<ShapetakerAttenuverterOscilloscope>(
-            centerPx("resonance_a_atten", 11.935f, 76.931f),
+            centerPx("resonance_v_atten", 11.935f, 76.931f),
             module, Involution::RESONANCE_A_ATTEN_PARAM));
         addParam(createParamCentered<ShapetakerAttenuverterOscilloscope>(
-            centerPx("cutoff_b_atten", 81.305f, 41.042f),
+            centerPx("cutoff_z_atten", 81.305f, 41.042f),
             module, Involution::CUTOFF_B_ATTEN_PARAM));
         addParam(createParamCentered<ShapetakerAttenuverterOscilloscope>(
-            centerPx("resonance_b_atten", 78.397f, 76.931f),
+            centerPx("resonance_z_atten", 78.397f, 76.931f),
             module, Involution::RESONANCE_B_ATTEN_PARAM));
 
         // Character Controls - using SVG parser with fallbacks
         // Highpass is now static at 12Hz - no control needed
         // Drive knob is fixed; reuse area for Aura/Orbit/Tide controls
-        addParam(createParamCentered<ShapetakerKnobOscilloscopeSmall>(centerPx("aura", 15.910f, 94.088f), module, Involution::AURA_PARAM));
-        addParam(createParamCentered<ShapetakerKnobOscilloscopeSmall>(centerPx("orbit", 45.166f, 94.088f), module, Involution::ORBIT_PARAM));
-        addParam(createParamCentered<ShapetakerKnobOscilloscopeSmall>(centerPx("tide", 74.422f, 94.088f), module, Involution::TIDE_PARAM));
-        addParam(createParamCentered<ShapetakerKnobOscilloscopeSmall>(centerPx("chaos_rate", 60.922f, 108.088f), module, Involution::CHAOS_RATE_PARAM));
+        addParam(createParamCentered<ShapetakerKnobAltSmall>(centerPx("aura", 15.910f, 94.088f), module, Involution::AURA_PARAM));
+        addParam(createParamCentered<ShapetakerKnobAltSmall>(centerPx("orbit", 45.166f, 94.088f), module, Involution::ORBIT_PARAM));
+        addParam(createParamCentered<ShapetakerKnobAltSmall>(centerPx("tide", 74.422f, 94.088f), module, Involution::TIDE_PARAM));
+        addParam(createParamCentered<ShapetakerKnobAltSmall>(centerPx("chaos_rate", 60.922f, 108.088f), module, Involution::CHAOS_RATE_PARAM));
         
         // Chaos Visualizer - using SVG parser for automatic positioning
         ChaosVisualizer* chaosViz = new ChaosVisualizer(module);
@@ -804,19 +861,19 @@ struct InvolutionWidget : ModuleWidget {
         addChild(createLightCentered<MediumLight<GreenLight>>(centerPx("tide_light", 74.422f, 103.546f), module, Involution::TIDE_LIGHT));
 
         // CV inputs - using SVG parser with updated coordinates
-        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("cutoff_a_cv", 24.027f, 44.322f), module, Involution::CUTOFF_A_CV_INPUT));
-        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("resonance_a_cv", 24.027f, 68.931f), module, Involution::RESONANCE_A_CV_INPUT));
-        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("cutoff_b_cv", 66.305f, 44.322f), module, Involution::CUTOFF_B_CV_INPUT));
-        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("resonance_b_cv", 66.305f, 68.931f), module, Involution::RESONANCE_B_CV_INPUT));
+        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("cutoff_v_cv", 24.027f, 44.322f), module, Involution::CUTOFF_A_CV_INPUT));
+        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("resonance_v_cv", 24.027f, 68.931f), module, Involution::RESONANCE_A_CV_INPUT));
+        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("cutoff_z_cv", 66.305f, 44.322f), module, Involution::CUTOFF_B_CV_INPUT));
+        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("resonance_z_cv", 66.305f, 68.931f), module, Involution::RESONANCE_B_CV_INPUT));
         addInput(createInputCentered<ShapetakerBNCPort>(centerPx("aura_cv", 15.910f, 84.630f), module, Involution::AURA_CV_INPUT));
         addInput(createInputCentered<ShapetakerBNCPort>(centerPx("orbit_cv", 45.166f, 84.630f), module, Involution::ORBIT_CV_INPUT));
         addInput(createInputCentered<ShapetakerBNCPort>(centerPx("tide_cv", 74.422f, 84.630f), module, Involution::TIDE_CV_INPUT));
         addInput(createInputCentered<ShapetakerBNCPort>(centerPx("chaos_lfo_cv", 60.922f, 84.630f), module, Involution::CHAOS_RATE_CV_INPUT));
         // Audio I/O - direct millimeter coordinates
-        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("audio_a_input", 10.276f, 118.977f), module, Involution::AUDIO_A_INPUT));
-        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("audio_b_input", 27.721f, 119.245f), module, Involution::AUDIO_B_INPUT));
-        addOutput(createOutputCentered<ShapetakerBNCPort>(centerPx("audio_a_output", 63.436f, 119.347f), module, Involution::AUDIO_A_OUTPUT));
-        addOutput(createOutputCentered<ShapetakerBNCPort>(centerPx("audio_b_output", 81.706f, 119.347f), module, Involution::AUDIO_B_OUTPUT));
+        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("audio_l_input", 10.276f, 118.977f), module, Involution::AUDIO_A_INPUT));
+        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("audio_r_input", 27.721f, 119.245f), module, Involution::AUDIO_B_INPUT));
+        addOutput(createOutputCentered<ShapetakerBNCPort>(centerPx("audio_l_output", 63.436f, 119.347f), module, Involution::AUDIO_A_OUTPUT));
+        addOutput(createOutputCentered<ShapetakerBNCPort>(centerPx("audio_r_output", 81.706f, 119.347f), module, Involution::AUDIO_B_OUTPUT));
     }
     
     // Draw panel background texture to match other modules

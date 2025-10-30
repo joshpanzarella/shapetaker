@@ -1382,7 +1382,7 @@ struct ChiaroscuroWidget : ModuleWidget {
         addOutput(createOutputCentered<ShapetakerBNCPort>(centerPx("audio-out-r", 50.997887f, 114.8209f), module, Chiaroscuro::AUDIO_R_OUTPUT));
         
         // Main VCA knob
-        addParam(createParamCentered<ShapetakerKnobOscilloscopeMedium>(centerPx("vca-knob", 18.328495f, 50.193539f), module, Chiaroscuro::VCA_PARAM));
+        addParam(createParamCentered<ShapetakerKnobAltMedium>(centerPx("vca-knob", 18.328495f, 50.193539f), module, Chiaroscuro::VCA_PARAM));
         
         // VCA CV input
         addInput(createInputCentered<ShapetakerBNCPort>(centerPx("vca-cv", 7.5756836f, 98.635521f), module, Chiaroscuro::VCA_CV_INPUT));
@@ -1409,19 +1409,19 @@ struct ChiaroscuroWidget : ModuleWidget {
         addInput(createInputCentered<ShapetakerBNCPort>(centerPx("dist-type-cv", 36.523819f, 82.450134f), module, Chiaroscuro::TYPE_CV_INPUT));
         
         // Distortion knob
-        addParam(createParamCentered<ShapetakerKnobOscilloscopeSmall>(centerPx("dist-knob", 50.997887f, 66.264755f), module, Chiaroscuro::DIST_PARAM));
+        addParam(createParamCentered<ShapetakerKnobAltSmall>(centerPx("dist-knob", 50.997887f, 66.264755f), module, Chiaroscuro::DIST_PARAM));
 
         // Distortion CV input
         addInput(createInputCentered<ShapetakerBNCPort>(centerPx("dist-cv", 7.5756836f, 82.450134f), module, Chiaroscuro::DIST_CV_INPUT));
         
         // Drive knob
-        addParam(createParamCentered<ShapetakerKnobOscilloscopeSmall>(centerPx("drive-knob", 50.997887f, 82.717743f), module, Chiaroscuro::DRIVE_PARAM));
+        addParam(createParamCentered<ShapetakerKnobAltSmall>(centerPx("drive-knob", 50.997887f, 82.717743f), module, Chiaroscuro::DRIVE_PARAM));
 
         // Drive CV input
         addInput(createInputCentered<ShapetakerBNCPort>(centerPx("drive-cv", 22.049751f, 82.450134f), module, Chiaroscuro::DRIVE_CV_INPUT));
         
         // Mix knob
-        addParam(createParamCentered<ShapetakerKnobOscilloscopeSmall>(centerPx("mix-knob", 50.997887f, 99.170738f), module, Chiaroscuro::MIX_PARAM));
+        addParam(createParamCentered<ShapetakerKnobAltSmall>(centerPx("mix-knob", 50.997887f, 99.170738f), module, Chiaroscuro::MIX_PARAM));
 
         // ATTENUVERTERS (knobs)
         // Distortion attenuverter
