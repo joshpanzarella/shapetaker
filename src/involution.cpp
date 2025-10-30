@@ -655,13 +655,12 @@ struct Involution : Module {
                         halo = rack::math::clamp(halo, -12.f, 12.f);
                         float haloMix = clamp(haloBlend, 0.f, 0.85f);
 
-                        // Constant-power blend keeps overall level closer to unity across the Aura range
-                        float dryGain = std::cos(haloMix * 0.5f * static_cast<float>(M_PI));
-                        float wetGain = std::sin(haloMix * 0.5f * static_cast<float>(M_PI));
-                        float blended = dryGain * input + wetGain * halo;
+                        // Treat halo as an additive ambience so the dry tone never fully disappears.
+                        float wetGain = haloMix * (0.45f + 0.2f * effectAmount);
+                        float blended = input + wetGain * halo;
 
                         // Subtle makeup gain tied to Aura keeps perceived loudness closer to the dry tone
-                        constexpr float MAKEUP_MAX_DB = 3.5f;
+                        constexpr float MAKEUP_MAX_DB = 2.8f;
                         float makeupLinear = std::pow(10.f, (auraAmount * MAKEUP_MAX_DB) / 20.f);
                         blended *= makeupLinear;
                         return rack::math::clamp(blended, -12.f, 12.f);
