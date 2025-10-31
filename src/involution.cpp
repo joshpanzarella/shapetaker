@@ -702,7 +702,7 @@ struct Involution : Module {
                         float blended = input + wetGain * halo;
 
                         // Subtle makeup gain tied to Aura keeps perceived loudness closer to the dry tone
-                        constexpr float MAKEUP_MAX_DB = 2.8f;
+                        constexpr float MAKEUP_MAX_DB = 0.0f;
                         float makeupLinear = std::pow(10.f, (auraAmount * MAKEUP_MAX_DB) / 20.f);
                         blended *= makeupLinear;
                         return rack::math::clamp(blended, -12.f, 12.f);
