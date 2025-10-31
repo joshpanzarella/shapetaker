@@ -46,8 +46,8 @@ private:
     SVF2Pole stage1, stage2, stage3;
 
     // VCV Rack's built-in oversampling
-    static const int OVERSAMPLE_FACTOR = 4;
-    static const int OVERSAMPLE_QUALITY = 8;
+    static const int OVERSAMPLE_FACTOR = 2;
+    static const int OVERSAMPLE_QUALITY = 4;
     rack::dsp::Decimator<OVERSAMPLE_FACTOR, OVERSAMPLE_QUALITY> decimator;
     rack::dsp::Upsampler<OVERSAMPLE_FACTOR, OVERSAMPLE_QUALITY> upsampler;
 

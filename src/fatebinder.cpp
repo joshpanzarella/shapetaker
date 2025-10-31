@@ -200,12 +200,12 @@ struct Envelope {
     float curve = 0.f;      // -1 to 1 (exp, linear, log)
     float shape = 0.f;      // 0 to 1 (sine to tri to saw to square)
     bool active = false;
-    int layerIndex = 0;     // Which layer spawned this envelope
+    int ringIndex = 0;      // Which ring spawned this envelope
 
-    void trigger(float atk, float dec, float curv, float shp, float chaos, int layer) {
+    void trigger(float atk, float dec, float curv, float shp, float chaos, int ring) {
         active = true;
         phase = 0.f;
-        layerIndex = layer;
+        ringIndex = ring;
 
         // Vary parameters based on chaos
         if (chaos > 0.01f) {
@@ -297,9 +297,9 @@ struct Particle {
     float fadeRate = 1.f;
     float brightness = 1.f;
     int stepIndex = 0;
-    int layerIndex = 0;    // 0=green, 1=amber, 2=purple
+    int ringIndex = 0;     // 0=orange, 1=amber, 2=red
 
-    void spawn(int step, int totalSteps, float chaos, int layer) {
+    void spawn(int step, int totalSteps, float chaos, int ring) {
         // Position on circular display
         float angle = (float)step / (float)totalSteps * 2.f * M_PI - M_PI * 0.5f;
         float radius = 0.6f + (rack::random::uniform() - 0.5f) * chaos * 0.2f;
@@ -316,7 +316,7 @@ struct Particle {
         fadeRate = 0.8f + rack::random::uniform() * 0.4f;
         brightness = 1.f;
         stepIndex = step;
-        layerIndex = layer;
+        ringIndex = ring;
     }
 
     void update(float dt, float chaos) {
@@ -361,8 +361,8 @@ struct Fatebinder : Module {
         HITS_PARAM,
         ROTATION_PARAM,
         TEMPO_PARAM,
-        LAYER_2_DIV_PARAM,
-        LAYER_3_DIV_PARAM,
+        RING_2_DIV_PARAM,
+        RING_3_DIV_PARAM,
         PROBABILITY_PARAM,
         CHAOS_PARAM,
         DENSITY_PARAM,
@@ -374,6 +374,7 @@ struct Fatebinder : Module {
         CURVE_PARAM,
         SHAPE_PARAM,
         OVERLAP_MODE_PARAM,
+        BIPOLAR_PARAM,
         PARAMS_LEN
     };
 
@@ -387,9 +388,9 @@ struct Fatebinder : Module {
 
     enum OutputId {
         MAIN_CV_OUTPUT,
-        LAYER_1_OUTPUT,
-        LAYER_2_OUTPUT,
-        LAYER_3_OUTPUT,
+        RING_1_OUTPUT,
+        RING_2_OUTPUT,
+        RING_3_OUTPUT,
         GATE_OUTPUT,
         ACCENT_OUTPUT,
         PARAMS_LEN_OUTPUT = ACCENT_OUTPUT + 1
@@ -399,12 +400,12 @@ struct Fatebinder : Module {
         LIGHTS_LEN
     };
 
-    // Layer system
-    static constexpr int kNumLayers = 3;
-    MutatingPattern layers[kNumLayers];
-    int currentStep[kNumLayers] = {0, 0, 0};
-    int clockDivCounter[kNumLayers] = {0, 0, 0};
-    float layerHitLevel[kNumLayers] = {0.f, 0.f, 0.f};
+    // Ring system
+    static constexpr int kNumRings = 3;
+    MutatingPattern rings[kNumRings];
+    int currentStep[kNumRings] = {0, 0, 0};
+    int clockDivCounter[kNumRings] = {0, 0, 0};
+    float ringHitLevel[kNumRings] = {0.f, 0.f, 0.f};
 
     dsp::SchmittTrigger clockTrigger;
     dsp::SchmittTrigger resetTrigger;
@@ -416,7 +417,7 @@ struct Fatebinder : Module {
     bool bipolarOutputs = false;
 
     // Envelope pool
-    static constexpr int kMaxEnvelopes = 24; // More envelopes for 3 layers
+    static constexpr int kMaxEnvelopes = 24; // More envelopes for 3 rings
     std::vector<Envelope> envelopes;
 
     // Particle system
@@ -442,8 +443,8 @@ struct Fatebinder : Module {
         configParam(HITS_PARAM, 1.f, 32.f, 4.f, "Hits");
         configParam(ROTATION_PARAM, 0.f, 31.f, 0.f, "Rotation");
         configParam(TEMPO_PARAM, 20.f, 240.f, 120.f, "Tempo", " BPM");
-        configParam(LAYER_2_DIV_PARAM, 1.f, 8.f, 2.f, "Layer 2 Clock Division");
-        configParam(LAYER_3_DIV_PARAM, 1.f, 8.f, 3.f, "Layer 3 Clock Division");
+        configParam(RING_2_DIV_PARAM, 1.f, 8.f, 2.f, "Ring 2 Clock Division");
+        configParam(RING_3_DIV_PARAM, 1.f, 8.f, 3.f, "Ring 3 Clock Division");
 
         // Probability parameters
         configParam(PROBABILITY_PARAM, 0.f, 1.f, 1.f, "Probability", "%", 0.f, 100.f);
@@ -461,6 +462,7 @@ struct Fatebinder : Module {
         configParam(CURVE_PARAM, -1.f, 1.f, 0.f, "Curve");
         configParam(SHAPE_PARAM, 0.f, 1.f, 0.f, "Shape");
         configParam(OVERLAP_MODE_PARAM, 0.f, 2.f, 0.f, "Overlap Mode");
+        shapetaker::ParameterHelper::configToggle(this, BIPOLAR_PARAM, "Output Range: Unipolar (0-10V) / Bipolar (-5-5V)");
 
         // Inputs
         configInput(CLOCK_INPUT, "Clock");
@@ -470,9 +472,9 @@ struct Fatebinder : Module {
 
         // Outputs
         configOutput(MAIN_CV_OUTPUT, "Main Mix CV");
-        configOutput(LAYER_1_OUTPUT, "Layer 1 CV");
-        configOutput(LAYER_2_OUTPUT, "Layer 2 CV");
-        configOutput(LAYER_3_OUTPUT, "Layer 3 CV");
+        configOutput(RING_1_OUTPUT, "Ring 1 CV");
+        configOutput(RING_2_OUTPUT, "Ring 2 CV");
+        configOutput(RING_3_OUTPUT, "Ring 3 CV");
         configOutput(GATE_OUTPUT, "Composite Gate");
         configOutput(ACCENT_OUTPUT, "Accent");
 
@@ -483,10 +485,10 @@ struct Fatebinder : Module {
     }
 
     void onReset() override {
-        for (int i = 0; i < kNumLayers; i++) {
+        for (int i = 0; i < kNumRings; i++) {
             currentStep[i] = 0;
             clockDivCounter[i] = 0;
-            layerHitLevel[i] = 0.f;
+            ringHitLevel[i] = 0.f;
         }
         internalClock = 0.f;
         frozen = false;
@@ -495,8 +497,8 @@ struct Fatebinder : Module {
         int hits = (int)params[HITS_PARAM].getValue();
         int rotation = (int)params[ROTATION_PARAM].getValue();
 
-        for (int i = 0; i < kNumLayers; i++) {
-            layers[i].initialize(steps, hits, rotation, rhythmMode);
+        for (int i = 0; i < kNumRings; i++) {
+            rings[i].initialize(steps, hits, rotation, rhythmMode);
         }
 
         for (auto& env : envelopes) {
@@ -512,8 +514,8 @@ struct Fatebinder : Module {
         int steps = (int)params[STEPS_PARAM].getValue();
         int hits = (int)params[HITS_PARAM].getValue();
         int rotation = (int)params[ROTATION_PARAM].getValue();
-        int layer2Div = (int)params[LAYER_2_DIV_PARAM].getValue();
-        int layer3Div = (int)params[LAYER_3_DIV_PARAM].getValue();
+        int ring2Div = (int)params[RING_2_DIV_PARAM].getValue();
+        int ring3Div = (int)params[RING_3_DIV_PARAM].getValue();
 
         float probability = params[PROBABILITY_PARAM].getValue();
         if (inputs[PROBABILITY_CV_INPUT].isConnected()) {
@@ -542,8 +544,8 @@ struct Fatebinder : Module {
         }
 
         if (resetPatternTrigger.process(params[RESET_PARAM].getValue())) {
-            for (int i = 0; i < kNumLayers; i++) {
-                layers[i].reset();
+            for (int i = 0; i < kNumRings; i++) {
+                rings[i].reset();
             }
         }
 
@@ -553,8 +555,8 @@ struct Fatebinder : Module {
         static int lastRotation = rotation;
 
         if (steps != lastSteps || hits != lastHits || rotation != lastRotation) {
-            for (int i = 0; i < kNumLayers; i++) {
-                layers[i].initialize(steps, hits, rotation, rhythmMode);
+            for (int i = 0; i < kNumRings; i++) {
+                rings[i].initialize(steps, hits, rotation, rhythmMode);
             }
             lastSteps = steps;
             lastHits = hits;
@@ -563,13 +565,13 @@ struct Fatebinder : Module {
 
         // Update display time for blinking
         displayTime += dt;
-        for (int i = 0; i < kNumLayers; i++) {
-            layerHitLevel[i] = std::max(0.f, layerHitLevel[i] - dt * 3.f);
+        for (int i = 0; i < kNumRings; i++) {
+            ringHitLevel[i] = std::max(0.f, ringHitLevel[i] - dt * 3.f);
         }
 
         // Update pattern mutations
-        for (int i = 0; i < kNumLayers; i++) {
-            layers[i].update(dt, mutationRate, chaos, frozen);
+        for (int i = 0; i < kNumRings; i++) {
+            rings[i].update(dt, mutationRate, chaos, frozen);
         }
 
         // Clock handling
@@ -614,37 +616,37 @@ struct Fatebinder : Module {
 
         // Reset handling
         if (inputs[RESET_INPUT].isConnected() && resetTrigger.process(inputs[RESET_INPUT].getVoltage())) {
-            for (int i = 0; i < kNumLayers; i++) {
+            for (int i = 0; i < kNumRings; i++) {
                 currentStep[i] = 0;
                 clockDivCounter[i] = 0;
             }
         }
 
-        // Process clock tick for each layer
+        // Process clock tick for each ring
         bool anyGate = false;
         bool anyAccent = false;
-        float layerCV[kNumLayers] = {0.f, 0.f, 0.f};
+        float ringCV[kNumRings] = {0.f, 0.f, 0.f};
 
         if (clockTick) {
-            // Layer 1: Every clock
+            // Ring 1: Every clock
             clockDivCounter[0]++;
             if (clockDivCounter[0] >= 1) {
                 clockDivCounter[0] = 0;
-                processLayerStep(0, steps, probability, density, chaos, attack, decay, curve, shape, anyGate, anyAccent, layerCV[0]);
+                processRingStep(0, steps, probability, density, chaos, attack, decay, curve, shape, anyGate, anyAccent, ringCV[0]);
             }
 
-            // Layer 2: Divided clock
+            // Ring 2: Divided clock
             clockDivCounter[1]++;
-            if (clockDivCounter[1] >= layer2Div) {
+            if (clockDivCounter[1] >= ring2Div) {
                 clockDivCounter[1] = 0;
-                processLayerStep(1, steps, probability, density, chaos, attack, decay, curve, shape, anyGate, anyAccent, layerCV[1]);
+                processRingStep(1, steps, probability, density, chaos, attack, decay, curve, shape, anyGate, anyAccent, ringCV[1]);
             }
 
-            // Layer 3: Divided clock
+            // Ring 3: Divided clock
             clockDivCounter[2]++;
-            if (clockDivCounter[2] >= layer3Div) {
+            if (clockDivCounter[2] >= ring3Div) {
                 clockDivCounter[2] = 0;
-                processLayerStep(2, steps, probability, density, chaos, attack, decay, curve, shape, anyGate, anyAccent, layerCV[2]);
+                processRingStep(2, steps, probability, density, chaos, attack, decay, curve, shape, anyGate, anyAccent, ringCV[2]);
             }
         }
 
@@ -652,8 +654,8 @@ struct Fatebinder : Module {
         float mainCV = 0.f;
         int overlapMode = (int)params[OVERLAP_MODE_PARAM].getValue();
 
-        for (int layer = 0; layer < kNumLayers; layer++) {
-            layerCV[layer] = 0.f;
+        for (int ring = 0; ring < kNumRings; ring++) {
+            ringCV[ring] = 0.f;
         }
 
         for (auto& env : envelopes) {
@@ -661,9 +663,9 @@ struct Fatebinder : Module {
 
             float value = env.process(dt);
 
-            // Add to layer output
-            if (env.layerIndex >= 0 && env.layerIndex < kNumLayers) {
-                layerCV[env.layerIndex] += value;
+            // Add to ring output
+            if (env.ringIndex >= 0 && env.ringIndex < kNumRings) {
+                ringCV[env.ringIndex] += value;
             }
 
             // Add to main mix
@@ -696,30 +698,36 @@ struct Fatebinder : Module {
 
         // Outputs
         float mainOut = mainCV;
-        float layerOut = rack::math::clamp(layerCV[0], 0.f, 1.f);
-        float layerOut2 = rack::math::clamp(layerCV[1], 0.f, 1.f);
-        float layerOut3 = rack::math::clamp(layerCV[2], 0.f, 1.f);
-        if (bipolarOutputs) {
+        float ringOut = rack::math::clamp(ringCV[0], 0.f, 1.f);
+        float ringOut2 = rack::math::clamp(ringCV[1], 0.f, 1.f);
+        float ringOut3 = rack::math::clamp(ringCV[2], 0.f, 1.f);
+
+        // Check bipolar switch parameter
+        bool useBipolar = params[BIPOLAR_PARAM].getValue() > 0.5f;
+
+        if (useBipolar) {
+            // Bipolar mode: -5V to +5V
             outputs[MAIN_CV_OUTPUT].setVoltage(mainOut * 10.f - 5.f);
-            outputs[LAYER_1_OUTPUT].setVoltage(layerOut * 10.f - 5.f);
-            outputs[LAYER_2_OUTPUT].setVoltage(layerOut2 * 10.f - 5.f);
-            outputs[LAYER_3_OUTPUT].setVoltage(layerOut3 * 10.f - 5.f);
+            outputs[RING_1_OUTPUT].setVoltage(ringOut * 10.f - 5.f);
+            outputs[RING_2_OUTPUT].setVoltage(ringOut2 * 10.f - 5.f);
+            outputs[RING_3_OUTPUT].setVoltage(ringOut3 * 10.f - 5.f);
         } else {
+            // Unipolar mode: 0V to +10V
             outputs[MAIN_CV_OUTPUT].setVoltage(mainOut * 10.f);
-            outputs[LAYER_1_OUTPUT].setVoltage(layerOut * 10.f);
-            outputs[LAYER_2_OUTPUT].setVoltage(layerOut2 * 10.f);
-            outputs[LAYER_3_OUTPUT].setVoltage(layerOut3 * 10.f);
+            outputs[RING_1_OUTPUT].setVoltage(ringOut * 10.f);
+            outputs[RING_2_OUTPUT].setVoltage(ringOut2 * 10.f);
+            outputs[RING_3_OUTPUT].setVoltage(ringOut3 * 10.f);
         }
         outputs[GATE_OUTPUT].setVoltage(anyGate ? 10.f : 0.f);
         outputs[ACCENT_OUTPUT].setVoltage(anyAccent ? 10.f : 0.f);
     }
 
-    void processLayerStep(int layer, int steps, float probability, float density, float chaos,
-                          float attack, float decay, float curve, float shape,
-                          bool& anyGate, bool& anyAccent, float& layerCV) {
-        currentStep[layer] = (currentStep[layer] + 1) % steps;
+    void processRingStep(int ring, int steps, float probability, float density, float chaos,
+                         float attack, float decay, float curve, float shape,
+                         bool& anyGate, bool& anyAccent, float& ringCV) {
+        currentStep[ring] = (currentStep[ring] + 1) % steps;
 
-        bool isPatternHit = layers[layer].getStep(currentStep[layer]);
+        bool isPatternHit = rings[ring].getStep(currentStep[ring]);
 
         // Probability check
         bool shouldTrigger = false;
@@ -733,7 +741,7 @@ struct Fatebinder : Module {
         }
 
         if (shouldTrigger) {
-            layerHitLevel[layer] = 1.f;
+            ringHitLevel[ring] = 1.f;
             // Find inactive envelope
             Envelope* env = nullptr;
             for (auto& e : envelopes) {
@@ -744,7 +752,7 @@ struct Fatebinder : Module {
             }
 
             if (env) {
-                env->trigger(attack, decay, curve, shape, chaos, layer);
+                env->trigger(attack, decay, curve, shape, chaos, ring);
                 anyGate = true;
                 anyAccent = anyAccent || isPatternHit;
 
@@ -752,7 +760,7 @@ struct Fatebinder : Module {
                 int particleCount = 2 + (int)(chaos * 4);
                 for (int i = 0; i < particleCount; i++) {
                     Particle p;
-                    p.spawn(currentStep[layer], steps, chaos, layer);
+                    p.spawn(currentStep[ring], steps, chaos, ring);
                     particles.push_back(p);
                 }
             }
@@ -761,7 +769,7 @@ struct Fatebinder : Module {
 
     json_t* dataToJson() override {
         json_t* rootJ = json_object();
-        for (int i = 0; i < kNumLayers; i++) {
+        for (int i = 0; i < kNumRings; i++) {
             json_object_set_new(rootJ, ("currentStep" + std::to_string(i)).c_str(), json_integer(currentStep[i]));
         }
         json_object_set_new(rootJ, "frozen", json_boolean(frozen));
@@ -771,7 +779,7 @@ struct Fatebinder : Module {
     }
 
     void dataFromJson(json_t* rootJ) override {
-        for (int i = 0; i < kNumLayers; i++) {
+        for (int i = 0; i < kNumRings; i++) {
             json_t* stepJ = json_object_get(rootJ, ("currentStep" + std::to_string(i)).c_str());
             if (stepJ) currentStep[i] = json_integer_value(stepJ);
         }
@@ -785,8 +793,8 @@ struct Fatebinder : Module {
             int steps = (int)params[STEPS_PARAM].getValue();
             int hits = (int)params[HITS_PARAM].getValue();
             int rotation = (int)params[ROTATION_PARAM].getValue();
-            for (int i = 0; i < kNumLayers; i++) {
-                layers[i].initialize(steps, hits, rotation, rhythmMode);
+            for (int i = 0; i < kNumRings; i++) {
+                rings[i].initialize(steps, hits, rotation, rhythmMode);
             }
         }
 
@@ -805,13 +813,13 @@ struct UnifiedDisplayWidget : TransparentWidget {
     Fatebinder* module = nullptr;
 
     // Radar colors
-    NVGcolor layerColors[3] = {
+    NVGcolor ringColors[3] = {
         nvgRGB(0x45, 0xec, 0xff),  // Teal
         nvgRGB(0xb0, 0x6b, 0xff),  // Violet
         nvgRGB(0x58, 0x9c, 0xff)   // Azure
     };
 
-    NVGcolor layerDim[3] = {
+    NVGcolor ringDim[3] = {
         nvgRGB(0x1d, 0x84, 0x9a),
         nvgRGB(0x5e, 0x3a, 0x8f),
         nvgRGB(0x2c, 0x59, 0x92)
@@ -822,7 +830,7 @@ struct UnifiedDisplayWidget : TransparentWidget {
     NVGcolor terminalDim = nvgRGB(0x60, 0xc5, 0xd8);
     NVGcolor terminalPurple = nvgRGB(0xc8, 0x84, 0xff);
 
-    float scanlinePhase = 0.f;
+    float scanlinePhase = -1.f;
 
     void drawLayer(const DrawArgs& args, int layer) override {
         if (layer != 1) return;
@@ -991,35 +999,34 @@ struct UnifiedDisplayWidget : TransparentWidget {
         // SCREEN EFFECTS (over everything)
         // ================================================================
 
-        // Scanlines (animated and finer for CRT feel)
-        const float scanSpacing = 1.45f;
-        const float scanThickness = 0.12f;
-        const float scanSpeed = 14.f; // pixels per second
-        float timeNow = (float)rack::system::getTime();
-        float animatedPhase = std::fmod(timeNow * scanSpeed, scanSpacing);
-        if (animatedPhase < 0.f) {
-            animatedPhase += scanSpacing;
+        // Scanlines (static and softened to avoid aliasing when zoomed out)
+        const float scanSpacing = 1.5f;
+        const float scanThickness = 0.18f;
+        if (scanlinePhase < 0.f) {
+            scanlinePhase = rack::random::uniform() * scanSpacing;
         }
-        scanlinePhase = animatedPhase;
-        for (float y = screenY + scanlinePhase; y < screenY + screenH; y += scanSpacing) {
+        float scanStartY = screenY + scanlinePhase;
+        while (scanStartY > screenY) {
+            scanStartY -= scanSpacing;
+        }
+        for (float y = scanStartY; y < screenY + screenH; y += scanSpacing) {
+            if (y + scanThickness < screenY) {
+                continue;
+            }
             nvgBeginPath(args.vg);
             nvgRect(args.vg, screenX, y, screenW, scanThickness);
-            nvgFillColor(args.vg, nvgRGBA(0, 0, 0, 32));
+            nvgFillColor(args.vg, nvgRGBA(0, 0, 0, 20));
             nvgFill(args.vg);
         }
 
-        // Phosphor separation lines (subtle, drifting)
+        // Phosphor separation lines (static, faint)
         const float separationSpacing = 6.f;
-        const float separationThickness = 0.35f;
-        const float separationSpeed = 2.5f; // pixels per second
-        float separationPhase = std::fmod(timeNow * separationSpeed, separationSpacing);
-        if (separationPhase < 0.f) {
-            separationPhase += separationSpacing;
-        }
-        for (float y = screenY + separationPhase; y < screenY + screenH; y += separationSpacing) {
+        const float separationThickness = 0.3f;
+        const float separationOffset = separationSpacing * 0.5f;
+        for (float y = screenY + separationOffset; y < screenY + screenH; y += separationSpacing) {
             nvgBeginPath(args.vg);
             nvgRect(args.vg, screenX, y, screenW, separationThickness);
-            nvgFillColor(args.vg, nvgRGBA(0x45, 0xec, 0xff, 14));
+            nvgFillColor(args.vg, nvgRGBA(0x45, 0xec, 0xff, 10));
             nvgFill(args.vg);
         }
 
@@ -1063,17 +1070,17 @@ struct UnifiedDisplayWidget : TransparentWidget {
 
         // Pattern rings - spread out with more spacing
         float ringRadii[3] = {
-            radius * 0.25f,  // Align with first range ring
-            radius * 0.50f,  // Align with second range ring
-            radius * 0.75f   // Align with third range ring
+            radius * 0.35f,  // Ring 1 (innermost)
+            radius * 0.60f,  // Ring 2 (middle)
+            radius * 0.85f   // Ring 3 (outermost)
         };
 
         for (int lay = 0; lay < 3; lay++) {
             float ringRadius = ringRadii[lay];
-            NVGcolor dimColor = layerDim[lay];
+            NVGcolor dimColor = ringDim[lay];
 
             for (int i = 0; i < steps; i++) {
-                if (!module->layers[lay].getStep(i)) continue;
+                if (!module->rings[lay].getStep(i)) continue;
 
                 float angle = (float)i / (float)steps * 2.f * M_PI - M_PI * 0.5f;
                 float x = cx + std::cos(angle) * ringRadius;
@@ -1093,8 +1100,8 @@ struct UnifiedDisplayWidget : TransparentWidget {
             float py = cy + p.y * radius;
             float brightness = p.brightness;
 
-            if (brightness > 0.01f && p.layerIndex >= 0 && p.layerIndex < 3) {
-                NVGcolor color = layerColors[p.layerIndex];
+            if (brightness > 0.01f && p.ringIndex >= 0 && p.ringIndex < 3) {
+                NVGcolor color = ringColors[p.ringIndex];
                 nvgBeginPath(vg);
                 nvgCircle(vg, px, py, 2.5f * brightness);
                 nvgFillColor(vg, nvgRGBA(color.r * brightness, color.g * brightness, color.b * brightness, brightness));
@@ -1118,9 +1125,9 @@ struct UnifiedDisplayWidget : TransparentWidget {
                 float angle = (float)currentStep / (float)steps * 2.f * M_PI - M_PI * 0.5f;
                 float tipX = cx + std::cos(angle) * ringRadius;
                 float tipY = cy + std::sin(angle) * ringRadius;
-                NVGcolor color = layerColors[lay];
+                NVGcolor color = ringColors[lay];
 
-                bool isHit = module->layers[lay].getStep(currentStep);
+                bool isHit = module->rings[lay].getStep(currentStep);
 
                 // Sweep line from center
                 nvgBeginPath(vg);
@@ -1148,6 +1155,31 @@ struct UnifiedDisplayWidget : TransparentWidget {
                     nvgFillColor(vg, color);
                     nvgFill(vg);
                 }
+            }
+        }
+
+        // ================================================================
+        // RING NUMBER LABELS
+        // ================================================================
+
+        std::shared_ptr<Font> labelFont = APP->window->loadFont(asset::system("res/fonts/ShareTechMono-Regular.ttf"));
+        if (labelFont) {
+            nvgFontFaceId(vg, labelFont->handle);
+            nvgFontSize(vg, 8.f);
+            nvgTextAlign(vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+
+            const char* ringLabels[] = {"1", "2", "3"};
+
+            for (int i = 0; i < 3; i++) {
+                float ringRadius = ringRadii[i];
+                // Position labels at the top of each ring
+                float labelX = cx;
+                float labelY = cy - ringRadius - 6.f;
+
+                // Draw label with ring color
+                NVGcolor labelColor = ringColors[i];
+                nvgFillColor(vg, labelColor);
+                nvgText(vg, labelX, labelY, ringLabels[i], NULL);
             }
         }
     }
@@ -1231,9 +1263,9 @@ struct UnifiedDisplayWidget : TransparentWidget {
         nvgText(vg, col1X, col1Y, buf, NULL);
         col1Y += lineHeight * 1.1f;
 
-        // Layers
-        int div2 = (int)module->params[Fatebinder::LAYER_2_DIV_PARAM].getValue();
-        int div3 = (int)module->params[Fatebinder::LAYER_3_DIV_PARAM].getValue();
+        // Rings
+        int div2 = (int)module->params[Fatebinder::RING_2_DIV_PARAM].getValue();
+        int div3 = (int)module->params[Fatebinder::RING_3_DIV_PARAM].getValue();
 
         NVGcolor divLabel = terminalPurple;
         divLabel.r *= 0.6f;
@@ -1318,7 +1350,7 @@ struct UnifiedDisplayWidget : TransparentWidget {
         snprintf(buf, sizeof(buf), "BLD:%s", modeNames[overlapMode % 3]);
         drawLine(col2ParamsX, col2Y, buf, terminalPurple);
 
-        // Activity indicators for each layer
+        // Activity indicators for each ring
         col2Y += lineHeight * 0.4f;
         nvgFillColor(vg, terminalDim);
         float activityLabelY = col2Y;
@@ -1332,8 +1364,8 @@ struct UnifiedDisplayWidget : TransparentWidget {
 
             float dotX = col2ActivityX + 16.f;
             float dotY = activityLabelY + 3.2f;
-            for (int i = 0; i < Fatebinder::kNumLayers; i++) {
-                float level = rack::math::clamp(module->layerHitLevel[i], 0.f, 1.f);
+            for (int i = 0; i < Fatebinder::kNumRings; i++) {
+                float level = rack::math::clamp(module->ringHitLevel[i], 0.f, 1.f);
                 float brightness = 0.4f + level * 0.6f;
                 float alpha = 0.2f + level * 0.8f;
 
@@ -1486,11 +1518,11 @@ struct TerminalDisplayWidget : TransparentWidget {
         col1Y += lineHeight * 1.3f;
 
         nvgFillColor(args.vg, terminalDim);
-        nvgText(args.vg, col1X, col1Y, "LAYERS:", NULL);
+        nvgText(args.vg, col1X, col1Y, "RINGS:", NULL);
         col1Y += lineHeight;
 
-        int div2 = (int)module->params[Fatebinder::LAYER_2_DIV_PARAM].getValue();
-        int div3 = (int)module->params[Fatebinder::LAYER_3_DIV_PARAM].getValue();
+        int div2 = (int)module->params[Fatebinder::RING_2_DIV_PARAM].getValue();
+        int div3 = (int)module->params[Fatebinder::RING_3_DIV_PARAM].getValue();
 
         nvgFillColor(args.vg, nvgRGB(0xff, 0x55, 0x00));
         snprintf(buf, sizeof(buf), "L1: 1/%d", 1);
@@ -1556,13 +1588,13 @@ struct ParticleDisplayWidget : TransparentWidget {
     Fatebinder* module = nullptr;
 
     // Military radar CRT phosphor colors - Orange/Amber/Red spectrum
-    NVGcolor layerColors[3] = {
-        nvgRGB(0xff, 0x55, 0x00),  // Layer 1: Orange - Primary targets
-        nvgRGB(0xff, 0xaa, 0x00),  // Layer 2: Amber - Harmonic signals
-        nvgRGB(0xff, 0x11, 0x00)   // Layer 3: Deep Red - Counter rhythm
+    NVGcolor ringColors[3] = {
+        nvgRGB(0xff, 0x55, 0x00),  // Ring 1: Orange - Primary targets
+        nvgRGB(0xff, 0xaa, 0x00),  // Ring 2: Amber - Harmonic signals
+        nvgRGB(0xff, 0x11, 0x00)   // Ring 3: Deep Red - Counter rhythm
     };
 
-    NVGcolor layerDim[3] = {
+    NVGcolor ringDim[3] = {
         nvgRGB(0x99, 0x33, 0x00),  // Dim orange
         nvgRGB(0x99, 0x66, 0x00),  // Dim amber
         nvgRGB(0x88, 0x0a, 0x00)   // Dim red
@@ -1571,7 +1603,7 @@ struct ParticleDisplayWidget : TransparentWidget {
     NVGcolor gridColor = nvgRGBA(0x66, 0x33, 0x00, 0x40);  // Dark orange grid
     NVGcolor bgGlowColor = nvgRGBA(0x22, 0x11, 0x00, 0xff); // Dark military green/black
 
-    float scanlinePhase = 0.f;
+    float scanlinePhase = -1.f;
     float sweepAngle = 0.f;
 
     void drawLayer(const DrawArgs& args, int layer) override {
@@ -1643,18 +1675,18 @@ struct ParticleDisplayWidget : TransparentWidget {
         // EUCLIDEAN PATTERN VISUALIZATION (3 concentric rings)
         // ================================================================
 
-        // Draw each layer's euclidean pattern as a colored ring
+        // Draw each ring's euclidean pattern as a colored ring
         for (int lay = 0; lay < 3; lay++) {
-            float ringRadius = radius * (0.65f + lay * 0.15f); // Layer 1: 65%, Layer 2: 80%, Layer 3: 95%
-            NVGcolor layerColor = layerColors[lay];
-            NVGcolor dimColor = layerDim[lay];
+            float ringRadius = radius * (0.65f + lay * 0.15f); // Ring 1: 65%, Ring 2: 80%, Ring 3: 95%
+            NVGcolor ringColor = ringColors[lay];
+            NVGcolor dimColor = ringDim[lay];
 
             for (int i = 0; i < steps; i++) {
                 float angle = (float)i / (float)steps * 2.f * M_PI - M_PI * 0.5f;
                 float x = cx + std::cos(angle) * ringRadius;
                 float y = cy + std::sin(angle) * ringRadius;
 
-                if (module->layers[lay].getStep(i)) {
+                if (module->rings[lay].getStep(i)) {
                     // Hit - bright dot
                     nvgBeginPath(args.vg);
                     nvgCircle(args.vg, x, y, 3.5f);
@@ -1664,7 +1696,7 @@ struct ParticleDisplayWidget : TransparentWidget {
                     // Inner glow
                     nvgBeginPath(args.vg);
                     nvgCircle(args.vg, x, y, 2.f);
-                    nvgFillColor(args.vg, layerColor);
+                    nvgFillColor(args.vg, ringColor);
                     nvgFill(args.vg);
                 } else {
                     // No hit - very dim dot
@@ -1703,8 +1735,8 @@ struct ParticleDisplayWidget : TransparentWidget {
             float py = cy + p.y * radius;
             float brightness = p.brightness;
 
-            if (brightness > 0.01f && p.layerIndex >= 0 && p.layerIndex < 3) {
-                NVGcolor color = layerColors[p.layerIndex];
+            if (brightness > 0.01f && p.ringIndex >= 0 && p.ringIndex < 3) {
+                NVGcolor color = ringColors[p.ringIndex];
 
                 // Strong particle core (radar blip)
                 nvgBeginPath(args.vg);
@@ -1741,7 +1773,7 @@ struct ParticleDisplayWidget : TransparentWidget {
                 float x = cx + std::cos(angle) * ringRadius;
                 float y = cy + std::sin(angle) * ringRadius;
 
-                NVGcolor color = layerColors[lay];
+                NVGcolor color = ringColors[lay];
 
                 // Bright indicator
                 nvgBeginPath(args.vg);
@@ -1769,16 +1801,57 @@ struct ParticleDisplayWidget : TransparentWidget {
         }
 
         // ================================================================
+        // RING NUMBER LABELS
+        // ================================================================
+
+        // Position labels at the right side of the display
+        float labelX = cx + radius * 1.05f;
+        const char* ringLabels[] = {"1", "2", "3"};
+
+        nvgFontSize(args.vg, 10.f);
+        nvgFontFaceId(args.vg, APP->window->uiFont->handle);
+        nvgTextAlign(args.vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+
+        for (int i = 0; i < 3; i++) {
+            float ringRadius = radius * (0.65f + i * 0.15f);
+            float labelY = cy - ringRadius;
+
+            // Draw label background for better visibility
+            nvgBeginPath(args.vg);
+            float textBounds[4];
+            nvgTextBounds(args.vg, labelX, labelY, ringLabels[i], NULL, textBounds);
+            float padding = 2.f;
+            nvgRect(args.vg, textBounds[0] - padding, textBounds[1] - padding,
+                    textBounds[2] - textBounds[0] + padding * 2,
+                    textBounds[3] - textBounds[1] + padding * 2);
+            nvgFillColor(args.vg, nvgRGBA(0, 0, 0, 180));
+            nvgFill(args.vg);
+
+            // Draw label text with ring color
+            nvgFillColor(args.vg, ringColors[i]);
+            nvgText(args.vg, labelX, labelY, ringLabels[i], NULL);
+        }
+
+        // ================================================================
         // CRT SCANLINES
         // ================================================================
 
-        scanlinePhase += 0.15f;
-        if (scanlinePhase > 1.5f) scanlinePhase = 0.f;
-
-        for (float y = scanlinePhase; y < box.size.y; y += 1.5f) {
+        const float scanSpacing = 1.5f;
+        const float scanThickness = 0.45f;
+        if (scanlinePhase < 0.f) {
+            scanlinePhase = rack::random::uniform() * scanSpacing;
+        }
+        float localStart = scanlinePhase;
+        while (localStart > 0.f) {
+            localStart -= scanSpacing;
+        }
+        for (float y = localStart; y < box.size.y; y += scanSpacing) {
+            if (y + scanThickness < 0.f) {
+                continue;
+            }
             nvgBeginPath(args.vg);
-            nvgRect(args.vg, 0, y, box.size.x, 0.5f);
-            nvgFillColor(args.vg, nvgRGBA(0, 0, 0, 25));
+            nvgRect(args.vg, 0, y, box.size.x, scanThickness);
+            nvgFillColor(args.vg, nvgRGBA(0, 0, 0, 22));
             nvgFill(args.vg);
         }
 
@@ -1819,6 +1892,15 @@ struct FatebinderWidget : ModuleWidget {
 
         using LayoutHelper = shapetaker::ui::LayoutHelper;
         auto mm = [](float x, float y) { return LayoutHelper::mm2px(Vec(x, y)); };
+        auto resizeKnob = [&](app::ParamWidget* knob, float diameterMm) {
+            if (!knob) {
+                return;
+            }
+            Vec center = knob->box.pos.plus(knob->box.size.div(2.f));
+            Vec newSize = LayoutHelper::mm2px(Vec(diameterMm, diameterMm));
+            knob->box.size = newSize;
+            knob->box.pos = center.minus(newSize.div(2.f));
+        };
 
         // Add screws
         LayoutHelper::ScrewPositions::addStandardScrews<ScrewBlack>(this, box.size.x);
@@ -1848,20 +1930,40 @@ struct FatebinderWidget : ModuleWidget {
         const float rowSpacing = 10.5f;
 
         // Column 1: Rhythm controls
-        addParam(createParamCentered<ShapetakerKnobOscilloscopeSmall>(mm(col1X, row1Y), module, Fatebinder::STEPS_PARAM));
-        addParam(createParamCentered<ShapetakerKnobOscilloscopeSmall>(mm(col1X, row1Y + rowSpacing), module, Fatebinder::HITS_PARAM));
-        addParam(createParamCentered<ShapetakerKnobOscilloscopeSmall>(mm(col1X, row1Y + rowSpacing * 2), module, Fatebinder::ROTATION_PARAM));
-        addParam(createParamCentered<ShapetakerKnobOscilloscopeSmall>(mm(col1X, row1Y + rowSpacing * 3), module, Fatebinder::LAYER_2_DIV_PARAM));
-        addParam(createParamCentered<ShapetakerKnobOscilloscopeSmall>(mm(col1X, row1Y + rowSpacing * 4), module, Fatebinder::LAYER_3_DIV_PARAM));
+        auto* stepsKnob = createParamCentered<ShapetakerKnobAltSmall>(mm(col1X, row1Y), module, Fatebinder::STEPS_PARAM);
+        resizeKnob(stepsKnob, 14.f);
+        addParam(stepsKnob);
+        auto* hitsKnob = createParamCentered<ShapetakerKnobAltSmall>(mm(col1X, row1Y + rowSpacing), module, Fatebinder::HITS_PARAM);
+        resizeKnob(hitsKnob, 14.f);
+        addParam(hitsKnob);
+        auto* rotationKnob = createParamCentered<ShapetakerKnobAltSmall>(mm(col1X, row1Y + rowSpacing * 2), module, Fatebinder::ROTATION_PARAM);
+        resizeKnob(rotationKnob, 14.f);
+        addParam(rotationKnob);
+        auto* ring2Knob = createParamCentered<ShapetakerKnobAltSmall>(mm(col1X, row1Y + rowSpacing * 3), module, Fatebinder::RING_2_DIV_PARAM);
+        resizeKnob(ring2Knob, 14.f);
+        addParam(ring2Knob);
+        auto* ring3Knob = createParamCentered<ShapetakerKnobAltSmall>(mm(col1X, row1Y + rowSpacing * 4), module, Fatebinder::RING_3_DIV_PARAM);
+        resizeKnob(ring3Knob, 14.f);
+        addParam(ring3Knob);
 
         // Column 2: Probability controls
-        addParam(createParamCentered<ShapetakerKnobOscilloscopeMedium>(mm(col2X, row1Y + 2.f), module, Fatebinder::PROBABILITY_PARAM));
-        addParam(createParamCentered<ShapetakerKnobOscilloscopeLarge>(mm(col2X, row1Y + rowSpacing + 7.f), module, Fatebinder::CHAOS_PARAM));
-        addParam(createParamCentered<ShapetakerKnobOscilloscopeSmall>(mm(col2X, row1Y + rowSpacing * 2 + 12.f), module, Fatebinder::DENSITY_PARAM));
+        auto* probabilityKnob = createParamCentered<ShapetakerKnobAltSmall>(mm(col2X, row1Y + 2.f), module, Fatebinder::PROBABILITY_PARAM);
+        resizeKnob(probabilityKnob, 16.f);
+        addParam(probabilityKnob);
+        auto* chaosKnob = createParamCentered<ShapetakerKnobAltMedium>(mm(col2X, row1Y + rowSpacing + 7.f), module, Fatebinder::CHAOS_PARAM);
+        resizeKnob(chaosKnob, 20.f);
+        addParam(chaosKnob);
+        auto* densityKnob = createParamCentered<ShapetakerKnobAltSmall>(mm(col2X, row1Y + rowSpacing * 2 + 12.f), module, Fatebinder::DENSITY_PARAM);
+        resizeKnob(densityKnob, 14.f);
+        addParam(densityKnob);
 
         // Column 3: Mutation controls
-        addParam(createParamCentered<ShapetakerKnobOscilloscopeMedium>(mm(col3X, row1Y), module, Fatebinder::TEMPO_PARAM));
-        addParam(createParamCentered<ShapetakerKnobOscilloscopeSmall>(mm(col3X, row1Y + rowSpacing), module, Fatebinder::MUTATION_RATE_PARAM));
+        auto* tempoKnob = createParamCentered<ShapetakerKnobAltSmall>(mm(col3X, row1Y), module, Fatebinder::TEMPO_PARAM);
+        resizeKnob(tempoKnob, 16.f);
+        addParam(tempoKnob);
+        auto* mutationKnob = createParamCentered<ShapetakerKnobAltSmall>(mm(col3X, row1Y + rowSpacing), module, Fatebinder::MUTATION_RATE_PARAM);
+        resizeKnob(mutationKnob, 14.f);
+        addParam(mutationKnob);
 
         // Freeze/Reset buttons
         addParam(createParamCentered<ShapetakerVintageMomentary>(mm(col3X, row1Y + rowSpacing * 2), module, Fatebinder::FREEZE_PARAM));
@@ -1871,10 +1973,18 @@ struct FatebinderWidget : ModuleWidget {
         addParam(createParamCentered<ShapetakerVintageToggleSwitch>(mm(col3X, row1Y + rowSpacing * 4), module, Fatebinder::OVERLAP_MODE_PARAM));
 
         // Column 4: Envelope controls
-        addParam(createParamCentered<ShapetakerKnobOscilloscopeSmall>(mm(col4X, row1Y), module, Fatebinder::ATTACK_PARAM));
-        addParam(createParamCentered<ShapetakerKnobOscilloscopeSmall>(mm(col4X, row1Y + rowSpacing), module, Fatebinder::DECAY_PARAM));
-        addParam(createParamCentered<ShapetakerKnobOscilloscopeSmall>(mm(col4X, row1Y + rowSpacing * 2), module, Fatebinder::CURVE_PARAM));
-        addParam(createParamCentered<ShapetakerKnobOscilloscopeSmall>(mm(col4X, row1Y + rowSpacing * 3), module, Fatebinder::SHAPE_PARAM));
+        auto* attackKnob = createParamCentered<ShapetakerKnobAltSmall>(mm(col4X, row1Y), module, Fatebinder::ATTACK_PARAM);
+        resizeKnob(attackKnob, 14.f);
+        addParam(attackKnob);
+        auto* decayKnob = createParamCentered<ShapetakerKnobAltSmall>(mm(col4X, row1Y + rowSpacing), module, Fatebinder::DECAY_PARAM);
+        resizeKnob(decayKnob, 14.f);
+        addParam(decayKnob);
+        auto* curveKnob = createParamCentered<ShapetakerKnobAltSmall>(mm(col4X, row1Y + rowSpacing * 2), module, Fatebinder::CURVE_PARAM);
+        resizeKnob(curveKnob, 14.f);
+        addParam(curveKnob);
+        auto* shapeKnob = createParamCentered<ShapetakerKnobAltSmall>(mm(col4X, row1Y + rowSpacing * 3), module, Fatebinder::SHAPE_PARAM);
+        resizeKnob(shapeKnob, 14.f);
+        addParam(shapeKnob);
 
         // ====================================================================
         // CV INPUTS - Spread across bottom
@@ -1893,10 +2003,13 @@ struct FatebinderWidget : ModuleWidget {
         // ====================================================================
         const float outputY = 119.5f;
 
-        // Layer outputs
-        addOutput(createOutputCentered<ShapetakerBNCPort>(mm(ioStartX, outputY), module, Fatebinder::LAYER_1_OUTPUT));
-        addOutput(createOutputCentered<ShapetakerBNCPort>(mm(ioStartX + ioSpacing, outputY), module, Fatebinder::LAYER_2_OUTPUT));
-        addOutput(createOutputCentered<ShapetakerBNCPort>(mm(ioStartX + ioSpacing * 2, outputY), module, Fatebinder::LAYER_3_OUTPUT));
+        // Bipolar/Unipolar toggle switch (above outputs)
+        addParam(createParamCentered<ShapetakerVintageRussianToggle>(mm(ioStartX + ioSpacing * 5, outputY - 10.f), module, Fatebinder::BIPOLAR_PARAM));
+
+        // Ring outputs
+        addOutput(createOutputCentered<ShapetakerBNCPort>(mm(ioStartX, outputY), module, Fatebinder::RING_1_OUTPUT));
+        addOutput(createOutputCentered<ShapetakerBNCPort>(mm(ioStartX + ioSpacing, outputY), module, Fatebinder::RING_2_OUTPUT));
+        addOutput(createOutputCentered<ShapetakerBNCPort>(mm(ioStartX + ioSpacing * 2, outputY), module, Fatebinder::RING_3_OUTPUT));
         addOutput(createOutputCentered<ShapetakerBNCPort>(mm(ioStartX + ioSpacing * 3, outputY), module, Fatebinder::GATE_OUTPUT));
         addOutput(createOutputCentered<ShapetakerBNCPort>(mm(ioStartX + ioSpacing * 4, outputY), module, Fatebinder::ACCENT_OUTPUT));
         addOutput(createOutputCentered<ShapetakerBNCPort>(mm(ioStartX + ioSpacing * 5, outputY), module, Fatebinder::MAIN_CV_OUTPUT));
@@ -1917,8 +2030,8 @@ struct FatebinderWidget : ModuleWidget {
                 int steps = (int)module->params[Fatebinder::STEPS_PARAM].getValue();
                 int hits = (int)module->params[Fatebinder::HITS_PARAM].getValue();
                 int rotation = (int)module->params[Fatebinder::ROTATION_PARAM].getValue();
-                for (int i = 0; i < module->kNumLayers; i++) {
-                    module->layers[i].initialize(steps, hits, rotation, module->rhythmMode);
+                for (int i = 0; i < module->kNumRings; i++) {
+                    module->rings[i].initialize(steps, hits, rotation, module->rhythmMode);
                 }
             }
         ));
@@ -1931,8 +2044,8 @@ struct FatebinderWidget : ModuleWidget {
                 int steps = (int)module->params[Fatebinder::STEPS_PARAM].getValue();
                 int hits = (int)module->params[Fatebinder::HITS_PARAM].getValue();
                 int rotation = (int)module->params[Fatebinder::ROTATION_PARAM].getValue();
-                for (int i = 0; i < module->kNumLayers; i++) {
-                    module->layers[i].initialize(steps, hits, rotation, module->rhythmMode);
+                for (int i = 0; i < module->kNumRings; i++) {
+                    module->rings[i].initialize(steps, hits, rotation, module->rhythmMode);
                 }
             }
         ));

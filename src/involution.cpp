@@ -151,6 +151,8 @@ struct Involution : Module {
     float chaosClockElapsed = 0.f;
     float chaosClockPeriod = 0.f;
     float chaosTargetRate = 0.5f;
+    bool effectActivePrev = false;
+    bool ecoMode = false;
 
     // Parameter smoothing
     
@@ -432,6 +434,8 @@ struct Involution : Module {
         float rawEffectIntensity = std::max(auraAmount, std::max(orbitAmount, tideAmount));
         float effectGateTarget = rack::math::clamp(rawEffectIntensity, 0.f, 1.f);
         float effectBlend = effectGateSmooth.process(effectGateTarget, args.sampleTime, EFFECT_GATE_SMOOTH_TC);
+        const bool effectActive = effectBlend > 5e-3f;
+        const bool effectDormant = effectBlend < 1e-3f;
 
         float driveLight = DRIVE_FIXED_NORMALIZED;
         float auraLight = auraRaw;
@@ -533,6 +537,8 @@ struct Involution : Module {
             // Set output channel count
             outputs[AUDIO_A_OUTPUT].setChannels(channels);
             outputs[AUDIO_B_OUTPUT].setChannels(channels);
+
+            const bool resetEthereal = (!effectActive && effectActivePrev && effectDormant);
 
             // Process each voice
             for (int c = 0; c < channels; c++) {
@@ -702,8 +708,13 @@ struct Involution : Module {
                         return rack::math::clamp(blended, -12.f, 12.f);
                     };
 
-                    processedA = processEthereal(processedA, voiceCutoffA, resonanceNormA, etherealVoicesA[c], -0.6f);
-                    processedB = processEthereal(processedB, voiceCutoffB, resonanceNormB, etherealVoicesB[c], 0.6f);
+                    if (effectActive) {
+                        processedA = processEthereal(processedA, voiceCutoffA, resonanceNormA, etherealVoicesA[c], -0.6f);
+                        processedB = processEthereal(processedB, voiceCutoffB, resonanceNormB, etherealVoicesB[c], 0.6f);
+                    } else if (resetEthereal) {
+                        etherealVoicesA[c].reset();
+                        etherealVoicesB[c].reset();
+                    }
                 }
                 
                 
@@ -713,6 +724,8 @@ struct Involution : Module {
             }
 
         }
+
+        effectActivePrev = effectActive;
         
         // Update lights to show parameter values with Chiaroscuro-style color progression
         // Both lights: Teal (0%) -> Bright blue-purple (50%) -> Dark purple (100%)
@@ -859,10 +872,10 @@ struct InvolutionWidget : ModuleWidget {
             module, Involution::RESONANCE_B_PARAM));
         
         // Link switches - using SVG parser with fallbacks
-        addParam(createParamCentered<ShapetakerVintageToggleSwitch>(
+        addParam(createParamCentered<ShapetakerVintageRussianToggle>(
             centerPx("link_cutoff", 45.166f, 29.894f),
             module, Involution::LINK_CUTOFF_PARAM));
-        addParam(createParamCentered<ShapetakerVintageToggleSwitch>(
+        addParam(createParamCentered<ShapetakerVintageRussianToggle>(
             centerPx("link_resonance", 45.166f, 84.630f),
             module, Involution::LINK_RESONANCE_PARAM));
 

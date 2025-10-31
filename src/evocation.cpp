@@ -3553,8 +3553,8 @@ struct EvocationWidget : ModuleWidget {
         addInput(createInputCentered<ShapetakerBNCPort>(centerPx("phase4-cv-in", 92.5f, 119.5f), module, Evocation::PHASE_4_INPUT));
 
         // Envelope controls
-        addParam(createParamCentered<ShapetakerKnobMedium>(centerPx("env-speed", 49.159584f, 47.892654f), module, Evocation::ENV_SPEED_PARAM));
-        addParam(createParamCentered<ShapetakerKnobOscilloscopeSmall>(centerPx("env-phase-offset", 78.077148f, 47.892654f), module, Evocation::ENV_PHASE_PARAM));
+        addParam(createParamCentered<ShapetakerKnobAltMedium>(centerPx("env-speed", 49.159584f, 47.892654f), module, Evocation::ENV_SPEED_PARAM));
+        addParam(createParamCentered<ShapetakerKnobAltSmall>(centerPx("env-phase-offset", 78.077148f, 47.892654f), module, Evocation::ENV_PHASE_PARAM));
 
         // Loop and invert capacitive touch switches with outer LED rings
         Vec loopCenter = centerPx("loop-sw", 78.077148f, 66.94957f);

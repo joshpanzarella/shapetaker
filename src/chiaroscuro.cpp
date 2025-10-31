@@ -10,14 +10,20 @@
 // Forward declaration for Chiaroscuro module (needed by widgets)
 struct Chiaroscuro;
 
-// Custom larger VU meter widget for better visibility
-// Using VU meter from utilities (implementation moved to ui/widgets.hpp)
+// Parameter/light indices for accessing values before the full Chiaroscuro definition
+static constexpr int CHIAROSC_DIST_PARAM = 2;
+static constexpr int CHIAROSC_DRIVE_PARAM = 4;
+static constexpr int CHIAROSC_MIX_PARAM = 6;
+
+static constexpr int CHIAROSC_LED_R = 0;
+static constexpr int CHIAROSC_LED_G = 1;
+static constexpr int CHIAROSC_LED_B = 2;
 
 // Vintage Dot Matrix Display Widget with Sun/Moon Eclipse
 struct VintageDotMatrix : Widget {
     Module* module;
-    static const int MATRIX_WIDTH = 48;  // High resolution for smooth eclipse effects
-    static const int MATRIX_HEIGHT = 14; // High resolution for smooth eclipse effects
+    static const int MATRIX_WIDTH = 64;   // Increased resolution for smoother animation
+    static const int MATRIX_HEIGHT = 18;  // Increased resolution for smoother animation
 
     float animationPhase = 0.0f;
 
@@ -60,127 +66,124 @@ struct VintageDotMatrix : Widget {
         // Draw hardware bezel and screen background
         drawHardwareFrame(args);
 
-        // Get parameters from Chiaroscuro module
-        float distortion = 0.0f;
-        float drive = module->params[4].getValue();      // DRIVE_PARAM
-        float mix = module->params[6].getValue();        // MIX_PARAM
+        // Get parameters from Chiaroscuro module (raw knob positions)
+        float distortion = clamp(module->params[CHIAROSC_DIST_PARAM].getValue(), 0.0f, 1.0f);
+        float drive = clamp(module->params[CHIAROSC_DRIVE_PARAM].getValue(), 0.0f, 1.0f);
+        float mix = clamp(module->params[CHIAROSC_MIX_PARAM].getValue(), 0.0f, 1.0f);
 
-        // Get distortion value from LED lights (temporary until we can access module members)
+        // Approximate processed distortion using LED color (captures CV + smoothing)
+        const float maxLedBrightness = 0.6f;
+        shapetaker::RGBColor ledColor = shapetaker::LightingHelper::getChiaroscuroColor(distortion, maxLedBrightness);
         if (module) {
-            float red_brightness = module->lights[0].getBrightness();
-            float green_brightness = module->lights[1].getBrightness();
-            const float max_brightness = 0.6f;
-
-            // Reverse-calculate distortion from LED RGB using the color progression
-            if (red_brightness <= max_brightness * 0.1f) {
-                distortion = (red_brightness / max_brightness) * 0.25f;
-            } else if (green_brightness >= max_brightness * 0.9f) {
-                distortion = (red_brightness / max_brightness) * 0.5f;
-            } else if (red_brightness >= max_brightness * 0.9f && green_brightness < max_brightness * 0.9f) {
-                distortion = 0.5f + (1.0f - (green_brightness / max_brightness)) * 0.5f;
-            }
-            distortion = clamp(distortion, 0.0f, 1.0f);
+            float r = module->lights[CHIAROSC_LED_R].getBrightness();
+            float g = module->lights[CHIAROSC_LED_G].getBrightness();
+            float b = module->lights[CHIAROSC_LED_B].getBrightness();
+            ledColor = {r, g, b};
+            distortion = clamp((r / maxLedBrightness) * 0.5f + (1.0f - g / maxLedBrightness) * 0.5f, 0.0f, 1.0f);
         }
 
         // Check if we should show type name instead of eclipse
         bool showTypeName = (typeDisplayTimer > 0.0f);
 
         // Calculate eclipse parameters (scaled for high resolution matrix)
-        float sunRadius = 6.0f + drive * 6.0f;  // Sun grows with drive (larger for high-res)
-        float moonRadius = 4.5f + distortion * 6.0f;  // Moon grows with distortion
-        float eclipseOffset = mix * 15.0f;  // Eclipse position based on mix (wider range)
+        const float widthScale = static_cast<float>(MATRIX_WIDTH) / 48.0f;
+        const float heightScale = static_cast<float>(MATRIX_HEIGHT) / 14.0f;
 
-        // Center positions
-        float centerX = MATRIX_WIDTH / 2.0f;
-        float centerY = MATRIX_HEIGHT / 2.0f;
-        float moonX = centerX + eclipseOffset - 7.5f;
-        float moonY = centerY + sin(animationPhase * 0.5f) * 1.2f;
+        float sunRadius = (5.5f * widthScale) + drive * (4.5f * widthScale);
+        float moonRadius = sunRadius * 0.92f;
+        float moonTravel = std::max((MATRIX_WIDTH * 0.5f) - (moonRadius + 2.0f * widthScale), 0.0f);
+
+        // Center positions in matrix coordinates
+        float centerX = MATRIX_WIDTH * 0.5f;
+        float centerY = MATRIX_HEIGHT * 0.5f;
+        float moonX = centerX + (1.0f - mix) * moonTravel;
+        float moonY = centerY + std::sin(animationPhase * (0.6f + distortion * 0.8f)) * ((0.8f + distortion * 1.2f) * heightScale);
 
         // Screen area with some padding for the bezel
         float screenPadding = 3.0f;
-        float screenWidth = box.size.x - (screenPadding * 2);
-        float screenHeight = box.size.y - (screenPadding * 2);
+        float screenWidth = box.size.x - (screenPadding * 2.0f);
+        float screenHeight = box.size.y - (screenPadding * 2.0f);
 
         // Calculate dot spacing within the screen area
         float dotSpacingX = screenWidth / MATRIX_WIDTH;
         float dotSpacingY = screenHeight / MATRIX_HEIGHT;
-        float dotSize = std::min(dotSpacingX, dotSpacingY) * 0.6f; // 60% of spacing for visible gaps between LEDs
+        float dotRadius = std::min(dotSpacingX, dotSpacingY) * 0.40f;
 
-        // Draw red dot matrix
+        // Normalise LED color to 0-1
+        float colorNormR = maxLedBrightness > 0.f ? ledColor.r / maxLedBrightness : 0.0f;
+        float colorNormG = maxLedBrightness > 0.f ? ledColor.g / maxLedBrightness : 0.0f;
+        float colorNormB = maxLedBrightness > 0.f ? ledColor.b / maxLedBrightness : 0.0f;
+
+        const float baseAmbient = 0.06f + distortion * 0.04f;
+        const float driveLuminance = 0.35f + drive * 0.65f;
+
         for (int x = 0; x < MATRIX_WIDTH; x++) {
             for (int y = 0; y < MATRIX_HEIGHT; y++) {
                 float dotX = screenPadding + x * dotSpacingX + dotSpacingX * 0.5f;
                 float dotY = screenPadding + y * dotSpacingY + dotSpacingY * 0.5f;
 
-                // Distance from sun center
-                float sunDist = sqrt((x - centerX) * (x - centerX) + (y - centerY) * (y - centerY));
-
-                // Distance from moon center
-                float moonDist = sqrt((x - moonX) * (x - moonX) + (y - moonY) * (y - moonY));
-
-                // Calculate dot brightness
-                float brightness = 0.0f;
+                float brightness = baseAmbient;
 
                 if (showTypeName) {
-                    // Show distortion type name using dot matrix pattern
                     brightness = getTextPixelBrightness(x, y, lastDistortionType);
+                    if (brightness > 0.0f) {
+                        brightness = 0.85f * brightness;
+                    }
                 } else {
-                    // Normal eclipse animation
-                    // Sun contribution
-                    if (sunDist <= sunRadius) {
-                        float sunIntensity = 1.0f - (sunDist / sunRadius);
-                        brightness += sunIntensity * 0.9f;
+                    float dx = x - centerX;
+                    float dy = y - centerY;
+                    float sunDist = std::sqrt(dx * dx + dy * dy);
+                    float sunSurface = clamp(1.0f - sunDist / sunRadius, 0.0f, 1.0f);
+
+                    // Drive brightens and enlarges the sun
+                    float sunContribution = sunSurface * driveLuminance;
+
+                    // Distortion adds a sizzling corona near the edge
+                    float edgeRegion = clamp((sunDist - (sunRadius - 1.4f)) / 1.4f, 0.0f, 1.0f);
+                    float ripple = 0.5f + 0.5f * std::sin(animationPhase * (2.0f + distortion * 3.5f) + dx * 0.35f + dy * 0.28f);
+                    float corona = distortion * edgeRegion * ripple * 0.7f;
+
+                    // Moon occlusion travels based on mix
+                    float mdx = x - moonX;
+                    float mdy = y - moonY;
+                    float moonDist = std::sqrt(mdx * mdx + mdy * mdy);
+                    float moonCoverage = clamp(1.0f - moonDist / moonRadius, 0.0f, 1.0f);
+                    float moonShadow = moonCoverage * (0.35f + mix * 0.65f);
+
+                    brightness += sunContribution + corona;
+                    brightness -= moonShadow;
+
+                    // Slight heat shimmer ahead of the moon when partially covering
+                    if (mix > 0.05f && moonCoverage > 0.1f) {
+                        float shimmer = moonCoverage * distortion * 0.3f * std::sin(animationPhase * 3.2f + mdx * 0.55f);
+                        brightness += shimmer;
                     }
 
-                    // Moon eclipse
-                    if (moonDist <= moonRadius) {
-                        float moonIntensity = 1.0f - (moonDist / moonRadius);
-                        brightness -= moonIntensity * 0.7f;  // Eclipse effect
-                    }
+                    brightness = clamp(brightness, 0.0f, 1.0f);
                 }
 
-                // Add vintage LED flicker
-                brightness += sin(animationPhase + x * 0.3f + y * 0.2f) * 0.03f;
-                brightness = clamp(brightness, 0.0f, 1.0f);
-
-                // LED matrix colors using shared utility function
-                NVGcolor dotColor;
-                if (brightness > 0.05f) {
-                    // Use shared color utility (same calculation as module LEDs)
-                    shapetaker::RGBColor ledColor = shapetaker::LightingHelper::getChiaroscuroColor(distortion, 0.6f);
-                    const float max_brightness = 0.6f;
-
-                    // Scale by dot brightness
-                    float r = ledColor.r * brightness / max_brightness;
-                    float g = ledColor.g * brightness / max_brightness;
-                    float b = ledColor.b * brightness / max_brightness;
-
-                    dotColor = nvgRGBAf(r, g, b, brightness);
-                } else {
-                    // Very dim background dots using shared color utility
-                    shapetaker::RGBColor dimColor = shapetaker::LightingHelper::getChiaroscuroColor(distortion, 0.06f);
-                    dotColor = nvgRGBAf(dimColor.r, dimColor.g, dimColor.b, 0.4f);
+                if (brightness <= 0.01f) {
+                    continue;
                 }
 
-                // Draw the LED dot with slight glow
-                if (brightness > 0.3f) {
-                    // Glow effect using cached LED color normalized to brightness
-                    shapetaker::RGBColor glowColor = shapetaker::LightingHelper::getChiaroscuroColor(distortion, brightness);
+                float alpha = clamp(brightness, 0.0f, 1.0f);
+                float r = clamp(colorNormR * brightness, 0.0f, 1.0f);
+                float g = clamp(colorNormG * brightness, 0.0f, 1.0f);
+                float b = clamp(colorNormB * brightness, 0.0f, 1.0f);
 
+                nvgBeginPath(args.vg);
+                nvgCircle(args.vg, dotX, dotY, dotRadius * (brightness > 0.7f ? 1.15f : 1.0f));
+                nvgFillColor(args.vg, nvgRGBAf(r, g, b, alpha));
+                nvgFill(args.vg);
+
+                if (!showTypeName && brightness > 0.65f) {
                     nvgBeginPath(args.vg);
-                    nvgCircle(args.vg, dotX, dotY, dotSize * 0.8f);
-                    nvgFillColor(args.vg, nvgRGBAf(glowColor.r, glowColor.g, glowColor.b, brightness * 0.3f));
+                    nvgCircle(args.vg, dotX, dotY, dotRadius * 1.6f);
+                    nvgFillColor(args.vg, nvgRGBAf(r, g, b, alpha * 0.25f));
                     nvgFill(args.vg);
                 }
-
-                // Main LED dot
-                nvgBeginPath(args.vg);
-                nvgCircle(args.vg, dotX, dotY, dotSize * 0.5f);
-                nvgFillColor(args.vg, dotColor);
-                nvgFill(args.vg);
             }
         }
-
 
         Widget::draw(args);
     }
@@ -326,249 +329,6 @@ private:
         nvgStrokeWidth(args.vg, 0.5f);
         nvgStrokeColor(args.vg, nvgRGBA(80, 80, 90, 100)); // Subtle reflection
         nvgStroke(args.vg);
-    }
-};
-
-// Vintage Tube & Chiaroscuro Art Visualization System
-struct VintageChiaroscuroDisplay {
-    struct TubeElement {
-        float intensity;
-        float warmth;
-        float flicker;
-        float phase;
-        Vec position;
-        float radius;
-        
-        TubeElement(Vec pos, float r) : position(pos), radius(r) {
-            intensity = 0.0f;
-            warmth = 0.0f;
-            flicker = random::uniform();
-            phase = random::uniform() * 2.0f * M_PI;
-        }
-    };
-    
-    static const int NUM_TUBES = 6;
-    TubeElement tubes[NUM_TUBES];
-    float shadowPattern[8][8]; // Chiaroscuro shadow matrix
-    float lightBurst;
-    float artPhase;
-    
-    VintageChiaroscuroDisplay() : tubes{
-        TubeElement(Vec(40.0f, 40.0f), 8.0f), // Center tube
-        TubeElement(Vec(40.0f + cos(0 * M_PI / 2.5f) * 15.0f, 40.0f + sin(0 * M_PI / 2.5f) * 15.0f), 6.0f),
-        TubeElement(Vec(40.0f + cos(1 * M_PI / 2.5f) * 15.0f, 40.0f + sin(1 * M_PI / 2.5f) * 15.0f), 6.0f),
-        TubeElement(Vec(40.0f + cos(2 * M_PI / 2.5f) * 15.0f, 40.0f + sin(2 * M_PI / 2.5f) * 15.0f), 6.0f),
-        TubeElement(Vec(40.0f + cos(3 * M_PI / 2.5f) * 15.0f, 40.0f + sin(3 * M_PI / 2.5f) * 15.0f), 6.0f),
-        TubeElement(Vec(40.0f + cos(4 * M_PI / 2.5f) * 15.0f, 40.0f + sin(4 * M_PI / 2.5f) * 15.0f), 6.0f)
-    } {
-        
-        // Initialize shadow pattern
-        for (int x = 0; x < 8; x++) {
-            for (int y = 0; y < 8; y++) {
-                shadowPattern[x][y] = random::uniform() * 0.3f;
-            }
-        }
-        
-        lightBurst = 0.0f;
-        artPhase = 0.0f;
-    }
-    
-    void update(float deltaTime, float chaos, float drive, float mix, int distortionType) {
-        artPhase += deltaTime * 2.0f;
-        
-        // Update each tube based on parameters
-        for (int i = 0; i < NUM_TUBES; i++) {
-            TubeElement& tube = tubes[i];
-            tube.phase += deltaTime * (3.0f + i * 0.5f);
-            
-            // Base intensity from drive
-            tube.intensity = drive * 0.8f + chaos * 0.6f;
-            
-            // Distortion type affects tube behavior
-            switch (distortionType) {
-                case 0: // Hard Clip - harsh, digital glow
-                    tube.intensity = (tube.intensity > 0.5f) ? 1.0f : 0.2f;
-                    tube.warmth = 0.3f;
-                    tube.flicker = 0.1f;
-                    break;
-                case 1: // Wave Fold - smooth wave-like pulsing
-                    tube.intensity *= (1.0f + sin(tube.phase * 2.0f + artPhase) * 0.3f);
-                    tube.warmth = 0.4f + sin(artPhase * 0.5f) * 0.2f;
-                    tube.flicker = 0.05f;
-                    break;
-                case 2: // Bit Crush - quantized, digital flickering
-                    tube.intensity = floor(tube.intensity * 4.0f) / 4.0f;
-                    tube.warmth = 0.2f;
-                    tube.flicker = 0.3f;
-                    break;
-                case 3: // Destroy - violent, explosive flashing
-                    tube.intensity += chaos * random::uniform() * 0.5f;
-                    tube.warmth = 0.8f + random::uniform() * 0.2f;
-                    tube.flicker = 0.4f + chaos * 0.3f;
-                    break;
-                case 4: { // Ring Mod - modulated, oscillating
-                    float ringMod = sin(glfwGetTime() * 12.0f) * cos(glfwGetTime() * 7.0f);
-                    tube.intensity *= (1.0f + ringMod * 0.4f);
-                    tube.warmth = 0.6f + ringMod * 0.3f;
-                    tube.flicker = abs(ringMod) * 0.2f;
-                    break;
-                }
-                case 5: // Tube Sat - warm, vintage tube glow
-                    tube.intensity = tanh(tube.intensity * 2.0f);
-                    tube.warmth = 0.9f + sin(tube.phase * 0.3f) * 0.1f;
-                    tube.flicker = 0.02f; // Very stable vintage glow
-                    break;
-            }
-            
-            // Mix affects individual tube modulation
-            if (mix > 0.1f) {
-                float mixPhase = artPhase * mix * 2.0f + i * 0.8f;
-                tube.intensity *= (1.0f + sin(mixPhase) * mix * 0.4f);
-            }
-            
-            // Clamp values
-            tube.intensity = clamp(tube.intensity, 0.0f, 1.0f);
-            tube.warmth = clamp(tube.warmth, 0.0f, 1.0f);
-            tube.flicker = clamp(tube.flicker, 0.0f, 0.5f);
-        }
-        
-        // Update Chiaroscuro shadow pattern
-        for (int x = 0; x < 8; x++) {
-            for (int y = 0; y < 8; y++) {
-                float basePattern = sin((x + y) * 0.5f + artPhase) * 0.5f + 0.5f;
-                shadowPattern[x][y] = basePattern * chaos * 0.4f + drive * 0.2f;
-                
-                // Add dramatic light/dark contrasts (Chiaroscuro effect)
-                if (chaos > 0.3f) {
-                    float contrast = (basePattern > 0.6f) ? 1.0f : 0.1f;
-                    shadowPattern[x][y] *= contrast;
-                }
-            }
-        }
-        
-        // Light burst effect for high intensity
-        lightBurst = (drive + chaos + mix) / 3.0f;
-        if (lightBurst > 0.7f) {
-            lightBurst += sin(artPhase * 8.0f) * 0.2f;
-        }
-    }
-};
-
-struct VintageChiaroscuroWidget : TransparentWidget {
-    VintageChiaroscuroDisplay display;
-    Module* module = nullptr;
-    int distLightId = -1, driveLightId = -1, mixLightId = -1;
-    int typeParamId = -1; // Add distortion type parameter
-    float lastTime = 0.0f;
-    
-    VintageChiaroscuroWidget() {
-        box.size = Vec(80, 80);
-    }
-    
-    void step() override {
-        TransparentWidget::step();
-        
-        if (!module) return;
-        
-        float currentTime = glfwGetTime();
-        float deltaTime = currentTime - lastTime;
-        lastTime = currentTime;
-        
-        // Limit delta time to prevent jumps
-        deltaTime = clamp(deltaTime, 0.0f, 1.0f / 30.0f);
-        
-        // Get parameter values from the module lights and parameters
-        float chaos = (distLightId >= 0) ? module->lights[distLightId].getBrightness() : 0.0f;
-        float drive = (driveLightId >= 0) ? module->lights[driveLightId].getBrightness() : 0.0f;
-        float mix = (mixLightId >= 0) ? module->lights[mixLightId].getBrightness() : 0.0f;
-        int distortionType = (typeParamId >= 0) ? (int)module->params[typeParamId].getValue() : 0;
-        
-        // Update vintage tube & chiaroscuro display
-        display.update(deltaTime, chaos, drive, mix, distortionType);
-    }
-    
-    void drawVintageTube(NVGcontext* vg, const VintageChiaroscuroDisplay::TubeElement& tube) {
-        // Main tube body (dark base)
-        nvgBeginPath(vg);
-        nvgCircle(vg, tube.position.x, tube.position.y, tube.radius);
-        nvgFillColor(vg, nvgRGBAf(0.1f, 0.05f, 0.02f, 0.8f));
-        nvgFill(vg);
-        
-        // Tube glow (warm vintage color)
-        if (tube.intensity > 0.1f) {
-            nvgBeginPath(vg);
-            nvgCircle(vg, tube.position.x, tube.position.y, tube.radius * 1.3f);
-            
-            // Color based on warmth and flicker
-            float flickerAmount = 1.0f - tube.flicker + sin(glfwGetTime() * 60.0f) * tube.flicker * 0.3f;
-            float r = 0.9f + tube.warmth * 0.1f;
-            float g = 0.4f + tube.warmth * 0.5f;
-            float b = 0.1f + tube.warmth * 0.2f;
-            
-            NVGcolor glowColor = nvgRGBAf(r, g, b, tube.intensity * flickerAmount * 0.6f);
-            nvgFillColor(vg, glowColor);
-            nvgFill(vg);
-        }
-        
-        // Inner filament
-        if (tube.intensity > 0.3f) {
-            nvgBeginPath(vg);
-            nvgCircle(vg, tube.position.x, tube.position.y, tube.radius * 0.4f);
-            nvgFillColor(vg, nvgRGBAf(1.0f, 0.9f, 0.7f, tube.intensity * 0.8f));
-            nvgFill(vg);
-        }
-    }
-    
-    void drawChiaroscuroPattern(NVGcontext* vg) {
-        // Draw dramatic light/shadow pattern
-        float cellSize = 10.0f;
-        
-        for (int x = 0; x < 8; x++) {
-            for (int y = 0; y < 8; y++) {
-                float shadowIntensity = display.shadowPattern[x][y];
-                
-                nvgBeginPath(vg);
-                nvgRect(vg, x * cellSize, y * cellSize, cellSize, cellSize);
-                
-                if (shadowIntensity > 0.5f) {
-                    // Light areas - warm glow
-                    NVGcolor lightColor = nvgRGBAf(1.0f, 0.9f, 0.7f, shadowIntensity * 0.3f);
-                    nvgFillColor(vg, lightColor);
-                } else {
-                    // Dark areas - deep shadows
-                    NVGcolor shadowColor = nvgRGBAf(0.1f, 0.05f, 0.02f, (1.0f - shadowIntensity) * 0.5f);
-                    nvgFillColor(vg, shadowColor);
-                }
-                nvgFill(vg);
-            }
-        }
-    }
-    
-    void draw(const DrawArgs& args) override {
-        if (!module) return;
-        
-        nvgSave(args.vg);
-        
-        // Draw Chiaroscuro background pattern
-        drawChiaroscuroPattern(args.vg);
-        
-        // Light burst effect for high intensity
-        if (display.lightBurst > 0.7f) {
-            nvgBeginPath(args.vg);
-            nvgCircle(args.vg, 40.0f, 40.0f, 35.0f);
-            
-            float burstAlpha = (display.lightBurst - 0.7f) * 0.3f;
-            NVGcolor burstColor = nvgRGBAf(1.0f, 0.9f, 0.6f, burstAlpha);
-            nvgFillColor(args.vg, burstColor);
-            nvgFill(args.vg);
-        }
-        
-        // Draw vintage tubes
-        for (int i = 0; i < VintageChiaroscuroDisplay::NUM_TUBES; i++) {
-            drawVintageTube(args.vg, display.tubes[i]);
-        }
-        
-        nvgRestore(args.vg);
     }
 };
 
@@ -719,11 +479,12 @@ struct Chiaroscuro : Module {
         DIST_PARAM,        // New: Distortion knob (dist-knob)
         DIST_ATT_PARAM,    // New: Distortion attenuverter
         DRIVE_PARAM,
-        DRIVE_ATT_PARAM,   // New: Drive attenuverter  
+        DRIVE_ATT_PARAM,   // New: Drive attenuverter
         MIX_PARAM,
         MIX_ATT_PARAM,     // New: Mix attenuverter
         LINK_PARAM,
         RESPONSE_PARAM,    // Linear/Exponential response switch
+        WIDTH_PARAM,       // Stereo width control
         NUM_PARAMS
     };
 
@@ -749,10 +510,58 @@ struct Chiaroscuro : Module {
         DIST_LED_R,
         DIST_LED_G,
         DIST_LED_B,
+        SIDECHAIN_LED,     // Visual feedback for sidechain activity
         NUM_LIGHTS
     };
 
     static constexpr float NOMINAL_LEVEL = 5.0f; // Reference voltage used for distortion normalization
+
+    struct OversampleState {
+        int factor = 1;
+        bool bypass = true;
+        float prevInput = 0.0f;
+        float lp1 = 0.0f;
+        float lp2 = 0.0f;
+        float a1 = 0.0f;
+        float b1 = 0.0f;
+        float a2 = 0.0f;
+        float b2 = 0.0f;
+
+        void configure(float baseSampleRate, int newFactor) {
+            factor = rack::math::clamp(newFactor, 1, 8);
+            bypass = (factor <= 1);
+            if (bypass) {
+                a1 = b1 = a2 = b2 = 0.0f;
+                return;
+            }
+
+            float oversampleRate = baseSampleRate * factor;
+            float cutoff = baseSampleRate * 0.45f; // Keep below Nyquist of base rate
+            float alpha1 = expf(-2.0f * M_PI * cutoff / oversampleRate);
+            a1 = 1.0f - alpha1;
+            b1 = alpha1;
+
+            float cutoff2 = cutoff * 0.6f; // Slightly lower for second pole
+            float alpha2 = expf(-2.0f * M_PI * cutoff2 / oversampleRate);
+            a2 = 1.0f - alpha2;
+            b2 = alpha2;
+        }
+
+        void reset() {
+            prevInput = 0.0f;
+            lp1 = 0.0f;
+            lp2 = 0.0f;
+        }
+
+        float filter(float input) {
+            if (bypass) {
+                return input;
+            }
+            lp1 = a1 * input + b1 * lp1;
+            lp2 = a2 * lp1 + b2 * lp2;
+            return lp2;
+        }
+    };
 
     shapetaker::PolyphonicProcessor polyProcessor;
     shapetaker::SidechainDetector detector;
@@ -782,11 +591,19 @@ struct Chiaroscuro : Module {
     shapetaker::FloatVoices makeupGainL;
     shapetaker::FloatVoices makeupGainR;
 
+    std::array<OversampleState, shapetaker::PolyphonicProcessor::MAX_VOICES> oversampleStateL{};
+    std::array<OversampleState, shapetaker::PolyphonicProcessor::MAX_VOICES> oversampleStateR{};
+
     // Rate-of-change tracking for adaptive smoothing
     float prev_distortion = 0.0f;
     float prev_drive = 0.0f;
     float prev_mix = 0.0f;
-    
+
+    // Sidechain mode (context menu): 0=Enhancement, 1=Ducking, 2=Direct
+    int sidechainMode = 0;
+    int oversampleFactor = 2;
+    float currentSampleRate = 44100.0f;
+
     Chiaroscuro() {
         config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
         
@@ -801,6 +618,8 @@ struct Chiaroscuro : Module {
         shapetaker::ParameterHelper::configAttenuverter(this, MIX_ATT_PARAM, "Mix CV Attenuverter");
         shapetaker::ParameterHelper::configToggle(this, LINK_PARAM, "Link L/R Channels");
         shapetaker::ParameterHelper::configToggle(this, RESPONSE_PARAM, "VCA Response: Linear/Exponential");
+        configParam(WIDTH_PARAM, -1.0f, 1.0f, 0.0f, "Stereo Width", "%", 0.f, 100.f);
+        paramQuantities[WIDTH_PARAM]->description = "Adjust stereo field: -100% = mono, 0% = normal, +100% = wide";
         
         shapetaker::ParameterHelper::configAudioInput(this, AUDIO_L_INPUT, "Audio Left");
         shapetaker::ParameterHelper::configAudioInput(this, AUDIO_R_INPUT, "Audio Right");
@@ -818,18 +637,14 @@ struct Chiaroscuro : Module {
         // Initialize distortion smoothing - fast enough to be responsive but slow enough to avoid clicks
         distortion_slew.setRiseFall(1000.f, 1000.f);
 
+        currentSampleRate = APP->engine->getSampleRate();
+        configureOversampling();
         resetLevelTracking();
     }
     
     void onSampleRateChange() override {
-        float sr = APP->engine->getSampleRate();
-        distortion_l.forEach([sr](shapetaker::DistortionEngine& engine) {
-            engine.setSampleRate(sr);
-        });
-        distortion_r.forEach([sr](shapetaker::DistortionEngine& engine) {
-            engine.setSampleRate(sr);
-        });
-
+        currentSampleRate = APP->engine->getSampleRate();
+        configureOversampling();
         resetLevelTracking();
     }
 
@@ -840,6 +655,55 @@ struct Chiaroscuro : Module {
         wetLevelR.reset();
         makeupGainL.forEach([](float& g) { g = 1.0f; });
         makeupGainR.forEach([](float& g) { g = 1.0f; });
+        for (auto& state : oversampleStateL) {
+            state.reset();
+        }
+        for (auto& state : oversampleStateR) {
+            state.reset();
+        }
+    }
+
+    void configureOversampling() {
+        float oversampleRate = currentSampleRate * oversampleFactor;
+        distortion_l.forEach([oversampleRate](shapetaker::DistortionEngine& engine) {
+            engine.setSampleRate(oversampleRate);
+        });
+        distortion_r.forEach([oversampleRate](shapetaker::DistortionEngine& engine) {
+            engine.setSampleRate(oversampleRate);
+        });
+        for (auto& state : oversampleStateL) {
+            state.configure(currentSampleRate, oversampleFactor);
+        }
+        for (auto& state : oversampleStateR) {
+            state.configure(currentSampleRate, oversampleFactor);
+        }
+    }
+
+    void setOversampleFactor(int factor) {
+        factor = rack::math::clamp(factor, 1, 8);
+        if (factor == oversampleFactor)
+            return;
+        oversampleFactor = factor;
+        configureOversampling();
+        resetLevelTracking();
+    }
+
+    json_t* dataToJson() override {
+        json_t* rootJ = json_object();
+        json_object_set_new(rootJ, "sidechainMode", json_integer(sidechainMode));
+        json_object_set_new(rootJ, "oversampleFactor", json_integer(oversampleFactor));
+        return rootJ;
+    }
+
+    void dataFromJson(json_t* rootJ) override {
+        json_t* sidechainModeJ = json_object_get(rootJ, "sidechainMode");
+        if (sidechainModeJ)
+            sidechainMode = json_integer_value(sidechainModeJ);
+        json_t* oversampleJ = json_object_get(rootJ, "oversampleFactor");
+        if (oversampleJ) {
+            int factor = json_integer_value(oversampleJ);
+            setOversampleFactor(factor);
+        }
     }
 
     void process(const ProcessArgs& args) override {
@@ -925,20 +789,44 @@ struct Chiaroscuro : Module {
         smoothed_drive_display += (processed_drive - smoothed_drive_display) * drive_smooth_factor;
         smoothed_mix_display += (processed_mix - smoothed_mix_display) * mix_smooth_factor;
 
-        // Enhanced sidechain behavior: when connected, modulate distortion AND drive together
+        // Enhanced sidechain behavior with three modes
         float combined_distortion, effective_drive, effective_mix;
 
+        // Sidechain LED: lights up based on sidechain envelope level
+        lights[SIDECHAIN_LED].setBrightness(inputs[SIDECHAIN_INPUT].isConnected() ? sc_env : 0.0f);
+
         if (inputs[SIDECHAIN_INPUT].isConnected()) {
-            // Sidechain mode: knobs set maximum range, sidechain signal controls intensity
             float sidechain_intensity = sc_env; // 0.0 to 1.0 based on sidechain input
 
-            // Both distortion and drive scale together with sidechain
-            // Knob positions set the maximum values that sidechain can reach
-            combined_distortion = dist_amount * sidechain_intensity;
-            effective_drive = drive * sidechain_intensity;
+            switch (sidechainMode) {
+                case 0: // Enhancement mode (original behavior)
+                    // Both distortion and drive scale together with sidechain
+                    // Knob positions set the maximum values that sidechain can reach
+                    combined_distortion = dist_amount * sidechain_intensity;
+                    effective_drive = drive * sidechain_intensity;
+                    effective_mix = fmaxf(mix, 0.8f); // At least 80% wet
+                    break;
 
-            // Mix stays at maximum (or near maximum) for full effect
-            effective_mix = fmaxf(mix, 0.8f); // At least 80% wet, respects knob if higher
+                case 1: // Ducking mode (inverse)
+                    // Reduce distortion when sidechain is hot
+                    combined_distortion = dist_amount * (1.0f - sidechain_intensity);
+                    effective_drive = drive * (1.0f - sidechain_intensity * 0.7f); // Partial ducking
+                    effective_mix = mix;
+                    break;
+
+                case 2: // Direct mode
+                    // Sidechain directly controls distortion amount
+                    combined_distortion = sidechain_intensity;
+                    effective_drive = drive;
+                    effective_mix = mix;
+                    break;
+
+                default:
+                    combined_distortion = dist_amount;
+                    effective_drive = drive;
+                    effective_mix = mix;
+                    break;
+            }
         } else {
             // Normal mode: knobs control directly
             combined_distortion = dist_amount;
@@ -1014,14 +902,51 @@ struct Chiaroscuro : Module {
             float vca_l = base_vca_l * aggression_gain;
             float vca_r = base_vca_r * aggression_gain;
             
-            // Process distortion for this voice with consistent headroom reference
+            // Process distortion for this voice
             float normalized_l = (vca_l * pre_drive_boost) * invNormalization;
             float normalized_r = (vca_r * pre_drive_boost) * invNormalization;
 
-            float wetNormL = distortion_l[ch].process(normalized_l, distortion_amount,
-                                                     (shapetaker::DistortionEngine::Type)distortion_type);
-            float wetNormR = distortion_r[ch].process(normalized_r, distortion_amount,
-                                                     (shapetaker::DistortionEngine::Type)distortion_type);
+            float wetNormL = 0.0f;
+            float wetNormR = 0.0f;
+
+            if (oversampleFactor <= 1) {
+                wetNormL = distortion_l[ch].process(normalized_l, distortion_amount,
+                                                   (shapetaker::DistortionEngine::Type)distortion_type);
+                wetNormR = distortion_r[ch].process(normalized_r, distortion_amount,
+                                                   (shapetaker::DistortionEngine::Type)distortion_type);
+                oversampleStateL[ch].prevInput = normalized_l;
+                oversampleStateR[ch].prevInput = normalized_r;
+            } else {
+                auto& osL = oversampleStateL[ch];
+                auto& osR = oversampleStateR[ch];
+                float prevL = osL.prevInput;
+                float prevR = osR.prevInput;
+                float accumL = 0.0f;
+                float accumR = 0.0f;
+                const int factor = oversampleFactor;
+                const float step = 1.0f / static_cast<float>(factor);
+
+                for (int os = 0; os < factor; ++os) {
+                    float t = (os + 1) * step;
+                    float interpL = rack::math::crossfade(prevL, normalized_l, t);
+                    float interpR = rack::math::crossfade(prevR, normalized_r, t);
+
+                    float distortedL = distortion_l[ch].process(
+                        interpL, distortion_amount,
+                        (shapetaker::DistortionEngine::Type)distortion_type);
+                    float distortedR = distortion_r[ch].process(
+                        interpR, distortion_amount,
+                        (shapetaker::DistortionEngine::Type)distortion_type);
+
+                    accumL += osL.filter(distortedL);
+                    accumR += osR.filter(distortedR);
+                }
+
+                osL.prevInput = normalized_l;
+                osR.prevInput = normalized_r;
+                wetNormL = accumL * step;
+                wetNormR = accumR * step;
+            }
 
             float wet_l = wetNormL * normalizationVoltage;
             float wet_r = wetNormR * normalizationVoltage;
@@ -1056,13 +981,47 @@ struct Chiaroscuro : Module {
             float compensated_r = wet_r * makeupGainR[ch];
 
             // Mix between clean and distorted signals - use effective mix for sidechain mode
-            float output_l = vca_l + effective_mix * (compensated_l - vca_l);
-            float output_r = vca_r + effective_mix * (compensated_r - vca_r);
+            // Simple linear crossfade with slight boost to compensate for wet/dry balance
+            float output_l = vca_l * (1.0f - effective_mix) + compensated_l * effective_mix;
+            float output_r = vca_r * (1.0f - effective_mix) + compensated_r * effective_mix;
+
+            // Apply gentle makeup gain at higher mix values to compensate for level drop
+            // +1.5dB at 100% mix to maintain consistent loudness
+            float mix_makeup = 1.0f + effective_mix * 0.19f;
+            output_l *= mix_makeup;
+            output_r *= mix_makeup;
+
+            // Safety check for NaN/infinity
+            if (!std::isfinite(output_l)) output_l = 0.0f;
+            if (!std::isfinite(output_r)) output_r = 0.0f;
+
+            // Stereo width processing (mid/side)
+            float width = params[WIDTH_PARAM].getValue();
+            if (width != 0.0f) {
+                // Convert to mid/side
+                float mid = (output_l + output_r) * 0.5f;
+                float side = (output_l - output_r) * 0.5f;
+
+                // Apply width adjustment
+                // width = -1.0: full mono (side = 0)
+                // width =  0.0: normal stereo (no change)
+                // width = +1.0: wide stereo (side * 2)
+                float width_scale = 1.0f + width;
+                if (width < 0.0f) {
+                    // Negative width: reduce side (towards mono)
+                    width_scale = 1.0f + width; // 0.0 to 1.0
+                }
+                side *= width_scale;
+
+                // Convert back to L/R
+                output_l = mid + side;
+                output_r = mid - side;
+            }
 
             const float headroom = 9.5f;
             output_l = headroom * std::tanh(output_l / headroom);
             output_r = headroom * std::tanh(output_r / headroom);
-            
+
             outputs[AUDIO_L_OUTPUT].setVoltage(output_l, ch);
             outputs[AUDIO_R_OUTPUT].setVoltage(output_r, ch);
         }
@@ -1305,6 +1264,50 @@ struct PixelRingWidget : TransparentWidget {
 
 struct ChiaroscuroWidget : ModuleWidget {
 
+    void appendContextMenu(Menu* menu) override {
+        Chiaroscuro* module = dynamic_cast<Chiaroscuro*>(this->module);
+        if (!module)
+            return;
+
+        menu->addChild(new MenuSeparator);
+        menu->addChild(createMenuLabel("Oversampling"));
+
+        struct OversampleFactorItem : MenuItem {
+            Chiaroscuro* module;
+            int factor;
+            void onAction(const event::Action& e) override {
+                module->setOversampleFactor(factor);
+            }
+            void step() override {
+                rightText = (module->oversampleFactor == factor) ? "✔" : "";
+                MenuItem::step();
+            }
+        };
+
+        menu->addChild(construct<OversampleFactorItem>(&MenuItem::text, "1x", &OversampleFactorItem::module, module, &OversampleFactorItem::factor, 1));
+        menu->addChild(construct<OversampleFactorItem>(&MenuItem::text, "2x", &OversampleFactorItem::module, module, &OversampleFactorItem::factor, 2));
+        menu->addChild(construct<OversampleFactorItem>(&MenuItem::text, "4x", &OversampleFactorItem::module, module, &OversampleFactorItem::factor, 4));
+
+        menu->addChild(new MenuSeparator);
+        menu->addChild(createMenuLabel("Sidechain Mode"));
+
+        struct SidechainModeItem : MenuItem {
+            Chiaroscuro* module;
+            int mode;
+            void onAction(const event::Action& e) override {
+                module->sidechainMode = mode;
+            }
+            void step() override {
+                rightText = (module->sidechainMode == mode) ? "✔" : "";
+                MenuItem::step();
+            }
+        };
+
+        menu->addChild(construct<SidechainModeItem>(&MenuItem::text, "Enhancement (Trigger)", &SidechainModeItem::module, module, &SidechainModeItem::mode, 0));
+        menu->addChild(construct<SidechainModeItem>(&MenuItem::text, "Ducking (Inverse)", &SidechainModeItem::module, module, &SidechainModeItem::mode, 1));
+        menu->addChild(construct<SidechainModeItem>(&MenuItem::text, "Direct Control", &SidechainModeItem::module, module, &SidechainModeItem::mode, 2));
+    }
+
     // Draw panel background texture to match other modules
     void draw(const DrawArgs& args) override {
         std::shared_ptr<Image> bg = APP->window->loadImage(asset::plugin(pluginInstance, "res/panels/vcv-panel-background.png"));
@@ -1355,10 +1358,12 @@ struct ChiaroscuroWidget : ModuleWidget {
         auto* linkSwitch = createParamCentered<ShapetakerVintageRussianToggle>(linkCenter, module, Chiaroscuro::LINK_PARAM);
         addParam(linkSwitch);
         
-        // Sidechain input
+        // Sidechain input with LED indicator
         addInput(createInputCentered<ShapetakerBNCPort>(centerPx("sidechain-detect-cv", 7.5756826f, 101.61994f), module, Chiaroscuro::SIDECHAIN_INPUT));
-        
-        
+
+        // Sidechain activity LED (small green LED near sidechain input)
+        addChild(createLightCentered<SmallLight<GreenLight>>(centerPx("sidechain-led", 12.0f, 101.61994f), module, Chiaroscuro::SIDECHAIN_LED));
+
         // Distortion type CV input
         addInput(createInputCentered<ShapetakerBNCPort>(centerPx("dist-type-cv", 36.523819f, 82.450134f), module, Chiaroscuro::TYPE_CV_INPUT));
         
