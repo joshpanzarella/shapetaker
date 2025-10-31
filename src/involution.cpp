@@ -162,6 +162,14 @@ struct Involution : Module {
     static constexpr float CHARACTER_SMOOTH_TC = 0.015f;
     static constexpr float EFFECT_GATE_SMOOTH_TC = 0.04f;
     static constexpr float ETHEREAL_PARAM_SMOOTH_TC = 0.05f;
+
+    // Character drama shaping - set mix to 0 to revert to legacy linear response
+    static constexpr float AURA_DRAMA_MIX = 1.f;
+    static constexpr float AURA_DRAMA_EXP = 0.55f;
+    static constexpr float ORBIT_DRAMA_MIX = 1.f;
+    static constexpr float ORBIT_DRAMA_EXP = 0.35f;
+    static constexpr float TIDE_DRAMA_MIX = 1.f;
+    static constexpr float TIDE_DRAMA_EXP = 0.7f;
     
     // Parameter change tracking for bidirectional linking
     float lastCutoffA = -1.f, lastCutoffB = -1.f;
@@ -405,14 +413,30 @@ struct Involution : Module {
         orbitAmount = clamp(orbitAmount, 0.f, 1.f);
         tideAmount = clamp(tideAmount, 0.f, 1.f);
 
+        float auraRaw = auraAmount;
+        float orbitRaw = orbitAmount;
+        float tideRaw = tideAmount;
+
+        auto applyCharacterDrama = [](float value, float mix, float exponent) {
+            float valueClamped = rack::math::clamp(value, 0.f, 1.f);
+            float mixClamped = rack::math::clamp(mix, 0.f, 1.f);
+            float exponentClamped = rack::math::clamp(exponent, 0.125f, 8.f);
+            float shaped = std::pow(valueClamped, exponentClamped);
+            return rack::math::crossfade(valueClamped, shaped, mixClamped);
+        };
+
+        auraAmount = applyCharacterDrama(auraRaw, AURA_DRAMA_MIX, AURA_DRAMA_EXP);
+        orbitAmount = applyCharacterDrama(orbitRaw, ORBIT_DRAMA_MIX, ORBIT_DRAMA_EXP);
+        tideAmount = applyCharacterDrama(tideRaw, TIDE_DRAMA_MIX, TIDE_DRAMA_EXP);
+
         float rawEffectIntensity = std::max(auraAmount, std::max(orbitAmount, tideAmount));
         float effectGateTarget = rack::math::clamp(rawEffectIntensity, 0.f, 1.f);
         float effectBlend = effectGateSmooth.process(effectGateTarget, args.sampleTime, EFFECT_GATE_SMOOTH_TC);
 
         float driveLight = DRIVE_FIXED_NORMALIZED;
-        float auraLight = auraAmount;
-        float orbitLight = orbitAmount;
-        float tideLight = tideAmount;
+        float auraLight = auraRaw;
+        float orbitLight = orbitRaw;
+        float tideLight = tideRaw;
 
         float knobChaosRate = clamp(params[CHAOS_RATE_PARAM].getValue(), CHAOS_RATE_MIN_HZ, CHAOS_RATE_MAX_HZ);
         float chaosTarget = knobChaosRate;
@@ -592,25 +616,36 @@ struct Involution : Module {
                         float lowFreqBlend = rack::math::clamp((cutoffDrama - 0.18f) / 0.22f, 0.f, 1.f);
                         lowFreqBlend = lowFreqBlend * lowFreqBlend * (3.f - 2.f * lowFreqBlend);
 
-                        float diffusionTarget = effectAmount * (0.15f + auraAmount * 0.55f);
-                        diffusionTarget = clamp(diffusionTarget, 0.f, 0.85f);
-                        float diffusion = smoothScalar(state.smoothedDiffusion, diffusionTarget, 0.f, 0.85f);
+                        float diffusionTarget = effectAmount * (0.25f
+                            + auraAmount * 0.95f
+                            + tideAmount * 0.2f
+                            + resonanceInfluence * 0.25f);
+                        diffusionTarget = clamp(diffusionTarget, 0.f, 0.92f);
+                        float diffusion = smoothScalar(state.smoothedDiffusion, diffusionTarget, 0.f, 0.92f);
 
-                        float feedbackTarget = effectAmount * (0.08f + orbitAmount * 0.6f);
-                        feedbackTarget = clamp(feedbackTarget, 0.f, 0.7f);
-                        float feedback = smoothScalar(state.smoothedFeedback, feedbackTarget, 0.f, 0.7f);
+                        float feedbackTarget = effectAmount * (0.12f
+                            + orbitAmount * 0.75f
+                            + auraAmount * 0.15f);
+                        feedbackTarget = clamp(feedbackTarget, 0.f, 0.82f);
+                        float feedback = smoothScalar(state.smoothedFeedback, feedbackTarget, 0.f, 0.82f);
 
-                        float shimmerTarget = effectAmount * tideAmount * 0.65f;
+                        float shimmerTarget = effectAmount * (tideAmount * 0.75f + auraAmount * 0.45f);
                         float shimmerLift = smoothScalar(state.smoothedShimmer, shimmerTarget, 0.f, 0.8f);
 
-                        float haloBlendTarget = effectAmount * (0.25f + auraAmount * 0.45f);
-                        haloBlendTarget = clamp(haloBlendTarget, 0.f, 0.8f);
-                        float haloBlend = smoothScalar(state.smoothedHaloMix, haloBlendTarget, 0.f, 0.8f);
+                        float haloBlendTarget = effectAmount * (0.32f
+                            + auraAmount * 0.6f
+                            + orbitAmount * 0.2f);
+                        haloBlendTarget = clamp(haloBlendTarget, 0.f, 0.85f);
+                        float haloBlend = smoothScalar(state.smoothedHaloMix, haloBlendTarget, 0.f, 0.85f);
 
-                        float modulationDepthTarget = effectAmount * (0.0008f + tideAmount * 0.0025f) * args.sampleRate;
-                        float modDepth = smoothScalar(state.smoothedModDepth, modulationDepthTarget, 0.f, args.sampleRate * 0.03f);
+                        float modulationDepthTarget = effectAmount * (
+                            0.0015f
+                            + tideAmount * 0.004f
+                            + auraAmount * 0.0025f
+                        ) * args.sampleRate;
+                        float modDepth = smoothScalar(state.smoothedModDepth, modulationDepthTarget, 0.f, args.sampleRate * 0.045f);
 
-                        float stereoWidthTarget = stereoSkew * (0.25f + orbitAmount * 0.5f);
+                        float stereoWidthTarget = stereoSkew * (0.35f + orbitAmount * 0.55f);
                         stereoWidthTarget += (orbitAmount - 0.5f) * 0.2f;
                         stereoWidthTarget = rack::math::clamp(stereoWidthTarget, -1.f, 1.f);
                         float effectiveStereoSkew = smoothScalar(state.smoothedStereoSkew, stereoWidthTarget, -1.f, 1.f);
@@ -628,23 +663,24 @@ struct Involution : Module {
                             }
 
                             float baseDelay = baseDelaySeconds[s] * args.sampleRate;
-                            float sizeScale = 1.f + auraAmount * 0.35f + tideAmount * 0.25f;
+                            float sizeScale = 1.05f + auraAmount * 0.5f + tideAmount * 0.35f;
                             float stereoBias = 1.f + effectiveStereoSkew * 0.08f * (s + 1);
-                            float tonalBias = 0.85f + 0.25f * cutoffDrama + 0.1f * resonanceNorm;
-                            float modulation = std::sin(state.modPhase[s] + state.phaseOffset[s] + swirlSeed * (0.3f + 0.15f * s));
-                            float delayTarget = baseDelay * sizeScale * tonalBias * stereoBias + modulation * modDepth * (1.f + 0.2f * s);
+                            float tonalBias = 0.85f + 0.3f * cutoffDrama + 0.12f * resonanceNorm;
+                            float modulation = std::sin(state.modPhase[s] + state.phaseOffset[s] + swirlSeed * (0.28f + 0.18f * s));
+                            float delayTarget = baseDelay * sizeScale * tonalBias * stereoBias + modulation * modDepth * (1.1f + 0.22f * s);
                             float maxDelaySamples = std::max(state.delays[s].maxDelaySamples(), 16.f);
                             float smoothedDelay = smoothScalar(state.smoothedDelay[s], delayTarget, 12.f, maxDelaySamples);
 
                             float stageBlendBase =
-                                effectAmount * (0.12f + 0.06f * s)
-                                + auraAmount * 0.1f;
-                            float stageBlendTarget = clamp(stageBlendBase, 0.f, 0.55f);
-                            stageBlendTarget = smoothScalar(state.smoothedStageBlend[s], stageBlendTarget, 0.f, 0.55f);
+                                effectAmount * (0.2f + 0.09f * s)
+                                + auraAmount * 0.18f
+                                + orbitAmount * 0.14f;
+                            float stageBlendTarget = clamp(stageBlendBase, 0.f, 0.65f);
+                            stageBlendTarget = smoothScalar(state.smoothedStageBlend[s], stageBlendTarget, 0.f, 0.6f);
                             float stageBlend = stageBlendTarget;
 
                             float stageInputDry = rack::math::crossfade(feed, cloud, stageBlend);
-                            float stageInput = stageInputDry + shimmerLift * cloud * 0.2f;
+                            float stageInput = stageInputDry + shimmerLift * cloud * 0.25f;
                             float stageOutputRaw = state.delays[s].process(stageInput, smoothedDelay, feedback);
                             float stageOutput = stageOutputRaw;
                             cloud += stageOutput * stageWeights[s];
@@ -653,10 +689,10 @@ struct Involution : Module {
 
                         float halo = cloud * (1.f + shimmerLift * 0.5f);
                         halo = rack::math::clamp(halo, -12.f, 12.f);
-                        float haloMix = clamp(haloBlend, 0.f, 0.85f);
+                        float haloMix = clamp(haloBlend, 0.f, 0.9f);
 
                         // Treat halo as an additive ambience so the dry tone never fully disappears.
-                        float wetGain = haloMix * (0.45f + 0.2f * effectAmount);
+                        float wetGain = haloMix * (0.6f + 0.28f * effectAmount);
                         float blended = input + wetGain * halo;
 
                         // Subtle makeup gain tied to Aura keeps perceived loudness closer to the dry tone

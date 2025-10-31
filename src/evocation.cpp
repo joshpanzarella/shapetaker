@@ -235,8 +235,8 @@ struct Evocation : Module {
     int currentTriggerChannels = 0;
     int currentGateChannels = 0;
 
-    // Voice allocation for monophonic inputs
-    int nextVoiceIndex = 0; // Round-robin voice allocation
+    // Round-robin voice allocator for mono sources and manual triggers
+    int nextVoiceIndex = 0;
 
     // Triggers
     dsp::SchmittTrigger triggerTrigger; // For button only
@@ -1109,12 +1109,23 @@ struct Evocation : Module {
 
         // Manual trigger acts as a one-shot gate
         if (manualTrigger) {
-            int voice = allocateTriggerVoice(0, 1);
-            adsrTriggerPulses[voice].trigger(ADSR_TRIGGER_PULSE_TIME);
-            adsrGateSignals[voice] = false;
-            adsrTriggerOneShot[voice] = true;
-            adsrGateHeld[voice] = false;
-            currentTriggerChannels = std::max(currentTriggerChannels, voice + 1);
+            int totalManualChannels = std::max(1, std::max(detectedTriggerChannels, detectedGateChannels));
+            if (totalManualChannels <= 1) {
+                int voice = allocateTriggerVoice(0, totalManualChannels);
+                adsrTriggerPulses[voice].trigger(ADSR_TRIGGER_PULSE_TIME);
+                adsrGateSignals[voice] = false;
+                adsrTriggerOneShot[voice] = true;
+                adsrGateHeld[voice] = false;
+            } else {
+                for (int c = 0; c < totalManualChannels && c < MAX_POLY_CHANNELS; ++c) {
+                    int voice = clamp(c, 0, MAX_POLY_CHANNELS - 1);
+                    adsrTriggerPulses[voice].trigger(ADSR_TRIGGER_PULSE_TIME);
+                    adsrGateSignals[voice] = false;
+                    adsrTriggerOneShot[voice] = true;
+                    adsrGateHeld[voice] = false;
+                }
+            }
+            currentTriggerChannels = std::max(currentTriggerChannels, totalManualChannels);
         }
 
         // Process trigger inputs
@@ -1125,7 +1136,7 @@ struct Evocation : Module {
                 adsrGateSignals[voice] = false;
                 adsrTriggerOneShot[voice] = true;
                 adsrGateHeld[voice] = false;
-                currentTriggerChannels = std::max(currentTriggerChannels, voice + 1);
+                currentTriggerChannels = std::max(currentTriggerChannels, std::max(1, detectedTriggerChannels));
             }
         }
 
@@ -1309,17 +1320,8 @@ struct Evocation : Module {
             adsrPhaseNormalized[voice] = clamp(phaseNorm, 0.f, 1.f);
         }
 
-        int outputChannels = std::max(currentTriggerChannels, currentGateChannels);
-        if (outputChannels == 0) {
-            for (int voice = MAX_POLY_CHANNELS - 1; voice >= 0; --voice) {
-                if (adsrValues[voice] > 1e-4f || adsrGateSignals[voice] || adsrTriggerOneShot[voice]) {
-                    outputChannels = voice + 1;
-                    break;
-                }
-            }
-        }
-        if (outputChannels == 0)
-            outputChannels = 1;
+        int expectedChannels = std::max(currentTriggerChannels, currentGateChannels);
+        int outputChannels = std::max(expectedChannels, 1);
 
         for (int outputIndex = 0; outputIndex < 4; ++outputIndex) {
             PlaybackState& pb = playback[outputIndex];
@@ -1328,30 +1330,84 @@ struct Evocation : Module {
             outputs[ENV_1_EOC_OUTPUT + outputIndex].setChannels(outputChannels);
             outputs[ENV_1_GATE_OUTPUT + outputIndex].setChannels(outputChannels);
 
-            for (int c = 0; c < outputChannels; ++c) {
-                float envValue = (c < MAX_POLY_CHANNELS) ? adsrValues[c] : 0.f;
-                envValue = clamp(envValue, 0.f, 1.f);
+            if (outputChannels == 1) {
+                float envValue = 0.f;
+                bool gateHigh = false;
+                bool eocHigh = false;
 
-                if (invertStates[outputIndex]) {
-                    envValue = 1.f - envValue;
+                for (int voice = 0; voice < MAX_POLY_CHANNELS; ++voice) {
+                    float voiceEnv = clamp(adsrValues[voice], 0.f, 1.f);
+                    bool voiceGate = adsrGateSignals[voice] || adsrTriggerOneShot[voice] || adsrValues[voice] > 1e-3f;
+                    bool completed = adsrCompleted[voice];
+
+                    if (completed) {
+                        pb.eocPulse[voice].trigger(1e-3f);
+                    }
+                    bool eocPulse = pb.eocPulse[voice].process(sampleTime);
+
+                    envValue = std::max(envValue, voiceEnv);
+                    gateHigh = gateHigh || voiceGate;
+                    eocHigh = eocHigh || eocPulse;
+
+                    pb.active[voice] = voiceGate;
+                    pb.phase[voice] = adsrPhaseNormalized[voice];
+                    pb.smoothedVoltage[voice] = voiceEnv * 10.f;
                 }
 
-                float outputVoltage = envValue * 10.f;
-                outputs[ENV_1_OUTPUT + outputIndex].setVoltage(outputVoltage, c);
+                float processedEnv = invertStates[outputIndex] ? (1.f - envValue) : envValue;
+                processedEnv = clamp(processedEnv, 0.f, 1.f);
+                float outputVoltage = processedEnv * 10.f;
 
-                bool gateHigh = (c < MAX_POLY_CHANNELS) ? (adsrGateSignals[c] || adsrTriggerOneShot[c] || adsrValues[c] > 1e-3f) : false;
-                outputs[ENV_1_GATE_OUTPUT + outputIndex].setVoltage(gateHigh ? 10.f : 0.f, c);
+                outputs[ENV_1_OUTPUT + outputIndex].setVoltage(outputVoltage, 0);
+                outputs[ENV_1_GATE_OUTPUT + outputIndex].setVoltage(gateHigh ? 10.f : 0.f, 0);
+                outputs[ENV_1_EOC_OUTPUT + outputIndex].setVoltage(eocHigh ? 10.f : 0.f, 0);
 
-                bool completed = (c < MAX_POLY_CHANNELS) ? adsrCompleted[c] : false;
-                if (completed) {
-                    pb.eocPulse[c].trigger(1e-3f);
+                // Ensure higher channels remain silent
+                for (int c = 1; c < outputChannels; ++c) {
+                    outputs[ENV_1_OUTPUT + outputIndex].setVoltage(0.f, c);
+                    outputs[ENV_1_GATE_OUTPUT + outputIndex].setVoltage(0.f, c);
+                    outputs[ENV_1_EOC_OUTPUT + outputIndex].setVoltage(0.f, c);
                 }
-                float eocVoltage = pb.eocPulse[c].process(sampleTime) ? 10.f : 0.f;
-                outputs[ENV_1_EOC_OUTPUT + outputIndex].setVoltage(eocVoltage, c);
+            } else {
+                std::array<bool, MAX_POLY_CHANNELS> voiceUsed{};
+                voiceUsed.fill(false);
 
-                pb.active[c] = gateHigh;
-                pb.phase[c] = (c < MAX_POLY_CHANNELS) ? adsrPhaseNormalized[c] : 0.f;
-                pb.smoothedVoltage[c] = outputVoltage;
+                for (int c = 0; c < outputChannels; ++c) {
+                    int voice = clamp(c, 0, MAX_POLY_CHANNELS - 1);
+                    voiceUsed[voice] = true;
+
+                    float envValue = clamp(adsrValues[voice], 0.f, 1.f);
+                    if (invertStates[outputIndex]) {
+                        envValue = 1.f - envValue;
+                    }
+
+                    float outputVoltage = envValue * 10.f;
+                    outputs[ENV_1_OUTPUT + outputIndex].setVoltage(outputVoltage, c);
+
+                    bool gateHigh = adsrGateSignals[voice] || adsrTriggerOneShot[voice] || adsrValues[voice] > 1e-3f;
+                    outputs[ENV_1_GATE_OUTPUT + outputIndex].setVoltage(gateHigh ? 10.f : 0.f, c);
+
+                    bool completed = adsrCompleted[voice];
+                    if (completed) {
+                        pb.eocPulse[voice].trigger(1e-3f);
+                    }
+                    float eocVoltage = pb.eocPulse[voice].process(sampleTime) ? 10.f : 0.f;
+                    outputs[ENV_1_EOC_OUTPUT + outputIndex].setVoltage(eocVoltage, c);
+
+                    pb.active[voice] = gateHigh;
+                    pb.phase[voice] = adsrPhaseNormalized[voice];
+                    pb.smoothedVoltage[voice] = outputVoltage;
+                }
+
+                // Clear any voices that were not written this frame to keep state consistent
+                for (int voice = 0; voice < MAX_POLY_CHANNELS; ++voice) {
+                    if (!voiceUsed[voice]) {
+                        pb.active[voice] = false;
+                        pb.smoothedVoltage[voice] = 0.f;
+                        pb.phase[voice] = 0.f;
+                        pb.eocPulse[voice].process(sampleTime);
+                    }
+                }
             }
         }
 
@@ -1598,13 +1654,22 @@ struct Evocation : Module {
 
     int getActiveVoiceChannels(int index) const {
         if (mode == EnvelopeMode::ADSR) {
-            int channels = 0;
+            int activeVoices = 0;
+            int highestVoice = -1;
             for (int v = 0; v < MAX_POLY_CHANNELS; ++v) {
                 if (adsrGateSignals[v] || adsrTriggerOneShot[v] || adsrValues[v] > 1e-3f) {
-                    channels = v + 1;
+                    activeVoices++;
+                    highestVoice = v;
                 }
             }
-            return channels;
+            int expected = std::max(currentTriggerChannels, currentGateChannels);
+            if (expected <= 1) {
+                return (activeVoices > 0) ? 1 : 0;
+            }
+            if (activeVoices == 0) {
+                return expected;
+            }
+            return std::max(expected, highestVoice + 1);
         }
         if (index < 0 || index >= NUM_ENVELOPES)
             return 0;

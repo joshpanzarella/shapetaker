@@ -7,6 +7,9 @@
 #include <string>
 #include <cctype>
 
+// Forward declaration for Chiaroscuro module (needed by widgets)
+struct Chiaroscuro;
+
 // Custom larger VU meter widget for better visibility
 // Using VU meter from utilities (implementation moved to ui/widgets.hpp)
 
@@ -58,31 +61,24 @@ struct VintageDotMatrix : Widget {
         drawHardwareFrame(args);
 
         // Get parameters from Chiaroscuro module
-        // For now, derive the LED color values from the actual LED brightness values
-        // This ensures perfect color matching since we're using the exact same data the LEDs use
         float distortion = 0.0f;
         float drive = module->params[4].getValue();      // DRIVE_PARAM
         float mix = module->params[6].getValue();        // MIX_PARAM
 
+        // Get distortion value from LED lights (temporary until we can access module members)
         if (module) {
-            // Extract distortion value from LED brightness calculations
-            // The LEDs use red/green/blue brightness values that encode the distortion level
-            float red_brightness = module->lights[0].getBrightness();   // DIST_LED_R
-            float green_brightness = module->lights[1].getBrightness(); // DIST_LED_G
+            float red_brightness = module->lights[0].getBrightness();
+            float green_brightness = module->lights[1].getBrightness();
+            const float max_brightness = 0.6f;
 
-            // Reverse-calculate distortion from LED values using the same logic as LEDs
-            const float base_brightness = 0.6f;
-            const float max_brightness = base_brightness;
-
-            if (red_brightness <= max_brightness && green_brightness >= max_brightness * 0.9f) {
-                // In the 0 to 0.5 range: red increases from 0 to max, green and blue stay max
+            // Reverse-calculate distortion from LED RGB using the color progression
+            if (red_brightness <= max_brightness * 0.1f) {
+                distortion = (red_brightness / max_brightness) * 0.25f;
+            } else if (green_brightness >= max_brightness * 0.9f) {
                 distortion = (red_brightness / max_brightness) * 0.5f;
-            } else if (red_brightness >= max_brightness * 0.9f) {
-                // In the 0.5 to 1.0 range: red stays max, green decreases
+            } else if (red_brightness >= max_brightness * 0.9f && green_brightness < max_brightness * 0.9f) {
                 distortion = 0.5f + (1.0f - (green_brightness / max_brightness)) * 0.5f;
             }
-
-            // Clamp to valid range
             distortion = clamp(distortion, 0.0f, 1.0f);
         }
 
@@ -147,64 +143,33 @@ struct VintageDotMatrix : Widget {
                 brightness += sin(animationPhase + x * 0.3f + y * 0.2f) * 0.03f;
                 brightness = clamp(brightness, 0.0f, 1.0f);
 
-                // LED matrix colors matching selector strip exactly
+                // LED matrix colors using shared utility function
                 NVGcolor dotColor;
                 if (brightness > 0.05f) {
-                    // Use EXACT same color scheme as selector LED strip
-                    float led_r, led_g, led_b;
-                    const float base_brightness = 0.6f;
-                    const float max_brightness = base_brightness;
-
-                    if (distortion <= 0.5f) {
-                        // 0 to 0.5: Teal to bright blue-purple
-                        led_r = distortion * 2.0f * max_brightness;
-                        led_g = max_brightness;
-                        led_b = max_brightness;
-                    } else {
-                        // 0.5 to 1.0: Bright blue-purple to dark purple
-                        led_r = max_brightness;
-                        led_g = 2.0f * (1.0f - distortion) * max_brightness;
-                        led_b = max_brightness * (1.7f - distortion * 0.7f);
-                    }
+                    // Use shared color utility (same calculation as module LEDs)
+                    shapetaker::RGBColor ledColor = shapetaker::LightingHelper::getChiaroscuroColor(distortion, 0.6f);
+                    const float max_brightness = 0.6f;
 
                     // Scale by dot brightness
-                    float r = led_r * brightness / max_brightness;
-                    float g = led_g * brightness / max_brightness;
-                    float b = led_b * brightness / max_brightness;
+                    float r = ledColor.r * brightness / max_brightness;
+                    float g = ledColor.g * brightness / max_brightness;
+                    float b = ledColor.b * brightness / max_brightness;
 
                     dotColor = nvgRGBAf(r, g, b, brightness);
                 } else {
-                    // Very dim background dots with same color logic
-                    float led_r, led_g, led_b;
-                    if (distortion <= 0.5f) {
-                        led_r = distortion * 2.0f * 0.1f;
-                        led_g = 0.1f;
-                        led_b = 0.1f;
-                    } else {
-                        led_r = 0.1f;
-                        led_g = 2.0f * (1.0f - distortion) * 0.1f;
-                        led_b = 0.1f * (1.7f - distortion * 0.7f);
-                    }
-                    dotColor = nvgRGBAf(led_r, led_g, led_b, 0.4f);
+                    // Very dim background dots using shared color utility
+                    shapetaker::RGBColor dimColor = shapetaker::LightingHelper::getChiaroscuroColor(distortion, 0.06f);
+                    dotColor = nvgRGBAf(dimColor.r, dimColor.g, dimColor.b, 0.4f);
                 }
 
                 // Draw the LED dot with slight glow
                 if (brightness > 0.3f) {
-                    // Glow effect using same color calculation
-                    float glow_r, glow_g, glow_b;
-                    if (distortion <= 0.5f) {
-                        glow_r = distortion * 2.0f * brightness;
-                        glow_g = brightness;
-                        glow_b = brightness;
-                    } else {
-                        glow_r = brightness;
-                        glow_g = 2.0f * (1.0f - distortion) * brightness;
-                        glow_b = brightness * (1.7f - distortion * 0.7f);
-                    }
+                    // Glow effect using cached LED color normalized to brightness
+                    shapetaker::RGBColor glowColor = shapetaker::LightingHelper::getChiaroscuroColor(distortion, brightness);
 
                     nvgBeginPath(args.vg);
                     nvgCircle(args.vg, dotX, dotY, dotSize * 0.8f);
-                    nvgFillColor(args.vg, nvgRGBAf(glow_r, glow_g, glow_b, brightness * 0.3f));
+                    nvgFillColor(args.vg, nvgRGBAf(glowColor.r, glowColor.g, glowColor.b, brightness * 0.3f));
                     nvgFill(args.vg);
                 }
 
@@ -806,6 +771,9 @@ struct Chiaroscuro : Module {
     // Smoothed distortion value for LED color calculation (same value LEDs use)
     float smoothed_distortion_for_leds = 0.0f;
 
+    // Cached LED color for sharing with widgets (calculated once per process cycle)
+    shapetaker::RGBColor currentLEDColor;
+
     // Wet/dry level tracking for auto-compensation
     shapetaker::FloatVoices cleanLevelL;
     shapetaker::FloatVoices cleanLevelR;
@@ -986,30 +954,17 @@ struct Chiaroscuro : Module {
         float smoothed_distortion = distortion_slew.process(args.sampleTime, combined_distortion);
         // Store for LED color matching in dot matrix
         smoothed_distortion_for_leds = smoothed_distortion;
-        
+
         // The actual distortion amount used in processing - use effective drive for sidechain mode
         float distortion_amount = smoothed_distortion * effective_drive;
-        
-        // LED brightness calculation
-        float red_brightness, green_brightness, blue_brightness;
-        const float base_brightness = 0.6f;
-        const float max_brightness = base_brightness;
-        
-        if (smoothed_distortion <= 0.5f) {
-            // 0 to 0.5: Teal to bright blue-purple
-            red_brightness = smoothed_distortion * 2.0f * max_brightness;
-            green_brightness = max_brightness;
-            blue_brightness = max_brightness;
-        } else {
-            // 0.5 to 1.0: Bright blue-purple to dark purple
-            red_brightness = max_brightness;
-            green_brightness = 2.0f * (1.0f - smoothed_distortion) * max_brightness;
-            blue_brightness = max_brightness * (1.7f - smoothed_distortion * 0.7f);
-        }
-        
-        lights[DIST_LED_R].setBrightness(red_brightness);   
-        lights[DIST_LED_G].setBrightness(green_brightness); 
-        lights[DIST_LED_B].setBrightness(blue_brightness);
+
+        // LED brightness calculation using shared utility
+        const float max_brightness = 0.6f;
+        currentLEDColor = shapetaker::LightingHelper::getChiaroscuroColor(smoothed_distortion, max_brightness);
+
+        lights[DIST_LED_R].setBrightness(currentLEDColor.r);
+        lights[DIST_LED_G].setBrightness(currentLEDColor.g);
+        lights[DIST_LED_B].setBrightness(currentLEDColor.b);
         
         // VCA gain calculation (polyphonic CV support)
         float base_vca_gain = params[VCA_PARAM].getValue();
@@ -1114,15 +1069,11 @@ struct Chiaroscuro : Module {
     }
 };
 
-
-
-// Forward declaration for Chiaroscuro module
-struct Chiaroscuro;
-
 // 8-bit style pixel ring display that surrounds the distortion selector
 // Hardware-feasible design that could be built with 24-32 RGB LEDs in a circle
 struct PixelRingWidget : TransparentWidget {
     Module* module = nullptr;
+    Chiaroscuro* chiaroscuroModule = nullptr;  // Typed pointer to avoid dynamic_cast
     int distParamId = -1;
     int driveParamId = -1;
     int mixParamId = -1;
@@ -1149,6 +1100,11 @@ struct PixelRingWidget : TransparentWidget {
     int distortionType = 0;
     float animationPhase = 0.0f;
 
+    // Previous values for conditional animation (#16)
+    float prevEclipseProgress = 0.0f;
+    float prevDriveIntensity = 0.0f;
+    float prevMixLevel = 0.0f;
+
     PixelRingWidget() {
         box.size = Vec(80, 80); // Smaller size for single ring
     }
@@ -1156,7 +1112,7 @@ struct PixelRingWidget : TransparentWidget {
     void step() override {
         TransparentWidget::step();
 
-        if (!module) return;
+        if (!chiaroscuroModule) return;
 
         float currentTime = glfwGetTime();
         float deltaTime = currentTime - lastTime;
@@ -1164,25 +1120,27 @@ struct PixelRingWidget : TransparentWidget {
         deltaTime = clamp(deltaTime, 0.0f, 1.0f / 30.0f);
 
         // Get smoothed display parameters (prevents audio-rate flickering)
-        Chiaroscuro* chiaroscuroModule = dynamic_cast<Chiaroscuro*>(module);
-        if (chiaroscuroModule) {
-            // Use smoothed values for LED display to prevent glitching at audio rates
-            eclipseProgress = clamp(chiaroscuroModule->smoothed_distortion_display, 0.0f, 1.0f);
-            driveIntensity = clamp(chiaroscuroModule->smoothed_drive_display, 0.0f, 1.0f);
-            mixLevel = clamp(chiaroscuroModule->smoothed_mix_display, 0.0f, 1.0f);
-            distortionType = (typeParamId >= 0) ? (int)module->params[typeParamId].getValue() : 0;
-        } else {
-            // Fallback to raw parameter values if cast fails
-            float distAmount = (distParamId >= 0) ? module->params[distParamId].getValue() : 0.0f;
-            float driveAmount = (driveParamId >= 0) ? module->params[driveParamId].getValue() : 0.0f;
-            float mixAmount = (mixParamId >= 0) ? module->params[mixParamId].getValue() : 0.0f;
-            distortionType = (typeParamId >= 0) ? (int)module->params[typeParamId].getValue() : 0;
+        // Use smoothed values for LED display to prevent glitching at audio rates
+        eclipseProgress = clamp(chiaroscuroModule->smoothed_distortion_display, 0.0f, 1.0f);
+        driveIntensity = clamp(chiaroscuroModule->smoothed_drive_display, 0.0f, 1.0f);
+        mixLevel = clamp(chiaroscuroModule->smoothed_mix_display, 0.0f, 1.0f);
+        distortionType = (typeParamId >= 0) ? (int)chiaroscuroModule->params[typeParamId].getValue() : 0;
 
-            eclipseProgress = clamp(distAmount, 0.0f, 1.0f);
-            driveIntensity = clamp(driveAmount, 0.0f, 1.0f);
-            mixLevel = clamp(mixAmount, 0.0f, 1.0f);
+        // Check if parameters have changed to conditionally pause animation
+        const float changeThreshold = 0.001f;
+        bool parametersStable =
+            fabsf(eclipseProgress - prevEclipseProgress) < changeThreshold &&
+            fabsf(driveIntensity - prevDriveIntensity) < changeThreshold &&
+            fabsf(mixLevel - prevMixLevel) < changeThreshold;
+
+        prevEclipseProgress = eclipseProgress;
+        prevDriveIntensity = driveIntensity;
+        prevMixLevel = mixLevel;
+
+        // Only animate when parameters are changing or drive is high (for sparkles)
+        if (!parametersStable || driveIntensity > 0.4f) {
+            animationPhase += deltaTime * 2.0f; // Slow animation for retro feel
         }
-        animationPhase += deltaTime * 2.0f; // Slow animation for retro feel
 
         updatePixelRing();
     }
@@ -1287,7 +1245,7 @@ struct PixelRingWidget : TransparentWidget {
     }
 
     void draw(const DrawArgs& args) override {
-        if (!module) return;
+        if (!chiaroscuroModule) return;
 
         Vec center = box.size.div(2);
         float ringRadius = 28.0f;  // Single ring radius (adjusted to meet larger switch)
@@ -1389,16 +1347,12 @@ struct ChiaroscuroWidget : ModuleWidget {
         
         // Linear/Exponential response switch
         Vec responseCenter = centerPx("lin-exp-switch", 34.048016f, 33.862297f);
-        auto* responseSwitch = createParamCentered<ShapetakerVintageToggleSwitch>(responseCenter, module, Chiaroscuro::RESPONSE_PARAM);
-        responseSwitch->box.size = mm2px(Vec(8.1225f, 16.245f));
-        responseSwitch->box.pos = responseCenter.minus(responseSwitch->box.size.div(2.f));
+        auto* responseSwitch = createParamCentered<ShapetakerVintageRussianToggle>(responseCenter, module, Chiaroscuro::RESPONSE_PARAM);
         addParam(responseSwitch);
         
         // Link switch
         Vec linkCenter = centerPx("lin-lr-switch", 34.048016f, 20.758846f);
-        auto* linkSwitch = createParamCentered<ShapetakerVintageToggleSwitch>(linkCenter, module, Chiaroscuro::LINK_PARAM);
-        linkSwitch->box.size = mm2px(Vec(8.1225f, 16.245f));
-        linkSwitch->box.pos = linkCenter.minus(linkSwitch->box.size.div(2.f));
+        auto* linkSwitch = createParamCentered<ShapetakerVintageRussianToggle>(linkCenter, module, Chiaroscuro::LINK_PARAM);
         addParam(linkSwitch);
         
         // Sidechain input
@@ -1444,6 +1398,7 @@ struct ChiaroscuroWidget : ModuleWidget {
         Vec selectorCenter = centerPx("dist-type-select", 42.631508f, 50.193539f);
         pixelRing->box.pos = selectorCenter.minus(pixelRing->box.size.div(2));
         pixelRing->module = module;
+        pixelRing->chiaroscuroModule = module;  // Store typed pointer to avoid dynamic_cast
         pixelRing->distParamId = Chiaroscuro::DIST_PARAM;
         pixelRing->driveParamId = Chiaroscuro::DRIVE_PARAM;
         pixelRing->mixParamId = Chiaroscuro::MIX_PARAM;
