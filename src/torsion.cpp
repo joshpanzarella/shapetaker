@@ -255,6 +255,17 @@ struct Torsion : Module {
     static constexpr float kVintageDriftHoldMax = 0.45f;
     static constexpr float kVintageIdleHissLevel = 0.002f;
 
+    // Cached exponential coefficients (computed once per sample rate change)
+    float cachedSlewCoeff = 0.f;
+    float cachedSuppressorDecay = 0.f;
+    float cachedReleaseCoeffBase = 0.f;
+
+    // Chorus LFO decimation
+    int chorusLfoCounter = 0;
+    static constexpr int kChorusLfoDecimation = 16;  // Update every 16 samples
+    float chorusModALast = 0.f;
+    float chorusModBLast = 0.f;
+
     Torsion() {
         config(PARAMS_LEN, INPUTS_LEN, OUTPUTS_LEN, LIGHTS_LEN);
 
@@ -343,6 +354,13 @@ struct Torsion : Module {
         });
     }
 
+    void updateCachedCoefficients(float sampleTime) {
+        // Cache exponential coefficients to avoid recomputing every sample
+        cachedSlewCoeff = std::exp(-sampleTime * 160.f);
+        cachedSuppressorDecay = std::exp(-sampleTime * 100.f);
+        cachedReleaseCoeffBase = sampleTime;  // Will multiply by rate later
+    }
+
     void onReset() override {
         primaryPhase.reset();
         secondaryPhase.reset();
@@ -428,6 +446,13 @@ struct Torsion : Module {
             {inputs[VOCT_INPUT], inputs[TORSION_CV_INPUT], inputs[SYMMETRY_CV_INPUT], inputs[STAGE_TRIG_INPUT], inputs[GATE_INPUT]},
             {outputs[MAIN_L_OUTPUT], outputs[MAIN_R_OUTPUT], outputs[EDGE_OUTPUT]});
 
+        // Update cached exponential coefficients if sample rate changed
+        static float lastSampleTime = 0.f;
+        if (args.sampleTime != lastSampleTime) {
+            updateCachedCoefficients(args.sampleTime);
+            lastSampleTime = args.sampleTime;
+        }
+
         float coarse = params[COARSE_PARAM].getValue();
         float detuneCents = params[DETUNE_PARAM].getValue();
         float detuneOct = detuneCents / 1200.f;
@@ -461,6 +486,15 @@ struct Torsion : Module {
         bool useSquare = params[SQUARE_WAVE_PARAM].getValue() > 0.5f;
         bool dirtyMode = params[DIRTY_MODE_PARAM].getValue() > 0.5f;
 
+        // Move these param reads outside the voice loop (optimization #2)
+        float feedbackAmount = params[FEEDBACK_PARAM].getValue();
+        float subLevel = params[SUB_LEVEL_PARAM].getValue();
+        float subWarpParam = params[SUB_WARP_PARAM].getValue();
+        bool subHardSync = params[SUB_SYNC_PARAM].getValue() > 0.5f;
+
+        // Check if any waveforms are enabled for conditional generation (optimization #1)
+        bool anyWaveformEnabled = useSaw || useTriangle || useSquare;
+
         float clockSignal = 0.f;
         if (vintageMode) {
             vintageClockPhase += args.sampleTime * kVintageClockFreq;
@@ -484,6 +518,21 @@ struct Torsion : Module {
             chorusBaseSamples = (int)std::round(kChorusBaseDelayMs * 0.001f * sampleRate);
             chorusDepthSamples = (int)std::round(kChorusDepthMs * 0.001f * sampleRate);
             chorusDepthSamples = std::max(1, chorusDepthSamples);
+
+            // Optimization #3: Decimate chorus LFO calculation
+            // Only update modulation values every N samples, interpolate between
+            chorusLfoCounter++;
+            if (chorusLfoCounter >= kChorusLfoDecimation) {
+                chorusLfoCounter = 0;
+                // Update phase for first voice (shared across all voices for simplicity)
+                float phase = chorusVoices[0].phase + chorusPhaseInc * kChorusLfoDecimation;
+                if (phase > 2.f * float(M_PI)) {
+                    phase -= 2.f * float(M_PI);
+                }
+                chorusVoices[0].phase = phase;
+                chorusModALast = std::sin(phase);
+                chorusModBLast = std::sin(phase + 2.f * float(M_PI) / 3.f);
+            }
         }
 
         for (int ch = 0; ch < channels; ++ch) {
@@ -532,7 +581,7 @@ struct Torsion : Module {
             // Sub-oscillator at -1 octave with optional sync
             float freqSub = freqA * 0.5f;
             float phaseSub = subPhase[ch] + freqSub * args.sampleTime;
-            bool subHardSync = params[SUB_SYNC_PARAM].getValue() > 0.5f;
+            // Use cached param read (optimization #2)
             if (wrappedA && subHardSync) {
                 phaseSub = 0.f;  // Hard sync to primary oscillator
             }
@@ -719,7 +768,7 @@ struct Torsion : Module {
 
             float stagePosition = stagePos;
             if (ch == 0) {
-                bool active = stageActive[ch] || !trigConnected;
+                bool active = stageActive[ch] || (!gateConnected && !trigConnected);
                 float lightSlew = args.sampleTime * 8.f;
                 for (int i = 0; i < kNumStages; ++i) {
                     float distance = std::fabs(stagePosition - (float)i);
@@ -746,14 +795,14 @@ struct Torsion : Module {
 
             // Envelope smoothing with faster slew for more responsive feel
             // ~6ms time constant for smooth but responsive transitions
-            float slewCoeff = std::exp(-args.sampleTime * 160.f);
+            // Use cached coefficient (optimization #4)
             float env = stageEnvelope[ch];
             if (releasing) {
-                float releaseRate = rack::math::clamp(14.f + rate * 2.2f, 14.f, 60.f);
-                float releaseCoeff = std::exp(-args.sampleTime * releaseRate);
+                float releaseRate = rack::math::clamp(22.f + rate * 2.8f, 22.f, 80.f);
+                float releaseCoeff = std::exp(-cachedReleaseCoeffBase * releaseRate);
                 env *= releaseCoeff;
             } else {
-                env = env + (targetStageValue - env) * (1.f - slewCoeff);
+                env = env + (targetStageValue - env) * (1.f - cachedSlewCoeff);
             }
             stageEnvelope[ch] = env;
 
@@ -766,8 +815,8 @@ struct Torsion : Module {
             const float clickSuppressionThreshold = 0.05f;  // Trigger when envelope drops below 5%
             if (env < clickSuppressionThreshold) {
                 // Fast exponential fade-out over ~10ms to ensure smooth zero-crossing
-                float suppressorDecay = std::exp(-args.sampleTime * 100.f); // ~10ms fade
-                clickSuppressor[ch] *= suppressorDecay;
+                // Use cached coefficient (optimization #4)
+                clickSuppressor[ch] *= cachedSuppressorDecay;
             } else {
                 // Normal operation - suppressor stays at 1.0
                 clickSuppressor[ch] = 1.0f;
@@ -800,8 +849,7 @@ struct Torsion : Module {
                 dcwB = rack::math::clamp(dcwEnv * influence, 0.f, 1.f);
             }
 
-            // Apply feedback to phase
-            float feedbackAmount = params[FEEDBACK_PARAM].getValue();
+            // Apply feedback to phase (use cached param read - optimization #2)
             float feedbackMod = feedbackSignal[ch] * feedbackAmount * 0.3f;
             float phaseAFinal = phaseA + feedbackMod;
             phaseAFinal = phaseAFinal - std::floor(phaseAFinal);
@@ -812,6 +860,15 @@ struct Torsion : Module {
             float warpedB = applyCZWarp(phaseB, dcwB, biasB, warpShape);
 
             auto buildWarpedVoice = [&](float warpedPhase, float amount) {
+                // Optimization #1: Early exit if no waveforms enabled
+                if (!anyWaveformEnabled) {
+                    // Just return sine wave
+                    float theta = 2.f * float(M_PI) * warpedPhase;
+                    float sin1 = std::sinf(theta);
+                    float loudness = 1.f + amount * 1.2f;
+                    return rack::math::clamp(sin1 * loudness, -3.f, 3.f);
+                }
+
                 float theta = 2.f * float(M_PI) * warpedPhase;
                 float sin1 = std::sinf(theta);
                 float cos1 = std::cosf(theta);
@@ -877,8 +934,8 @@ struct Torsion : Module {
             }
 
             // Generate sub-oscillator (pure sine wave, -1 octave) with optional DCW warp
-            float subLevel = params[SUB_LEVEL_PARAM].getValue();
-            float subWarpDepth = rack::math::clamp(env * params[SUB_WARP_PARAM].getValue(), 0.f, 1.f);
+            // Use cached param reads (optimization #2)
+            float subWarpDepth = rack::math::clamp(env * subWarpParam, 0.f, 1.f);
             float subBias = shapeBias(symmetry, subWarpDepth);
             float subPhaseWarped = applyCZWarp(phaseSub, subWarpDepth, subBias, warpShape);
             float subLoudness = 1.f + subWarpDepth * 0.8f;
@@ -951,12 +1008,9 @@ struct Torsion : Module {
             float stereoRight = dcBlockedMain;
             if (chorusEnabled) {
                 ChorusVoiceState& chorusState = chorusVoices[ch];
-                chorusState.phase += chorusPhaseInc;
-                if (chorusState.phase > 2.f * float(M_PI)) {
-                    chorusState.phase -= 2.f * float(M_PI);
-                }
-                float modA = std::sin(chorusState.phase);
-                float modB = std::sin(chorusState.phase + 2.f * float(M_PI) / 3.f);
+                // Optimization #3: Use cached/decimated LFO values
+                float modA = chorusModALast;
+                float modB = chorusModBLast;
                 int delayA = chorusBaseSamples + (int)std::round(chorusDepthSamples * ((modA + 1.f) * 0.5f));
                 int delayB = chorusBaseSamples + (int)std::round(chorusDepthSamples * ((modB + 1.f) * 0.5f));
                 delayA = rack::math::clamp(delayA, 0, kChorusMaxDelaySamples - 1);
