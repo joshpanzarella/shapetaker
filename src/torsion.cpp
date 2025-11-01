@@ -749,7 +749,7 @@ struct Torsion : Module {
             float slewCoeff = std::exp(-args.sampleTime * 160.f);
             float env = stageEnvelope[ch];
             if (releasing) {
-                float releaseRate = rack::math::clamp(8.f + rate * 1.5f, 8.f, 40.f);
+                float releaseRate = rack::math::clamp(14.f + rate * 2.2f, 14.f, 60.f);
                 float releaseCoeff = std::exp(-args.sampleTime * releaseRate);
                 env *= releaseCoeff;
             } else {
