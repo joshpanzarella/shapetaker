@@ -177,7 +177,8 @@ struct Torsion : Module {
         INPUTS_LEN
     };
     enum OutputId {
-        MAIN_OUTPUT,
+        MAIN_L_OUTPUT,
+        MAIN_R_OUTPUT,
         EDGE_OUTPUT,
         OUTPUTS_LEN
     };
@@ -252,7 +253,7 @@ struct Torsion : Module {
     static constexpr float kVintageDriftRange = 0.0045f; // +/- range in octaves (~5.5 cents)
     static constexpr float kVintageDriftHoldMin = 0.18f;
     static constexpr float kVintageDriftHoldMax = 0.45f;
-    static constexpr float kVintageIdleHissLevel = 0.0012f;
+    static constexpr float kVintageIdleHissLevel = 0.002f;
 
     Torsion() {
         config(PARAMS_LEN, INPUTS_LEN, OUTPUTS_LEN, LIGHTS_LEN);
@@ -263,7 +264,7 @@ struct Torsion : Module {
             quantity->smoothEnabled = false;
         }
 
-        configParam(DETUNE_PARAM, -20.f, 20.f, 0.f, "Detune", " cents");
+        configParam(DETUNE_PARAM, -20.f, 20.f, -3.f, "Detune", " cents");
 
         shapetaker::ParameterHelper::configGain(this, TORSION_PARAM, "Torsion depth", 0.0f);
         shapetaker::ParameterHelper::configGain(this, SYMMETRY_PARAM, "Symmetry warp", 0.0f);
@@ -328,8 +329,9 @@ struct Torsion : Module {
         shapetaker::ParameterHelper::configGateInput(this, STAGE_TRIG_INPUT, "DCW trigger");
         shapetaker::ParameterHelper::configGateInput(this, GATE_INPUT, "DCW gate");
 
-        shapetaker::ParameterHelper::configAudioOutput(this, MAIN_OUTPUT, "Main");
-        shapetaker::ParameterHelper::configAudioOutput(this, EDGE_OUTPUT, "Edge");
+        shapetaker::ParameterHelper::configAudioOutput(this, MAIN_L_OUTPUT, "Main L (chorus)");
+        shapetaker::ParameterHelper::configAudioOutput(this, MAIN_R_OUTPUT, "Main R (chorus)");
+        shapetaker::ParameterHelper::configAudioOutput(this, EDGE_OUTPUT, "Edge difference");
 
         velocityHold.forEach([](float& v) { v = 1.f; });
         resetChorusState();
@@ -424,7 +426,7 @@ struct Torsion : Module {
     void process(const ProcessArgs& args) override {
         int channels = polyProcessor.updateChannels(
             {inputs[VOCT_INPUT], inputs[TORSION_CV_INPUT], inputs[SYMMETRY_CV_INPUT], inputs[STAGE_TRIG_INPUT], inputs[GATE_INPUT]},
-            {outputs[MAIN_OUTPUT], outputs[EDGE_OUTPUT]});
+            {outputs[MAIN_L_OUTPUT], outputs[MAIN_R_OUTPUT], outputs[EDGE_OUTPUT]});
 
         float coarse = params[COARSE_PARAM].getValue();
         float detuneCents = params[DETUNE_PARAM].getValue();
@@ -544,9 +546,10 @@ struct Torsion : Module {
             float stagePos = stagePositions[ch];
             int dir = loopDirection[ch];
 
+            bool gateHigh = !gateConnected;
             if (gateConnected) {
                 float gateVolt = inputs[GATE_INPUT].getPolyVoltage(ch);
-                bool gateHigh = gateVolt >= 1.f;
+                gateHigh = gateVolt >= 1.f;
                 bool prevGate = gateHeld[ch];
 
                 if (gateHigh) {
@@ -580,16 +583,9 @@ struct Torsion : Module {
                     stageActive[ch] = true;
                 } else {
                     if (prevGate) {
-                        stageEnvelope[ch] = 0.f;
+                        clickSuppressor[ch] = 1.f;
                     }
-                    gateHeld[ch] = false;
-                    stageActive[ch] = false;
-                    stagePositions[ch] = 0.f;
-                    loopDirection[ch] = 1;
-                    outputs[MAIN_OUTPUT].setVoltage(0.f, ch);
-                    outputs[EDGE_OUTPUT].setVoltage(0.f, ch);
-                    clickSuppressor[ch] = 1.0f;
-                    continue;
+                    stageActive[ch] = stageEnvelope[ch] > 1e-4f;
                 }
                 gateHeld[ch] = gateHigh;
             } else if (trigConnected) {
@@ -686,6 +682,8 @@ struct Torsion : Module {
                 }
             }
 
+            bool releasing = gateConnected && !gateHigh;
+
             if (!std::isfinite(stagePos)) {
                 stagePos = 0.f;
             } else {
@@ -732,7 +730,7 @@ struct Torsion : Module {
                 lights[LOOP_REVERSE_LIGHT].setSmoothBrightness(dir < 0 ? 1.f : 0.f, lightSlew);
             }
             float targetStageValue = 0.f;
-            if (stageActive[ch] || !trigConnected) {
+            if (!releasing && (stageActive[ch] || !trigConnected)) {
                 int stageIndex = rack::math::clamp((int)stagePosition, 0, kNumStages - 1);
                 // Don't wrap around to stage 1 when at the last stage - hold at final stage value
                 int nextStage = rack::math::clamp(stageIndex + 1, 0, kNumStages - 1);
@@ -749,8 +747,19 @@ struct Torsion : Module {
             // Envelope smoothing with faster slew for more responsive feel
             // ~6ms time constant for smooth but responsive transitions
             float slewCoeff = std::exp(-args.sampleTime * 160.f);
-            float env = stageEnvelope[ch] + (targetStageValue - stageEnvelope[ch]) * (1.f - slewCoeff);
+            float env = stageEnvelope[ch];
+            if (releasing) {
+                float releaseRate = rack::math::clamp(8.f + rate * 1.5f, 8.f, 40.f);
+                float releaseCoeff = std::exp(-args.sampleTime * releaseRate);
+                env *= releaseCoeff;
+            } else {
+                env = env + (targetStageValue - env) * (1.f - slewCoeff);
+            }
             stageEnvelope[ch] = env;
+
+            if (releasing && env <= 1e-4f) {
+                stageActive[ch] = false;
+            }
 
             // Click suppression system: trigger fade-out when envelope is very low
             // This prevents pops from complex waveforms cutting off abruptly
@@ -774,7 +783,8 @@ struct Torsion : Module {
 
             // Only silence output when envelope AND click suppressor are truly negligible
             if (env <= 1e-6f && clickSuppressor[ch] <= 1e-6f) {
-                outputs[MAIN_OUTPUT].setVoltage(0.f, ch);
+                outputs[MAIN_L_OUTPUT].setVoltage(0.f, ch);
+                outputs[MAIN_R_OUTPUT].setVoltage(0.f, ch);
                 outputs[EDGE_OUTPUT].setVoltage(0.f, ch);
                 stageEnvelope[ch] = 0.f;
                 clickSuppressor[ch] = 1.0f;  // Reset for next trigger
@@ -885,7 +895,8 @@ struct Torsion : Module {
             float baseSum = baseA + baseB;
             float torsionDifference = (shapedA - baseA) + (shapedB - baseB);
             float edgeContribution = torsionDifference + baseSum * (1.f - dcwEnv);
-            float edgeSignal = env * interactionGain * 0.5f * edgeContribution;
+            float edgeGain = 0.4f;
+            float edgeSignal = env * interactionGain * edgeGain * edgeContribution;
 
             mainSignal *= polyComp;
             edgeSignal *= polyComp;
@@ -894,7 +905,7 @@ struct Torsion : Module {
                 float hiss = (rack::random::uniform() * 2.f - 1.f) * kVintageHissLevel * polyComp;
                 float bleed = clockSignal * polyComp;
                 mainSignal += hiss + bleed;
-                edgeSignal += hiss + bleed * 0.6f;
+                edgeSignal += hiss * 0.4f;  // keep edge noise subtler
             }
 
             if (!std::isfinite(mainSignal) || !std::isfinite(edgeSignal)) {
@@ -923,7 +934,7 @@ struct Torsion : Module {
             if (vintageMode) {
                 float idleHiss = (rack::random::uniform() * 2.f - 1.f) * kVintageIdleHissLevel * polyComp;
                 mainOut += idleHiss;
-                edgeOut += idleHiss * 0.7f;
+                edgeOut += idleHiss * 0.6f;
             }
 
             // DC blocking filter to remove DC offset and reduce clicks/pops
@@ -936,8 +947,8 @@ struct Torsion : Module {
             // Store feedback signal for next sample (before DC blocking for stability)
             feedbackSignal[ch] = mainOut;
 
-            float processedMain = dcBlockedMain;
-            float processedEdge = edgeOut;
+            float stereoLeft = dcBlockedMain;
+            float stereoRight = dcBlockedMain;
             if (chorusEnabled) {
                 ChorusVoiceState& chorusState = chorusVoices[ch];
                 chorusState.phase += chorusPhaseInc;
@@ -950,19 +961,19 @@ struct Torsion : Module {
                 int delayB = chorusBaseSamples + (int)std::round(chorusDepthSamples * ((modB + 1.f) * 0.5f));
                 delayA = rack::math::clamp(delayA, 0, kChorusMaxDelaySamples - 1);
                 delayB = rack::math::clamp(delayB, 0, kChorusMaxDelaySamples - 1);
-                float inputL = processedMain + processedEdge * 0.25f;
-                float inputR = processedEdge + processedMain * 0.25f;
-                float delayOutL = chorusState.delayL.process(inputL, delayA);
-                float delayOutR = chorusState.delayR.process(inputR, delayB);
+                float input = dcBlockedMain;
+                float delayOutL = chorusState.delayL.process(input, delayA);
+                float delayOutR = chorusState.delayR.process(input, delayB);
                 float dryMix = std::cos(kChorusMix * float(M_PI) * 0.5f);
                 float wetMix = std::sin(kChorusMix * float(M_PI) * 0.5f);
                 float crossMix = kChorusCrossMix * wetMix;
-                processedMain = processedMain * dryMix + delayOutL * wetMix + delayOutR * crossMix;
-                processedEdge = processedEdge * dryMix + delayOutR * wetMix + delayOutL * crossMix;
+                stereoLeft = input * dryMix + delayOutL * wetMix + delayOutR * crossMix;
+                stereoRight = input * dryMix + delayOutR * wetMix + delayOutL * crossMix;
             }
 
-            outputs[MAIN_OUTPUT].setVoltage(processedMain * OUTPUT_SCALE, ch);
-            outputs[EDGE_OUTPUT].setVoltage(processedEdge * OUTPUT_SCALE, ch);
+            outputs[MAIN_L_OUTPUT].setVoltage(stereoLeft * OUTPUT_SCALE, ch);
+            outputs[MAIN_R_OUTPUT].setVoltage(stereoRight * OUTPUT_SCALE, ch);
+            outputs[EDGE_OUTPUT].setVoltage(edgeOut * OUTPUT_SCALE, ch);
         }
     }
 };
@@ -1309,7 +1320,9 @@ struct TorsionWidget : ModuleWidget {
             centerPx("gate_input", 24.477f, 113.280f), module, Torsion::GATE_INPUT));
 
         addOutput(createOutputCentered<ShapetakerBNCPort>(
-            centerPx("main_output", 55.f, ioY), module, Torsion::MAIN_OUTPUT));
+            centerPx("main_output", 55.f, ioY), module, Torsion::MAIN_L_OUTPUT));
+        addOutput(createOutputCentered<ShapetakerBNCPort>(
+            centerPx("main_output_r", 65.f, ioY), module, Torsion::MAIN_R_OUTPUT));
         addOutput(createOutputCentered<ShapetakerBNCPort>(
             centerPx("edge_output", 65.f, ioY), module, Torsion::EDGE_OUTPUT));
     }

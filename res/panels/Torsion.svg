@@ -761,6 +761,12 @@
      inkscape:label="main_output"
      r="2.6005619" /><circle
      style="display:none;fill:#0000ff;fill-opacity:1;fill-rule:evenodd;stroke:none;stroke-width:0.0270053;stroke-linecap:round;stroke-linejoin:round;stroke-opacity:0.777108;paint-order:fill markers stroke"
+     id="main_output_r"
+     cx="65.188492"
+     cy="113.28011"
+     inkscape:label="main_output_r"
+     r="2.6005619" /><circle
+     style="display:none;fill:#0000ff;fill-opacity:1;fill-rule:evenodd;stroke:none;stroke-width:0.0270053;stroke-linecap:round;stroke-linejoin:round;stroke-opacity:0.777108;paint-order:fill markers stroke"
      id="edge_output"
      cx="71.004387"
      cy="113.28011"
