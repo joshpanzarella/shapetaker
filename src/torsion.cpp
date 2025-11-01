@@ -1,4 +1,6 @@
 #include "plugin.hpp"
+#include "dsp/audio.hpp"
+#include <algorithm>
 #include <cmath>
 
 namespace {
@@ -94,18 +96,23 @@ namespace {
     }
 
     // Curve shaping for stage transitions
-    // curve: -1 = exponential, 0 = linear, +1 = logarithmic
+    // curve: -1 = exponential (fast start), 0 = linear, +1 = logarithmic (slow start)
     float applyCurve(float t, float curve) {
         t = rack::math::clamp(t, 0.f, 1.f);
         curve = rack::math::clamp(curve, -1.f, 1.f);
 
         if (curve < -0.01f) {
-            // Exponential (fast start, slow end)
             float amount = -curve;
-            return std::pow(t, 1.f + amount * 3.f);
+            float exponent = lerp(1.f, 5.f, amount);
+            float shaped = 1.f - std::pow(1.f - t, exponent);
+            float mix = lerp(0.6f, 0.9f, amount);
+            return rack::math::crossfade(t, shaped, mix);
         } else if (curve > 0.01f) {
-            // Logarithmic (slow start, fast end)
-            return 1.f - std::pow(1.f - t, 1.f + curve * 3.f);
+            float amount = curve;
+            float exponent = lerp(1.f, 5.f, amount);
+            float shaped = std::pow(t, exponent);
+            float mix = lerp(0.6f, 0.9f, amount);
+            return rack::math::crossfade(t, shaped, mix);
         }
         return t; // Linear
     }
@@ -155,6 +162,7 @@ struct Torsion : Module {
         SAW_WAVE_PARAM,
         TRIANGLE_WAVE_PARAM,
         SQUARE_WAVE_PARAM,
+        DIRTY_MODE_PARAM,
         SUB_LEVEL_PARAM,
         SUB_WARP_PARAM,
         SUB_SYNC_PARAM,
@@ -198,6 +206,30 @@ struct Torsion : Module {
     shapetaker::dsp::VoiceArray<rack::dsp::SchmittTrigger> stageTriggers;
     shapetaker::dsp::VoiceArray<bool> gateHeld;
 
+    shapetaker::dsp::VoiceArray<float> vintageDrift;
+    shapetaker::dsp::VoiceArray<float> vintageDriftTimer;
+    shapetaker::dsp::VoiceArray<float> velocityHold;
+
+    static constexpr int kChorusMaxDelaySamples = 4096;
+    static constexpr float kChorusBaseDelayMs = 14.f;
+    static constexpr float kChorusDepthMs = 4.2f;
+    static constexpr float kChorusRateHz = 0.42f;
+    static constexpr float kChorusMix = 0.35f;
+    static constexpr float kChorusCrossMix = 0.25f;
+
+    struct ChorusVoiceState {
+        shapetaker::dsp::AudioProcessor::DelayLine<kChorusMaxDelaySamples> delayL;
+        shapetaker::dsp::AudioProcessor::DelayLine<kChorusMaxDelaySamples> delayR;
+        float phase = 0.f;
+
+        void reset() {
+            delayL.clear();
+            delayR.clear();
+            phase = 0.f;
+        }
+    };
+    shapetaker::dsp::VoiceArray<ChorusVoiceState> chorusVoices;
+
     // DC blocking filters for clean output (prevents clicks/pops)
     shapetaker::dsp::VoiceArray<float> dcBlockerX1;  // Previous input
     shapetaker::dsp::VoiceArray<float> dcBlockerY1;  // Previous output
@@ -207,7 +239,20 @@ struct Torsion : Module {
 
     InteractionMode interactionMode = INTERACTION_NONE;
     LoopMode loopMode = LOOP_FORWARD;
+    bool vintageMode = false;
+    bool dcwKeyTrackEnabled = false;
+    bool dcwVelocityEnabled = false;
+    bool chorusEnabled = false;
     static constexpr int kNumStages = 6;
+    float vintageClockPhase = 0.f;
+
+    static constexpr float kVintageHissLevel = 0.0045f;
+    static constexpr float kVintageClockLevel = 0.0024f;
+    static constexpr float kVintageClockFreq = 9000.f;  // Hz
+    static constexpr float kVintageDriftRange = 0.0045f; // +/- range in octaves (~5.5 cents)
+    static constexpr float kVintageDriftHoldMin = 0.18f;
+    static constexpr float kVintageDriftHoldMax = 0.45f;
+    static constexpr float kVintageIdleHissLevel = 0.0012f;
 
     Torsion() {
         config(PARAMS_LEN, INPUTS_LEN, OUTPUTS_LEN, LIGHTS_LEN);
@@ -220,8 +265,8 @@ struct Torsion : Module {
 
         configParam(DETUNE_PARAM, -20.f, 20.f, 0.f, "Detune", " cents");
 
-        shapetaker::ParameterHelper::configGain(this, TORSION_PARAM, "Torsion depth", 1.0f);
-        shapetaker::ParameterHelper::configGain(this, SYMMETRY_PARAM, "Symmetry warp", 0.5f);
+        shapetaker::ParameterHelper::configGain(this, TORSION_PARAM, "Torsion depth", 0.0f);
+        shapetaker::ParameterHelper::configGain(this, SYMMETRY_PARAM, "Symmetry warp", 0.0f);
 
         shapetaker::ParameterHelper::configAttenuverter(this, TORSION_ATTEN_PARAM, "Torsion CV");
         shapetaker::ParameterHelper::configAttenuverter(this, SYMMETRY_ATTEN_PARAM, "Symmetry CV");
@@ -234,25 +279,25 @@ struct Torsion : Module {
         }
 
         // Stage envelope controls
-        shapetaker::ParameterHelper::configDiscrete(this, STAGE_RATE_PARAM, "DCW cycle rate", 1, 30, 1);
+        shapetaker::ParameterHelper::configDiscrete(this, STAGE_RATE_PARAM, "DCW cycle rate", 1, 30, 10);
 
         shapetaker::ParameterHelper::configAttenuverter(this, STAGE_TIME_PARAM, "Stage time scale");
 
         // Stage levels for DCW envelope - ADSR-like shape by default
-        shapetaker::ParameterHelper::configGain(this, STAGE1_PARAM, "Stage 1 level", 0.0f);    // Start at 0
-        shapetaker::ParameterHelper::configGain(this, STAGE2_PARAM, "Stage 2 level", 1.0f);    // Attack to full
-        shapetaker::ParameterHelper::configGain(this, STAGE3_PARAM, "Stage 3 level", 0.7f);    // Decay to sustain
-        shapetaker::ParameterHelper::configGain(this, STAGE4_PARAM, "Stage 4 level", 0.7f);    // Hold sustain
-        shapetaker::ParameterHelper::configGain(this, STAGE5_PARAM, "Stage 5 level", 0.6f);    // Slight decay
-        shapetaker::ParameterHelper::configGain(this, STAGE6_PARAM, "Stage 6 level", 0.0f);    // Release to 0
+        shapetaker::ParameterHelper::configGain(this, STAGE1_PARAM, "Stage 1 level", 1.0f);
+        shapetaker::ParameterHelper::configGain(this, STAGE2_PARAM, "Stage 2 level", 1.0f);
+        shapetaker::ParameterHelper::configGain(this, STAGE3_PARAM, "Stage 3 level", 0.5f);
+        shapetaker::ParameterHelper::configGain(this, STAGE4_PARAM, "Stage 4 level", 0.5f);
+        shapetaker::ParameterHelper::configGain(this, STAGE5_PARAM, "Stage 5 level", 0.0f);
+        shapetaker::ParameterHelper::configGain(this, STAGE6_PARAM, "Stage 6 level", 0.0f);
 
         // Curve shapers (-1 = exp, 0 = linear, +1 = log)
-        configParam(CURVE1_PARAM, -1.f, 1.f, -0.3f, "Stage 1 curve");  // Exponential attack
-        configParam(CURVE2_PARAM, -1.f, 1.f, 0.3f, "Stage 2 curve");   // Logarithmic decay
-        configParam(CURVE3_PARAM, -1.f, 1.f, 0.f, "Stage 3 curve");    // Linear sustain
-        configParam(CURVE4_PARAM, -1.f, 1.f, 0.f, "Stage 4 curve");    // Linear hold
-        configParam(CURVE5_PARAM, -1.f, 1.f, 0.f, "Stage 5 curve");    // Linear decay
-        configParam(CURVE6_PARAM, -1.f, 1.f, 0.3f, "Stage 6 curve");   // Logarithmic release
+        configParam(CURVE1_PARAM, -1.f, 1.f, 0.f, "Stage 1 curve");
+        configParam(CURVE2_PARAM, -1.f, 1.f, 0.f, "Stage 2 curve");
+        configParam(CURVE3_PARAM, -1.f, 1.f, 0.f, "Stage 3 curve");
+        configParam(CURVE4_PARAM, -1.f, 1.f, 0.f, "Stage 4 curve");
+        configParam(CURVE5_PARAM, -1.f, 1.f, 0.f, "Stage 5 curve");
+        configParam(CURVE6_PARAM, -1.f, 1.f, 0.f, "Stage 6 curve");
 
         configSwitch(LOOP_MODE_PARAM, 0.f, LOOP_MODES_LEN - 1.f, 0.f, "Loop mode",
             {"Forward", "Reverse", "Ping-Pong", "Random"});
@@ -262,11 +307,16 @@ struct Torsion : Module {
         configParam(SAW_WAVE_PARAM, 0.f, 1.f, 0.f, "Sawtooth wave");
         configParam(TRIANGLE_WAVE_PARAM, 0.f, 1.f, 0.f, "Triangle wave");
         configParam(SQUARE_WAVE_PARAM, 0.f, 1.f, 0.f, "Square wave");
+        configSwitch(DIRTY_MODE_PARAM, 0.f, 1.f, 0.f, "Saturation mode", {"Clean", "Dirty"});
+        if (auto* quantity = paramQuantities[DIRTY_MODE_PARAM]) {
+            quantity->snapEnabled = true;
+            quantity->smoothEnabled = false;
+        }
 
         // Sub oscillator with extended range for powerful bass
         configParam(SUB_LEVEL_PARAM, 0.f, 2.0f, 0.0f, "Sub oscillator level", "%", 0.f, 100.f);
         configParam(SUB_WARP_PARAM, 0.f, 1.f, 0.f, "Sub DCW depth");
-        configSwitch(SUB_SYNC_PARAM, 0.f, 1.f, 1.f, "Sub sync mode", {"Free-run", "Hard sync"});
+        configSwitch(SUB_SYNC_PARAM, 0.f, 1.f, 0.f, "Sub sync mode", {"Free-run", "Hard sync"});
         if (auto* quantity = paramQuantities[SUB_SYNC_PARAM]) {
             quantity->snapEnabled = true;
             quantity->smoothEnabled = false;
@@ -280,6 +330,15 @@ struct Torsion : Module {
 
         shapetaker::ParameterHelper::configAudioOutput(this, MAIN_OUTPUT, "Main");
         shapetaker::ParameterHelper::configAudioOutput(this, EDGE_OUTPUT, "Edge");
+
+        velocityHold.forEach([](float& v) { v = 1.f; });
+        resetChorusState();
+    }
+
+    void resetChorusState() {
+        chorusVoices.forEach([](ChorusVoiceState& voice) {
+            voice.reset();
+        });
     }
 
     void onReset() override {
@@ -300,8 +359,17 @@ struct Torsion : Module {
         }
         gateHeld.reset();
         stageTriggers.reset();
+        vintageDrift.reset();
+        vintageDriftTimer.reset();
+        velocityHold.forEach([](float& v) { v = 1.f; });
         interactionMode = INTERACTION_NONE;
         loopMode = LOOP_FORWARD;
+        vintageMode = false;
+        dcwKeyTrackEnabled = false;
+        dcwVelocityEnabled = false;
+        chorusEnabled = false;
+        vintageClockPhase = 0.f;
+        resetChorusState();
         for (int i = 0; i < LIGHTS_LEN; ++i) {
             lights[i].setBrightness(0.f);
         }
@@ -311,6 +379,10 @@ struct Torsion : Module {
         json_t* rootJ = json_object();
         json_object_set_new(rootJ, "interactionMode", json_integer((int)interactionMode));
         json_object_set_new(rootJ, "loopMode", json_integer((int)loopMode));
+        json_object_set_new(rootJ, "vintageMode", json_boolean(vintageMode));
+        json_object_set_new(rootJ, "dcwKeyTrackEnabled", json_boolean(dcwKeyTrackEnabled));
+        json_object_set_new(rootJ, "dcwVelocityEnabled", json_boolean(dcwVelocityEnabled));
+        json_object_set_new(rootJ, "chorusEnabled", json_boolean(chorusEnabled));
         return rootJ;
     }
 
@@ -330,6 +402,23 @@ struct Torsion : Module {
             loopMode = (LoopMode)rack::math::clamp(
                 (int)loopMode, 0, LOOP_MODES_LEN - 1);
         }
+        json_t* vintageJ = json_object_get(rootJ, "vintageMode");
+        if (vintageJ) {
+            vintageMode = json_is_true(vintageJ);
+        }
+        json_t* trackJ = json_object_get(rootJ, "dcwKeyTrackEnabled");
+        if (trackJ) {
+            dcwKeyTrackEnabled = json_is_true(trackJ);
+        }
+        json_t* velocityJ = json_object_get(rootJ, "dcwVelocityEnabled");
+        if (velocityJ) {
+            dcwVelocityEnabled = json_is_true(velocityJ);
+        }
+        json_t* chorusJ = json_object_get(rootJ, "chorusEnabled");
+        if (chorusJ) {
+            chorusEnabled = json_is_true(chorusJ);
+        }
+        resetChorusState();
     }
 
     void process(const ProcessArgs& args) override {
@@ -368,9 +457,50 @@ struct Torsion : Module {
         bool useSaw = params[SAW_WAVE_PARAM].getValue() > 0.5f;
         bool useTriangle = params[TRIANGLE_WAVE_PARAM].getValue() > 0.5f;
         bool useSquare = params[SQUARE_WAVE_PARAM].getValue() > 0.5f;
+        bool dirtyMode = params[DIRTY_MODE_PARAM].getValue() > 0.5f;
+
+        float clockSignal = 0.f;
+        if (vintageMode) {
+            vintageClockPhase += args.sampleTime * kVintageClockFreq;
+            if (vintageClockPhase >= 1.f) {
+                vintageClockPhase -= std::floor(vintageClockPhase);
+            }
+            clockSignal = std::sin(2.f * float(M_PI) * vintageClockPhase) * kVintageClockLevel;
+        }
+
+        float polyComp = 1.f;
+        if (channels > 1) {
+            polyComp = 1.f / std::sqrt((float)channels);
+        }
+
+        float chorusPhaseInc = 0.f;
+        int chorusBaseSamples = 0;
+        int chorusDepthSamples = 0;
+        if (chorusEnabled) {
+            float sampleRate = args.sampleRate;
+            chorusPhaseInc = 2.f * float(M_PI) * kChorusRateHz * args.sampleTime;
+            chorusBaseSamples = (int)std::round(kChorusBaseDelayMs * 0.001f * sampleRate);
+            chorusDepthSamples = (int)std::round(kChorusDepthMs * 0.001f * sampleRate);
+            chorusDepthSamples = std::max(1, chorusDepthSamples);
+        }
 
         for (int ch = 0; ch < channels; ++ch) {
+            float drift = 0.f;
+            if (vintageMode) {
+                float timer = vintageDriftTimer[ch] - args.sampleTime;
+                if (timer <= 0.f) {
+                    vintageDrift[ch] = rack::random::uniform() * 2.f - 1.f;
+                    vintageDrift[ch] *= kVintageDriftRange;
+                    float hold = rack::random::uniform();
+                    hold = lerp(kVintageDriftHoldMin, kVintageDriftHoldMax, hold);
+                    timer = hold;
+                }
+                vintageDriftTimer[ch] = timer;
+                drift = vintageDrift[ch];
+            }
+
             float pitch = coarse;
+            pitch += drift;
             if (inputs[VOCT_INPUT].isConnected()) {
                 pitch += inputs[VOCT_INPUT].getPolyVoltage(ch);
             }
@@ -423,6 +553,7 @@ struct Torsion : Module {
                     if (!prevGate) {
                         stagePos = 0.f;
                         dir = 1;
+                        velocityHold[ch] = rack::math::clamp(gateVolt / 10.f, 0.f, 1.f);
                     }
                     float effectiveRate = rate * (1.f + stageTimeScale);
                     stagePos += dir * effectiveRate * args.sampleTime;
@@ -467,6 +598,7 @@ struct Torsion : Module {
                     stagePos = 0.f;
                     dir = 1;
                     stageActive[ch] = true;
+                    velocityHold[ch] = rack::math::clamp(std::fabs(trigVolt) / 10.f, 0.f, 1.f);
                 }
 
                 if (stageActive[ch]) {
@@ -549,6 +681,9 @@ struct Torsion : Module {
 
             if (!gateConnected) {
                 gateHeld[ch] = false;
+                if (!trigConnected) {
+                    velocityHold[ch] = 1.f;
+                }
             }
 
             if (!std::isfinite(stagePos)) {
@@ -565,7 +700,17 @@ struct Torsion : Module {
                 torsionA += inputs[TORSION_CV_INPUT].getPolyVoltage(ch) *
                             params[TORSION_ATTEN_PARAM].getValue() * 0.1f;
             }
-            torsionA = rack::math::clamp(torsionA, 0.f, 1.f);
+            float keyFactor = 1.f;
+            if (dcwKeyTrackEnabled) {
+                float offset = rack::math::clamp(pitch, -3.f, 3.f);
+                keyFactor = rack::math::clamp(1.f + offset * 0.18f, 0.25f, 1.75f);
+            }
+            float velocityFactor = 1.f;
+            if (dcwVelocityEnabled) {
+                float heldVelocity = rack::math::clamp(velocityHold[ch], 0.f, 1.f);
+                velocityFactor = lerp(0.35f, 1.f, heldVelocity);
+            }
+            torsionA = rack::math::clamp(torsionA * keyFactor * velocityFactor, 0.f, 1.f);
 
             float symmetry = symmetryBase;
             if (inputs[SYMMETRY_CV_INPUT].isConnected()) {
@@ -728,32 +873,58 @@ struct Torsion : Module {
             float subPhaseWarped = applyCZWarp(phaseSub, subWarpDepth, subBias, warpShape);
             float subLoudness = 1.f + subWarpDepth * 0.8f;
             float subSignal = generateSine(subPhaseWarped) * subLevel * subLoudness;
+            float primaryActivity = 0.5f * (std::fabs(shapedA) + std::fabs(shapedB));
+            float subTrim = 1.f / (1.f + primaryActivity * 0.9f);
+            subSignal *= subTrim;
 
-            // Main output: mix both oscillators with proper gain staging
-            // Using 0.6f instead of 0.5f to boost output amplitude
+            // Main output: mix both oscillators with balanced gain staging
             // Envelope modulates torsion, not amplitude directly
-            float mainOut = env * interactionGain * 0.6f * (shapedA + shapedB) + subSignal * env;
+            float mainSignal = env * interactionGain * 0.5f * (shapedA + shapedB) + subSignal * env;
 
             // Edge output: blend between base tone (low torsion) and torsion difference (high torsion)
             float baseSum = baseA + baseB;
             float torsionDifference = (shapedA - baseA) + (shapedB - baseB);
-            float edgeSignal = torsionDifference + baseSum * (1.f - dcwEnv);
-            float edgeOut = env * interactionGain * 0.6f * edgeSignal;
+            float edgeContribution = torsionDifference + baseSum * (1.f - dcwEnv);
+            float edgeSignal = env * interactionGain * 0.5f * edgeContribution;
 
-            if (!std::isfinite(mainOut) || !std::isfinite(edgeOut)) {
-                mainOut = 0.f;
-                edgeOut = 0.f;
+            mainSignal *= polyComp;
+            edgeSignal *= polyComp;
+
+            if (vintageMode) {
+                float hiss = (rack::random::uniform() * 2.f - 1.f) * kVintageHissLevel * polyComp;
+                float bleed = clockSignal * polyComp;
+                mainSignal += hiss + bleed;
+                edgeSignal += hiss + bleed * 0.6f;
             }
 
-            // Apply gentle soft clipping (tanh) for analog warmth and prevent harsh clipping
-            // Drive slightly before saturation for more character
-            mainOut = std::tanh(mainOut * 1.2f) * 0.9f;
-            edgeOut = std::tanh(edgeOut * 1.2f) * 0.9f;
+            if (!std::isfinite(mainSignal) || !std::isfinite(edgeSignal)) {
+                mainSignal = 0.f;
+                edgeSignal = 0.f;
+            }
+
+            // Optional saturation: dirty mode keeps the original drive, clean mode adds gentle limiting
+            float mainOut;
+            float edgeOut;
+            if (dirtyMode) {
+                mainOut = std::tanh(mainSignal * 1.2f) * 0.9f;
+                edgeOut = std::tanh(edgeSignal * 1.2f) * 0.9f;
+            } else {
+                constexpr float cleanDrive = 0.75f;
+                constexpr float cleanScale = 1.f / cleanDrive;  // Unity gain around 0 V
+                mainOut = std::tanh(mainSignal * cleanDrive) * cleanScale;
+                edgeOut = std::tanh(edgeSignal * cleanDrive) * cleanScale;
+            }
 
             // Apply click suppressor to prevent pops at envelope end
             // This creates a smooth fade-out ramp when envelope is very low
             mainOut *= clickSuppressor[ch];
             edgeOut *= clickSuppressor[ch];
+
+            if (vintageMode) {
+                float idleHiss = (rack::random::uniform() * 2.f - 1.f) * kVintageIdleHissLevel * polyComp;
+                mainOut += idleHiss;
+                edgeOut += idleHiss * 0.7f;
+            }
 
             // DC blocking filter to remove DC offset and reduce clicks/pops
             // Uses a 1-pole high-pass filter with very low cutoff (~20Hz at 44.1kHz)
@@ -765,8 +936,33 @@ struct Torsion : Module {
             // Store feedback signal for next sample (before DC blocking for stability)
             feedbackSignal[ch] = mainOut;
 
-            outputs[MAIN_OUTPUT].setVoltage(dcBlockedMain * OUTPUT_SCALE, ch);
-            outputs[EDGE_OUTPUT].setVoltage(edgeOut * OUTPUT_SCALE, ch);
+            float processedMain = dcBlockedMain;
+            float processedEdge = edgeOut;
+            if (chorusEnabled) {
+                ChorusVoiceState& chorusState = chorusVoices[ch];
+                chorusState.phase += chorusPhaseInc;
+                if (chorusState.phase > 2.f * float(M_PI)) {
+                    chorusState.phase -= 2.f * float(M_PI);
+                }
+                float modA = std::sin(chorusState.phase);
+                float modB = std::sin(chorusState.phase + 2.f * float(M_PI) / 3.f);
+                int delayA = chorusBaseSamples + (int)std::round(chorusDepthSamples * ((modA + 1.f) * 0.5f));
+                int delayB = chorusBaseSamples + (int)std::round(chorusDepthSamples * ((modB + 1.f) * 0.5f));
+                delayA = rack::math::clamp(delayA, 0, kChorusMaxDelaySamples - 1);
+                delayB = rack::math::clamp(delayB, 0, kChorusMaxDelaySamples - 1);
+                float inputL = processedMain + processedEdge * 0.25f;
+                float inputR = processedEdge + processedMain * 0.25f;
+                float delayOutL = chorusState.delayL.process(inputL, delayA);
+                float delayOutR = chorusState.delayR.process(inputR, delayB);
+                float dryMix = std::cos(kChorusMix * float(M_PI) * 0.5f);
+                float wetMix = std::sin(kChorusMix * float(M_PI) * 0.5f);
+                float crossMix = kChorusCrossMix * wetMix;
+                processedMain = processedMain * dryMix + delayOutL * wetMix + delayOutR * crossMix;
+                processedEdge = processedEdge * dryMix + delayOutR * wetMix + delayOutL * crossMix;
+            }
+
+            outputs[MAIN_OUTPUT].setVoltage(processedMain * OUTPUT_SCALE, ch);
+            outputs[EDGE_OUTPUT].setVoltage(processedEdge * OUTPUT_SCALE, ch);
         }
     }
 };
@@ -802,38 +998,19 @@ struct VintageSliderLED : app::SvgSlider {
     }
 
     void draw(const DrawArgs& args) override {
-        // Draw the slider background first
-        if (background && background->svg) {
-            background->draw(args);
-        }
+        app::SvgSlider::draw(args);
 
-        // Get current parameter value for brightness
         float value = 0.5f;
-        ParamQuantity* pq = getParamQuantity();
-        if (pq) {
+        if (auto* pq = getParamQuantity()) {
             value = pq->getScaledValue();
         }
 
-        // Calculate LED position - it follows the handle position
-        Vec ledPos;
+        Vec ledPos = Vec(box.size.x * 0.5f, box.size.y * 0.5f);
         if (handle) {
-            // Position LED at the center of the handle
             ledPos = Vec(handle->box.pos.x + handle->box.size.x * 0.5f,
-                        handle->box.pos.y + handle->box.size.y * 0.5f);
-        } else {
-            // Fallback if handle doesn't exist
-            ledPos = Vec(box.size.x * 0.5f, box.size.y * 0.5f);
+                         handle->box.pos.y + handle->box.size.y * 0.5f);
         }
 
-        // Draw the handle first using the cached SVG
-        if (handle && handle->svg) {
-            nvgSave(args.vg);
-            nvgTranslate(args.vg, handle->box.pos.x, handle->box.pos.y);
-            handle->draw(args);
-            nvgRestore(args.vg);
-        }
-
-        // Draw LED on top so the glow isn't hidden behind the handle
         drawLED(args, ledPos, value);
     }
 
@@ -1035,6 +1212,8 @@ struct TorsionWidget : ModuleWidget {
             centerPx("tri_wave_switch", leftCol, 48.f), module, Torsion::TRIANGLE_WAVE_PARAM));
         addParam(createParamCentered<CKSS>(
             centerPx("square_wave_switch", leftCol + 8.f, 48.f), module, Torsion::SQUARE_WAVE_PARAM));
+        addParam(createParamCentered<CKSS>(
+            centerPx("dirty_mode_switch", leftCol - 8.f, 60.f), module, Torsion::DIRTY_MODE_PARAM));
 
         addParam(createParamCentered<ShapetakerKnobAltSmall>(
             centerPx("sub_level_knob", leftCol, 56.f), module, Torsion::SUB_LEVEL_PARAM));
@@ -1216,21 +1395,94 @@ struct TorsionWidget : ModuleWidget {
         loopHeading->text = "DCW Envelope loop mode";
         menu->addChild(loopHeading);
 
-        const char* loopLabels[] = {
-            "Forward",
-            "Reverse",
-            "Ping-Pong",
-            "Random"
+            const char* loopLabels[] = {
+                "Forward",
+                "Reverse",
+                "Ping-Pong",
+                "Random"
+            };
+
+            for (int i = 0; i < Torsion::LOOP_MODES_LEN; ++i) {
+                auto* item = new LoopModeItem;
+                item->module = module;
+                item->mode = (Torsion::LoopMode)i;
+                item->text = loopLabels[i];
+                menu->addChild(item);
+            }
+
+        menu->addChild(new ui::MenuSeparator());
+
+        auto* dcwHeading = new ui::MenuLabel;
+        dcwHeading->text = "DCW enhancements";
+        menu->addChild(dcwHeading);
+
+        struct KeyTrackItem : ui::MenuItem {
+            Torsion* module;
+            void onAction(const event::Action& e) override {
+                module->dcwKeyTrackEnabled = !module->dcwKeyTrackEnabled;
+            }
+            void step() override {
+                rightText = module->dcwKeyTrackEnabled ? "✔" : "";
+                ui::MenuItem::step();
+            }
         };
 
-        for (int i = 0; i < Torsion::LOOP_MODES_LEN; ++i) {
-            auto* item = new LoopModeItem;
-            item->module = module;
-            item->mode = (Torsion::LoopMode)i;
-            item->text = loopLabels[i];
-            menu->addChild(item);
-        }
-    }
-};
+        struct VelocityItem : ui::MenuItem {
+            Torsion* module;
+            void onAction(const event::Action& e) override {
+                module->dcwVelocityEnabled = !module->dcwVelocityEnabled;
+            }
+            void step() override {
+                rightText = module->dcwVelocityEnabled ? "✔" : "";
+                ui::MenuItem::step();
+            }
+        };
 
-Model* modelTorsion = createModel<Torsion, TorsionWidget>("Torsion");
+        auto* keyTrackItem = new KeyTrackItem;
+        keyTrackItem->module = module;
+        keyTrackItem->text = "Key tracking (DCW depth)";
+        menu->addChild(keyTrackItem);
+
+        auto* velocityItem = new VelocityItem;
+        velocityItem->module = module;
+        velocityItem->text = "Velocity sensitivity (DCW depth)";
+        menu->addChild(velocityItem);
+
+        menu->addChild(new ui::MenuSeparator());
+
+        struct ChorusItem : ui::MenuItem {
+            Torsion* module;
+            void onAction(const event::Action& e) override {
+                module->chorusEnabled = !module->chorusEnabled;
+                module->resetChorusState();
+            }
+            void step() override {
+                rightText = module->chorusEnabled ? "✔" : "";
+                ui::MenuItem::step();
+            }
+        };
+
+        struct VintageModeItem : ui::MenuItem {
+            Torsion* module;
+            void onAction(const event::Action& e) override {
+                module->vintageMode = !module->vintageMode;
+            }
+            void step() override {
+                rightText = module->vintageMode ? "✔" : "";
+                ui::MenuItem::step();
+            }
+        };
+
+        auto* chorusItem = new ChorusItem;
+        chorusItem->module = module;
+        chorusItem->text = "Chorus (stereo)";
+        menu->addChild(chorusItem);
+
+        auto* vintageItem = new VintageModeItem;
+        vintageItem->module = module;
+        vintageItem->text = "Vintage mode (hiss/bleed/drift)";
+        menu->addChild(vintageItem);
+        }
+    };
+
+    Model* modelTorsion = createModel<Torsion, TorsionWidget>("Torsion");

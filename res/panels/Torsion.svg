@@ -689,6 +689,12 @@
      inkscape:label="saw_wave_switch"
      r="2.6005619" /><circle
      style="display:none;fill:#ff0000;fill-opacity:1;fill-rule:evenodd;stroke:none;stroke-width:0.0270053;stroke-linecap:round;stroke-linejoin:round;stroke-opacity:0.777108;paint-order:fill markers stroke"
+     id="dirty_mode_switch"
+     cx="11.44458"
+     cy="63.5"
+     inkscape:label="dirty_mode_switch"
+     r="2.6005619" /><circle
+     style="display:none;fill:#ff0000;fill-opacity:1;fill-rule:evenodd;stroke:none;stroke-width:0.0270053;stroke-linecap:round;stroke-linejoin:round;stroke-opacity:0.777108;paint-order:fill markers stroke"
      id="torsion_atten"
      cx="11.44458"
      cy="91.490593"
