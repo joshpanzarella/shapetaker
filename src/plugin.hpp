@@ -17,6 +17,7 @@ extern Model* modelEvocation;
 extern Model* modelIncantation;
 extern Model* modelTransmutation;
 extern Model* modelSpecula;
+extern Model* modelTorsion;
 
 struct ShapetakerKnobLarge : app::SvgKnob {
     widget::SvgWidget* bg;

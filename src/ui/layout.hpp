@@ -44,6 +44,7 @@ public:
         WIDTH_12HP = 12,
         WIDTH_14HP = 14,
         WIDTH_16HP = 16,
+        WIDTH_18HP = 18,  // Torsion
         WIDTH_20HP = 20,
         WIDTH_26HP = 26,  // Transmutation
         WIDTH_28HP = 28,

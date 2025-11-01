@@ -14,6 +14,12 @@
       "description": "Dual sigmoid oscillator with morphing waveforms and stereo crossfading",
       "tags": ["Oscillator", "VCO", "Dual", "Stereo"]
     },
+    {
+      "slug": "Torsion",
+      "name": "Torsion",
+      "description": "Phase distortion oscillator inspired by CZ synthesis with torsion and symmetry morphing",
+      "tags": ["Oscillator", "VCO", "Digital"]
+    },
         {
       "slug": "Chiaroscuro",
       "name": "Chiaroscuro",

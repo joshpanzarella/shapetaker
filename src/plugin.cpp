@@ -13,4 +13,5 @@ void init(Plugin* p) {
     p->addModel(modelIncantation);
     p->addModel(modelTransmutation);
     p->addModel(modelSpecula);
+    p->addModel(modelTorsion);
 }
