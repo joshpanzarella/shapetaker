@@ -4,7 +4,7 @@ Plugin* pluginInstance;
 
 void init(Plugin* p) {
     pluginInstance = p;
-    
+
     p->addModel(modelClairaudient);
     p->addModel(modelChiaroscuro);
     p->addModel(modelFatebinder);
@@ -14,4 +14,6 @@ void init(Plugin* p) {
     p->addModel(modelTransmutation);
     p->addModel(modelSpecula);
     p->addModel(modelTorsion);
+    p->addModel(modelDissolution);
+    p->addModel(modelTessellation);
 }

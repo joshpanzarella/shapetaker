@@ -123,11 +123,9 @@ inline void generateLSystemPattern(int steps, int hits, int rotation, std::vecto
     }
 
     // Convert L-System string to pattern, cycling if needed
-    int hitCount = 0;
     for (int i = 0; i < steps; i++) {
         char symbol = current[i % current.length()];
         pattern[i] = (symbol == 'X');
-        if (pattern[i]) hitCount++;
     }
 
     // Apply rotation
@@ -1104,12 +1102,12 @@ struct UnifiedDisplayWidget : TransparentWidget {
                 NVGcolor color = ringColors[p.ringIndex];
                 nvgBeginPath(vg);
                 nvgCircle(vg, px, py, 2.5f * brightness);
-                nvgFillColor(vg, nvgRGBA(color.r * brightness, color.g * brightness, color.b * brightness, brightness));
+                nvgFillColor(vg, nvgRGBAf(color.r * brightness, color.g * brightness, color.b * brightness, brightness));
                 nvgFill(vg);
 
                 NVGpaint glow = nvgRadialGradient(vg, px, py, 0, 10.f * brightness,
-                    nvgRGBA(color.r * brightness * 0.8f, color.g * brightness * 0.8f, color.b * brightness * 0.8f, brightness * 0.6f),
-                    nvgRGBA(0, 0, 0, 0));
+                    nvgRGBAf(color.r * brightness * 0.8f, color.g * brightness * 0.8f, color.b * brightness * 0.8f, brightness * 0.6f),
+                    nvgRGBAf(0.f, 0.f, 0.f, 0.f));
                 nvgBeginPath(vg);
                 nvgCircle(vg, px, py, 10.f * brightness);
                 nvgFillPaint(vg, glow);
@@ -1133,7 +1131,7 @@ struct UnifiedDisplayWidget : TransparentWidget {
                 nvgBeginPath(vg);
                 nvgMoveTo(vg, cx, cy);
                 nvgLineTo(vg, tipX, tipY);
-                nvgStrokeColor(vg, nvgRGBA(color.r * 0.5f, color.g * 0.5f, color.b * 0.5f, 0.3f));
+                nvgStrokeColor(vg, nvgRGBAf(color.r * 0.5f, color.g * 0.5f, color.b * 0.5f, 0.3f));
                 nvgStrokeWidth(vg, 1.5f);
                 nvgStroke(vg);
 
@@ -1741,20 +1739,18 @@ struct ParticleDisplayWidget : TransparentWidget {
                 // Strong particle core (radar blip)
                 nvgBeginPath(args.vg);
                 nvgCircle(args.vg, px, py, 2.5f * brightness);
-                NVGcolor particleCore = nvgRGBA(
+                nvgFillColor(args.vg, nvgRGBAf(
                     color.r * brightness,
                     color.g * brightness,
                     color.b * brightness,
-                    brightness
-                );
-                nvgFillColor(args.vg, particleCore);
+                    brightness));
                 nvgFill(args.vg);
 
                 // Wide phosphor bloom (CRT glow)
                 NVGpaint particleGlow = nvgRadialGradient(args.vg, px, py, 0, 12.f * brightness,
-                    nvgRGBA(color.r * brightness * 0.8f, color.g * brightness * 0.8f,
+                    nvgRGBAf(color.r * brightness * 0.8f, color.g * brightness * 0.8f,
                             color.b * brightness * 0.8f, brightness * 0.6f),
-                    nvgRGBA(0, 0, 0, 0));
+                    nvgRGBAf(0.f, 0.f, 0.f, 0.f));
                 nvgBeginPath(args.vg);
                 nvgCircle(args.vg, px, py, 12.f * brightness);
                 nvgFillPaint(args.vg, particleGlow);
@@ -1783,8 +1779,8 @@ struct ParticleDisplayWidget : TransparentWidget {
 
                 // Strong glow
                 NVGpaint glow = nvgRadialGradient(args.vg, x, y, 0, 16.f,
-                    nvgRGBA(color.r * 0.9f, color.g * 0.9f, color.b * 0.9f, 0.8f),
-                    nvgRGBA(0, 0, 0, 0));
+                    nvgRGBAf(color.r * 0.9f, color.g * 0.9f, color.b * 0.9f, 0.8f),
+                    nvgRGBAf(0.f, 0.f, 0.f, 0.f));
                 nvgBeginPath(args.vg);
                 nvgCircle(args.vg, x, y, 16.f);
                 nvgFillPaint(args.vg, glow);
@@ -1794,7 +1790,7 @@ struct ParticleDisplayWidget : TransparentWidget {
                 nvgBeginPath(args.vg);
                 nvgMoveTo(args.vg, cx, cy);
                 nvgLineTo(args.vg, x, y);
-                nvgStrokeColor(args.vg, nvgRGBA(color.r * 0.5f, color.g * 0.5f, color.b * 0.5f, 0.3f));
+                nvgStrokeColor(args.vg, nvgRGBAf(color.r * 0.5f, color.g * 0.5f, color.b * 0.5f, 0.3f));
                 nvgStrokeWidth(args.vg, 1.5f);
                 nvgStroke(args.vg);
             }
@@ -1906,8 +1902,6 @@ struct FatebinderWidget : ModuleWidget {
         LayoutHelper::ScrewPositions::addStandardScrews<ScrewBlack>(this, box.size.x);
 
         // Panel width: 91.44mm (18HP), height: 128.5mm
-        const float panelWidth = 91.44f;
-
         // ====================================================================
         // TOP DISPLAY - Unified radar + terminal with CRT bezel
         // ====================================================================

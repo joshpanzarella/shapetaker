@@ -269,22 +269,22 @@ struct Torsion : Module {
     Torsion() {
         config(PARAMS_LEN, INPUTS_LEN, OUTPUTS_LEN, LIGHTS_LEN);
 
-        configParam(COARSE_PARAM, -4.f, 4.f, 0.f, "Octave", " oct");
+        configParam(COARSE_PARAM, -4.f, 4.f, 0.f, "octave", " oct");
         if (auto* quantity = paramQuantities[COARSE_PARAM]) {
             quantity->snapEnabled = true;
             quantity->smoothEnabled = false;
         }
 
-        configParam(DETUNE_PARAM, -20.f, 20.f, -3.f, "Detune", " cents");
+        configParam(DETUNE_PARAM, -20.f, 20.f, -3.f, "detune", " cents");
 
-        shapetaker::ParameterHelper::configGain(this, TORSION_PARAM, "Torsion depth", 0.0f);
-        shapetaker::ParameterHelper::configGain(this, SYMMETRY_PARAM, "Symmetry warp", 0.0f);
+        shapetaker::ParameterHelper::configGain(this, TORSION_PARAM, "torsion depth", 0.0f);
+        shapetaker::ParameterHelper::configGain(this, SYMMETRY_PARAM, "symmetry warp", 0.0f);
 
-        shapetaker::ParameterHelper::configAttenuverter(this, TORSION_ATTEN_PARAM, "Torsion CV");
-        shapetaker::ParameterHelper::configAttenuverter(this, SYMMETRY_ATTEN_PARAM, "Symmetry CV");
+        shapetaker::ParameterHelper::configAttenuverter(this, TORSION_ATTEN_PARAM, "torsion CV");
+        shapetaker::ParameterHelper::configAttenuverter(this, SYMMETRY_ATTEN_PARAM, "symmetry CV");
 
-        configSwitch(WARP_SHAPE_PARAM, 0.f, (float)((int)CZWarpShape::Count - 1), 0.f, "Warp shape",
-            {"Single sine", "Resonant", "Double sine", "Saw pulse", "Pulse"});
+        configSwitch(WARP_SHAPE_PARAM, 0.f, (float)((int)CZWarpShape::Count - 1), 0.f, "warp shape",
+            {"single sine", "resonant", "double sine", "saw pulse", "pulse"});
         if (auto* quantity = paramQuantities[WARP_SHAPE_PARAM]) {
             quantity->snapEnabled = true;
             quantity->smoothEnabled = false;
@@ -293,56 +293,56 @@ struct Torsion : Module {
         // Stage envelope controls
         shapetaker::ParameterHelper::configDiscrete(this, STAGE_RATE_PARAM, "DCW cycle rate", 1, 30, 10);
 
-        shapetaker::ParameterHelper::configAttenuverter(this, STAGE_TIME_PARAM, "Stage time scale");
+        shapetaker::ParameterHelper::configAttenuverter(this, STAGE_TIME_PARAM, "stage time scale");
 
         // Stage levels for DCW envelope - ADSR-like shape by default
-        shapetaker::ParameterHelper::configGain(this, STAGE1_PARAM, "Stage 1 level", 1.0f);
-        shapetaker::ParameterHelper::configGain(this, STAGE2_PARAM, "Stage 2 level", 1.0f);
-        shapetaker::ParameterHelper::configGain(this, STAGE3_PARAM, "Stage 3 level", 0.5f);
-        shapetaker::ParameterHelper::configGain(this, STAGE4_PARAM, "Stage 4 level", 0.5f);
-        shapetaker::ParameterHelper::configGain(this, STAGE5_PARAM, "Stage 5 level", 0.0f);
-        shapetaker::ParameterHelper::configGain(this, STAGE6_PARAM, "Stage 6 level", 0.0f);
+        shapetaker::ParameterHelper::configGain(this, STAGE1_PARAM, "stage 1 level", 1.0f);
+        shapetaker::ParameterHelper::configGain(this, STAGE2_PARAM, "stage 2 level", 1.0f);
+        shapetaker::ParameterHelper::configGain(this, STAGE3_PARAM, "stage 3 level", 0.5f);
+        shapetaker::ParameterHelper::configGain(this, STAGE4_PARAM, "stage 4 level", 0.5f);
+        shapetaker::ParameterHelper::configGain(this, STAGE5_PARAM, "stage 5 level", 0.0f);
+        shapetaker::ParameterHelper::configGain(this, STAGE6_PARAM, "stage 6 level", 0.0f);
 
         // Curve shapers (-1 = exp, 0 = linear, +1 = log)
-        configParam(CURVE1_PARAM, -1.f, 1.f, 0.f, "Stage 1 curve");
-        configParam(CURVE2_PARAM, -1.f, 1.f, 0.f, "Stage 2 curve");
-        configParam(CURVE3_PARAM, -1.f, 1.f, 0.f, "Stage 3 curve");
-        configParam(CURVE4_PARAM, -1.f, 1.f, 0.f, "Stage 4 curve");
-        configParam(CURVE5_PARAM, -1.f, 1.f, 0.f, "Stage 5 curve");
-        configParam(CURVE6_PARAM, -1.f, 1.f, 0.f, "Stage 6 curve");
+        configParam(CURVE1_PARAM, -1.f, 1.f, 0.f, "stage 1 curve");
+        configParam(CURVE2_PARAM, -1.f, 1.f, 0.f, "stage 2 curve");
+        configParam(CURVE3_PARAM, -1.f, 1.f, 0.f, "stage 3 curve");
+        configParam(CURVE4_PARAM, -1.f, 1.f, 0.f, "stage 4 curve");
+        configParam(CURVE5_PARAM, -1.f, 1.f, 0.f, "stage 5 curve");
+        configParam(CURVE6_PARAM, -1.f, 1.f, 0.f, "stage 6 curve");
 
-        configSwitch(LOOP_MODE_PARAM, 0.f, LOOP_MODES_LEN - 1.f, 0.f, "Loop mode",
-            {"Forward", "Reverse", "Ping-Pong", "Random"});
+        configSwitch(LOOP_MODE_PARAM, 0.f, LOOP_MODES_LEN - 1.f, 0.f, "loop mode",
+            {"forward", "reverse", "ping-pong", "random"});
 
-        shapetaker::ParameterHelper::configGain(this, FEEDBACK_PARAM, "Feedback amount", 0.0f);
+        shapetaker::ParameterHelper::configGain(this, FEEDBACK_PARAM, "feedback amount", 0.0f);
 
-        configParam(SAW_WAVE_PARAM, 0.f, 1.f, 0.f, "Sawtooth wave");
-        configParam(TRIANGLE_WAVE_PARAM, 0.f, 1.f, 0.f, "Triangle wave");
-        configParam(SQUARE_WAVE_PARAM, 0.f, 1.f, 0.f, "Square wave");
-        configSwitch(DIRTY_MODE_PARAM, 0.f, 1.f, 0.f, "Saturation mode", {"Clean", "Dirty"});
+        configParam(SAW_WAVE_PARAM, 0.f, 1.f, 0.f, "sawtooth wave");
+        configParam(TRIANGLE_WAVE_PARAM, 0.f, 1.f, 0.f, "triangle wave");
+        configParam(SQUARE_WAVE_PARAM, 0.f, 1.f, 0.f, "square wave");
+        configSwitch(DIRTY_MODE_PARAM, 0.f, 1.f, 0.f, "saturation mode", {"clean", "dirty"});
         if (auto* quantity = paramQuantities[DIRTY_MODE_PARAM]) {
             quantity->snapEnabled = true;
             quantity->smoothEnabled = false;
         }
 
         // Sub oscillator with extended range for powerful bass
-        configParam(SUB_LEVEL_PARAM, 0.f, 2.0f, 0.0f, "Sub oscillator level", "%", 0.f, 100.f);
-        configParam(SUB_WARP_PARAM, 0.f, 1.f, 0.f, "Sub DCW depth");
-        configSwitch(SUB_SYNC_PARAM, 0.f, 1.f, 0.f, "Sub sync mode", {"Free-run", "Hard sync"});
+        configParam(SUB_LEVEL_PARAM, 0.f, 2.0f, 0.0f, "sub osc level", "%", 0.f, 100.f);
+        configParam(SUB_WARP_PARAM, 0.f, 1.f, 0.f, "sub DCW depth");
+        configSwitch(SUB_SYNC_PARAM, 0.f, 1.f, 0.f, "sub sync mode", {"free-run", "hard sync"});
         if (auto* quantity = paramQuantities[SUB_SYNC_PARAM]) {
             quantity->snapEnabled = true;
             quantity->smoothEnabled = false;
         }
 
-        shapetaker::ParameterHelper::configCVInput(this, VOCT_INPUT, "Pitch (V/Oct)");
-        shapetaker::ParameterHelper::configCVInput(this, TORSION_CV_INPUT, "Torsion CV");
-        shapetaker::ParameterHelper::configCVInput(this, SYMMETRY_CV_INPUT, "Symmetry CV");
+        shapetaker::ParameterHelper::configCVInput(this, VOCT_INPUT, "pitch (V/Oct)");
+        shapetaker::ParameterHelper::configCVInput(this, TORSION_CV_INPUT, "torsion CV");
+        shapetaker::ParameterHelper::configCVInput(this, SYMMETRY_CV_INPUT, "symmetry CV");
         shapetaker::ParameterHelper::configGateInput(this, STAGE_TRIG_INPUT, "DCW trigger");
         shapetaker::ParameterHelper::configGateInput(this, GATE_INPUT, "DCW gate");
 
-        shapetaker::ParameterHelper::configAudioOutput(this, MAIN_L_OUTPUT, "Main L (chorus)");
-        shapetaker::ParameterHelper::configAudioOutput(this, MAIN_R_OUTPUT, "Main R (chorus)");
-        shapetaker::ParameterHelper::configAudioOutput(this, EDGE_OUTPUT, "Edge difference");
+        shapetaker::ParameterHelper::configAudioOutput(this, MAIN_L_OUTPUT, "main L");
+        shapetaker::ParameterHelper::configAudioOutput(this, MAIN_R_OUTPUT, "main R");
+        shapetaker::ParameterHelper::configAudioOutput(this, EDGE_OUTPUT, "edge difference");
 
         velocityHold.forEach([](float& v) { v = 1.f; });
         resetChorusState();

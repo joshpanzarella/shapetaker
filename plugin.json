@@ -89,6 +89,28 @@
       "name": "Specula",
       "description": "A dual VU meter.",
       "tags": ["Utility", "Metering"]
+    },
+    {
+      "slug": "Dissolution",
+      "name": "Dissolution",
+      "description": "Quad-voice tape degradation and freeze engine with capture, sustain, and fade control.",
+      "tags": [
+        "Sampler",
+        "Effect",
+        "Granular",
+        "Tape"
+      ]
+    },
+    {
+      "slug": "Tessellation",
+      "name": "Tessellation",
+      "description": "Triple synchronized digital delay with golden-ratio subdivisions and multi-voicing.",
+      "tags": [
+        "Delay",
+        "Effect",
+        "Stereo",
+        "Digital"
+      ]
     }
   ]
 }

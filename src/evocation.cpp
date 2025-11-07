@@ -3109,7 +3109,6 @@ struct EvocationOLEDDisplay : Widget {
         // Define safe display area (inside bezel)
         const float padding = 6.0f;
         const float safeWidth = box.size.x - (padding * 2.0f);
-        const float safeHeight = box.size.y - (padding * 2.0f);
 
         int envIndex = module->getCurrentEnvelopeIndex();
         envIndex = clamp(envIndex, 0, Evocation::NUM_ENVELOPES - 1);
@@ -3505,9 +3504,6 @@ struct EvocationWidget : ModuleWidget {
         auto centerPx = [&](const std::string& id, float defx, float defy) -> Vec {
             return parser.centerPx(id, defx, defy);
         };
-
-        constexpr float panelWidthMm = 101.6f;
-        constexpr float panelHeightMm = 128.5f;
 
         addChild(createWidget<ScrewBlack>(Vec(RACK_GRID_WIDTH, 0)));
         addChild(createWidget<ScrewBlack>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, 0)));
