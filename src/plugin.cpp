@@ -14,6 +14,5 @@ void init(Plugin* p) {
     p->addModel(modelTransmutation);
     p->addModel(modelSpecula);
     p->addModel(modelTorsion);
-    p->addModel(modelDissolution);
     p->addModel(modelTessellation);
 }
