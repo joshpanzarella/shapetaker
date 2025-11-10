@@ -60,6 +60,10 @@ struct Involution : Module {
     shapetaker::dsp::VoiceArray<LiquidFilter> filtersA;
     shapetaker::dsp::VoiceArray<LiquidFilter> filtersB;
 
+    // Per-voice cutoff smoothers to eliminate CV zipper noise
+    shapetaker::dsp::VoiceArray<shapetaker::FastSmoother> cutoffASmoothers;
+    shapetaker::dsp::VoiceArray<shapetaker::FastSmoother> cutoffBSmoothers;
+
     static constexpr int ETHEREAL_STAGES = 4;
     static constexpr float ETHEREAL_MAX_DELAY_SEC = 0.45f;
 
@@ -162,6 +166,7 @@ struct Involution : Module {
     static constexpr float CHARACTER_SMOOTH_TC = 0.015f;
     static constexpr float EFFECT_GATE_SMOOTH_TC = 0.04f;
     static constexpr float ETHEREAL_PARAM_SMOOTH_TC = 0.05f;
+    static constexpr float CUTOFF_CV_SMOOTH_TC = 0.002f;  // Very fast smoothing to preserve modulation character while eliminating zipper noise
 
     // Character drama shaping - set mix to 0 to revert to legacy linear response
     static constexpr float AURA_DRAMA_MIX = 1.f;
@@ -568,12 +573,16 @@ struct Involution : Module {
                         voiceCutoffA += inputs[CUTOFF_A_CV_INPUT].getPolyVoltage(c) * attenA / 10.f;
                     }
                     voiceCutoffA = clamp(voiceCutoffA, 0.f, 1.f);
+                    // Apply per-voice smoothing to eliminate CV zipper noise
+                    voiceCutoffA = cutoffASmoothers[c].process(voiceCutoffA, args.sampleTime, CUTOFF_CV_SMOOTH_TC);
 
                     if (inputs[CUTOFF_B_CV_INPUT].isConnected()) {
                         float attenB = params[CUTOFF_B_ATTEN_PARAM].getValue();
                         voiceCutoffB += inputs[CUTOFF_B_CV_INPUT].getPolyVoltage(c) * attenB / 10.f;
                     }
                     voiceCutoffB = clamp(voiceCutoffB, 0.f, 1.f);
+                    // Apply per-voice smoothing to eliminate CV zipper noise
+                    voiceCutoffB = cutoffBSmoothers[c].process(voiceCutoffB, args.sampleTime, CUTOFF_CV_SMOOTH_TC);
 
                     if (inputs[RESONANCE_A_CV_INPUT].isConnected()) {
                         float attenA = params[RESONANCE_A_ATTEN_PARAM].getValue();
@@ -833,16 +842,11 @@ struct InvolutionWidget : ModuleWidget {
         addChild(createWidget<ScrewBlack>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
         addChild(createWidget<ScrewBlack>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
-        // Parse SVG panel for precise positioning
-        shapetaker::ui::LayoutHelper::PanelSVGParser parser(asset::plugin(pluginInstance, "res/panels/Involution.svg"));
-
-        // Helper function that uses SVG parser with fallbacks to direct millimeter coordinates
-        // Usage: centerPx("svg_element_id", fallback_x_mm, fallback_y_mm)
-        // When SVG elements are added to the panel with matching IDs, they will automatically
-        // position controls precisely. Until then, fallback coordinates are used.
-        auto centerPx = [&](const std::string& id, float defx, float defy) -> Vec {
-            return parser.centerPx(id, defx, defy);
-        };
+        // Create positioning helper from SVG panel
+        using LayoutHelper = shapetaker::ui::LayoutHelper;
+        auto centerPx = LayoutHelper::createCenterPxHelper(
+            asset::plugin(pluginInstance, "res/panels/Involution.svg")
+        );
         
         // Main Filter Section - using SVG parser for automatic positioning
         addParam(createParamCentered<ShapetakerKnobAltHuge>(
@@ -859,10 +863,10 @@ struct InvolutionWidget : ModuleWidget {
             module, Involution::RESONANCE_B_PARAM));
         
         // Link switches - using SVG parser with fallbacks
-        addParam(createParamCentered<ShapetakerVintageToggleSwitch>(
+        addParam(createParamCentered<ShapetakerVintageRussianToggle>(
             centerPx("link_cutoff", 45.166f, 29.894f),
             module, Involution::LINK_CUTOFF_PARAM));
-        addParam(createParamCentered<ShapetakerVintageToggleSwitch>(
+        addParam(createParamCentered<ShapetakerVintageRussianToggle>(
             centerPx("link_resonance", 45.166f, 84.630f),
             module, Involution::LINK_RESONANCE_PARAM));
 
@@ -883,10 +887,10 @@ struct InvolutionWidget : ModuleWidget {
         // Character Controls - using SVG parser with fallbacks
         // Highpass is now static at 12Hz - no control needed
         // Drive knob is fixed; reuse area for Aura/Orbit/Tide controls
-        addParam(createParamCentered<ShapetakerKnobAltSmall>(centerPx("aura", 15.910f, 94.088f), module, Involution::AURA_PARAM));
-        addParam(createParamCentered<ShapetakerKnobAltSmall>(centerPx("orbit", 45.166f, 94.088f), module, Involution::ORBIT_PARAM));
-        addParam(createParamCentered<ShapetakerKnobAltSmall>(centerPx("tide", 74.422f, 94.088f), module, Involution::TIDE_PARAM));
-        addParam(createParamCentered<ShapetakerKnobAltSmall>(centerPx("chaos_rate", 60.922f, 108.088f), module, Involution::CHAOS_RATE_PARAM));
+        addParam(createParamCentered<ShapetakerKnobAltSmall>(centerPx("aura_knob", 15.910f, 94.088f), module, Involution::AURA_PARAM));
+        addParam(createParamCentered<ShapetakerKnobAltSmall>(centerPx("orbit_knob", 45.166f, 94.088f), module, Involution::ORBIT_PARAM));
+        addParam(createParamCentered<ShapetakerKnobAltSmall>(centerPx("tide_knob", 74.422f, 94.088f), module, Involution::TIDE_PARAM));
+        addParam(createParamCentered<ShapetakerAttenuverterOscilloscope>(centerPx("chaos_rate_knob", 60.922f, 108.088f), module, Involution::CHAOS_RATE_PARAM));
         
         // Chaos Visualizer - using SVG parser for automatic positioning
         ChaosVisualizer* chaosViz = new ChaosVisualizer(module);
@@ -913,7 +917,7 @@ struct InvolutionWidget : ModuleWidget {
         addInput(createInputCentered<ShapetakerBNCPort>(centerPx("aura_cv", 15.910f, 84.630f), module, Involution::AURA_CV_INPUT));
         addInput(createInputCentered<ShapetakerBNCPort>(centerPx("orbit_cv", 45.166f, 84.630f), module, Involution::ORBIT_CV_INPUT));
         addInput(createInputCentered<ShapetakerBNCPort>(centerPx("tide_cv", 74.422f, 84.630f), module, Involution::TIDE_CV_INPUT));
-        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("chaos_lfo_cv", 60.922f, 84.630f), module, Involution::CHAOS_RATE_CV_INPUT));
+        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("chaos_cv", 60.922f, 84.630f), module, Involution::CHAOS_RATE_CV_INPUT));
         // Audio I/O - direct millimeter coordinates
         addInput(createInputCentered<ShapetakerBNCPort>(centerPx("audio_l_input", 10.276f, 118.977f), module, Involution::AUDIO_A_INPUT));
         addInput(createInputCentered<ShapetakerBNCPort>(centerPx("audio_r_input", 27.721f, 119.245f), module, Involution::AUDIO_B_INPUT));

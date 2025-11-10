@@ -47,7 +47,6 @@ struct Tessellation : Module {
         VOICE3_PARAM,
         MOD_DEPTH_PARAM,
         MOD_RATE_PARAM,
-        FREEZE_PARAM,
         TAP_PARAM,
         PINGPONG_PARAM,
         XFEED_PARAM,
@@ -62,7 +61,6 @@ struct Tessellation : Module {
         TIME3_CV_INPUT,
         REPEATS_CV_INPUT,
         MOD_CV_INPUT,
-        FREEZE_GATE_INPUT,
         INPUTS_LEN
     };
 
@@ -77,12 +75,12 @@ struct Tessellation : Module {
 
     enum LightId {
         TEMPO_LIGHT,
-        DELAY1_VU_LIGHT,
-        DELAY2_VU_LIGHT,
-        DELAY3_VU_LIGHT,
-        MIX1_LIGHT,
-        MIX2_LIGHT,
-        MIX3_LIGHT,
+        ENUMS(DELAY1_VU_LIGHT, 3),  // RGB for Teal
+        ENUMS(DELAY2_VU_LIGHT, 3),  // RGB for Magenta
+        ENUMS(DELAY3_VU_LIGHT, 3),  // RGB for Amber
+        ENUMS(MIX1_LIGHT, 3),       // RGB for Teal
+        ENUMS(MIX2_LIGHT, 3),       // RGB for Magenta
+        ENUMS(MIX3_LIGHT, 3),       // RGB for Amber
         LIGHTS_LEN
     };
 
@@ -162,7 +160,7 @@ struct Tessellation : Module {
         };
 
         Result process(int channel, float inL, float inR, float feedback, float tone,
-                        float modDepthSeconds, float modRateHz, bool freeze, float sampleTime) {
+                        float modDepthSeconds, float modRateHz, float sampleTime) {
             channel = rack::math::clamp(channel, 0, MAX_CHANNELS - 1);
 
             float depthSamples = rack::math::clamp(modDepthSeconds * sampleRate, 0.f, static_cast<float>(bufferSize) * 0.45f);
@@ -259,19 +257,8 @@ struct Tessellation : Module {
                 res.wetR = tonedR;
             }
 
-            float writeL = tonedL * feedback;
-            float writeR = tonedR * feedback;
-            if (!freeze) {
-                writeL += inL;
-                writeR += inR;
-            }
-            else {
-                writeL = tonedL;
-                writeR = tonedR;
-            }
-
-            writeL = rack::math::clamp(writeL, -10.f, 10.f);
-            writeR = rack::math::clamp(writeR, -10.f, 10.f);
+            float writeL = rack::math::clamp(tonedL * feedback + inL, -10.f, 10.f);
+            float writeR = rack::math::clamp(tonedR * feedback + inR, -10.f, 10.f);
 
             bufferL[channel][writeIndex[channel]] = writeL;
             bufferR[channel][writeIndex[channel]] = writeR;
@@ -309,12 +296,10 @@ struct Tessellation : Module {
 
     std::array<StereoDelayLine, 3> delayLines;
     float sampleRate = 44100.f;
-    rack::dsp::SchmittTrigger freezeButtonTrigger;
     rack::dsp::SchmittTrigger tapButtonTrigger;
     rack::dsp::PulseGenerator tempoLightPulse;
     float tapTimer = 0.f;
     float tempoPhase = 0.f;
-    bool freezeLatched = false;
 
     // Cross-feedback state: previous sample's delay 3 output (for Delay 3 → 1 feedback)
     static constexpr int MAX_CHANNELS = 16;
@@ -368,7 +353,6 @@ struct Tessellation : Module {
 
         shapetaker::ParameterHelper::configGain(this, MOD_DEPTH_PARAM, "Mod depth", 0.1f);
         shapetaker::ParameterHelper::configGain(this, MOD_RATE_PARAM, "Mod rate", 0.3f);
-        configButton(FREEZE_PARAM, "Freeze");
         configButton(TAP_PARAM, "Tap tempo");
         configSwitch(PINGPONG_PARAM, 0.f, 2.f, 0.f, "Ping-pong mode", {"Off", "Ping-pong", "Inverted"});
         shapetaker::ParameterHelper::configGain(this, XFEED_PARAM, "Cross-feedback", 0.0f);
@@ -380,7 +364,6 @@ struct Tessellation : Module {
         shapetaker::ParameterHelper::configCVInput(this, TIME3_CV_INPUT, "Delay 3 time CV");
         shapetaker::ParameterHelper::configCVInput(this, REPEATS_CV_INPUT, "Repeats CV");
         shapetaker::ParameterHelper::configCVInput(this, MOD_CV_INPUT, "Mod depth CV");
-        shapetaker::ParameterHelper::configGateInput(this, FREEZE_GATE_INPUT, "Freeze gate");
 
         shapetaker::ParameterHelper::configAudioOutput(this, OUT_L_OUTPUT, "Left output");
         shapetaker::ParameterHelper::configAudioOutput(this, OUT_R_OUTPUT, "Right output");
@@ -405,12 +388,6 @@ struct Tessellation : Module {
 
     void process(const ProcessArgs& args) override {
         sampleRate = args.sampleRate;
-
-        if (freezeButtonTrigger.process(params[FREEZE_PARAM].getValue())) {
-            freezeLatched = !freezeLatched;
-        }
-        bool freezeGate = inputs[FREEZE_GATE_INPUT].getVoltage() >= 1.f;
-        bool freezeActive = freezeLatched || freezeGate;
 
         tapTimer += args.sampleTime;
         if (tapTimer > tessellation::TAP_RESET_SECONDS) {
@@ -532,19 +509,19 @@ struct Tessellation : Module {
                 float in1L = inL + xfeedDelay3L[c] * crossFeedback;
                 float in1R = inR + xfeedDelay3R[c] * crossFeedback;
                 res1 = delayLines[0].process(c, in1L, in1R, feedback1, tone1,
-                    modDepthSeconds, modRateHz, freezeActive, args.sampleTime);
+                    modDepthSeconds, modRateHz, args.sampleTime);
 
                 // Delay 2 gets input + cross-fed signal from Delay 1
                 float in2L = inL + res1.tapL * crossFeedback;
                 float in2R = inR + res1.tapR * crossFeedback;
                 res2 = delayLines[1].process(c, in2L, in2R, feedback2, tone2,
-                    modDepthSeconds, modRateHz, freezeActive, args.sampleTime);
+                    modDepthSeconds, modRateHz, args.sampleTime);
 
                 // Delay 3 gets input + cross-fed signal from Delay 2
                 float in3L = inL + res2.tapL * crossFeedback;
                 float in3R = inR + res2.tapR * crossFeedback;
                 res3 = delayLines[2].process(c, in3L, in3R, feedback3, tone3,
-                    modDepthSeconds, modRateHz, freezeActive, args.sampleTime);
+                    modDepthSeconds, modRateHz, args.sampleTime);
 
                 // Store Delay 3 output for next sample's Delay 1 feedback
                 xfeedDelay3L[c] = res3.tapL;
@@ -552,11 +529,11 @@ struct Tessellation : Module {
             } else {
                 // No cross-feedback: process delays independently (faster)
                 res1 = delayLines[0].process(c, inL, inR, feedback1, tone1,
-                    modDepthSeconds, modRateHz, freezeActive, args.sampleTime);
+                    modDepthSeconds, modRateHz, args.sampleTime);
                 res2 = delayLines[1].process(c, inL, inR, feedback2, tone2,
-                    modDepthSeconds, modRateHz, freezeActive, args.sampleTime);
+                    modDepthSeconds, modRateHz, args.sampleTime);
                 res3 = delayLines[2].process(c, inL, inR, feedback3, tone3,
-                    modDepthSeconds, modRateHz, freezeActive, args.sampleTime);
+                    modDepthSeconds, modRateHz, args.sampleTime);
             }
 
             float wetL = (res1.wetL * mix1 + res2.wetL * mix2 + res3.wetL * mix3) * wetGainComp;
@@ -589,12 +566,37 @@ struct Tessellation : Module {
         float tempoBrightness = tempoLightPulse.process(args.sampleTime) ? 1.f : 0.f;
         lights[TEMPO_LIGHT].setBrightness(tempoBrightness);
 
-        lights[DELAY1_VU_LIGHT].setBrightness(maxVU[0]);
-        lights[DELAY2_VU_LIGHT].setBrightness(maxVU[1]);
-        lights[DELAY3_VU_LIGHT].setBrightness(maxVU[2]);
-        lights[MIX1_LIGHT].setBrightness(mix1);
-        lights[MIX2_LIGHT].setBrightness(mix2);
-        lights[MIX3_LIGHT].setBrightness(mix3);
+        // Set RGB values for colored LEDs to match screen cubes
+        // Delay 1 VU: Teal (#00ffb4) = R:0, G:1, B:0.7
+        lights[DELAY1_VU_LIGHT + 0].setBrightness(0.f);           // Red
+        lights[DELAY1_VU_LIGHT + 1].setBrightness(maxVU[0]);      // Green
+        lights[DELAY1_VU_LIGHT + 2].setBrightness(maxVU[0] * 0.7f); // Blue
+
+        // Delay 2 VU: Magenta (#ff00ff) = R:1, G:0, B:1
+        lights[DELAY2_VU_LIGHT + 0].setBrightness(maxVU[1]);      // Red
+        lights[DELAY2_VU_LIGHT + 1].setBrightness(0.f);           // Green
+        lights[DELAY2_VU_LIGHT + 2].setBrightness(maxVU[1]);      // Blue
+
+        // Delay 3 VU: Amber (#ffb400) = R:1, G:0.7, B:0
+        lights[DELAY3_VU_LIGHT + 0].setBrightness(maxVU[2]);      // Red
+        lights[DELAY3_VU_LIGHT + 1].setBrightness(maxVU[2] * 0.7f); // Green
+        lights[DELAY3_VU_LIGHT + 2].setBrightness(0.f);           // Blue
+
+        // Mix LEDs with same colors
+        // Mix 1: Teal
+        lights[MIX1_LIGHT + 0].setBrightness(0.f);
+        lights[MIX1_LIGHT + 1].setBrightness(mix1);
+        lights[MIX1_LIGHT + 2].setBrightness(mix1 * 0.7f);
+
+        // Mix 2: Magenta
+        lights[MIX2_LIGHT + 0].setBrightness(mix2);
+        lights[MIX2_LIGHT + 1].setBrightness(0.f);
+        lights[MIX2_LIGHT + 2].setBrightness(mix2);
+
+        // Mix 3: Amber
+        lights[MIX3_LIGHT + 0].setBrightness(mix3);
+        lights[MIX3_LIGHT + 1].setBrightness(mix3 * 0.7f);
+        lights[MIX3_LIGHT + 2].setBrightness(0.f);
     }
 };
 
@@ -613,102 +615,110 @@ struct TessellationWidget : ModuleWidget {
             return mm2px(Vec(x, y));
         };
 
-        // 26HP layout (132.08mm) with proper spacing for all controls
-        // Control sizes: Medium knob = 18mm, Small knob = 8mm, Jack = 8mm
-        const float panelWidth = 132.08f;
+        // 26HP layout: 132.08mm wide × 128.5mm tall
+        // Control sizes: Medium knob = 20mm, Small knob = 16mm, Jack = 8mm
+        // Safe zone: 8mm margin on each edge (knob radius) = 116mm usable width
 
-        // Three column layout: Delay 1 | Delay 2 | Delay 3
-        const float margin = 10.f;  // Left/right margins
-        const float col1 = margin + 16.f;      // Delay 1 column (~26mm)
-        const float col2 = panelWidth * 0.38f;  // Delay 2 column (~50mm)
-        const float col3 = panelWidth * 0.62f;  // Delay 3 column (~82mm)
-
-        auto addMixLights = [&](float knobCol, int mixLightId, int vuLightId, float rowPos) {
+        // Custom RGB light colors matching the screen visualization
+        // Delay 1: Teal (#00ffb4)
+        // Delay 2: Magenta (#ff00ff)
+        // Delay 3: Amber (#ffb400)
+        auto addMixLights = [&](float knobCol, int mixLightId, int vuLightId, float rowPos, int delayIndex) {
             if (!module) return;
-            addChild(createLightCentered<SmallLight<YellowLight>>(mm(knobCol - 6.5f, rowPos - 3.f), module, mixLightId));
-            addChild(createLightCentered<SmallLight<RedLight>>(mm(knobCol + 6.5f, rowPos - 3.f), module, vuLightId));
+            // Use RGB lights - all use the same type, color is set by brightness values
+            addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(mm(knobCol - 8.f, rowPos - 3.f), module, mixLightId));
+            addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(mm(knobCol + 8.f, rowPos - 3.f), module, vuLightId));
+            (void)delayIndex;  // Unused, color is set by RGB brightness values in process()
         };
 
-        // Row positions with proper spacing (minimum 12mm between rows for medium knobs)
-        const float rowHeader = 18.f;
-        const float rowTime = 32.f;   // TIME knobs for subdiv modes
-        const float rowMix = 48.f;    // MIX + REPEATS pairs
-        const float rowTone = 64.f;   // TONE knobs
-        const float rowVoice = 74.f;  // VOICE switches (below TONE)
-        const float rowMod = 90.f;    // Global modulation controls
-        const float rowControl = 102.f; // FREEZE + PING-PONG
-        const float rowInputs = 112.f;  // Audio inputs
-        const float rowCV = 120.f;      // CV inputs (tight spacing at bottom)
+        // Row positions (verified against 128.5mm panel height)
+        const float row1 = 18.f;   // TIME1 + TAP
+        const float row2 = 36.f;   // SUBDIV2, TIME2, SUBDIV3, TIME3
+        const float row3 = 54.f;   // MIX1, REPEATS1, MIX2, REPEATS2, MIX3, REPEATS3
+        const float row4 = 70.f;   // TONE1, TONE2, TONE3
+        const float row5 = 84.f;   // VOICE1, VOICE2, VOICE3
+        const float row6 = 96.f;   // MOD_DEPTH, MOD_RATE, XFEED
+        const float row7 = 108.f;  // Ping-pong + audio inputs
+        const float row8 = 120.f;  // All CV inputs and outputs
 
-        // === ROW 1: TIME/SUBDIV Controls ===
-        // Delay 1: Main TIME knob (medium) + Tap button
-        addParam(createParamCentered<ShapetakerKnobAltMedium>(mm(col1, rowHeader), module, Tessellation::TIME1_PARAM));
-        addParam(createParamCentered<rack::componentlibrary::LEDButton>(mm(col1 + 12.f, rowHeader - 4.f), module, Tessellation::TAP_PARAM));
-        if (module) addChild(createLightCentered<SmallLight<GreenLight>>(mm(col1 + 12.f, rowHeader - 4.f), module, Tessellation::TEMPO_LIGHT));
+        // === ROW 1: TIME1 (20mm medium) + TAP button ===
+        // Safe: 10mm (knob radius) to 40mm (10+20+10)
+        addParam(createParamCentered<ShapetakerKnobAltMedium>(mm(20.f, row1), module, Tessellation::TIME1_PARAM));
+        addParam(createParamCentered<rack::componentlibrary::LEDButton>(mm(38.f, row1), module, Tessellation::TAP_PARAM));
+        if (module) addChild(createLightCentered<SmallLight<GreenLight>>(mm(38.f, row1), module, Tessellation::TEMPO_LIGHT));
 
-        // Delay 2 & 3: SUBDIV knobs
-        addParam(createParamCentered<ShapetakerKnobAltSmall>(mm(col2, rowHeader), module, Tessellation::SUBDIV2_PARAM));
-        addParam(createParamCentered<ShapetakerKnobAltSmall>(mm(col3, rowHeader), module, Tessellation::SUBDIV3_PARAM));
+        // === ROW 2: 4 small knobs (16mm each) ===
+        // Available: 8mm to 124mm (116mm width)
+        // 4 knobs need 4*8mm = 32mm for radii, 84mm for spacing
+        // Spacing: 84/3 = 28mm between centers
+        addParam(createParamCentered<ShapetakerKnobAltSmall>(mm(16.f, row2), module, Tessellation::SUBDIV2_PARAM));
+        addParam(createParamCentered<ShapetakerKnobAltSmall>(mm(44.f, row2), module, Tessellation::TIME2_PARAM));
+        addParam(createParamCentered<ShapetakerKnobAltSmall>(mm(72.f, row2), module, Tessellation::SUBDIV3_PARAM));
+        addParam(createParamCentered<ShapetakerKnobAltSmall>(mm(100.f, row2), module, Tessellation::TIME3_PARAM));
 
-        // === ROW 2: TIME knobs for FREE subdivision mode ===
-        addParam(createParamCentered<ShapetakerKnobAltSmall>(mm(col2, rowTime), module, Tessellation::TIME2_PARAM));
-        addParam(createParamCentered<ShapetakerKnobAltSmall>(mm(col3, rowTime), module, Tessellation::TIME3_PARAM));
+        // === ROW 3: 6 small knobs (3 pairs) ===
+        // Layout: MIX1 REPT1 | MIX2 REPT2 | MIX3 REPT3
+        // Each pair needs 18mm spacing (16mm + 2mm), 54mm total for 3 pairs
+        // Plus 2 gaps of ~20mm = 94mm total, fits in 116mm
+        addParam(createParamCentered<ShapetakerKnobAltSmall>(mm(14.f, row3), module, Tessellation::MIX1_PARAM));
+        addParam(createParamCentered<ShapetakerKnobAltSmall>(mm(32.f, row3), module, Tessellation::REPEATS1_PARAM));
+        addMixLights(23.f, Tessellation::MIX1_LIGHT, Tessellation::DELAY1_VU_LIGHT, row3, 0);
 
-        // === ROW 3: MIX + REPEATS pairs (with VU lights) ===
-        addParam(createParamCentered<ShapetakerKnobAltSmall>(mm(col1 - 6.f, rowMix), module, Tessellation::MIX1_PARAM));
-        addParam(createParamCentered<ShapetakerKnobAltSmall>(mm(col1 + 6.f, rowMix), module, Tessellation::REPEATS1_PARAM));
-        addMixLights(col1, Tessellation::MIX1_LIGHT, Tessellation::DELAY1_VU_LIGHT, rowMix);
+        addParam(createParamCentered<ShapetakerKnobAltSmall>(mm(52.f, row3), module, Tessellation::MIX2_PARAM));
+        addParam(createParamCentered<ShapetakerKnobAltSmall>(mm(70.f, row3), module, Tessellation::REPEATS2_PARAM));
+        addMixLights(61.f, Tessellation::MIX2_LIGHT, Tessellation::DELAY2_VU_LIGHT, row3, 1);
 
-        addParam(createParamCentered<ShapetakerKnobAltSmall>(mm(col2 - 6.f, rowMix), module, Tessellation::MIX2_PARAM));
-        addParam(createParamCentered<ShapetakerKnobAltSmall>(mm(col2 + 6.f, rowMix), module, Tessellation::REPEATS2_PARAM));
-        addMixLights(col2, Tessellation::MIX2_LIGHT, Tessellation::DELAY2_VU_LIGHT, rowMix);
+        addParam(createParamCentered<ShapetakerKnobAltSmall>(mm(90.f, row3), module, Tessellation::MIX3_PARAM));
+        addParam(createParamCentered<ShapetakerKnobAltSmall>(mm(108.f, row3), module, Tessellation::REPEATS3_PARAM));
+        addMixLights(99.f, Tessellation::MIX3_LIGHT, Tessellation::DELAY3_VU_LIGHT, row3, 2);
 
-        addParam(createParamCentered<ShapetakerKnobAltSmall>(mm(col3 - 6.f, rowMix), module, Tessellation::MIX3_PARAM));
-        addParam(createParamCentered<ShapetakerKnobAltSmall>(mm(col3 + 6.f, rowMix), module, Tessellation::REPEATS3_PARAM));
-        addMixLights(col3, Tessellation::MIX3_LIGHT, Tessellation::DELAY3_VU_LIGHT, rowMix);
+        // === ROW 4: 3 TONE knobs aligned with pair centers ===
+        addParam(createParamCentered<ShapetakerKnobAltSmall>(mm(23.f, row4), module, Tessellation::TONE1_PARAM));
+        addParam(createParamCentered<ShapetakerKnobAltSmall>(mm(61.f, row4), module, Tessellation::TONE2_PARAM));
+        addParam(createParamCentered<ShapetakerKnobAltSmall>(mm(99.f, row4), module, Tessellation::TONE3_PARAM));
 
-        // === ROW 4: TONE knobs ===
-        addParam(createParamCentered<ShapetakerKnobAltSmall>(mm(col1, rowTone), module, Tessellation::TONE1_PARAM));
-        addParam(createParamCentered<ShapetakerKnobAltSmall>(mm(col2, rowTone), module, Tessellation::TONE2_PARAM));
-        addParam(createParamCentered<ShapetakerKnobAltSmall>(mm(col3, rowTone), module, Tessellation::TONE3_PARAM));
+        // === ROW 5: 3 VOICE switches ===
+        addParam(createParamCentered<rack::componentlibrary::CKSSThree>(mm(23.f, row5), module, Tessellation::VOICE1_PARAM));
+        addParam(createParamCentered<rack::componentlibrary::CKSSThree>(mm(61.f, row5), module, Tessellation::VOICE2_PARAM));
+        addParam(createParamCentered<rack::componentlibrary::CKSSThree>(mm(99.f, row5), module, Tessellation::VOICE3_PARAM));
 
-        // === ROW 5: VOICE switches ===
-        addParam(createParamCentered<rack::componentlibrary::CKSSThree>(mm(col1, rowVoice), module, Tessellation::VOICE1_PARAM));
-        addParam(createParamCentered<rack::componentlibrary::CKSSThree>(mm(col2, rowVoice), module, Tessellation::VOICE2_PARAM));
-        addParam(createParamCentered<rack::componentlibrary::CKSSThree>(mm(col3, rowVoice), module, Tessellation::VOICE3_PARAM));
+        // === ROW 6: 3 global knobs (MOD_DEPTH, MOD_RATE, XFEED) ===
+        addParam(createParamCentered<ShapetakerKnobAltSmall>(mm(28.f, row6), module, Tessellation::MOD_DEPTH_PARAM));
+        addParam(createParamCentered<ShapetakerKnobAltSmall>(mm(66.f, row6), module, Tessellation::MOD_RATE_PARAM));
+        addParam(createParamCentered<ShapetakerKnobAltSmall>(mm(104.f, row6), module, Tessellation::XFEED_PARAM));
 
-        // === ROW 6: GLOBAL MODULATION CONTROLS ===
-        addParam(createParamCentered<ShapetakerKnobAltSmall>(mm(col1, rowMod), module, Tessellation::MOD_DEPTH_PARAM));
-        addParam(createParamCentered<ShapetakerKnobAltSmall>(mm(col2, rowMod), module, Tessellation::MOD_RATE_PARAM));
-        addParam(createParamCentered<ShapetakerKnobAltSmall>(mm(col3, rowMod), module, Tessellation::XFEED_PARAM));
+        // === ROW 7: Ping-pong selector + audio inputs ===
+        addParam(createParamCentered<rack::componentlibrary::CKSSThree>(mm(23.f, row7), module, Tessellation::PINGPONG_PARAM));
+        addInput(createInputCentered<ShapetakerBNCPort>(mm(92.f, row7), module, Tessellation::IN_L_INPUT));
+        addInput(createInputCentered<ShapetakerBNCPort>(mm(110.f, row7), module, Tessellation::IN_R_INPUT));
 
-        // === ROW 7: FREEZE + PING-PONG ===
-        addParam(createParamCentered<rack::componentlibrary::LEDButton>(mm(col1, rowControl), module, Tessellation::FREEZE_PARAM));
-        addParam(createParamCentered<rack::componentlibrary::CKSSThree>(mm(col3, rowControl), module, Tessellation::PINGPONG_PARAM));
+        // === ROW 8: All CV inputs and outputs (10 jacks total) ===
+        // 10 jacks at 4mm radius = 8mm + (9*8mm spacing) = 80mm < 116mm ✓
+        const float jackSpacing = 9.f;
+        float jackX = 12.f;
 
-        // === ROW 8: AUDIO INPUTS ===
-        addInput(createInputCentered<ShapetakerBNCPort>(mm(col1, rowInputs), module, Tessellation::IN_L_INPUT));
-        addInput(createInputCentered<ShapetakerBNCPort>(mm(col2, rowInputs), module, Tessellation::IN_R_INPUT));
+        // CV Inputs (5 jacks)
+        addInput(createInputCentered<ShapetakerBNCPort>(mm(jackX, row8), module, Tessellation::TIME1_CV_INPUT));
+        jackX += jackSpacing;
+        addInput(createInputCentered<ShapetakerBNCPort>(mm(jackX, row8), module, Tessellation::TIME2_CV_INPUT));
+        jackX += jackSpacing;
+        addInput(createInputCentered<ShapetakerBNCPort>(mm(jackX, row8), module, Tessellation::TIME3_CV_INPUT));
+        jackX += jackSpacing;
+        addInput(createInputCentered<ShapetakerBNCPort>(mm(jackX, row8), module, Tessellation::REPEATS_CV_INPUT));
+        jackX += jackSpacing;
+        addInput(createInputCentered<ShapetakerBNCPort>(mm(jackX, row8), module, Tessellation::MOD_CV_INPUT));
+        jackX += jackSpacing + 4.f;  // Extra gap before outputs
 
-        // === ROW 9: CV INPUTS (distributed across bottom) ===
-        const float cvSpacing = 16.f;
-        const float cvStart = 18.f;
-        addInput(createInputCentered<ShapetakerBNCPort>(mm(cvStart, rowCV), module, Tessellation::TIME1_CV_INPUT));
-        addInput(createInputCentered<ShapetakerBNCPort>(mm(cvStart + cvSpacing, rowCV), module, Tessellation::TIME2_CV_INPUT));
-        addInput(createInputCentered<ShapetakerBNCPort>(mm(cvStart + cvSpacing * 2, rowCV), module, Tessellation::TIME3_CV_INPUT));
-        addInput(createInputCentered<ShapetakerBNCPort>(mm(cvStart + cvSpacing * 3, rowCV), module, Tessellation::REPEATS_CV_INPUT));
-        addInput(createInputCentered<ShapetakerBNCPort>(mm(cvStart + cvSpacing * 4, rowCV), module, Tessellation::MOD_CV_INPUT));
-        addInput(createInputCentered<ShapetakerBNCPort>(mm(cvStart + cvSpacing * 5, rowCV), module, Tessellation::FREEZE_GATE_INPUT));
-
-        // === OUTPUTS (below CV inputs) ===
-        const float outRow = rowCV + 8.f;  // Just below CV inputs
-        const float outSpacing = 18.f;
-        const float outStart = 20.f;
-        addOutput(createOutputCentered<ShapetakerBNCPort>(mm(outStart, outRow), module, Tessellation::OUT_L_OUTPUT));
-        addOutput(createOutputCentered<ShapetakerBNCPort>(mm(outStart + outSpacing, outRow), module, Tessellation::OUT_R_OUTPUT));
-        addOutput(createOutputCentered<ShapetakerBNCPort>(mm(outStart + outSpacing * 2, outRow), module, Tessellation::DELAY1_OUTPUT));
-        addOutput(createOutputCentered<ShapetakerBNCPort>(mm(outStart + outSpacing * 3, outRow), module, Tessellation::DELAY2_OUTPUT));
-        addOutput(createOutputCentered<ShapetakerBNCPort>(mm(outStart + outSpacing * 4, outRow), module, Tessellation::DELAY3_OUTPUT));
+        // Outputs (5 jacks)
+        addOutput(createOutputCentered<ShapetakerBNCPort>(mm(jackX, row8), module, Tessellation::OUT_L_OUTPUT));
+        jackX += jackSpacing;
+        addOutput(createOutputCentered<ShapetakerBNCPort>(mm(jackX, row8), module, Tessellation::OUT_R_OUTPUT));
+        jackX += jackSpacing;
+        addOutput(createOutputCentered<ShapetakerBNCPort>(mm(jackX, row8), module, Tessellation::DELAY1_OUTPUT));
+        jackX += jackSpacing;
+        addOutput(createOutputCentered<ShapetakerBNCPort>(mm(jackX, row8), module, Tessellation::DELAY2_OUTPUT));
+        jackX += jackSpacing;
+        addOutput(createOutputCentered<ShapetakerBNCPort>(mm(jackX, row8), module, Tessellation::DELAY3_OUTPUT));
     }
 };
 

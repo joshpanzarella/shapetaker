@@ -792,9 +792,6 @@ struct Chiaroscuro : Module {
         // Enhanced sidechain behavior with three modes
         float combined_distortion, effective_drive, effective_mix;
 
-        // Sidechain LED: lights up based on sidechain envelope level
-        lights[SIDECHAIN_LED].setBrightness(inputs[SIDECHAIN_INPUT].isConnected() ? sc_env : 0.0f);
-
         if (inputs[SIDECHAIN_INPUT].isConnected()) {
             float sidechain_intensity = sc_env; // 0.0 to 1.0 based on sidechain input
 
@@ -1330,11 +1327,11 @@ struct ChiaroscuroWidget : ModuleWidget {
         addChild(createWidget<ScrewBlack>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
         addChild(createWidget<ScrewBlack>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
+        // Create positioning helper from SVG panel
         using LayoutHelper = shapetaker::ui::LayoutHelper;
-        LayoutHelper::PanelSVGParser parser(asset::plugin(pluginInstance, "res/panels/Chiaroscuro.svg"));
-        auto centerPx = [&](const std::string& id, float defx, float defy) -> Vec {
-            return parser.centerPx(id, defx, defy);
-        };
+        auto centerPx = LayoutHelper::createCenterPxHelper(
+            asset::plugin(pluginInstance, "res/panels/Chiaroscuro.svg")
+        );
         
         // Audio I/O - BNC connectors for vintage oscilloscope look
         addInput(createInputCentered<ShapetakerBNCPort>(centerPx("audio-in-l", 7.5756826f, 114.8209f), module, Chiaroscuro::AUDIO_L_INPUT));
@@ -1358,11 +1355,8 @@ struct ChiaroscuroWidget : ModuleWidget {
         auto* linkSwitch = createParamCentered<ShapetakerVintageRussianToggle>(linkCenter, module, Chiaroscuro::LINK_PARAM);
         addParam(linkSwitch);
         
-        // Sidechain input with LED indicator
+        // Sidechain input
         addInput(createInputCentered<ShapetakerBNCPort>(centerPx("sidechain-detect-cv", 7.5756826f, 101.61994f), module, Chiaroscuro::SIDECHAIN_INPUT));
-
-        // Sidechain activity LED (small green LED near sidechain input)
-        addChild(createLightCentered<SmallLight<GreenLight>>(centerPx("sidechain-led", 12.0f, 101.61994f), module, Chiaroscuro::SIDECHAIN_LED));
 
         // Distortion type CV input
         addInput(createInputCentered<ShapetakerBNCPort>(centerPx("dist-type-cv", 36.523819f, 82.450134f), module, Chiaroscuro::TYPE_CV_INPUT));
@@ -1411,10 +1405,13 @@ struct ChiaroscuroWidget : ModuleWidget {
         addChild(pixelRing);
 
         // Vintage dot matrix display with sun/moon eclipse
+#if 0
+        // Temporarily disabled to remove the screen from the hardware panel while keeping the code handy.
         VintageDotMatrix* dotMatrix = new VintageDotMatrix(module);
         Vec dotMatrixCenter = centerPx("dot_matrix", 30.7f, 104.272f);  // Center of the 48.36x14.61 rectangle
         dotMatrix->box.pos = dotMatrixCenter.minus(dotMatrix->box.size.div(2));
         addChild(dotMatrix);
+#endif
     }
 };
 

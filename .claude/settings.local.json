@@ -54,7 +54,8 @@
       "Bash(mkdir:*)",
       "Bash(for:*)",
       "Bash(do echo \"=== $f ===\")",
-      "Bash(git stash:*)"
+      "Bash(git stash:*)",
+      "Bash(c++:*)"
     ],
     "deny": [],
     "ask": []

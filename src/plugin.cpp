@@ -15,4 +15,5 @@ void init(Plugin* p) {
     p->addModel(modelSpecula);
     p->addModel(modelTorsion);
     p->addModel(modelTessellation);
+    p->addModel(modelPatina);
 }

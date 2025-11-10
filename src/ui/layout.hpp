@@ -142,6 +142,67 @@ public:
             return p.rectMm(id, defx, defy, defw, defh);
         }
     };
+
+    /**
+     * Create a parser and return a lambda for convenient widget positioning.
+     * This encapsulates the common pattern used across all modules.
+     *
+     * Usage in ModuleWidget constructor:
+     *   auto centerPx = LayoutHelper::createCenterPxHelper(
+     *       asset::plugin(pluginInstance, "res/panels/YourPanel.svg")
+     *   );
+     *   addParam(createParamCentered<KnobType>(
+     *       centerPx("knob_id", 10.0f, 25.0f),
+     *       module,
+     *       PARAM_ID
+     *   ));
+     */
+    static std::function<Vec(const std::string&, float, float)>
+    createCenterPxHelper(const std::string& svgPath) {
+        // Create parser on the heap so it persists for the lambda's lifetime
+        auto parser = std::make_shared<PanelSVGParser>(svgPath);
+        return [parser](const std::string& id, float defx, float defy) -> Vec {
+            return parser->centerPx(id, defx, defy);
+        };
+    }
+
+    /**
+     * Simplified version using a pre-constructed parser (avoids re-reading file).
+     * Use this when you need the parser for other operations too.
+     *
+     * Usage:
+     *   PanelSVGParser parser(asset::plugin(...));
+     *   auto centerPx = LayoutHelper::createCenterPxHelper(parser);
+     */
+    static std::function<Vec(const std::string&, float, float)>
+    createCenterPxHelper(const PanelSVGParser& parser) {
+        return [&parser](const std::string& id, float defx, float defy) -> Vec {
+            return parser.centerPx(id, defx, defy);
+        };
+    }
+
+    /**
+     * Legacy pattern support - creates parser and lambda in widget scope.
+     * This is what modules currently use inline. Kept for reference.
+     *
+     * Preferred: Use createCenterPxHelper() instead.
+     */
+    struct WidgetPositioner {
+        PanelSVGParser parser;
+
+        explicit WidgetPositioner(const std::string& svgPath) : parser(svgPath) {}
+
+        Vec centerPx(const std::string& id, float defx, float defy) const {
+            return parser.centerPx(id, defx, defy);
+        }
+
+        // Create lambda for compatibility with existing code
+        std::function<Vec(const std::string&, float, float)> getLambda() {
+            return [this](const std::string& id, float defx, float defy) -> Vec {
+                return this->centerPx(id, defx, defy);
+            };
+        }
+    };
     
     /**
      * Get module width in pixels

@@ -19,8 +19,58 @@ extern Model* modelTransmutation;
 extern Model* modelSpecula;
 extern Model* modelTorsion;
 extern Model* modelTessellation;
+extern Model* modelPatina;
 
-struct ShapetakerKnobLarge : app::SvgKnob {
+/**
+ * Base knob class with universal fallback indicator support.
+ * If a knob uses blank_indicator.svg, this will draw a procedural
+ * filled circle indicator on the knob skirt.
+ */
+struct ShapetakerKnobBase : app::SvgKnob {
+    bool usesFallbackIndicator = false;
+    float indicatorRadiusFraction = 0.85f;  // Position on skirt (0.0 = center, 1.0 = edge)
+    float indicatorSizeFraction = 0.08f;    // Size relative to knob radius
+
+    void checkForFallbackIndicator(const std::string& svgPath) {
+        // Check if this knob is using the blank indicator
+        usesFallbackIndicator = (svgPath.find("blank_indicator.svg") != std::string::npos);
+    }
+
+    void drawFallbackIndicator(const DrawArgs& args) {
+        if (!usesFallbackIndicator) return;
+
+        // Get the current knob value and convert to angle
+        float value = 0.f;
+        if (getParamQuantity()) {
+            value = getParamQuantity()->getScaledValue();
+        }
+        float angle = rack::math::rescale(value, 0.f, 1.f, minAngle, maxAngle);
+
+        // Calculate indicator position on the skirt
+        Vec center = box.size.div(2);
+        float knobRadius = std::min(center.x, center.y);
+        float indicatorDistance = knobRadius * indicatorRadiusFraction;
+        float indicatorSize = knobRadius * indicatorSizeFraction;
+
+        // Calculate indicator position
+        float x = center.x + indicatorDistance * std::sin(angle);
+        float y = center.y - indicatorDistance * std::cos(angle);
+
+        // Draw filled circle indicator
+        nvgBeginPath(args.vg);
+        nvgCircle(args.vg, x, y, indicatorSize);
+        nvgFillColor(args.vg, nvgRGBA(0, 255, 200, 255));  // Teal indicator
+        nvgFill(args.vg);
+
+        // Add subtle glow
+        nvgBeginPath(args.vg);
+        nvgCircle(args.vg, x, y, indicatorSize * 1.5f);
+        nvgFillColor(args.vg, nvgRGBA(0, 255, 200, 60));
+        nvgFill(args.vg);
+    }
+};
+
+struct ShapetakerKnobLarge : ShapetakerKnobBase {
     widget::SvgWidget* bg;
     Vec nativeSize = Vec(100.f, 100.f);
     
@@ -622,7 +672,7 @@ struct ShapetakerKnobDarkLarge : app::SvgKnob {
     }
 };
 
-struct ShapetakerKnobAltHuge : app::SvgKnob {
+struct ShapetakerKnobAltHuge : ShapetakerKnobBase {
     widget::SvgWidget* bg;
     Vec nativeSize = Vec(100.f, 100.f);
 
@@ -630,8 +680,10 @@ struct ShapetakerKnobAltHuge : app::SvgKnob {
         minAngle = -0.75 * M_PI;
         maxAngle = 0.75 * M_PI;
 
-        // Use blank indicator for now - will be replaced piecemeal later
-        setSvg(Svg::load(asset::plugin(pluginInstance, "res/knobs/indicators/blank_indicator.svg")));
+        // Use blank indicator - fallback will be drawn procedurally
+        std::string indicatorPath = asset::plugin(pluginInstance, "res/knobs/indicators/blank_indicator.svg");
+        setSvg(Svg::load(indicatorPath));
+        checkForFallbackIndicator(indicatorPath);
 
         bg = new widget::SvgWidget;
         bg->setSvg(Svg::load(asset::plugin(pluginInstance, "res/knobs/backgrounds/st_alt_knob_huge.svg")));
@@ -658,10 +710,13 @@ struct ShapetakerKnobAltHuge : app::SvgKnob {
         nvgScale(args.vg, s, s);
         app::SvgKnob::draw(args);
         nvgRestore(args.vg);
+
+        // Draw fallback indicator if using blank_indicator.svg
+        drawFallbackIndicator(args);
     }
 };
 
-struct ShapetakerKnobAltLarge : app::SvgKnob {
+struct ShapetakerKnobAltLarge : ShapetakerKnobBase {
     widget::SvgWidget* bg;
     Vec nativeSize = Vec(100.f, 100.f);
 
@@ -669,8 +724,10 @@ struct ShapetakerKnobAltLarge : app::SvgKnob {
         minAngle = -0.75 * M_PI;
         maxAngle = 0.75 * M_PI;
 
-        // Use blank indicator for now - will be replaced piecemeal later
-        setSvg(Svg::load(asset::plugin(pluginInstance, "res/knobs/indicators/blank_indicator.svg")));
+        // Use blank indicator - fallback will be drawn procedurally
+        std::string indicatorPath = asset::plugin(pluginInstance, "res/knobs/indicators/blank_indicator.svg");
+        setSvg(Svg::load(indicatorPath));
+        checkForFallbackIndicator(indicatorPath);
 
         bg = new widget::SvgWidget;
         bg->setSvg(Svg::load(asset::plugin(pluginInstance, "res/knobs/backgrounds/st_alt_knob_large.svg")));
@@ -697,10 +754,13 @@ struct ShapetakerKnobAltLarge : app::SvgKnob {
         nvgScale(args.vg, s, s);
         app::SvgKnob::draw(args);
         nvgRestore(args.vg);
+
+        // Draw fallback indicator if using blank_indicator.svg
+        drawFallbackIndicator(args);
     }
 };
 
-struct ShapetakerKnobAltMedium : app::SvgKnob {
+struct ShapetakerKnobAltMedium : ShapetakerKnobBase {
     widget::SvgWidget* bg;
     Vec nativeSize = Vec(100.f, 100.f);
 
@@ -708,8 +768,10 @@ struct ShapetakerKnobAltMedium : app::SvgKnob {
         minAngle = -0.75 * M_PI;
         maxAngle = 0.75 * M_PI;
 
-        // Use blank indicator for now - will be replaced piecemeal later
-        setSvg(Svg::load(asset::plugin(pluginInstance, "res/knobs/indicators/blank_indicator.svg")));
+        // Use blank indicator - fallback will be drawn procedurally
+        std::string indicatorPath = asset::plugin(pluginInstance, "res/knobs/indicators/blank_indicator.svg");
+        setSvg(Svg::load(indicatorPath));
+        checkForFallbackIndicator(indicatorPath);
 
         bg = new widget::SvgWidget;
         bg->setSvg(Svg::load(asset::plugin(pluginInstance, "res/knobs/backgrounds/st_alt_knob_medium.svg")));
@@ -736,10 +798,13 @@ struct ShapetakerKnobAltMedium : app::SvgKnob {
         nvgScale(args.vg, s, s);
         app::SvgKnob::draw(args);
         nvgRestore(args.vg);
+
+        // Draw fallback indicator if using blank_indicator.svg
+        drawFallbackIndicator(args);
     }
 };
 
-struct ShapetakerKnobAltSmall : app::SvgKnob {
+struct ShapetakerKnobAltSmall : ShapetakerKnobBase {
     widget::SvgWidget* bg;
     Vec nativeSize = Vec(100.f, 100.f);
 
@@ -747,8 +812,10 @@ struct ShapetakerKnobAltSmall : app::SvgKnob {
         minAngle = -0.75 * M_PI;
         maxAngle = 0.75 * M_PI;
 
-        // Use blank indicator for now - will be replaced piecemeal later
-        setSvg(Svg::load(asset::plugin(pluginInstance, "res/knobs/indicators/blank_indicator.svg")));
+        // Use blank indicator - fallback will be drawn procedurally
+        std::string indicatorPath = asset::plugin(pluginInstance, "res/knobs/indicators/blank_indicator.svg");
+        setSvg(Svg::load(indicatorPath));
+        checkForFallbackIndicator(indicatorPath);
 
         bg = new widget::SvgWidget;
         bg->setSvg(Svg::load(asset::plugin(pluginInstance, "res/knobs/backgrounds/st_alt_knob_small.svg")));
@@ -775,6 +842,9 @@ struct ShapetakerKnobAltSmall : app::SvgKnob {
         nvgScale(args.vg, s, s);
         app::SvgKnob::draw(args);
         nvgRestore(args.vg);
+
+        // Draw fallback indicator if using blank_indicator.svg
+        drawFallbackIndicator(args);
     }
 };
 
@@ -1085,6 +1155,9 @@ struct ShapetakerAttenuverterOscilloscope : app::SvgKnob {
         widget::SvgWidget probe;
         probe.setSvg(Svg::load(asset::plugin(pluginInstance, "res/knobs/indicators/st_knob_oscilloscope_indicator_attenuverter_small.svg")));
         nativeSize = probe.box.size;
+        // Force nativeSize to be square to prevent distortion when rotating
+        float maxDim = std::max(nativeSize.x, nativeSize.y);
+        nativeSize = Vec(maxDim, maxDim);
         // Target: Attenuverter = 10 mm (closer to compact 4ms-style attenuverters)
         box.size = mm2px(Vec(10.f, 10.f));
         // Configure Fundamental-style shadow (no shrink; face matches SVG)
@@ -1092,10 +1165,10 @@ struct ShapetakerAttenuverterOscilloscope : app::SvgKnob {
             shadow->visible = true;
             shadow->blurRadius = 0.f;
             shadow->opacity = 0.15f;
-            // Keep Rack's default 10% downward offset and full size
-            Vec s = sw->box.size;
-            shadow->box.size = s;
-            shadow->box.pos = Vec(0.f, s.y * 0.10f);
+            // Force shadow to be square to match the square box.size
+            float size = std::max(box.size.x, box.size.y);
+            shadow->box.size = Vec(size, size);
+            shadow->box.pos = Vec(0.f, size * 0.10f);
         }
     }
     void draw(const DrawArgs& args) override {
