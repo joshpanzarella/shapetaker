@@ -1,5 +1,6 @@
 #include "plugin.hpp"
 #include "transmutation/ui.hpp" // for PanelPatinaOverlay (shared vintage overlay)
+#include "ui/menu_helpers.hpp"
 #include <cmath>
 #include <atomic>
 #include <functional>
@@ -17,20 +18,6 @@ struct ClairaudientModule : Module, IOscilloscopeSource {
     static constexpr float HIGH_CUT_HZ = 14500.f;
     static constexpr float ANTI_ALIAS_CUTOFF = 0.45f;
 
-    // Quantize voltage to discrete octave steps for oscillator V
-    float quantizeToOctave(float voltage) {
-        // Clamp to -2 to +2 octaves, then round to nearest octave
-        float clamped = clamp(voltage, -2.0f, 2.0f);
-        return std::round(clamped);
-    }
-
-    // Quantize to semitones within 4 octave range for oscillator Z
-    float quantizeToSemitone(float semitones) {
-        // Clamp to -24 to +24 semitones range (4 octaves)
-        float clamped = clamp(semitones, -24.0f, 24.0f);
-        // Round to the nearest semitone step
-        return std::round(clamped);
-    }
     enum ParamId {
         FREQ1_PARAM,
         FREQ2_PARAM,
@@ -280,13 +267,13 @@ struct ClairaudientModule : Module, IOscilloscopeSource {
             // V Oscillator: quantize knob value if enabled, then add CV
             float basePitch1 = params[FREQ1_PARAM].getValue();
             if (quantizeOscV)
-                basePitch1 = quantizeToOctave(basePitch1);
+                basePitch1 = shapetaker::dsp::PitchHelper::quantizeToOctave(basePitch1);
             float pitch1 = basePitch1 + voct1;
 
             // Z Oscillator: quantize knob (in semitones) if enabled, then add CV
             float baseSemitoneZ = params[FREQ2_PARAM].getValue();
             if (quantizeOscZ)
-                baseSemitoneZ = quantizeToSemitone(baseSemitoneZ);
+                baseSemitoneZ = shapetaker::dsp::PitchHelper::quantizeToSemitone(baseSemitoneZ, 24.f);
             float pitch2 = baseSemitoneZ / 12.0f + voct2;
             
             float fineTune1 = params[FINE1_PARAM].getValue();
@@ -403,10 +390,10 @@ struct ClairaudientModule : Module, IOscilloscopeSource {
 
                 if (waveformMode == WAVEFORM_PWM) {
                     // PWM mode - shape parameter controls pulse width
-                    osc1A = generatePWM(phase1A[ch], shape1, freq1A, oversampleRate);
-                    osc1B = generatePWM(phase1B[ch], shape1, freq1B, oversampleRate);
-                    osc2A = generatePWM(phase2A[ch], shape2, freq2A, oversampleRate);
-                    osc2B = generatePWM(phase2B[ch], shape2, freq2B, oversampleRate);
+                    osc1A = shapetaker::dsp::OscillatorHelper::pwmWithPolyBLEP(phase1A[ch], shape1, freq1A, oversampleRate);
+                    osc1B = shapetaker::dsp::OscillatorHelper::pwmWithPolyBLEP(phase1B[ch], shape1, freq1B, oversampleRate);
+                    osc2A = shapetaker::dsp::OscillatorHelper::pwmWithPolyBLEP(phase2A[ch], shape2, freq2A, oversampleRate);
+                    osc2B = shapetaker::dsp::OscillatorHelper::pwmWithPolyBLEP(phase2B[ch], shape2, freq2B, oversampleRate);
                 } else {
                     // Sigmoid saw mode (default)
                     osc1A = shapetaker::dsp::OscillatorHelper::organicSigmoidSaw(phase1A[ch], shape1, freq1A, oversampleRate);
@@ -494,30 +481,6 @@ struct ClairaudientModule : Module, IOscilloscopeSource {
     int getOscilloscopeBufferSize() const override { return OSCILLOSCOPE_BUFFER_SIZE; }
 
 private:
-    // Generate PWM waveform with anti-aliasing
-    float generatePWM(float phase, float pulseWidth, float freq, float sampleRate) {
-        pulseWidth = clamp(pulseWidth, 0.05f, 0.95f); // Prevent stuck DC
-
-        // Simple polyBLEP anti-aliasing for pulse wave
-        float output = (phase < pulseWidth) ? 1.f : -1.f;
-
-        // Pre-calculate freq/sampleRate (eliminates repeated division)
-        float dt = freq / sampleRate;
-
-        // PolyBLEP at rising edge (phase = 0)
-        if (phase < dt) {
-            float t = phase / dt;
-            output -= (t + t - t * t - 1.f);
-        }
-        // PolyBLEP at falling edge (phase = pulseWidth)
-        else if (phase > pulseWidth && phase < pulseWidth + dt) {
-            float t = (phase - pulseWidth) / dt;
-            output += (t + t - t * t - 1.f);
-        }
-
-        return output;
-    }
-
     // Update organic drift and noise for more natural sound (per voice)
     void updateOrganicDrift(int voice, float sampleTime, float amount) {
         amount = clamp(amount, 0.f, 1.f);
@@ -810,47 +773,21 @@ struct ClairaudientWidget : ModuleWidget {
         // Oscillator noise amount slider (0..100%)
         menu->addChild(new MenuSeparator);
         menu->addChild(createMenuLabel("Oscillator Noise"));
-        struct NoiseQuantity : Quantity {
-            ClairaudientModule* m;
-            explicit NoiseQuantity(ClairaudientModule* mod) : m(mod) {}
-            void setValue(float v) override { m->oscNoiseAmount = clamp(v, 0.f, 1.f); }
-            float getValue() override { return m->oscNoiseAmount; }
-            float getMinValue() override { return 0.f; }
-            float getMaxValue() override { return 1.f; }
-            float getDefaultValue() override { return 0.f; }
-            float getDisplayValue() override { return getValue() * 100.f; }
-            void setDisplayValue(float v) override { setValue(v / 100.f); }
-            std::string getLabel() override { return "Noise"; }
-            std::string getUnit() override { return "%"; }
-        };
-        struct NoiseSlider : ui::Slider {
-            explicit NoiseSlider(ClairaudientModule* m) { quantity = new NoiseQuantity(m); }
-        };
-        auto* ns = new NoiseSlider(module);
-        ns->box.size.x = 200.f;
-        menu->addChild(ns);
+        menu->addChild(shapetaker::ui::createPercentageSlider(
+            module,
+            [](ClairaudientModule* m, float v) { m->oscNoiseAmount = v; },
+            [](ClairaudientModule* m) { return m->oscNoiseAmount; },
+            "Noise"
+        ));
 
         menu->addChild(new MenuSeparator);
         menu->addChild(createMenuLabel("Organic Drift"));
-        struct DriftQuantity : Quantity {
-            ClairaudientModule* m;
-            explicit DriftQuantity(ClairaudientModule* mod) : m(mod) {}
-            void setValue(float v) override { m->driftAmount = clamp(v, 0.f, 1.f); }
-            float getValue() override { return m->driftAmount; }
-            float getMinValue() override { return 0.f; }
-            float getMaxValue() override { return 1.f; }
-            float getDefaultValue() override { return 0.f; }
-            float getDisplayValue() override { return getValue() * 100.f; }
-            void setDisplayValue(float v) override { setValue(v / 100.f); }
-            std::string getLabel() override { return "Drift"; }
-            std::string getUnit() override { return "%"; }
-        };
-        struct DriftSlider : ui::Slider {
-            explicit DriftSlider(ClairaudientModule* m) { quantity = new DriftQuantity(m); }
-        };
-        auto* ds = new DriftSlider(module);
-        ds->box.size.x = 200.f;
-        menu->addChild(ds);
+        menu->addChild(shapetaker::ui::createPercentageSlider(
+            module,
+            [](ClairaudientModule* m, float v) { m->driftAmount = v; },
+            [](ClairaudientModule* m) { return m->driftAmount; },
+            "Drift"
+        ));
 
         menu->addChild(new MenuSeparator);
         menu->addChild(createMenuLabel("Tone Options"));

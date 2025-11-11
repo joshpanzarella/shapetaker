@@ -6,11 +6,12 @@
 #include "dsp/filters.hpp"
 #include "dsp/parameters.hpp"
 #include "dsp/oscillators.hpp"
-#include "dsp/envelopes.hpp" 
+#include "dsp/envelopes.hpp"
 #include "dsp/audio.hpp"
 #include "dsp/effects.hpp"
 #include "dsp/polyphony.hpp"
 #include "dsp/delays.hpp"
+#include "dsp/pitch.hpp"
 
 // Graphics Utilities
 #include "graphics/drawing.hpp"
@@ -44,7 +45,8 @@ namespace shapetaker {
     using ShimmerDelay = dsp::ShimmerDelay;
     using EnvelopeFollower = dsp::EnvelopeFollower;
     using FastSmoother = dsp::FastSmoother;
-    
+    using PitchHelper = dsp::PitchHelper;
+
     // Convenience aliases for voice arrays
     template<typename T, int SIZE = dsp::PolyphonicProcessor::MAX_VOICES>
     using VoiceArray = dsp::VoiceArray<T, SIZE>;

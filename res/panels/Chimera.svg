@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="UTF-8" standalone="no"?>
 <svg
-   width="172.72mm"
+   width="182.88mm"
    height="128.5mm"
-   viewBox="0 0 172.72 128.5"
+   viewBox="0 0 182.88 128.5"
    version="1.1"
    id="chimera-panel"
    xmlns="http://www.w3.org/2000/svg"
@@ -22,13 +22,13 @@
   <rect
      x="0"
      y="0"
-     width="172.72"
+     width="182.88"
      height="128.5"
      fill="url(#panelGradient)" />
   <rect
      x="4.5"
      y="10"
-     width="163.72"
+     width="173.88"
      height="108.5"
      rx="6"
      fill="none"
@@ -100,54 +100,55 @@
     <circle id="ch4_in_r" cx="110" cy="110" r="2.2" style="fill:#00ff00" />
 
     <!-- Slot knobs -->
-    <circle id="slot_a_rate" cx="118" cy="22" r="2.8" style="fill:#ff0000" />
-    <circle id="slot_a_depth" cx="118" cy="44" r="2.8" style="fill:#ff0000" />
-    <circle id="slot_a_texture" cx="118" cy="66" r="2.8" style="fill:#ff0000" />
-    <circle id="slot_b_rate" cx="132" cy="22" r="2.8" style="fill:#ff0000" />
-    <circle id="slot_b_depth" cx="132" cy="44" r="2.8" style="fill:#ff0000" />
-    <circle id="slot_b_texture" cx="132" cy="66" r="2.8" style="fill:#ff0000" />
+    <circle id="slot_a_rate" cx="120" cy="22" r="2.8" style="fill:#ff0000" />
+    <circle id="slot_a_depth" cx="120" cy="44" r="2.8" style="fill:#ff0000" />
+    <circle id="slot_a_texture" cx="120" cy="66" r="2.8" style="fill:#ff0000" />
+    <circle id="slot_b_rate" cx="138" cy="22" r="2.8" style="fill:#ff0000" />
+    <circle id="slot_b_depth" cx="138" cy="44" r="2.8" style="fill:#ff0000" />
+    <circle id="slot_b_texture" cx="138" cy="66" r="2.8" style="fill:#ff0000" />
 
     <!-- Morph & glue knobs -->
-    <circle id="morph_master_knob" cx="144" cy="90" r="2.8" style="fill:#ff0000" />
-    <circle id="glue_threshold_knob" cx="156" cy="90" r="2.8" style="fill:#ff0000" />
-    <circle id="glue_attack_knob" cx="144" cy="110" r="2.5" style="fill:#ff0000" />
-    <circle id="glue_release_knob" cx="156" cy="110" r="2.5" style="fill:#ff0000" />
-    <circle id="glue_mix_knob" cx="144" cy="126" r="2.5" style="fill:#ff0000" />
-    <circle id="glue_makeup_knob" cx="156" cy="126" r="2.5" style="fill:#ff0000" />
+    <circle id="morph_master_knob" cx="156" cy="90" r="2.8" style="fill:#ff0000" />
+    <circle id="glue_threshold_knob" cx="170" cy="90" r="2.8" style="fill:#ff0000" />
+    <circle id="glue_attack_knob" cx="156" cy="110" r="2.5" style="fill:#ff0000" />
+    <circle id="glue_release_knob" cx="170" cy="110" r="2.5" style="fill:#ff0000" />
+    <circle id="glue_mix_knob" cx="156" cy="126" r="2.5" style="fill:#ff0000" />
+    <circle id="glue_makeup_knob" cx="170" cy="126" r="2.5" style="fill:#ff0000" />
 
     <!-- Switches -->
-    <circle id="slot_a_mode_switch" cx="118" cy="32" r="1.8" style="fill:#ffaa00" />
-    <circle id="slot_b_mode_switch" cx="132" cy="32" r="1.8" style="fill:#ffaa00" />
-    <circle id="glue_ratio_switch" cx="144" cy="54" r="1.8" style="fill:#ffaa00" />
-    <circle id="glue_hpf_switch" cx="156" cy="54" r="1.8" style="fill:#ffaa00" />
-    <circle id="glue_sidechain_switch" cx="150" cy="78" r="1.8" style="fill:#ffaa00" />
+    <circle id="slot_a_mode_switch" cx="120" cy="32" r="1.8" style="fill:#ffaa00" />
+    <circle id="slot_b_mode_switch" cx="138" cy="32" r="1.8" style="fill:#ffaa00" />
+    <circle id="glue_ratio_switch" cx="156" cy="54" r="1.8" style="fill:#ffaa00" />
+    <circle id="glue_hpf_switch" cx="170" cy="54" r="1.8" style="fill:#ffaa00" />
+    <circle id="glue_sidechain_switch" cx="163" cy="78" r="1.8" style="fill:#ffaa00" />
 
     <!-- Clock / looper controls -->
-    <circle id="clock_bpm_knob" cx="168" cy="24" r="2.8" style="fill:#ff0000" />
-    <circle id="clock_run_switch" cx="168" cy="38" r="1.8" style="fill:#ffaa00" />
-    <circle id="clock_mode_switch" cx="168" cy="48" r="1.8" style="fill:#ffaa00" />
-    <circle id="clock_click_switch" cx="168" cy="58" r="1.8" style="fill:#ffaa00" />
-    <circle id="clock_mix_switch" cx="168" cy="68" r="1.8" style="fill:#ffaa00" />
-    <circle id="loop_bar_switch" cx="168" cy="80" r="1.8" style="fill:#ffaa00" />
+    <circle id="clock_bpm_knob" cx="178" cy="24" r="2.8" style="fill:#ff0000" />
+    <circle id="clock_run_switch" cx="178" cy="38" r="1.8" style="fill:#ffaa00" />
+    <circle id="clock_mode_switch" cx="178" cy="48" r="1.8" style="fill:#ffaa00" />
+    <circle id="clock_click_switch" cx="178" cy="58" r="1.8" style="fill:#ffaa00" />
+    <circle id="clock_mix_switch" cx="178" cy="68" r="1.8" style="fill:#ffaa00" />
+    <circle id="loop_bar_switch" cx="178" cy="80" r="1.8" style="fill:#ffaa00" />
+    <circle id="clock_click_level_knob" cx="178" cy="92" r="2.5" style="fill:#ff0000" />
 
     <!-- Slot CV inputs -->
-    <circle id="slot_a_rate_cv" cx="118" cy="94" r="2.2" style="fill:#00ff00" />
-    <circle id="slot_a_depth_cv" cx="130" cy="94" r="2.2" style="fill:#00ff00" />
-    <circle id="slot_a_texture_cv" cx="142" cy="94" r="2.2" style="fill:#00ff00" />
-    <circle id="slot_b_rate_cv" cx="118" cy="106" r="2.2" style="fill:#00ff00" />
-    <circle id="slot_b_depth_cv" cx="130" cy="106" r="2.2" style="fill:#00ff00" />
-    <circle id="slot_b_texture_cv" cx="142" cy="106" r="2.2" style="fill:#00ff00" />
+    <circle id="slot_a_rate_cv" cx="122" cy="94" r="2.2" style="fill:#00ff00" />
+    <circle id="slot_a_depth_cv" cx="134" cy="94" r="2.2" style="fill:#00ff00" />
+    <circle id="slot_a_texture_cv" cx="146" cy="94" r="2.2" style="fill:#00ff00" />
+    <circle id="slot_b_rate_cv" cx="122" cy="106" r="2.2" style="fill:#00ff00" />
+    <circle id="slot_b_depth_cv" cx="134" cy="106" r="2.2" style="fill:#00ff00" />
+    <circle id="slot_b_texture_cv" cx="146" cy="106" r="2.2" style="fill:#00ff00" />
 
     <!-- Utility inputs -->
-    <circle id="gesture_input" cx="168" cy="106" r="2.2" style="fill:#00ff00" />
-    <circle id="glue_sc_input" cx="168" cy="118" r="2.2" style="fill:#00ff00" />
-    <circle id="ext_clock_input" cx="168" cy="98" r="2.2" style="fill:#00ff00" />
+    <circle id="gesture_input" cx="178" cy="106" r="2.2" style="fill:#00ff00" />
+    <circle id="glue_sc_input" cx="170" cy="118" r="2.2" style="fill:#00ff00" />
+    <circle id="ext_clock_input" cx="178" cy="98" r="2.2" style="fill:#00ff00" />
 
     <!-- Outputs -->
-    <circle id="morph_a_out" cx="118" cy="120" r="2.2" style="fill:#0000ff" />
-    <circle id="morph_b_out" cx="130" cy="120" r="2.2" style="fill:#0000ff" />
-    <circle id="main_out_l" cx="142" cy="120" r="2.2" style="fill:#0000ff" />
-    <circle id="main_out_r" cx="154" cy="120" r="2.2" style="fill:#0000ff" />
-    <circle id="click_output" cx="168" cy="116" r="2.2" style="fill:#0000ff" />
+    <circle id="morph_a_out" cx="122" cy="120" r="2.2" style="fill:#0000ff" />
+    <circle id="morph_b_out" cx="134" cy="120" r="2.2" style="fill:#0000ff" />
+    <circle id="main_out_l" cx="146" cy="120" r="2.2" style="fill:#0000ff" />
+    <circle id="main_out_r" cx="158" cy="120" r="2.2" style="fill:#0000ff" />
+    <circle id="click_output" cx="178" cy="116" r="2.2" style="fill:#0000ff" />
   </g>
 </svg>

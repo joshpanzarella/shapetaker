@@ -4,6 +4,7 @@
 #include "transmutation/chords.hpp"
 #include "transmutation/engine.hpp"
 #include "transmutation/widgets.hpp"
+#include "ui/menu_helpers.hpp"
 #include <vector>
 #include <array>
 #include <string>
@@ -2724,28 +2725,18 @@ struct TransmutationWidget : ModuleWidget {
         menu->addChild(createSubmenuItem("Advanced", "", [module](Menu* adv){
             // Pulse width slider (1..100 ms)
             adv->addChild(createMenuLabel("Pulse Width (ms)"));
-            struct PulseWidthQuantity : Quantity {
-                Transmutation* m;
-                explicit PulseWidthQuantity(Transmutation* mod) : m(mod) {}
-                void setValue(float v) override {
+            adv->addChild(shapetaker::ui::createFloatSlider(
+                module,
+                [](Transmutation* m, float v) {
                     int iv = rack::math::clamp((int)std::round(v), 1, 100);
                     m->gatePulseMs = (float)iv;
-                }
-                float getValue() override { return (float)rack::math::clamp((int)std::round(m->gatePulseMs), 1, 100); }
-                float getMinValue() override { return 1.f; }
-                float getMaxValue() override { return 100.f; }
-                float getDefaultValue() override { return 8.f; }
-                std::string getLabel() override { return "Pulse Width"; }
-                std::string getUnit() override { return "ms"; }
-            };
-            struct PulseWidthSlider : ui::Slider {
-                explicit PulseWidthSlider(Transmutation* m) {
-                    quantity = new PulseWidthQuantity(m);
-                }
-            };
-            auto* pw = new PulseWidthSlider(module);
-            pw->box.size.x = 200.f;
-            adv->addChild(pw);
+                },
+                [](Transmutation* m) {
+                    return (float)rack::math::clamp((int)std::round(m->gatePulseMs), 1, 100);
+                },
+                1.f, 100.f, 8.f,
+                "Pulse Width", "ms"
+            ));
         }));
 
         // Randomization submenu
@@ -2778,31 +2769,15 @@ struct TransmutationWidget : ModuleWidget {
 
             // Sliders for chord density, rest, and tie probabilities (Impromptu pattern)
             randMenu->addChild(new MenuSeparator);
-            struct ProbQuantity : Quantity {
-                float* value = nullptr;
-                float def = 0.f;
-                std::string label;
-                ProbQuantity(float* ref, const char* lab, float d) { value = ref; label = lab; def = d; }
-                void setValue(float v) override { *value = rack::math::clamp(v, 0.f, 1.f); }
-                float getValue() override { return *value; }
-                float getMinValue() override { return 0.f; }
-                float getMaxValue() override { return 1.f; }
-                float getDefaultValue() override { return def; }
-                float getDisplayValue() override { return getValue() * 100.f; }
-                void setDisplayValue(float v) override { setValue(v / 100.f); }
-                std::string getLabel() override { return label; }
-                std::string getUnit() override { return "%"; }
-            };
-            struct ProbSlider : ui::Slider {
-                ProbSlider(float* ref, const char* label, float def) {
-                    quantity = new ProbQuantity(ref, label, def);
-                }
-            };
             auto addProbSlider = [&](Menu* m, const char* label, float& ref, float def) {
                 m->addChild(createMenuLabel(label));
-                auto* s = new ProbSlider(&ref, label, def);
-                s->box.size.x = 200.0f;
-                m->addChild(s);
+                m->addChild(shapetaker::ui::createPercentageSlider(
+                    module,
+                    [&ref](Transmutation*, float v) { ref = v; },
+                    [&ref](Transmutation*) { return ref; },
+                    label,
+                    def
+                ));
             };
             addProbSlider(randMenu, "Chord Density", module->randomChordProb, 0.60f);
             addProbSlider(randMenu, "Rest Probability", module->randomRestProb, 0.12f);

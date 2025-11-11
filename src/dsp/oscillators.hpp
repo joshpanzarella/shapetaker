@@ -102,6 +102,64 @@ public:
         float angle = rack::math::clamp(t, 0.f, 1.f) * (float)M_PI_2;
         return a * std::cos(angle) + b * std::sin(angle);
     }
+
+    // ========================================================================
+    // ANTI-ALIASING UTILITIES
+    // ========================================================================
+
+    // PolyBLEP (Polynomial Band-Limited Step) residual calculation
+    // Used to reduce aliasing at discontinuities in waveforms
+    // t: normalized distance from discontinuity (0 at discontinuity, increases with distance)
+    // Returns the correction value to subtract from the naive waveform
+    static float polyBLEP(float t) {
+        // For t in [0, 1], apply polynomial correction
+        if (t < 1.f) {
+            t = t + t - t * t - 1.f;
+            return t;
+        }
+        // For t in [-1, 0], apply mirrored correction
+        else if (t > -1.f) {
+            t = t + t + t * t + 1.f;
+            return t;
+        }
+        // Outside correction range
+        return 0.f;
+    }
+
+    // Generate PWM (Pulse Width Modulation) waveform with polyBLEP anti-aliasing
+    // phase: oscillator phase [0, 1)
+    // pulseWidth: duty cycle [0, 1], clamped to [0.05, 0.95] to prevent DC offset
+    // freq: oscillator frequency in Hz
+    // sampleRate: audio sample rate in Hz
+    // Returns anti-aliased pulse wave output in range [-1, 1]
+    static float pwmWithPolyBLEP(float phase, float pulseWidth, float freq, float sampleRate) {
+        // Clamp pulse width to prevent stuck DC offset
+        pulseWidth = rack::math::clamp(pulseWidth, 0.05f, 0.95f);
+
+        // Generate naive square wave
+        float output = (phase < pulseWidth) ? 1.f : -1.f;
+
+        // Calculate normalized phase increment per sample
+        float dt = freq / sampleRate;
+
+        // Apply polyBLEP correction at rising edge (phase = 0)
+        if (phase < dt) {
+            float t = phase / dt;
+            output -= polyBLEP(t);
+        }
+        // Apply polyBLEP correction at falling edge (phase = pulseWidth)
+        else if (phase > pulseWidth && phase < pulseWidth + dt) {
+            float t = (phase - pulseWidth) / dt;
+            output += polyBLEP(t);
+        }
+
+        return output;
+    }
+
+    // Convenience alias for backward compatibility
+    static inline float generatePWM(float phase, float pulseWidth, float freq, float sampleRate) {
+        return pwmWithPolyBLEP(phase, pulseWidth, freq, sampleRate);
+    }
 };
 
 }} // namespace shapetaker::dsp

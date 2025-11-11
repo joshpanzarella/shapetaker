@@ -70,6 +70,7 @@ Data & Assets
 Conventions & Notes
 - Polyphony: Commonly up to 6 voices; set output channel counts explicitly per process() frame.
 - Voltages: CV is V/Oct with C4 = 0 V; gates use 10 V high by default.
+- DSP & Utilities: Reuse the shared helpers in `src/dsp/` and `shapetaker::` namespaces whenever possible. `shapetaker::dsp::VoiceArray`, `PolyphonicProcessor`, filter/envelope utilities, and smoothing helpers keep polyphony consistent and eliminate one-off bugs; avoid re-implementing these in modules. Browser-level helpers (e.g., `shapetaker::FastSmoother`, chorus/delay blocks) live in `src/dsp/effects.hpp`, `filters.hpp`, etc. Move module-specific algorithms into localized helpers only when they truly depend on that module’s state—otherwise add them to the shared DSP layer so future modules benefit.
 - Clocking: Sequencers support external clock/reset inputs; internal BPM with multipliers is available where implemented.
 - Triggers: Uses Rack `dsp::SchmittTrigger`/`PulseGenerator` patterns for robust edge detection and gates.
 - UI: NanoVG drawing; larger/high-res custom canvases where readability matters (e.g., Transmutation matrix).
@@ -84,4 +85,3 @@ Ideas / TODOs (lightweight)
 
 Ownership & Contact
 - Author: Josh Panzarella (`plugin.json` contains author metadata).
-

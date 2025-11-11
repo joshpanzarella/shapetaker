@@ -231,6 +231,7 @@ struct Torsion : Module {
     bool dcwVelocityEnabled = false;
     bool chorusEnabled = false;
     static constexpr int kNumStages = 6;
+    static constexpr float kStageRateBase = 10.f;
     float vintageClockPhase = 0.f;
 
     static constexpr float kVintageHissLevel = 0.0028f;
@@ -289,9 +290,9 @@ struct Torsion : Module {
         }
 
         // Stage envelope controls
-        shapetaker::ParameterHelper::configDiscrete(this, STAGE_RATE_PARAM, "dcw cycle rate", 1, 30, 10);
+        configParam(STAGE_RATE_PARAM, -0.9f, 2.f, 0.f, "stage time scale", "%", 100.f);
 
-        shapetaker::ParameterHelper::configAttenuverter(this, STAGE_TIME_PARAM, "stage time scale");
+        configParam(STAGE_TIME_PARAM, 0.f, 0.f, 0.f, "stage time scale (legacy)");
 
         // Stage levels for DCW envelope - ADSR-like shape by default
         shapetaker::ParameterHelper::configGain(this, STAGE1_PARAM, "stage 1 level", 1.0f);
@@ -414,6 +415,24 @@ struct Torsion : Module {
         if (!rootJ) {
             return;
         }
+
+        if (json_t* paramsJ = json_object_get(rootJ, "params")) {
+            if (json_is_array(paramsJ)) {
+                if (json_t* stageRateJ = json_array_get(paramsJ, STAGE_RATE_PARAM)) {
+                    if (json_t* valueJ = json_object_get(stageRateJ, "value")) {
+                        if (json_is_number(valueJ)) {
+                            float storedValue = json_number_value(valueJ);
+                            if (storedValue > 2.f || storedValue < -0.9f) {
+                                float converted = (storedValue - kStageRateBase) / kStageRateBase;
+                                params[STAGE_RATE_PARAM].setValue(
+                                    rack::math::clamp(converted, -0.9f, 2.f));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         json_t* modeJ = json_object_get(rootJ, "interactionMode");
         if (modeJ) {
             interactionMode = (InteractionMode)json_integer_value(modeJ);
@@ -459,8 +478,8 @@ struct Torsion : Module {
         float symmetryBase = params[SYMMETRY_PARAM].getValue();
         float torsionAtten = params[TORSION_ATTEN_PARAM].getValue();
 
-        float rate = params[STAGE_RATE_PARAM].getValue();
-        float stageTimeScale = params[STAGE_TIME_PARAM].getValue();
+        float stageTimeScale = params[STAGE_RATE_PARAM].getValue();
+        float rate = kStageRateBase * rack::math::clamp(1.f + stageTimeScale, 0.01f, 4.f);
         float stageLevels[kNumStages] = {
             params[STAGE1_PARAM].getValue(),
             params[STAGE2_PARAM].getValue(),
@@ -685,7 +704,7 @@ struct Torsion : Module {
                         stagePos = 0.f;
                         velocityHold[ch] = rack::math::clamp(gateVolt / 10.f, 0.f, 1.f);
                     }
-                    float effectiveRate = rate * (1.f + stageTimeScale);
+                    float effectiveRate = rate;
                     stagePos += effectiveRate * args.sampleTime;
 
                     // Simple forward-only: hold at end
@@ -709,7 +728,7 @@ struct Torsion : Module {
                 }
 
                 if (stageActive[ch]) {
-                    float effectiveRate = rate * (1.f + stageTimeScale);
+                    float effectiveRate = rate;
                     stagePos += effectiveRate * args.sampleTime;
 
                     // Simple forward-only: stop at end
@@ -724,7 +743,7 @@ struct Torsion : Module {
                 if (stagePos >= (float)kNumStages - 0.01f) {
                     stagePos = (float)kNumStages - 0.01f;  // Hold at last stage
                 } else {
-                    float effectiveRate = rate * (1.f + stageTimeScale);
+                    float effectiveRate = rate;
                     stagePos += effectiveRate * args.sampleTime;
 
                     if (stagePos >= (float)kNumStages) {
@@ -1153,8 +1172,6 @@ struct TorsionWidget : ModuleWidget {
         // Attenuverters
         addParam(createParamCentered<ShapetakerAttenuverterOscilloscope>(
             centerPx("torsion_atten", 72.277924f, 69.663483f), module, Torsion::TORSION_ATTEN_PARAM));
-        addParam(createParamCentered<ShapetakerAttenuverterOscilloscope>(
-            centerPx("stage_time_atten", 72.277924f, 84.927017f), module, Torsion::STAGE_TIME_PARAM));
 
         // Middle section knobs
         addParam(createParamCentered<ShapetakerKnobAltSmall>(

@@ -49,6 +49,7 @@ struct Chimera : Module {
         CLOCK_RUN_PARAM,
         CLOCK_MODE_PARAM,
         CLOCK_CLICK_PARAM,
+        CLOCK_CLICK_LEVEL_PARAM,
         CLOCK_MIX_PARAM,
         PARAMS_LEN
     };
@@ -403,6 +404,7 @@ struct Chimera : Module {
                      {"Internal", "External"});
         configSwitch(CLOCK_CLICK_PARAM, 0.f, 1.f, 1.f, "Click enable",
                      {"Off", "On"});
+        configParam(CLOCK_CLICK_LEVEL_PARAM, 0.f, 1.5f, 0.75f, "Click level", " V");
         configSwitch(CLOCK_MIX_PARAM, 0.f, 1.f, 0.f, "Click to mix",
                      {"Off", "On"});
         configInput(GLUE_SC_INPUT, "Glue external sidechain");
@@ -489,7 +491,8 @@ struct Chimera : Module {
 
         bool clickGate = clockState.clickPulse.process(sampleTime);
         bool clickEnabled = params[CLOCK_CLICK_PARAM].getValue() > 0.5f;
-        float clickVoltage = (clickGate && clickEnabled) ? 5.f : 0.f;
+        float clickLevel = rack::math::clamp(params[CLOCK_CLICK_LEVEL_PARAM].getValue(), 0.f, 1.5f);
+        float clickVoltage = (clickGate && clickEnabled) ? clickLevel : 0.f;
         outputs[CLICK_OUTPUT].setChannels(1);
         outputs[CLICK_OUTPUT].setVoltage(clickVoltage);
         bool clickToMix = params[CLOCK_MIX_PARAM].getValue() > 0.5f;
@@ -857,88 +860,90 @@ struct ChimeraWidget : ModuleWidget {
         }
 
         addParam(createParamCentered<ShapetakerKnobAltMedium>(
-            centerPx("slot_a_rate", 118.f, 22.f), module, Chimera::SLOT_A_RATE_PARAM));
+            centerPx("slot_a_rate", 120.f, 22.f), module, Chimera::SLOT_A_RATE_PARAM));
         addParam(createParamCentered<ShapetakerKnobAltMedium>(
-            centerPx("slot_a_depth", 118.f, 44.f), module, Chimera::SLOT_A_DEPTH_PARAM));
+            centerPx("slot_a_depth", 120.f, 44.f), module, Chimera::SLOT_A_DEPTH_PARAM));
         addParam(createParamCentered<ShapetakerKnobAltMedium>(
-            centerPx("slot_a_texture", 118.f, 66.f), module, Chimera::SLOT_A_TEXTURE_PARAM));
+            centerPx("slot_a_texture", 120.f, 66.f), module, Chimera::SLOT_A_TEXTURE_PARAM));
 
         addParam(createParamCentered<ShapetakerKnobAltMedium>(
-            centerPx("slot_b_rate", 132.f, 22.f), module, Chimera::SLOT_B_RATE_PARAM));
+            centerPx("slot_b_rate", 138.f, 22.f), module, Chimera::SLOT_B_RATE_PARAM));
         addParam(createParamCentered<ShapetakerKnobAltMedium>(
-            centerPx("slot_b_depth", 132.f, 44.f), module, Chimera::SLOT_B_DEPTH_PARAM));
+            centerPx("slot_b_depth", 138.f, 44.f), module, Chimera::SLOT_B_DEPTH_PARAM));
         addParam(createParamCentered<ShapetakerKnobAltMedium>(
-            centerPx("slot_b_texture", 132.f, 66.f), module, Chimera::SLOT_B_TEXTURE_PARAM));
+            centerPx("slot_b_texture", 138.f, 66.f), module, Chimera::SLOT_B_TEXTURE_PARAM));
 
         addParam(createParamCentered<ShapetakerKnobAltMedium>(
-            centerPx("morph_master_knob", 144.f, 90.f), module, Chimera::MORPH_MASTER_PARAM));
+            centerPx("morph_master_knob", 156.f, 90.f), module, Chimera::MORPH_MASTER_PARAM));
         addParam(createParamCentered<ShapetakerKnobAltMedium>(
-            centerPx("glue_threshold_knob", 156.f, 90.f), module, Chimera::GLUE_THRESHOLD_PARAM));
+            centerPx("glue_threshold_knob", 170.f, 90.f), module, Chimera::GLUE_THRESHOLD_PARAM));
 
         addParam(createParamCentered<ShapetakerKnobAltSmall>(
-            centerPx("glue_attack_knob", 144.f, 110.f), module, Chimera::GLUE_ATTACK_PARAM));
+            centerPx("glue_attack_knob", 156.f, 110.f), module, Chimera::GLUE_ATTACK_PARAM));
         addParam(createParamCentered<ShapetakerKnobAltSmall>(
-            centerPx("glue_release_knob", 156.f, 110.f), module, Chimera::GLUE_RELEASE_PARAM));
+            centerPx("glue_release_knob", 170.f, 110.f), module, Chimera::GLUE_RELEASE_PARAM));
         addParam(createParamCentered<ShapetakerKnobAltSmall>(
-            centerPx("glue_mix_knob", 144.f, 126.f), module, Chimera::GLUE_MIX_PARAM));
+            centerPx("glue_mix_knob", 156.f, 126.f), module, Chimera::GLUE_MIX_PARAM));
         addParam(createParamCentered<ShapetakerKnobAltSmall>(
-            centerPx("glue_makeup_knob", 156.f, 126.f), module, Chimera::GLUE_MAKEUP_PARAM));
+            centerPx("glue_makeup_knob", 170.f, 126.f), module, Chimera::GLUE_MAKEUP_PARAM));
 
         addParam(createParamCentered<rack::componentlibrary::CKSSThree>(
-            centerPx("slot_a_mode_switch", 118.f, 32.f), module, Chimera::SLOT_A_MODE_PARAM));
+            centerPx("slot_a_mode_switch", 120.f, 32.f), module, Chimera::SLOT_A_MODE_PARAM));
         addParam(createParamCentered<rack::componentlibrary::CKSSThree>(
-            centerPx("slot_b_mode_switch", 132.f, 32.f), module, Chimera::SLOT_B_MODE_PARAM));
+            centerPx("slot_b_mode_switch", 138.f, 32.f), module, Chimera::SLOT_B_MODE_PARAM));
         addParam(createParamCentered<rack::componentlibrary::CKSSThree>(
-            centerPx("glue_ratio_switch", 144.f, 54.f), module, Chimera::GLUE_RATIO_PARAM));
+            centerPx("glue_ratio_switch", 156.f, 54.f), module, Chimera::GLUE_RATIO_PARAM));
         addParam(createParamCentered<rack::componentlibrary::CKSSThree>(
-            centerPx("glue_hpf_switch", 156.f, 54.f), module, Chimera::GLUE_HPF_PARAM));
+            centerPx("glue_hpf_switch", 170.f, 54.f), module, Chimera::GLUE_HPF_PARAM));
         addParam(createParamCentered<rack::componentlibrary::CKSSThree>(
-            centerPx("glue_sidechain_switch", 150.f, 78.f), module, Chimera::GLUE_SIDECHAIN_SRC_PARAM));
+            centerPx("glue_sidechain_switch", 163.f, 78.f), module, Chimera::GLUE_SIDECHAIN_SRC_PARAM));
 
         addParam(createParamCentered<ShapetakerKnobAltSmall>(
-            centerPx("clock_bpm_knob", 168.f, 24.f), module, Chimera::CLOCK_BPM_PARAM));
+            centerPx("clock_bpm_knob", 178.f, 24.f), module, Chimera::CLOCK_BPM_PARAM));
         addParam(createParamCentered<rack::componentlibrary::CKSS>(
-            centerPx("clock_run_switch", 168.f, 38.f), module, Chimera::CLOCK_RUN_PARAM));
+            centerPx("clock_run_switch", 178.f, 38.f), module, Chimera::CLOCK_RUN_PARAM));
         addParam(createParamCentered<rack::componentlibrary::CKSS>(
-            centerPx("clock_mode_switch", 168.f, 48.f), module, Chimera::CLOCK_MODE_PARAM));
+            centerPx("clock_mode_switch", 178.f, 48.f), module, Chimera::CLOCK_MODE_PARAM));
         addParam(createParamCentered<rack::componentlibrary::CKSS>(
-            centerPx("clock_click_switch", 168.f, 58.f), module, Chimera::CLOCK_CLICK_PARAM));
+            centerPx("clock_click_switch", 178.f, 58.f), module, Chimera::CLOCK_CLICK_PARAM));
         addParam(createParamCentered<rack::componentlibrary::CKSS>(
-            centerPx("clock_mix_switch", 168.f, 68.f), module, Chimera::CLOCK_MIX_PARAM));
+            centerPx("clock_mix_switch", 178.f, 68.f), module, Chimera::CLOCK_MIX_PARAM));
         addParam(createParamCentered<rack::componentlibrary::CKSSThree>(
-            centerPx("loop_bar_switch", 168.f, 80.f), module, Chimera::LOOP_BARS_PARAM));
+            centerPx("loop_bar_switch", 178.f, 80.f), module, Chimera::LOOP_BARS_PARAM));
+        addParam(createParamCentered<ShapetakerKnobAltSmall>(
+            centerPx("clock_click_level_knob", 178.f, 92.f), module, Chimera::CLOCK_CLICK_LEVEL_PARAM));
 
         addInput(createInputCentered<ShapetakerBNCPort>(
-            centerPx("slot_a_rate_cv", 118.f, 94.f), module, Chimera::SLOT_A_RATE_CV_INPUT));
+            centerPx("slot_a_rate_cv", 122.f, 94.f), module, Chimera::SLOT_A_RATE_CV_INPUT));
         addInput(createInputCentered<ShapetakerBNCPort>(
-            centerPx("slot_a_depth_cv", 130.f, 94.f), module, Chimera::SLOT_A_DEPTH_CV_INPUT));
+            centerPx("slot_a_depth_cv", 134.f, 94.f), module, Chimera::SLOT_A_DEPTH_CV_INPUT));
         addInput(createInputCentered<ShapetakerBNCPort>(
-            centerPx("slot_a_texture_cv", 142.f, 94.f), module, Chimera::SLOT_A_TEXTURE_CV_INPUT));
+            centerPx("slot_a_texture_cv", 146.f, 94.f), module, Chimera::SLOT_A_TEXTURE_CV_INPUT));
 
         addInput(createInputCentered<ShapetakerBNCPort>(
-            centerPx("slot_b_rate_cv", 118.f, 106.f), module, Chimera::SLOT_B_RATE_CV_INPUT));
+            centerPx("slot_b_rate_cv", 122.f, 106.f), module, Chimera::SLOT_B_RATE_CV_INPUT));
         addInput(createInputCentered<ShapetakerBNCPort>(
-            centerPx("slot_b_depth_cv", 130.f, 106.f), module, Chimera::SLOT_B_DEPTH_CV_INPUT));
+            centerPx("slot_b_depth_cv", 134.f, 106.f), module, Chimera::SLOT_B_DEPTH_CV_INPUT));
         addInput(createInputCentered<ShapetakerBNCPort>(
-            centerPx("slot_b_texture_cv", 142.f, 106.f), module, Chimera::SLOT_B_TEXTURE_CV_INPUT));
+            centerPx("slot_b_texture_cv", 146.f, 106.f), module, Chimera::SLOT_B_TEXTURE_CV_INPUT));
 
         addInput(createInputCentered<ShapetakerBNCPort>(
-            centerPx("glue_sc_input", 168.f, 118.f), module, Chimera::GLUE_SC_INPUT));
+            centerPx("glue_sc_input", 170.f, 118.f), module, Chimera::GLUE_SC_INPUT));
         addInput(createInputCentered<ShapetakerBNCPort>(
-            centerPx("gesture_input", 168.f, 106.f), module, Chimera::GESTURE_INPUT));
+            centerPx("gesture_input", 178.f, 106.f), module, Chimera::GESTURE_INPUT));
         addInput(createInputCentered<ShapetakerBNCPort>(
-            centerPx("ext_clock_input", 168.f, 98.f), module, Chimera::EXT_CLOCK_INPUT));
+            centerPx("ext_clock_input", 178.f, 98.f), module, Chimera::EXT_CLOCK_INPUT));
 
         addOutput(createOutputCentered<ShapetakerBNCPort>(
-            centerPx("morph_a_out", 118.f, 120.f), module, Chimera::MORPH_A_OUTPUT));
+            centerPx("morph_a_out", 122.f, 120.f), module, Chimera::MORPH_A_OUTPUT));
         addOutput(createOutputCentered<ShapetakerBNCPort>(
-            centerPx("morph_b_out", 130.f, 120.f), module, Chimera::MORPH_B_OUTPUT));
+            centerPx("morph_b_out", 134.f, 120.f), module, Chimera::MORPH_B_OUTPUT));
         addOutput(createOutputCentered<ShapetakerBNCPort>(
-            centerPx("main_out_l", 142.f, 120.f), module, Chimera::OUT_L_OUTPUT));
+            centerPx("main_out_l", 146.f, 120.f), module, Chimera::OUT_L_OUTPUT));
         addOutput(createOutputCentered<ShapetakerBNCPort>(
-            centerPx("main_out_r", 154.f, 120.f), module, Chimera::OUT_R_OUTPUT));
+            centerPx("main_out_r", 158.f, 120.f), module, Chimera::OUT_R_OUTPUT));
         addOutput(createOutputCentered<ShapetakerBNCPort>(
-            centerPx("click_output", 168.f, 116.f), module, Chimera::CLICK_OUTPUT));
+            centerPx("click_output", 178.f, 116.f), module, Chimera::CLICK_OUTPUT));
     }
 };
 

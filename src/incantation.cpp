@@ -722,57 +722,61 @@ struct IncantationWidget : ModuleWidget {
         auto centerPx = LayoutHelper::createCenterPxHelper(parser);
 
         // Main controls (top section - more spaced out)
-        addParam(createParamCentered<RoundBlackKnob>(centerPx("inc-drive-knob", 25.f, 20.f), module, Incantation::DRIVE_PARAM));
-        addParam(createParamCentered<RoundBlackKnob>(centerPx("inc-mix-knob", 45.f, 20.f), module, Incantation::MIX_PARAM));
-        addParam(createParamCentered<RoundBlackKnob>(centerPx("inc-output-knob", 65.f, 20.f), module, Incantation::OUTPUT_PARAM));
+        addParam(createParamCentered<ShapetakerKnobAltLarge>(centerPx("inc-drive-knob", 24.f, 20.f), module, Incantation::DRIVE_PARAM));
+        addParam(createParamCentered<ShapetakerKnobAltLarge>(centerPx("inc-mix-knob", 47.f, 20.f), module, Incantation::MIX_PARAM));
+        addParam(createParamCentered<ShapetakerKnobAltLarge>(centerPx("inc-output-knob", 70.f, 20.f), module, Incantation::OUTPUT_PARAM));
         
         // Second row of controls - more spaced
-        addParam(createParamCentered<RoundBlackSnapKnob>(centerPx("inc-pattern-knob", 25.f, 35.f), module, Incantation::PATTERN_PARAM));
-        addParam(createParamCentered<RoundBlackKnob>(centerPx("inc-envelope-knob", 45.f, 35.f), module, Incantation::ENVELOPE_PARAM));
-        addParam(createParamCentered<RoundBlackKnob>(centerPx("inc-rate-knob", 65.f, 35.f), module, Incantation::RATE_PARAM));
+        addParam(createParamCentered<ShapetakerKnobAltMedium>(centerPx("inc-pattern-knob", 24.f, 35.f), module, Incantation::PATTERN_PARAM));
+        addParam(createParamCentered<ShapetakerKnobAltMedium>(centerPx("inc-envelope-knob", 47.f, 35.f), module, Incantation::ENVELOPE_PARAM));
+        addParam(createParamCentered<ShapetakerKnobAltMedium>(centerPx("inc-rate-knob", 70.f, 35.f), module, Incantation::RATE_PARAM));
         
         // Preset buttons - spread out more
-        addParam(createParamCentered<VCVButton>(centerPx("inc-preset-zero", 25.f, 48.f), module, Incantation::PRESET_ZERO_PARAM));
-        addParam(createParamCentered<VCVButton>(centerPx("inc-preset-half", 35.f, 48.f), module, Incantation::PRESET_HALF_PARAM));
-        addParam(createParamCentered<VCVButton>(centerPx("inc-preset-full", 45.f, 48.f), module, Incantation::PRESET_FULL_PARAM));
+        addParam(createParamCentered<ShapetakerVintageMomentary>(centerPx("inc-preset-zero", 24.f, 48.f), module, Incantation::PRESET_ZERO_PARAM));
+        addParam(createParamCentered<ShapetakerVintageMomentary>(centerPx("inc-preset-half", 37.f, 48.f), module, Incantation::PRESET_HALF_PARAM));
+        addParam(createParamCentered<ShapetakerVintageMomentary>(centerPx("inc-preset-full", 50.f, 48.f), module, Incantation::PRESET_FULL_PARAM));
         
         // Filter sliders - more spacing between them
         for (int i = 0; i < 8; i++) {
             std::string id = "inc-filter-slider-" + std::to_string(i);
-            float fallbackX = 18.f + i * 9.f;
+            float fallbackX = 16.f + i * 10.f;
             addParam(createParamCentered<VintageSlider>(centerPx(id, fallbackX, 65.f), module, Incantation::FILTER_1_PARAM + i));
         }
         
         // Filter CV inputs - aligned below sliders with same spacing
         for (int i = 0; i < 8; i++) {
             std::string id = "inc-filter-cv-" + std::to_string(i);
-            float fallbackX = 18.f + i * 9.f;
-            addInput(createInputCentered<PJ301MPort>(centerPx(id, fallbackX, 85.f), module, Incantation::FILTER_1_CV_INPUT + i));
+            float fallbackX = 16.f + i * 10.f;
+            addInput(createInputCentered<ShapetakerBNCPort>(centerPx(id, fallbackX, 85.f), module, Incantation::FILTER_1_CV_INPUT + i));
         }
         
         // CV Bypass switch - positioned to the left of filter sliders
-        addParam(createParamCentered<CKSS>(centerPx("inc-cv-bypass-switch", 8.f, 75.f), module, Incantation::CV_BYPASS_SWITCH_PARAM));
+        addParam(createParamCentered<ShapetakerVintageToggleSwitch>(
+            centerPx("inc-cv-bypass-switch", 10.5f, 75.f), module, Incantation::CV_BYPASS_SWITCH_PARAM));
         
         // Switches - spread out more
-        addParam(createParamCentered<CKSS>(centerPx("inc-freq-switch", 20.f, 100.f), module, Incantation::FREQ_SWITCH_PARAM));
-        addParam(createParamCentered<CKSS>(centerPx("inc-lfo-switch", 40.f, 100.f), module, Incantation::LFO_SWITCH_PARAM));
-        addParam(createParamCentered<CKSS>(centerPx("inc-q-switch", 60.f, 100.f), module, Incantation::Q_FACTOR_SWITCH_PARAM));
+        addParam(createParamCentered<ShapetakerVintageToggleSwitch>(
+            centerPx("inc-freq-switch", 26.f, 100.f), module, Incantation::FREQ_SWITCH_PARAM));
+        addParam(createParamCentered<ShapetakerVintageToggleSwitch>(
+            centerPx("inc-lfo-switch", 47.f, 100.f), module, Incantation::LFO_SWITCH_PARAM));
+        addParam(createParamCentered<ShapetakerVintageToggleSwitch>(
+            centerPx("inc-q-switch", 68.f, 100.f), module, Incantation::Q_FACTOR_SWITCH_PARAM));
         
         // Main inputs - better spacing  
-        addInput(createInputCentered<PJ301MPort>(centerPx("inc-audio-left-in", 10.f, 115.f), module, Incantation::AUDIO_LEFT_INPUT));
-        addInput(createInputCentered<PJ301MPort>(centerPx("inc-audio-right-in", 20.f, 115.f), module, Incantation::AUDIO_RIGHT_INPUT));
-        addInput(createInputCentered<PJ301MPort>(centerPx("inc-envelope-cv-in", 35.f, 115.f), module, Incantation::ENVELOPE_CV_INPUT));
-        addInput(createInputCentered<PJ301MPort>(centerPx("inc-rate-cv-in", 50.f, 115.f), module, Incantation::RATE_CV_INPUT));
-        addInput(createInputCentered<PJ301MPort>(centerPx("inc-lfo-sweep-cv-in", 65.f, 115.f), module, Incantation::LFO_SWEEP_CV_INPUT));
-        addInput(createInputCentered<PJ301MPort>(centerPx("inc-mix-cv-in", 80.f, 115.f), module, Incantation::MIX_CV_INPUT));
-        addInput(createInputCentered<PJ301MPort>(centerPx("inc-tap-step-in", 95.f, 115.f), module, Incantation::TAP_STEP_INPUT));
+        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("inc-audio-left-in", 14.f, 115.f), module, Incantation::AUDIO_LEFT_INPUT));
+        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("inc-audio-right-in", 26.f, 115.f), module, Incantation::AUDIO_RIGHT_INPUT));
+        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("inc-envelope-cv-in", 38.f, 115.f), module, Incantation::ENVELOPE_CV_INPUT));
+        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("inc-rate-cv-in", 50.f, 115.f), module, Incantation::RATE_CV_INPUT));
+        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("inc-lfo-sweep-cv-in", 62.f, 115.f), module, Incantation::LFO_SWEEP_CV_INPUT));
+        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("inc-mix-cv-in", 74.f, 115.f), module, Incantation::MIX_CV_INPUT));
+        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("inc-tap-step-in", 86.f, 115.f), module, Incantation::TAP_STEP_INPUT));
         
         // Outputs - moved up to prevent cutoff
-        addOutput(createOutputCentered<PJ301MPort>(centerPx("inc-left-output", 20.f, 125.f), module, Incantation::LEFT_MONO_OUTPUT));
-        addOutput(createOutputCentered<PJ301MPort>(centerPx("inc-right-output", 35.f, 125.f), module, Incantation::RIGHT_OUTPUT));
+        addOutput(createOutputCentered<ShapetakerBNCPort>(centerPx("inc-left-output", 66.f, 125.f), module, Incantation::LEFT_MONO_OUTPUT));
+        addOutput(createOutputCentered<ShapetakerBNCPort>(centerPx("inc-right-output", 80.f, 125.f), module, Incantation::RIGHT_OUTPUT));
         
         // Lights - repositioned
-        addChild(createLightCentered<MediumLight<RedLight>>(centerPx("inc-rate-light", 75.f, 35.f), module, Incantation::RATE_LIGHT));
+        addChild(createLightCentered<MediumLight<RedLight>>(centerPx("inc-rate-light", 82.f, 35.f), module, Incantation::RATE_LIGHT));
         addChild(createLightCentered<MediumLight<GreenRedLight>>(centerPx("inc-drive-light", 15.f, 20.f), module, Incantation::DRIVE_LIGHT));
     }
 };

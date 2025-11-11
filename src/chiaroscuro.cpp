@@ -2,7 +2,6 @@
 #include <dsp/digital.hpp>
 #include <dsp/filter.hpp>
 #include <cmath>
-#include <unordered_map>
 #include <array>
 #include <string>
 #include <cctype>
@@ -332,145 +331,6 @@ private:
     }
 };
 
-// Custom textured jewel LED with layered opacity effects
-struct TexturedJewelLED : ModuleLightWidget {
-    TexturedJewelLED() {
-        box.size = Vec(25, 25);
-        
-        // Try to load the jewel SVG, fallback to simple shape if it fails
-        widget::SvgWidget* sw = new widget::SvgWidget;
-        std::shared_ptr<Svg> svg = APP->window->loadSvg(asset::plugin(pluginInstance, "res/leds/jewel_led_large.svg"));
-        
-        if (svg) {
-            sw->setSvg(svg);
-            // Center the SVG within the widget box
-            sw->box.pos = Vec((box.size.x - sw->box.size.x) * 0.5f, (box.size.y - sw->box.size.y) * 0.5f);
-            addChild(sw);
-        }
-        
-        // Set up proper RGB color mixing
-        addBaseColor(nvgRGB(0xff, 0x00, 0x00)); // Red channel
-        addBaseColor(nvgRGB(0x00, 0xff, 0x00)); // Green channel  
-        addBaseColor(nvgRGB(0x00, 0x00, 0xff)); // Blue channel
-    }
-    
-    void step() override {
-        ModuleLightWidget::step();
-        
-        if (module) {
-            float r = module->lights[firstLightId + 0].getBrightness();
-            float g = module->lights[firstLightId + 1].getBrightness();
-            float b = module->lights[firstLightId + 2].getBrightness();
-            
-            // Create layered color effect with different opacities
-            color = nvgRGBAf(r, g, b, fmaxf(r, fmaxf(g, b)));
-        }
-    }
-    
-    void draw(const DrawArgs& args) override {
-        if (module) {
-            float r = module->lights[firstLightId + 0].getBrightness();
-            float g = module->lights[firstLightId + 1].getBrightness();
-            float b = module->lights[firstLightId + 2].getBrightness();
-            float maxBrightness = fmaxf(r, fmaxf(g, b));
-            
-            float cx = box.size.x * 0.5f;
-            float cy = box.size.y * 0.5f;
-            
-            // Draw dramatic layered jewel effect even when dim
-            if (maxBrightness > 0.01f) {
-                // Save current transform
-                nvgSave(args.vg);
-                
-                // Layer 1: Large outer glow with gradient (scaled down)
-                NVGpaint outerGlow = nvgRadialGradient(args.vg, cx, cy, 6.5f, 13.5f,
-                    nvgRGBAf(r, g, b, 0.6f * maxBrightness), nvgRGBAf(r, g, b, 0.0f));
-                nvgBeginPath(args.vg);
-                nvgCircle(args.vg, cx, cy, 13.5f);
-                nvgFillPaint(args.vg, outerGlow);
-                nvgFill(args.vg);
-                
-                // Layer 2: Medium ring with stronger color saturation (scaled down)
-                NVGpaint mediumRing = nvgRadialGradient(args.vg, cx, cy, 3.5f, 9.5f,
-                    nvgRGBAf(r * 1.2f, g * 1.2f, b * 1.2f, 0.9f * maxBrightness), 
-                    nvgRGBAf(r, g, b, 0.3f * maxBrightness));
-                nvgBeginPath(args.vg);
-                nvgCircle(args.vg, cx, cy, 9.5f);
-                nvgFillPaint(args.vg, mediumRing);
-                nvgFill(args.vg);
-                
-                // Layer 3: Inner core with high contrast (scaled down)
-                NVGpaint innerCore = nvgRadialGradient(args.vg, cx, cy, 1.5f, 6.0f,
-                    nvgRGBAf(fminf(r * 1.5f, 1.0f), fminf(g * 1.5f, 1.0f), fminf(b * 1.5f, 1.0f), 1.0f), 
-                    nvgRGBAf(r, g, b, 0.7f));
-                nvgBeginPath(args.vg);
-                nvgCircle(args.vg, cx, cy, 6.0f);
-                nvgFillPaint(args.vg, innerCore);
-                nvgFill(args.vg);
-                
-                // Layer 4: Bright center hotspot (scaled down)
-                nvgBeginPath(args.vg);
-                nvgCircle(args.vg, cx, cy, 3.0f);
-                nvgFillColor(args.vg, nvgRGBAf(fminf(r * 2.0f, 1.0f), fminf(g * 2.0f, 1.0f), fminf(b * 2.0f, 1.0f), 1.0f));
-                nvgFill(args.vg);
-                
-                // Layer 5: Multiple highlight spots for faceted jewel effect (scaled down)
-                float highlightIntensity = 0.9f * maxBrightness;
-                
-                // Main highlight (upper left) - scaled down
-                nvgBeginPath(args.vg);
-                nvgCircle(args.vg, cx - 2.5f, cy - 2.5f, 1.7f);
-                nvgFillColor(args.vg, nvgRGBAf(1.0f, 1.0f, 1.0f, highlightIntensity));
-                nvgFill(args.vg);
-                
-                // Secondary highlight (right side) - scaled down
-                nvgBeginPath(args.vg);
-                nvgCircle(args.vg, cx + 2.0f, cy - 0.8f, 1.0f);
-                nvgFillColor(args.vg, nvgRGBAf(1.0f, 1.0f, 1.0f, highlightIntensity * 0.6f));
-                nvgFill(args.vg);
-                
-                // Tiny sparkle highlights - scaled down
-                nvgBeginPath(args.vg);
-                nvgCircle(args.vg, cx - 0.8f, cy + 1.7f, 0.6f);
-                nvgFillColor(args.vg, nvgRGBAf(1.0f, 1.0f, 1.0f, highlightIntensity * 0.8f));
-                nvgFill(args.vg);
-                
-                // Layer 6: Dark rim for definition (scaled down)
-                nvgBeginPath(args.vg);
-                nvgCircle(args.vg, cx, cy, 12.0f);
-                nvgStrokeColor(args.vg, nvgRGBAf(0.2f, 0.2f, 0.2f, 0.8f));
-                nvgStrokeWidth(args.vg, 0.7f);
-                nvgStroke(args.vg);
-                
-                nvgRestore(args.vg);
-            } else {
-                // Draw subtle base jewel when off (scaled down)
-                nvgBeginPath(args.vg);
-                nvgCircle(args.vg, cx, cy, 12.0f);
-                nvgFillColor(args.vg, nvgRGBA(60, 60, 70, 255));
-                nvgFill(args.vg);
-                
-                nvgBeginPath(args.vg);
-                nvgCircle(args.vg, cx, cy, 9.5f);
-                nvgFillColor(args.vg, nvgRGBA(30, 30, 35, 255));
-                nvgFill(args.vg);
-                
-                // Subtle highlight even when off (scaled down)
-                nvgBeginPath(args.vg);
-                nvgCircle(args.vg, cx - 1.7f, cy - 1.7f, 1.3f);
-                nvgFillColor(args.vg, nvgRGBA(120, 120, 140, 100));
-                nvgFill(args.vg);
-            }
-        }
-        
-        // Draw the SVG on top if it exists (with blend mode for better integration)
-        if (!children.empty()) {
-            nvgGlobalCompositeBlendFunc(args.vg, NVG_ONE, NVG_ONE_MINUS_SRC_ALPHA);
-            Widget::draw(args);
-            nvgGlobalCompositeBlendFunc(args.vg, NVG_ONE, NVG_ONE_MINUS_SRC_ALPHA);
-        }
-    }
-};
 
 struct Chiaroscuro : Module {
     enum ParamIds {
@@ -607,31 +467,31 @@ struct Chiaroscuro : Module {
     Chiaroscuro() {
         config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
         
-        shapetaker::ParameterHelper::configGain(this, VCA_PARAM, "VCA Gain");
-        shapetaker::ParameterHelper::configSwitch(this, TYPE_PARAM, "Distortion Type",
-            {"Hard Clip", "Wave Fold", "Bit Crush", "Destroy", "Ring Mod", "Tube Sat"}, 0);
-        shapetaker::ParameterHelper::configGain(this, DIST_PARAM, "Distortion Amount");
-        shapetaker::ParameterHelper::configAttenuverter(this, DIST_ATT_PARAM, "Distortion CV Attenuverter");
+        shapetaker::ParameterHelper::configGain(this, VCA_PARAM, "vca gain");
+        shapetaker::ParameterHelper::configSwitch(this, TYPE_PARAM, "dist type",
+            {"hard clip", "wave fold", "bit crush", "destroy", "ring mod", "tube sat"}, 0);
+        shapetaker::ParameterHelper::configGain(this, DIST_PARAM, "dist %");
+        shapetaker::ParameterHelper::configAttenuverter(this, DIST_ATT_PARAM, "dist cv");
         shapetaker::ParameterHelper::configDrive(this, DRIVE_PARAM);
-        shapetaker::ParameterHelper::configAttenuverter(this, DRIVE_ATT_PARAM, "Drive CV Attenuverter");
+        shapetaker::ParameterHelper::configAttenuverter(this, DRIVE_ATT_PARAM, "drive cv");
         shapetaker::ParameterHelper::configMix(this, MIX_PARAM);
-        shapetaker::ParameterHelper::configAttenuverter(this, MIX_ATT_PARAM, "Mix CV Attenuverter");
-        shapetaker::ParameterHelper::configToggle(this, LINK_PARAM, "Link L/R Channels");
-        shapetaker::ParameterHelper::configToggle(this, RESPONSE_PARAM, "VCA Response: Linear/Exponential");
-        configParam(WIDTH_PARAM, -1.0f, 1.0f, 0.0f, "Stereo Width", "%", 0.f, 100.f);
-        paramQuantities[WIDTH_PARAM]->description = "Adjust stereo field: -100% = mono, 0% = normal, +100% = wide";
+        shapetaker::ParameterHelper::configAttenuverter(this, MIX_ATT_PARAM, "mix cv");
+        shapetaker::ParameterHelper::configToggle(this, LINK_PARAM, "link L/R channels");
+        shapetaker::ParameterHelper::configToggle(this, RESPONSE_PARAM, "vca resp: lin/exp");
+        configParam(WIDTH_PARAM, -1.0f, 1.0f, 0.0f, "stereo width", "%", 0.f, 100.f);
+        paramQuantities[WIDTH_PARAM]->description = "stereo field adj: -100% = mono, 0% = normal, +100% = wide";
         
-        shapetaker::ParameterHelper::configAudioInput(this, AUDIO_L_INPUT, "Audio Left");
-        shapetaker::ParameterHelper::configAudioInput(this, AUDIO_R_INPUT, "Audio Right");
-        shapetaker::ParameterHelper::configCVInput(this, VCA_CV_INPUT, "VCA Control Voltage");
-        shapetaker::ParameterHelper::configAudioInput(this, SIDECHAIN_INPUT, "Sidechain Detector");
-        shapetaker::ParameterHelper::configCVInput(this, TYPE_CV_INPUT, "Distortion Type CV");
-        shapetaker::ParameterHelper::configCVInput(this, DIST_CV_INPUT, "Distortion Amount CV");
-        shapetaker::ParameterHelper::configCVInput(this, DRIVE_CV_INPUT, "Drive Amount CV");
-        shapetaker::ParameterHelper::configCVInput(this, MIX_CV_INPUT, "Mix Control CV");
+        shapetaker::ParameterHelper::configAudioInput(this, AUDIO_L_INPUT, "L");
+        shapetaker::ParameterHelper::configAudioInput(this, AUDIO_R_INPUT, "R");
+        shapetaker::ParameterHelper::configCVInput(this, VCA_CV_INPUT, "vca cv");
+        shapetaker::ParameterHelper::configAudioInput(this, SIDECHAIN_INPUT, "sidechain detect");
+        shapetaker::ParameterHelper::configCVInput(this, TYPE_CV_INPUT, "dist type");
+        shapetaker::ParameterHelper::configCVInput(this, DIST_CV_INPUT, "dist amt");
+        shapetaker::ParameterHelper::configCVInput(this, DRIVE_CV_INPUT, "drive amt");
+        shapetaker::ParameterHelper::configCVInput(this, MIX_CV_INPUT, "mix control");
         
-        shapetaker::ParameterHelper::configAudioOutput(this, AUDIO_L_OUTPUT, "Audio Left");
-        shapetaker::ParameterHelper::configAudioOutput(this, AUDIO_R_OUTPUT, "Audio Right");
+        shapetaker::ParameterHelper::configAudioOutput(this, AUDIO_L_OUTPUT, "L");
+        shapetaker::ParameterHelper::configAudioOutput(this, AUDIO_R_OUTPUT, "R");
         detector.setTiming(10.0f, 200.0f);
         
         // Initialize distortion smoothing - fast enough to be responsive but slow enough to avoid clicks

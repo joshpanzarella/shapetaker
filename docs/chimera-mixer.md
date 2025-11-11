@@ -13,10 +13,10 @@ Chimera is a four-channel stereo mixer with per-channel morph sends that continu
 | 4 stereo strips | Level (fader), Width/Pan, Morph Send, Loop Threshold, Tilt EQ, Loop Arm, Bus select (A/B/Both) | Each strip accepts stereo or dual-mono. When armed, the loop auto-records on amplitude threshold and replaces the live feed. |
 | Morph Section | Slot A mode, Slot B mode, per-slot mini controls (Rate, Depth, Texture), Global Morph Mix (A⇄B), CV inputs | Slots default to chorus/ensemble and flanger/trem palettes; each slot can be reconfigured later. |
 | Glue Section | Threshold, Ratio switch (2:1 / 4:1 / Crush), Attack, Release, HPF sidechain (Off/60/120), Dry/Wet, Makeup | Classic stereo bus compressor placed post mix. |
-| Loop & Clock | Loop length switch (1/2/4 bars), BPM knob, run/source toggles, click enable + mix route, ext clock in + click out | Internal metronome or external clock define loop quantization; click can route to mix or its own output. |
+| Loop & Clock | Loop length switch (1/2/4 bars), BPM knob, run/source toggles, click enable/mix/level, ext clock in + click out | Internal metronome or external clock define loop quantization; click can route to mix or its own output at a user-set level (0–1.5 V). |
 | Routing & Aux | Ping-pong toggle for morph bus, Cross-feedback knob (Morph → Mix sidechain), Aux send output pair | Keeps space for future expander ideas. |
 
-Module width target: **34 HP** (expanded from 30 HP to give the morph/glue/clock cluster an extra column). This yields enough horizontal room for four channel strips, loop controls, morph slots, and the shared clock/compressor blocks without overcrowding.
+Module width target: **36 HP** (expanded again to give the morph/glue/clock cluster more breathing room and prevent control overlap). This yields enough horizontal room for four channel strips, loop controls, morph slots, and the shared clock/compressor blocks without overcrowding.
 
 ## Signal Flow Summary
 
