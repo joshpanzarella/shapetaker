@@ -370,6 +370,8 @@ struct Patina : Module {
         for (int i = 0; i < 3; ++i) {
             lfoCores[i].phase = phaseOffsets[i];
         }
+
+        shapetaker::ui::LabelFormatter::normalizeModuleControls(this);
     }
 
     void onSampleRateChange() override {
@@ -590,16 +592,15 @@ struct PatinaWidget : ModuleWidget {
         setModule(module);
         setPanel(createPanel(asset::plugin(pluginInstance, "res/panels/Patina.svg")));
 
+        using LayoutHelper = shapetaker::ui::LayoutHelper;
         // Add screws
-        shapetaker::ui::LayoutHelper::ScrewPositions::addStandardScrews<ScrewSilver>(
+        LayoutHelper::ScrewPositions::addStandardScrews<ScrewSilver>(
             this,
-            shapetaker::ui::LayoutHelper::getModuleWidth(
-                shapetaker::ui::LayoutHelper::ModuleWidth::WIDTH_20HP));
+            LayoutHelper::getModuleWidth(LayoutHelper::ModuleWidth::WIDTH_20HP));
 
-        // Helper function for mm coordinates
-        auto mm = [](float x, float y) {
-            return mm2px(Vec(x, y));
-        };
+        auto svgPath = asset::plugin(pluginInstance, "res/panels/Patina.svg");
+        LayoutHelper::PanelSVGParser parser(svgPath);
+        auto centerPx = LayoutHelper::createCenterPxHelper(parser);
 
         // 20HP layout: 101.6mm wide × 128.5mm tall
         // Panel center: 50.8mm
@@ -626,19 +627,19 @@ struct PatinaWidget : ModuleWidget {
         const float envRow3 = 48.f;  // Mode knob (small, 4mm radius)
 
         // Three knobs: Sensitivity, Master Rate, Envelope Depth
-        addParam(createParamCentered<ShapetakerKnobAltMedium>(mm(leftCol, envRow1), module, Patina::ENV_SENSITIVITY_PARAM));
-        addParam(createParamCentered<ShapetakerKnobAltMedium>(mm(centerX, envRow1), module, Patina::MASTER_RATE_PARAM));
-        addParam(createParamCentered<ShapetakerKnobAltMedium>(mm(rightCol, envRow1), module, Patina::ENV_DEPTH_PARAM));
+        addParam(createParamCentered<ShapetakerKnobAltMedium>(centerPx("patina-env-sensitivity", leftCol, envRow1), module, Patina::ENV_SENSITIVITY_PARAM));
+        addParam(createParamCentered<ShapetakerKnobAltMedium>(centerPx("patina-master-rate", centerX, envRow1), module, Patina::MASTER_RATE_PARAM));
+        addParam(createParamCentered<ShapetakerKnobAltMedium>(centerPx("patina-env-depth", rightCol, envRow1), module, Patina::ENV_DEPTH_PARAM));
 
         // Jacks: Audio In, Envelope Out, Reset
-        addInput(createInputCentered<ShapetakerBNCPort>(mm(leftCol, envRow2), module, Patina::AUDIO_INPUT));
-        addOutput(createOutputCentered<ShapetakerBNCPort>(mm(centerX, envRow2), module, Patina::ENV_OUTPUT));
-        addInput(createInputCentered<ShapetakerBNCPort>(mm(rightCol, envRow2), module, Patina::RESET_INPUT));
+        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("patina-audio-input", leftCol, envRow2), module, Patina::AUDIO_INPUT));
+        addOutput(createOutputCentered<ShapetakerBNCPort>(centerPx("patina-env-output", centerX, envRow2), module, Patina::ENV_OUTPUT));
+        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("patina-reset-input", rightCol, envRow2), module, Patina::RESET_INPUT));
 
         // Envelope mode switch (Frequency / Amplitude / Alternating / Bipolar) - using CKSS (2-position) stacked
         // Since we need 4 positions and don't have a CKSSFour, we'll use a custom approach
         // For now, use a knob that snaps to 4 positions
-        addParam(createParamCentered<ShapetakerKnobAltSmall>(mm(centerX, envRow3), module, Patina::ENV_MODE_PARAM));
+        addParam(createParamCentered<ShapetakerKnobAltSmall>(centerPx("patina-env-mode", centerX, envRow3), module, Patina::ENV_MODE_PARAM));
 
         // ====================================================================
         // LFO CORES SECTION (Middle - 3 columns)
@@ -660,31 +661,31 @@ struct PatinaWidget : ModuleWidget {
         const float lfoRow7 = 116.f;   // Output lights (2mm radius)
 
         // LFO 1 (Left - Teal)
-        addParam(createParamCentered<ShapetakerKnobAltMedium>(mm(midLeftCol, lfoRow1), module, Patina::RATE_1_PARAM));
-        addInput(createInputCentered<ShapetakerBNCPort>(mm(midLeftCol, lfoRow2), module, Patina::RATE_1_INPUT));
-        addParam(createParamCentered<ShapetakerKnobAltSmall>(mm(midLeftCol, lfoRow3), module, Patina::SHAPE_1_PARAM));
-        addParam(createParamCentered<ShapetakerKnobAltSmall>(mm(midLeftCol, lfoRow4), module, Patina::DRIFT_1_PARAM));
-        addParam(createParamCentered<ShapetakerKnobAltSmall>(mm(midLeftCol, lfoRow5), module, Patina::JITTER_1_PARAM));
-        addOutput(createOutputCentered<ShapetakerBNCPort>(mm(midLeftCol, lfoRow6), module, Patina::LFO_1_OUTPUT));
-        if (module) addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(mm(midLeftCol, lfoRow7), module, Patina::LFO_1_LIGHT));
+        addParam(createParamCentered<ShapetakerKnobAltMedium>(centerPx("patina-rate1", midLeftCol, lfoRow1), module, Patina::RATE_1_PARAM));
+        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("patina-rate1-cv", midLeftCol, lfoRow2), module, Patina::RATE_1_INPUT));
+        addParam(createParamCentered<ShapetakerKnobAltSmall>(centerPx("patina-shape1", midLeftCol, lfoRow3), module, Patina::SHAPE_1_PARAM));
+        addParam(createParamCentered<ShapetakerKnobAltSmall>(centerPx("patina-drift1", midLeftCol, lfoRow4), module, Patina::DRIFT_1_PARAM));
+        addParam(createParamCentered<ShapetakerKnobAltSmall>(centerPx("patina-jitter1", midLeftCol, lfoRow5), module, Patina::JITTER_1_PARAM));
+        addOutput(createOutputCentered<ShapetakerBNCPort>(centerPx("patina-output1", midLeftCol, lfoRow6), module, Patina::LFO_1_OUTPUT));
+        if (module) addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(centerPx("patina-light1", midLeftCol, lfoRow7), module, Patina::LFO_1_LIGHT));
 
         // LFO 2 (Center - Purple)
-        addParam(createParamCentered<ShapetakerKnobAltMedium>(mm(centerX, lfoRow1), module, Patina::RATE_2_PARAM));
-        addInput(createInputCentered<ShapetakerBNCPort>(mm(centerX, lfoRow2), module, Patina::RATE_2_INPUT));
-        addParam(createParamCentered<ShapetakerKnobAltSmall>(mm(centerX, lfoRow3), module, Patina::SHAPE_2_PARAM));
-        addParam(createParamCentered<ShapetakerKnobAltSmall>(mm(centerX, lfoRow4), module, Patina::DRIFT_2_PARAM));
-        addParam(createParamCentered<ShapetakerKnobAltSmall>(mm(centerX, lfoRow5), module, Patina::JITTER_2_PARAM));
-        addOutput(createOutputCentered<ShapetakerBNCPort>(mm(centerX, lfoRow6), module, Patina::LFO_2_OUTPUT));
-        if (module) addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(mm(centerX, lfoRow7), module, Patina::LFO_2_LIGHT));
+        addParam(createParamCentered<ShapetakerKnobAltMedium>(centerPx("patina-rate2", centerX, lfoRow1), module, Patina::RATE_2_PARAM));
+        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("patina-rate2-cv", centerX, lfoRow2), module, Patina::RATE_2_INPUT));
+        addParam(createParamCentered<ShapetakerKnobAltSmall>(centerPx("patina-shape2", centerX, lfoRow3), module, Patina::SHAPE_2_PARAM));
+        addParam(createParamCentered<ShapetakerKnobAltSmall>(centerPx("patina-drift2", centerX, lfoRow4), module, Patina::DRIFT_2_PARAM));
+        addParam(createParamCentered<ShapetakerKnobAltSmall>(centerPx("patina-jitter2", centerX, lfoRow5), module, Patina::JITTER_2_PARAM));
+        addOutput(createOutputCentered<ShapetakerBNCPort>(centerPx("patina-output2", centerX, lfoRow6), module, Patina::LFO_2_OUTPUT));
+        if (module) addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(centerPx("patina-light2", centerX, lfoRow7), module, Patina::LFO_2_LIGHT));
 
         // LFO 3 (Right - Amber)
-        addParam(createParamCentered<ShapetakerKnobAltMedium>(mm(midRightCol, lfoRow1), module, Patina::RATE_3_PARAM));
-        addInput(createInputCentered<ShapetakerBNCPort>(mm(midRightCol, lfoRow2), module, Patina::RATE_3_INPUT));
-        addParam(createParamCentered<ShapetakerKnobAltSmall>(mm(midRightCol, lfoRow3), module, Patina::SHAPE_3_PARAM));
-        addParam(createParamCentered<ShapetakerKnobAltSmall>(mm(midRightCol, lfoRow4), module, Patina::DRIFT_3_PARAM));
-        addParam(createParamCentered<ShapetakerKnobAltSmall>(mm(midRightCol, lfoRow5), module, Patina::JITTER_3_PARAM));
-        addOutput(createOutputCentered<ShapetakerBNCPort>(mm(midRightCol, lfoRow6), module, Patina::LFO_3_OUTPUT));
-        if (module) addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(mm(midRightCol, lfoRow7), module, Patina::LFO_3_LIGHT));
+        addParam(createParamCentered<ShapetakerKnobAltMedium>(centerPx("patina-rate3", midRightCol, lfoRow1), module, Patina::RATE_3_PARAM));
+        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("patina-rate3-cv", midRightCol, lfoRow2), module, Patina::RATE_3_INPUT));
+        addParam(createParamCentered<ShapetakerKnobAltSmall>(centerPx("patina-shape3", midRightCol, lfoRow3), module, Patina::SHAPE_3_PARAM));
+        addParam(createParamCentered<ShapetakerKnobAltSmall>(centerPx("patina-drift3", midRightCol, lfoRow4), module, Patina::DRIFT_3_PARAM));
+        addParam(createParamCentered<ShapetakerKnobAltSmall>(centerPx("patina-jitter3", midRightCol, lfoRow5), module, Patina::JITTER_3_PARAM));
+        addOutput(createOutputCentered<ShapetakerBNCPort>(centerPx("patina-output3", midRightCol, lfoRow6), module, Patina::LFO_3_OUTPUT));
+        if (module) addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(centerPx("patina-light3", midRightCol, lfoRow7), module, Patina::LFO_3_LIGHT));
 
         // ====================================================================
         // CHARACTER SECTION (Bottom)
@@ -704,14 +705,14 @@ struct PatinaWidget : ModuleWidget {
         const float char3X = 56.f;    // Small knob: 52-60mm
         const float char4X = 77.f;    // Small knob: 73-81mm
 
-        addParam(createParamCentered<ShapetakerKnobAltSmall>(mm(char1X, charRow1), module, Patina::SLEW_PARAM));
-        addParam(createParamCentered<ShapetakerKnobAltSmall>(mm(char2X, charRow1), module, Patina::COMPLEXITY_PARAM));
-        addParam(createParamCentered<ShapetakerKnobAltSmall>(mm(char3X, charRow1), module, Patina::ALT_INTERVAL_PARAM));
-        addParam(createParamCentered<ShapetakerKnobAltSmall>(mm(char4X, charRow1), module, Patina::XMOD_PARAM));
+        addParam(createParamCentered<ShapetakerKnobAltSmall>(centerPx("patina-slew", char1X, charRow1), module, Patina::SLEW_PARAM));
+        addParam(createParamCentered<ShapetakerKnobAltSmall>(centerPx("patina-complexity", char2X, charRow1), module, Patina::COMPLEXITY_PARAM));
+        addParam(createParamCentered<ShapetakerKnobAltSmall>(centerPx("patina-alt-interval", char3X, charRow1), module, Patina::ALT_INTERVAL_PARAM));
+        addParam(createParamCentered<ShapetakerKnobAltSmall>(centerPx("patina-xmod", char4X, charRow1), module, Patina::XMOD_PARAM));
 
         // Vintage mode button with light
-        addParam(createParamCentered<rack::componentlibrary::LEDButton>(mm(centerX, charRow2), module, Patina::VINTAGE_MODE_PARAM));
-        if (module) addChild(createLightCentered<MediumLight<RedLight>>(mm(centerX, charRow2), module, Patina::VINTAGE_LIGHT));
+        addParam(createParamCentered<rack::componentlibrary::LEDButton>(centerPx("patina-vintage-button", centerX, charRow2), module, Patina::VINTAGE_MODE_PARAM));
+        if (module) addChild(createLightCentered<MediumLight<RedLight>>(centerPx("patina-vintage-light", centerX, charRow2), module, Patina::VINTAGE_LIGHT));
     }
 };
 

@@ -279,6 +279,8 @@ struct Involution : Module {
         orbitSmooth.reset(params[ORBIT_PARAM].getValue());
         tideSmooth.reset(params[TIDE_PARAM].getValue());
         effectGateSmooth.reset(0.f);
+
+        shapetaker::ui::LabelFormatter::normalizeModuleControls(this);
     }
 
     void onSampleRateChange() override {

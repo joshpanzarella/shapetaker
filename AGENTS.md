@@ -24,12 +24,17 @@ Repository Layout
   - `plugin.cpp` — registers all module models
   - `plugin.hpp` — shared custom widgets (knobs, switches, ports)
   - `clairaudient.cpp` — dual sigmoid oscillator (stereo)
+  - `torsion.cpp` — phase distortion oscillator with DCW envelope
   - `chiaroscuro.cpp` — stereo VCA with sidechain-driven distortion
   - `fatebinder.cpp` — chaotic LFO (strange attractor)
   - `involution.cpp` — dual morphing filters with feedback/shimmer
   - `evocation.cpp` — gesture-based envelope with multi-speed outputs
-  - `incantation.cpp` — utility module
+  - `incantation.cpp` — animated filter bank with 8-band processing
   - `transmutation.cpp` — dual chord sequencer with 8×8 matrix & chord packs
+  - `specula.cpp` — dual VU meter for stereo monitoring
+  - `tessellation.cpp` — triple synchronized delay with golden-ratio subdivisions
+  - `chimera.cpp` — 4-channel morphing mixer with effects and looper
+  - `patina.cpp` — vintage character LFO with envelope following
 - `res/` — SVG panels, knobs, switches, LEDs, meters
 - `chord_packs/` — JSON chord packs grouped by musical key
 - `plugin.json` — plugin/module metadata
@@ -37,12 +42,17 @@ Repository Layout
 
 Modules Overview
 - Clairaudient: Dual sigmoid oscillator, morphing waveforms, stereo crossfade, polyphony up to 6 voices.
-- Chiaroscuro: Stereo VCA + sidechain-controlled distortion engine; custom large VU.
-- Fatebinder: Chaotic LFO with chaos/order morphing.
-- Involution: Dual 6th‑order morphing filters with cross-feedback, shimmer, stereo effects.
+- Torsion: Phase distortion oscillator inspired by Casio CZ synthesis. Features DCW (Digital Controlled Wave) envelope with 6-stage morphing, torsion/symmetry warp controls, sub-oscillator, vintage mode (hiss/drift/bleed), optional chorus, ring mod, and sync modes. Includes feedback, multiple waveform blending, and edge difference output.
+- Chiaroscuro: Stereo VCA + sidechain-controlled distortion engine; custom large VU. Six distortion algorithms with full CV control.
+- Fatebinder: Chaotic LFO with chaos/order morphing using strange attractor math.
+- Involution: Dual 6th‑order morphing filters with cross-feedback, chaos modulation, shimmer processing, and stereo effects.
 - Evocation: Gesture/touch-strip envelope recorder, four speeds, looping, invert, gate output.
-- Incantation: Utility functionality (see source for details).
-- Transmutation: Alchemical chord “Transmutation” — dual sequencer with 8×8 matrix, symbol-to-chord mapping, chord packs, internal/external clocking, A/B modes (independent/harmony/lock), poly CV/gate outputs.
+- Incantation: Sophisticated animated filter bank inspired by the Moog MF-105 MuRF. 8-band filter system with polyphonic processing, animation patterns, and envelope following.
+- Transmutation: Alchemical chord sequencer — dual 8×8 matrix with 40 mystical symbols, chord pack system (JSON), internal/external clocking, A/B modes (independent/harmony/lock), poly CV/gate outputs.
+- Specula: Dual stereo VU meter for visual monitoring of audio levels.
+- Tessellation: Triple synchronized digital delay with golden-ratio time subdivisions, multi-voicing, and stereo processing.
+- Chimera: 4-channel morphing stereo mixer with dual modulation slots (Argent/Aurum flavors), glue-style bus compressor, loop recording per channel, clock system, and gesture CV input.
+- Patina: Vintage character LFO with 3 LFO cores featuring drift, jitter, and audio-reactive envelope following for organic modulation.
 
 Shared UI Components
 - Defined in `src/plugin.hpp` and reused across modules:

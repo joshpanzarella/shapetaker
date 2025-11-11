@@ -102,6 +102,17 @@
       ]
     },
     {
+      "slug": "Chimera",
+      "name": "Chimera",
+      "description": "Morphing stereo mixer with dual modulation slots and a glue-style bus compressor.",
+      "tags": [
+        "Mixer",
+        "Effect",
+        "Stereo",
+        "Compressor"
+      ]
+    },
+    {
       "slug": "Patina",
       "name": "Patina",
       "description": "Vintage character LFO with envelope following - 3 LFO cores with drift, jitter, and audio-reactive modulation",

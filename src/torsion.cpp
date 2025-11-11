@@ -2,6 +2,7 @@
 #include "dsp/audio.hpp"
 #include <algorithm>
 #include <cmath>
+#include <sstream>
 
 namespace {
     constexpr float OUTPUT_SCALE = 5.f;
@@ -127,21 +128,12 @@ struct Torsion : Module {
         INTERACTION_MODES_LEN
     };
 
-    enum LoopMode {
-        LOOP_FORWARD,
-        LOOP_REVERSE,
-        LOOP_PINGPONG,
-        LOOP_RANDOM,
-        LOOP_MODES_LEN
-    };
-
     enum ParamId {
         COARSE_PARAM,
         DETUNE_PARAM,
         TORSION_PARAM,
         SYMMETRY_PARAM,
         TORSION_ATTEN_PARAM,
-        SYMMETRY_ATTEN_PARAM,
         WARP_SHAPE_PARAM,
         STAGE_RATE_PARAM,
         STAGE_TIME_PARAM,
@@ -157,7 +149,6 @@ struct Torsion : Module {
         CURVE4_PARAM,
         CURVE5_PARAM,
         CURVE6_PARAM,
-        LOOP_MODE_PARAM,
         FEEDBACK_PARAM,
         SAW_WAVE_PARAM,
         TRIANGLE_WAVE_PARAM,
@@ -170,10 +161,9 @@ struct Torsion : Module {
     };
     enum InputId {
         VOCT_INPUT,
-        TORSION_CV_INPUT,
-        SYMMETRY_CV_INPUT,
-        STAGE_TRIG_INPUT,
         GATE_INPUT,
+        TORSION_CV_INPUT,
+        STAGE_TRIG_INPUT,
         INPUTS_LEN
     };
     enum OutputId {
@@ -189,8 +179,6 @@ struct Torsion : Module {
         STAGE_LIGHT_4,
         STAGE_LIGHT_5,
         STAGE_LIGHT_6,
-        LOOP_FORWARD_LIGHT,
-        LOOP_REVERSE_LIGHT,
         LIGHTS_LEN
     };
 
@@ -203,7 +191,6 @@ struct Torsion : Module {
     shapetaker::dsp::VoiceArray<float> stagePositions;
     shapetaker::dsp::VoiceArray<bool> stageActive;
     shapetaker::dsp::VoiceArray<float> stageEnvelope;
-    shapetaker::dsp::VoiceArray<int> loopDirection;  // 1 = forward, -1 = reverse
     shapetaker::dsp::VoiceArray<rack::dsp::SchmittTrigger> stageTriggers;
     shapetaker::dsp::VoiceArray<bool> gateHeld;
 
@@ -239,7 +226,6 @@ struct Torsion : Module {
     shapetaker::dsp::VoiceArray<float> clickSuppressor;  // 1.0 = normal, 0.0 = fully faded
 
     InteractionMode interactionMode = INTERACTION_NONE;
-    LoopMode loopMode = LOOP_FORWARD;
     bool vintageMode = false;
     bool dcwKeyTrackEnabled = false;
     bool dcwVelocityEnabled = false;
@@ -247,13 +233,13 @@ struct Torsion : Module {
     static constexpr int kNumStages = 6;
     float vintageClockPhase = 0.f;
 
-    static constexpr float kVintageHissLevel = 0.0045f;
-    static constexpr float kVintageClockLevel = 0.0024f;
+    static constexpr float kVintageHissLevel = 0.0028f;
+    static constexpr float kVintageClockLevel = 0.0015f;
     static constexpr float kVintageClockFreq = 9000.f;  // Hz
     static constexpr float kVintageDriftRange = 0.0045f; // +/- range in octaves (~5.5 cents)
     static constexpr float kVintageDriftHoldMin = 0.18f;
     static constexpr float kVintageDriftHoldMax = 0.45f;
-    static constexpr float kVintageIdleHissLevel = 0.002f;
+    static constexpr float kVintageIdleHissLevel = 0.0012f;
 
     // Cached exponential coefficients (computed once per sample rate change)
     float cachedSlewCoeff = 0.f;
@@ -293,8 +279,7 @@ struct Torsion : Module {
         shapetaker::ParameterHelper::configGain(this, TORSION_PARAM, "torsion depth", 0.0f);
         shapetaker::ParameterHelper::configGain(this, SYMMETRY_PARAM, "symmetry warp", 0.0f);
 
-        shapetaker::ParameterHelper::configAttenuverter(this, TORSION_ATTEN_PARAM, "torsion CV");
-        shapetaker::ParameterHelper::configAttenuverter(this, SYMMETRY_ATTEN_PARAM, "symmetry CV");
+        shapetaker::ParameterHelper::configAttenuverter(this, TORSION_ATTEN_PARAM, "torsion cv");
 
         configSwitch(WARP_SHAPE_PARAM, 0.f, (float)((int)CZWarpShape::Count - 1), 0.f, "warp shape",
             {"single sine", "resonant", "double sine", "saw pulse", "pulse"});
@@ -304,7 +289,7 @@ struct Torsion : Module {
         }
 
         // Stage envelope controls
-        shapetaker::ParameterHelper::configDiscrete(this, STAGE_RATE_PARAM, "DCW cycle rate", 1, 30, 10);
+        shapetaker::ParameterHelper::configDiscrete(this, STAGE_RATE_PARAM, "dcw cycle rate", 1, 30, 10);
 
         shapetaker::ParameterHelper::configAttenuverter(this, STAGE_TIME_PARAM, "stage time scale");
 
@@ -324,9 +309,6 @@ struct Torsion : Module {
         configParam(CURVE5_PARAM, -1.f, 1.f, 0.f, "stage 5 curve");
         configParam(CURVE6_PARAM, -1.f, 1.f, 0.f, "stage 6 curve");
 
-        configSwitch(LOOP_MODE_PARAM, 0.f, LOOP_MODES_LEN - 1.f, 0.f, "loop mode",
-            {"forward", "reverse", "ping-pong", "random"});
-
         shapetaker::ParameterHelper::configGain(this, FEEDBACK_PARAM, "feedback amount", 0.0f);
 
         configParam(SAW_WAVE_PARAM, 0.f, 1.f, 0.f, "sawtooth wave");
@@ -340,21 +322,20 @@ struct Torsion : Module {
 
         // Sub oscillator with extended range for powerful bass
         configParam(SUB_LEVEL_PARAM, 0.f, 2.0f, 0.0f, "sub osc level", "%", 0.f, 100.f);
-        configParam(SUB_WARP_PARAM, 0.f, 1.f, 0.f, "sub DCW depth");
+        configParam(SUB_WARP_PARAM, 0.f, 1.f, 0.f, "sub dcw depth");
         configSwitch(SUB_SYNC_PARAM, 0.f, 1.f, 0.f, "sub sync mode", {"free-run", "hard sync"});
         if (auto* quantity = paramQuantities[SUB_SYNC_PARAM]) {
             quantity->snapEnabled = true;
             quantity->smoothEnabled = false;
         }
 
-        shapetaker::ParameterHelper::configCVInput(this, VOCT_INPUT, "pitch (V/Oct)");
-        shapetaker::ParameterHelper::configCVInput(this, TORSION_CV_INPUT, "torsion CV");
-        shapetaker::ParameterHelper::configCVInput(this, SYMMETRY_CV_INPUT, "symmetry CV");
-        shapetaker::ParameterHelper::configGateInput(this, STAGE_TRIG_INPUT, "DCW trigger");
-        shapetaker::ParameterHelper::configGateInput(this, GATE_INPUT, "DCW gate");
+        shapetaker::ParameterHelper::configCVInput(this, VOCT_INPUT, "v/oct");
+        shapetaker::ParameterHelper::configGateInput(this, GATE_INPUT, "dcw gate");
+        shapetaker::ParameterHelper::configCVInput(this, TORSION_CV_INPUT, "torsion cv");
+        shapetaker::ParameterHelper::configGateInput(this, STAGE_TRIG_INPUT, "dcw trigger");
 
-        shapetaker::ParameterHelper::configAudioOutput(this, MAIN_L_OUTPUT, "main L");
-        shapetaker::ParameterHelper::configAudioOutput(this, MAIN_R_OUTPUT, "main R");
+        shapetaker::ParameterHelper::configAudioOutput(this, MAIN_L_OUTPUT, "L");
+        shapetaker::ParameterHelper::configAudioOutput(this, MAIN_R_OUTPUT, "R");
         shapetaker::ParameterHelper::configAudioOutput(this, EDGE_OUTPUT, "edge difference");
 
         velocityHold.forEach([](float& v) { v = 1.f; });
@@ -364,6 +345,8 @@ struct Torsion : Module {
         for (int i = 0; i < kVintageNoiseBufferSize; ++i) {
             vintageNoiseBuffer[i] = rack::random::uniform() * 2.f - 1.f;
         }
+
+        shapetaker::ui::LabelFormatter::normalizeModuleControls(this);
     }
 
     void resetChorusState() {
@@ -394,12 +377,10 @@ struct Torsion : Module {
         stagePositions.reset();
         stageActive.reset();
         stageEnvelope.reset();
-        loopDirection.reset();
         dcBlockerX1.reset();
         dcBlockerY1.reset();
         clickSuppressor.reset();
         for (int i = 0; i < 16; i++) {
-            loopDirection[i] = 1;  // Initialize to forward
             clickSuppressor[i] = 1.0f;  // Start fully active
         }
         gateHeld.reset();
@@ -408,7 +389,6 @@ struct Torsion : Module {
         vintageDriftTimer.reset();
         velocityHold.forEach([](float& v) { v = 1.f; });
         interactionMode = INTERACTION_NONE;
-        loopMode = LOOP_FORWARD;
         vintageMode = false;
         dcwKeyTrackEnabled = false;
         dcwVelocityEnabled = false;
@@ -423,7 +403,6 @@ struct Torsion : Module {
     json_t* dataToJson() override {
         json_t* rootJ = json_object();
         json_object_set_new(rootJ, "interactionMode", json_integer((int)interactionMode));
-        json_object_set_new(rootJ, "loopMode", json_integer((int)loopMode));
         json_object_set_new(rootJ, "vintageMode", json_boolean(vintageMode));
         json_object_set_new(rootJ, "dcwKeyTrackEnabled", json_boolean(dcwKeyTrackEnabled));
         json_object_set_new(rootJ, "dcwVelocityEnabled", json_boolean(dcwVelocityEnabled));
@@ -440,12 +419,6 @@ struct Torsion : Module {
             interactionMode = (InteractionMode)json_integer_value(modeJ);
             interactionMode = (InteractionMode)rack::math::clamp(
                 (int)interactionMode, 0, INTERACTION_MODES_LEN - 1);
-        }
-        json_t* loopJ = json_object_get(rootJ, "loopMode");
-        if (loopJ) {
-            loopMode = (LoopMode)json_integer_value(loopJ);
-            loopMode = (LoopMode)rack::math::clamp(
-                (int)loopMode, 0, LOOP_MODES_LEN - 1);
         }
         json_t* vintageJ = json_object_get(rootJ, "vintageMode");
         if (vintageJ) {
@@ -468,7 +441,7 @@ struct Torsion : Module {
 
     void process(const ProcessArgs& args) override {
         int channels = polyProcessor.updateChannels(
-            {inputs[VOCT_INPUT], inputs[TORSION_CV_INPUT], inputs[SYMMETRY_CV_INPUT], inputs[STAGE_TRIG_INPUT], inputs[GATE_INPUT]},
+            {inputs[VOCT_INPUT], inputs[GATE_INPUT], inputs[TORSION_CV_INPUT], inputs[STAGE_TRIG_INPUT]},
             {outputs[MAIN_L_OUTPUT], outputs[MAIN_R_OUTPUT], outputs[EDGE_OUTPUT]});
 
         // Update cached exponential coefficients if sample rate changed
@@ -485,7 +458,6 @@ struct Torsion : Module {
         float torsionBase = params[TORSION_PARAM].getValue();
         float symmetryBase = params[SYMMETRY_PARAM].getValue();
         float torsionAtten = params[TORSION_ATTEN_PARAM].getValue();
-        float symmetryAtten = params[SYMMETRY_ATTEN_PARAM].getValue();
 
         float rate = params[STAGE_RATE_PARAM].getValue();
         float stageTimeScale = params[STAGE_TIME_PARAM].getValue();
@@ -505,7 +477,6 @@ struct Torsion : Module {
             params[CURVE5_PARAM].getValue(),
             params[CURVE6_PARAM].getValue()
         };
-        loopMode = (LoopMode)(int)params[LOOP_MODE_PARAM].getValue();
         CZWarpShape warpShape = (CZWarpShape)rack::math::clamp(
             (int)params[WARP_SHAPE_PARAM].getValue(), 0, (int)CZWarpShape::Count - 1);
         bool useSaw = params[SAW_WAVE_PARAM].getValue() > 0.5f;
@@ -702,7 +673,6 @@ struct Torsion : Module {
             bool gateConnected = inputs[GATE_INPUT].isConnected();
             bool trigConnected = inputs[STAGE_TRIG_INPUT].isConnected() && !gateConnected;
             float stagePos = stagePositions[ch];
-            int dir = loopDirection[ch];
 
             bool gateHigh = !gateConnected;
             if (gateConnected) {
@@ -713,30 +683,14 @@ struct Torsion : Module {
                 if (gateHigh) {
                     if (!prevGate) {
                         stagePos = 0.f;
-                        dir = 1;
                         velocityHold[ch] = rack::math::clamp(gateVolt / 10.f, 0.f, 1.f);
                     }
                     float effectiveRate = rate * (1.f + stageTimeScale);
-                    stagePos += dir * effectiveRate * args.sampleTime;
+                    stagePos += effectiveRate * args.sampleTime;
 
+                    // Simple forward-only: hold at end
                     if (stagePos >= (float)kNumStages) {
-                        if (loopMode == LOOP_PINGPONG) {
-                            stagePos = 2.f * kNumStages - stagePos;
-                            dir = -1;
-                        } else if (loopMode == LOOP_RANDOM) {
-                            stagePos = rack::random::uniform() * kNumStages;
-                        } else {
-                            stagePos = (float)kNumStages - 0.01f;
-                            dir = 1;
-                        }
-                    } else if (stagePos < 0.f) {
-                        if (loopMode == LOOP_PINGPONG) {
-                            stagePos = -stagePos;
-                            dir = 1;
-                        } else {
-                            stagePos = 0.f;
-                            dir = 1;
-                        }
+                        stagePos = (float)kNumStages - 0.01f;
                     }
                     stageActive[ch] = true;
                 } else {
@@ -750,84 +704,31 @@ struct Torsion : Module {
                 float trigVolt = inputs[STAGE_TRIG_INPUT].getPolyVoltage(ch);
                 if (stageTriggers[ch].process(trigVolt)) {
                     stagePos = 0.f;
-                    dir = 1;
                     stageActive[ch] = true;
                     velocityHold[ch] = rack::math::clamp(std::fabs(trigVolt) / 10.f, 0.f, 1.f);
                 }
 
                 if (stageActive[ch]) {
                     float effectiveRate = rate * (1.f + stageTimeScale);
-                    stagePos += dir * effectiveRate * args.sampleTime;
+                    stagePos += effectiveRate * args.sampleTime;
 
-                    // Handle looping at boundaries
+                    // Simple forward-only: stop at end
                     if (stagePos >= (float)kNumStages) {
-                        if (loopMode == LOOP_PINGPONG) {
-                            stagePos = 2.f * kNumStages - stagePos;
-                            dir = -1;
-                        } else if (loopMode == LOOP_RANDOM) {
-                            stagePos = rack::random::uniform() * kNumStages;
-                        } else {
-                            stagePos = 0.f;
-                            stageActive[ch] = false;
-                        }
-                    } else if (stagePos < 0.f) {
-                        if (loopMode == LOOP_PINGPONG) {
-                            stagePos = -stagePos;
-                            dir = 1;
-                        } else {
-                            stagePos = 0.f;
-                            stageActive[ch] = false;
-                        }
+                        stagePos = 0.f;
+                        stageActive[ch] = false;
                     }
                 }
             } else {
                 // Free-running mode (no trigger connected)
-                // Behavior depends on loop mode:
-                // - Forward: cycle continuously
-                // - Others: loop/pingpong as configured
-
-                // Only advance if we haven't reached the end in forward mode
-                bool shouldAdvance = true;
-                if (loopMode == LOOP_FORWARD) {
-                    // In forward mode without trigger, play once then hold at end
-                    if (stagePos >= (float)kNumStages - 0.01f && dir > 0) {
-                        stagePos = (float)kNumStages - 0.01f;  // Hold at last stage
-                        shouldAdvance = false;
-                    }
-                }
-
-                if (shouldAdvance) {
+                // Play once then hold at end
+                if (stagePos >= (float)kNumStages - 0.01f) {
+                    stagePos = (float)kNumStages - 0.01f;  // Hold at last stage
+                } else {
                     float effectiveRate = rate * (1.f + stageTimeScale);
-                    stagePos += dir * effectiveRate * args.sampleTime;
+                    stagePos += effectiveRate * args.sampleTime;
 
                     if (stagePos >= (float)kNumStages) {
-                        if (loopMode == LOOP_FORWARD) {
-                            // Hold at end (shouldn't reach here, but just in case)
-                            stagePos = (float)kNumStages - 0.01f;
-                            dir = 1;
-                        } else if (loopMode == LOOP_REVERSE) {
-                            // Reverse mode: flip direction at end
-                            stagePos = kNumStages - (stagePos - kNumStages);
-                            dir = -1;
-                        } else if (loopMode == LOOP_PINGPONG) {
-                            // Ping-pong: bounce at end
-                            stagePos = 2.f * kNumStages - stagePos;
-                            dir = -1;
-                        } else if (loopMode == LOOP_RANDOM) {
-                            // Random: jump to random stage
-                            stagePos = rack::random::uniform() * kNumStages;
-                            dir = 1;
-                        }
-                    } else if (stagePos < 0.f) {
-                        if (loopMode == LOOP_PINGPONG || loopMode == LOOP_REVERSE) {
-                            // Bounce back forward when hitting start
-                            stagePos = -stagePos;
-                            dir = 1;
-                        } else {
-                            // Wrap to end
-                            stagePos += kNumStages;
-                            dir = 1;
-                        }
+                        stagePos = (float)kNumStages - 0.01f;
                     }
                 }
                 stageActive[ch] = true;
@@ -849,7 +750,6 @@ struct Torsion : Module {
             }
 
             stagePositions[ch] = stagePos;
-            loopDirection[ch] = dir;
 
             // Optimization #3: Reduce redundant clamping - clamp once at the end
             float torsionA = torsionBase;
@@ -874,9 +774,6 @@ struct Torsion : Module {
 
             // Symmetry with single clamp
             float symmetry = symmetryBase;
-            if (inputs[SYMMETRY_CV_INPUT].isConnected()) {
-                symmetry += inputs[SYMMETRY_CV_INPUT].getPolyVoltage(ch) * symmetryAtten * 0.1f;
-            }
             symmetry = rack::math::clamp(symmetry, 0.f, 1.f);
 
             float targetStageValue = 0.f;
@@ -1090,23 +987,16 @@ struct Torsion : Module {
         // Update polyphonic stage LEDs with brightness stacking
         // Accumulate brightness from all active voices for a "heat map" effect
         float stageBrightness[kNumStages] = {};
-        bool anyActive = false;
-        int activeDir = 1;  // Track direction for loop indicators
 
         for (int ch = 0; ch < channels; ++ch) {
             bool active = stageActive[ch] || (!inputs[GATE_INPUT].isConnected() && !inputs[STAGE_TRIG_INPUT].isConnected());
             if (active) {
-                anyActive = true;
                 float stagePos = stagePositions[ch];
                 // Accumulate brightness contribution from each voice
                 for (int i = 0; i < kNumStages; ++i) {
                     float distance = std::fabs(stagePos - (float)i);
                     float brightness = rack::math::clamp(1.f - distance, 0.f, 1.f);
                     stageBrightness[i] += brightness;
-                }
-                // Use direction from last active voice
-                if (ch == 0 || stageActive[ch]) {
-                    activeDir = loopDirection[ch];
                 }
             }
         }
@@ -1118,10 +1008,6 @@ struct Torsion : Module {
             float normalizedBrightness = rack::math::clamp(stageBrightness[i] * normalizeFactor, 0.f, 1.f);
             lights[STAGE_LIGHT_1 + i].setSmoothBrightness(normalizedBrightness, lightSlew);
         }
-
-        // Update loop direction indicators
-        lights[LOOP_FORWARD_LIGHT].setSmoothBrightness(anyActive && activeDir >= 0 ? 1.f : 0.f, lightSlew);
-        lights[LOOP_REVERSE_LIGHT].setSmoothBrightness(anyActive && activeDir < 0 ? 1.f : 0.f, lightSlew);
     }
 };
 
@@ -1130,6 +1016,7 @@ struct VintageSliderLED : app::SvgSlider {
     // LED parameters - warm tube glow color
     static constexpr float LED_RADIUS = 4.0f;
     static constexpr float LED_GLOW_RADIUS = 10.0f;
+    static constexpr float TRACK_CENTER_OFFSET_X = 2.0f;  // Track is 8px inside 12px widget
     // Warm orange/amber tube glow color
     NVGcolor ledColor = nvgRGBf(1.0f, 0.6f, 0.2f);
 
@@ -1229,180 +1116,129 @@ struct VintageSliderLED : app::SvgSlider {
     }
 };
 
-// Vintage four-position rotary switch sized to match a small knob footprint
-struct VintageFourWaySwitch : app::Knob {
-    VintageFourWaySwitch() {
-        box.size = rack::mm2px(Vec(16.f, 16.f));
-        minAngle = -0.75f * M_PI;
-        maxAngle = 0.75f * M_PI;
-        speed = 0.8f;
-        smooth = false;
-    }
-
-    void onDragMove(const DragMoveEvent& e) override {
-        // Snap to four discrete positions while dragging
-        app::Knob::onDragMove(e);
-        ParamQuantity* pq = getParamQuantity();
-        if (pq) {
-            pq->setValue(std::round(pq->getValue()));
-        }
-    }
-
-    void onButton(const event::Button& e) override {
-        if (e.action == GLFW_PRESS && (e.button == GLFW_MOUSE_BUTTON_LEFT || e.button == GLFW_MOUSE_BUTTON_RIGHT)) {
-            ParamQuantity* pq = getParamQuantity();
-            if (pq) {
-                int current = (int)std::round(pq->getValue());
-                int direction = (e.button == GLFW_MOUSE_BUTTON_LEFT) ? 1 : -1;
-                int minValue = (int)std::round(pq->getMinValue());
-                int maxValue = (int)std::round(pq->getMaxValue());
-                int next = current + direction;
-                if (next > maxValue) {
-                    next = minValue;
-                } else if (next < minValue) {
-                    next = maxValue;
-                }
-                pq->setValue((float)rack::math::clamp(next, minValue, maxValue));
-            }
-            e.consume(this);
-        }
-        app::Knob::onButton(e);
-    }
-
-    void draw(const DrawArgs& args) override {
-        NVGcontext* vg = args.vg;
-        Vec center = box.size.div(2.f);
-        float radius = std::min(box.size.x, box.size.y) * 0.5f - 1.f;
-
-        // Base
-        nvgBeginPath(vg);
-        nvgCircle(vg, center.x, center.y, radius);
-        NVGcolor baseOuter = nvgRGBA(46, 40, 38, 255);
-        NVGcolor baseInner = nvgRGBA(87, 74, 66, 255);
-        nvgFillPaint(vg, nvgRadialGradient(vg, center.x, center.y, radius * 0.2f, radius, baseInner, baseOuter));
-        nvgFill(vg);
-
-        // Brass ring
-        nvgBeginPath(vg);
-        nvgCircle(vg, center.x, center.y, radius - 2.f);
-        nvgStrokeWidth(vg, 2.f);
-        nvgStrokeColor(vg, nvgRGBA(170, 139, 87, 255));
-        nvgStroke(vg);
-
-        // Tick marks for each position
-        ParamQuantity* pq = getParamQuantity();
-        float minValue = pq ? pq->getMinValue() : 0.f;
-        float maxValue = pq ? pq->getMaxValue() : 3.f;
-        for (int i = 0; i <= (int)(maxValue - minValue); ++i) {
-            float angle = rack::math::rescale((float)i, minValue, maxValue, minAngle, maxAngle);
-            Vec dir(std::cos(angle), std::sin(angle));
-            Vec inner = dir.mult(radius - 4.f).plus(center);
-            Vec outer = dir.mult(radius - 1.f).plus(center);
-            nvgBeginPath(vg);
-            nvgMoveTo(vg, inner.x, inner.y);
-            nvgLineTo(vg, outer.x, outer.y);
-            nvgStrokeWidth(vg, 1.2f);
-            nvgStrokeColor(vg, nvgRGBA(230, 214, 176, 160));
-            nvgStroke(vg);
-        }
-
-        // Pointer
-        float value = pq ? pq->getValue() : 0.f;
-        float pointerAngle = rack::math::rescale(value, minValue, maxValue, minAngle, maxAngle);
-        float pointerLength = radius - 4.f;
-        Vec pointerDir(std::cos(pointerAngle), std::sin(pointerAngle));
-        pointerDir = pointerDir.normalize();
-        Vec tip = pointerDir.mult(pointerLength).plus(center);
-        Vec leftWing(std::cos(pointerAngle + 0.9f * M_PI_2), std::sin(pointerAngle + 0.9f * M_PI_2));
-        Vec rightWing(std::cos(pointerAngle - 0.9f * M_PI_2), std::sin(pointerAngle - 0.9f * M_PI_2));
-        leftWing = leftWing.mult(2.2f).plus(center);
-        rightWing = rightWing.mult(2.2f).plus(center);
-
-        nvgBeginPath(vg);
-        nvgMoveTo(vg, leftWing.x, leftWing.y);
-        nvgLineTo(vg, tip.x, tip.y);
-        nvgLineTo(vg, rightWing.x, rightWing.y);
-        nvgClosePath(vg);
-        nvgFillColor(vg, nvgRGBA(238, 220, 170, 255));
-        nvgFill(vg);
-
-        // Center cap
-        nvgBeginPath(vg);
-        nvgCircle(vg, center.x, center.y, 3.2f);
-        nvgFillColor(vg, nvgRGBA(78, 62, 49, 255));
-        nvgFill(vg);
-        nvgBeginPath(vg);
-        nvgCircle(vg, center.x, center.y, 3.2f);
-        nvgStrokeWidth(vg, 1.f);
-        nvgStrokeColor(vg, nvgRGBA(205, 183, 148, 255));
-        nvgStroke(vg);
-    }
-};
+// VintageFourWaySwitch removed - replaced with ShapetakerKnobAltSmall for cleaner aesthetic
 
 struct TorsionWidget : ModuleWidget {
     TorsionWidget(Torsion* module) {
         setModule(module);
         setPanel(createPanel(asset::plugin(pluginInstance, "res/panels/Torsion.svg")));
 
-        float moduleWidth = shapetaker::ui::LayoutHelper::getModuleWidth(
-            shapetaker::ui::LayoutHelper::ModuleWidth::WIDTH_18HP);
-        shapetaker::ui::LayoutHelper::ScrewPositions::addStandardScrews<ScrewBlack>(this, moduleWidth);
+        shapetaker::ui::LayoutHelper::ScrewPositions::addStandardScrews<ScrewBlack>(this, box.size.x);
 
         shapetaker::ui::LayoutHelper::PanelSVGParser parser(
             asset::plugin(pluginInstance, "res/panels/Torsion.svg"));
+        auto centerPx = shapetaker::ui::LayoutHelper::createCenterPxHelper(parser);
 
-        auto centerPx = [&](const std::string& id, float defX, float defY) -> Vec {
-            return parser.centerPx(id, defX, defY);
+        // === Control positioning synchronized with SVG ===
+        // Note: centerPx() reads from SVG first, fallback values provided for safety
+
+        // Top row knobs
+        addParam(createParamCentered<ShapetakerKnobAltSmall>(
+            centerPx("coarse_knob", 11.44458f, 17.659729f), module, Torsion::COARSE_PARAM));
+        addParam(createParamCentered<ShapetakerKnobAltSmall>(
+            centerPx("torsion_knob", 31.128044f, 17.659729f), module, Torsion::TORSION_PARAM));
+        addParam(createParamCentered<ShapetakerKnobAltSmall>(
+            centerPx("sub_level_knob", 50.811508f, 17.659729f), module, Torsion::SUB_LEVEL_PARAM));
+        addParam(createParamCentered<ShapetakerKnobAltSmall>(
+            centerPx("warp_shape_knob", 70.494972f, 17.659729f), module, Torsion::WARP_SHAPE_PARAM));
+
+        // Second row knobs
+        addParam(createParamCentered<ShapetakerKnobAltSmall>(
+            centerPx("detune_knob", 11.44458f, 37.985481f), module, Torsion::DETUNE_PARAM));
+        addParam(createParamCentered<ShapetakerKnobAltSmall>(
+            centerPx("symmetry_knob", 31.128044f, 37.985481f), module, Torsion::SYMMETRY_PARAM));
+        addParam(createParamCentered<ShapetakerKnobAltSmall>(
+            centerPx("stage_rate_knob", 50.811508f, 37.985481f), module, Torsion::STAGE_RATE_PARAM));
+
+        // Attenuverters
+        addParam(createParamCentered<ShapetakerAttenuverterOscilloscope>(
+            centerPx("torsion_atten", 72.277924f, 69.663483f), module, Torsion::TORSION_ATTEN_PARAM));
+        addParam(createParamCentered<ShapetakerAttenuverterOscilloscope>(
+            centerPx("stage_time_atten", 72.277924f, 84.927017f), module, Torsion::STAGE_TIME_PARAM));
+
+        // Middle section knobs
+        addParam(createParamCentered<ShapetakerKnobAltSmall>(
+            centerPx("dcw_depth_knob", 11.963207f, 59.011551f), module, Torsion::SUB_WARP_PARAM));
+        addParam(createParamCentered<ShapetakerKnobAltSmall>(
+            centerPx("feedback_knob", 11.963207f, 80.037621f), module, Torsion::FEEDBACK_PARAM));
+
+        // Toggle switches (bottom row)
+        addParam(createParamCentered<ShapetakerVintageRussianToggle>(
+            centerPx("saw_wave_switch", 11.953995f, 102.31097f), module, Torsion::SAW_WAVE_PARAM));
+        addParam(createParamCentered<ShapetakerVintageRussianToggle>(
+            centerPx("tri_wave_switch", 26.716593f, 102.10995f), module, Torsion::TRIANGLE_WAVE_PARAM));
+        addParam(createParamCentered<ShapetakerVintageRussianToggle>(
+            centerPx("dirty_mode_switch", 41.479195f, 102.10995f), module, Torsion::DIRTY_MODE_PARAM));
+        addParam(createParamCentered<ShapetakerVintageRussianToggle>(
+            centerPx("square_wave_switch", 56.241791f, 102.10995f), module, Torsion::SQUARE_WAVE_PARAM));
+        addParam(createParamCentered<ShapetakerVintageRussianToggle>(
+            centerPx("sub_sync_switch", 71.004387f, 102.10995f), module, Torsion::SUB_SYNC_PARAM));
+
+        // Helper lambda to position sliders by their top-left corner from SVG rect coords
+        auto parseTranslate = [](const std::string& transformAttr) -> Vec {
+            Vec offset(0.f, 0.f);
+            if (transformAttr.empty()) {
+                return offset;
+            }
+            size_t translatePos = transformAttr.find("translate");
+            if (translatePos == std::string::npos) {
+                return offset;
+            }
+            size_t open = transformAttr.find('(', translatePos);
+            size_t close = transformAttr.find(')', translatePos);
+            if (open == std::string::npos || close == std::string::npos || close <= open) {
+                return offset;
+            }
+            std::string inside = transformAttr.substr(open + 1, close - open - 1);
+            for (char& c : inside) {
+                if (c == ',' || c == ';') {
+                    c = ' ';
+                }
+            }
+            std::stringstream ss(inside);
+            ss >> offset.x;
+            if (!(ss >> offset.y)) {
+                offset.y = 0.f;
+            }
+            return offset;
         };
 
-        // === LEFT COLUMN: Oscillator controls ===
-        float leftCol = 15.f;
-        float centerCol = 45.f;
+        constexpr const char* SLIDER_GROUP_ID = "slider_guides";
+        Vec sliderGroupOffset = Vec(0.f, 0.f);
+        {
+            std::string sliderGroupTag = parser.findTagForId(SLIDER_GROUP_ID);
+            std::string transformAttr = shapetaker::ui::LayoutHelper::PanelSVGParser::getAttrStr(
+                sliderGroupTag, "transform", "");
+            sliderGroupOffset = parseTranslate(transformAttr);
+        }
 
-        addParam(createParamCentered<ShapetakerKnobAltSmall>(
-            centerPx("coarse_knob", leftCol, 20.f), module, Torsion::COARSE_PARAM));
-        addParam(createParamCentered<ShapetakerKnobAltSmall>(
-            centerPx("detune_knob", leftCol, 35.f), module, Torsion::DETUNE_PARAM));
+        auto createSlider = [&](const char* id, float fallbackX, float fallbackY, int paramId,
+                                const char* anchorCenterId = nullptr,
+                                float fallbackCenterX = 0.f, float fallbackCenterY = 0.f) {
+            auto* slider = createParam<VintageSliderLED>(Vec(0, 0), module, paramId);
 
-        addParam(createParamCentered<CKSS>(
-            centerPx("saw_wave_switch", leftCol - 8.f, 48.f), module, Torsion::SAW_WAVE_PARAM));
-        addParam(createParamCentered<CKSS>(
-            centerPx("tri_wave_switch", leftCol, 48.f), module, Torsion::TRIANGLE_WAVE_PARAM));
-        addParam(createParamCentered<CKSS>(
-            centerPx("square_wave_switch", leftCol + 8.f, 48.f), module, Torsion::SQUARE_WAVE_PARAM));
-        addParam(createParamCentered<CKSS>(
-            centerPx("dirty_mode_switch", leftCol - 8.f, 60.f), module, Torsion::DIRTY_MODE_PARAM));
+            if (anchorCenterId) {
+                Vec centerPxValue = centerPx(anchorCenterId, fallbackCenterX, fallbackCenterY);
+                slider->box.pos = Vec(centerPxValue.x - slider->box.size.x * 0.5f,
+                                      centerPxValue.y - slider->box.size.y * 0.5f);
+                slider->box.pos.x += VintageSliderLED::TRACK_CENTER_OFFSET_X;
+            } else {
+                // Get rect position from SVG
+                std::string tag = parser.findTagForId(id);
+                float rectX = shapetaker::ui::LayoutHelper::PanelSVGParser::getAttr(tag, "x", fallbackX);
+                float rectY = shapetaker::ui::LayoutHelper::PanelSVGParser::getAttr(tag, "y", fallbackY);
 
-        addParam(createParamCentered<ShapetakerKnobAltSmall>(
-            centerPx("sub_level_knob", leftCol, 56.f), module, Torsion::SUB_LEVEL_PARAM));
-        addParam(createParamCentered<ShapetakerKnobAltSmall>(
-            centerPx("dcw_depth_knob", leftCol + 10.5f, 56.f), module, Torsion::SUB_WARP_PARAM));
-        addParam(createParamCentered<CKSS>(
-            centerPx("sub_sync_switch", leftCol - 10.5f, 56.f), module, Torsion::SUB_SYNC_PARAM));
+                // Apply group transform offset and convert to pixels
+                float finalX = rectX + sliderGroupOffset.x;
+                float finalY = rectY + sliderGroupOffset.y;
+                Vec rectTopLeftPx = shapetaker::ui::LayoutHelper::mm2px(Vec(finalX, finalY));
 
-        addParam(createParamCentered<ShapetakerKnobAltSmall>(
-            centerPx("feedback_knob", leftCol, 68.f), module, Torsion::FEEDBACK_PARAM));
-        addParam(createParamCentered<ShapetakerKnobAltSmall>(
-            centerPx("warp_shape_knob", leftCol + 11.f, 76.f), module, Torsion::WARP_SHAPE_PARAM));
+                // Position by top-left corner
+                slider->box.pos = rectTopLeftPx;
+            }
 
-        addParam(createParamCentered<ShapetakerKnobAltSmall>(
-            centerPx("torsion_knob", leftCol, 88.f), module, Torsion::TORSION_PARAM));
-        addParam(createParamCentered<ShapetakerAttenuverterOscilloscope>(
-            centerPx("torsion_atten", leftCol - 9.f, 88.f), module, Torsion::TORSION_ATTEN_PARAM));
-
-        addParam(createParamCentered<ShapetakerKnobAltSmall>(
-            centerPx("symmetry_knob", leftCol, 106.f), module, Torsion::SYMMETRY_PARAM));
-        addParam(createParamCentered<ShapetakerAttenuverterOscilloscope>(
-            centerPx("symmetry_atten", leftCol - 9.f, 106.f), module, Torsion::SYMMETRY_ATTEN_PARAM));
-
-        // === CENTER COLUMN: DCW Envelope controls ===
-        addParam(createParamCentered<ShapetakerKnobAltSmall>(
-            centerPx("stage_rate_knob", centerCol, 20.f), module, Torsion::STAGE_RATE_PARAM));
-        addParam(createParamCentered<ShapetakerAttenuverterOscilloscope>(
-            centerPx("stage_time_atten", centerCol, 32.f), module, Torsion::STAGE_TIME_PARAM));
-
-        addParam(createParamCentered<VintageFourWaySwitch>(
-            centerPx("loop_mode_swtich", centerCol, 42.f), module, Torsion::LOOP_MODE_PARAM));
+            addParam(slider);
+        };
 
         const char* stageSliderIds[Torsion::kNumStages] = {
             "stage_1_slider",
@@ -1412,14 +1248,28 @@ struct TorsionWidget : ModuleWidget {
             "stage_5_slider",
             "stage_6_slider"
         };
+        const char* stageSliderDotIds[Torsion::kNumStages] = {
+            "stage_1_dot",
+            "stage_2_dot",
+            "stage_3_dot",
+            "stage_4_dot",
+            "stage_5_dot",
+            "stage_6_dot"
+        };
         constexpr float stageSliderFallbackX[Torsion::kNumStages] = {
             22.14f, 29.54f, 36.94f, 44.34f, 51.74f, 59.14f
         };
         constexpr float stageSliderFallbackY = 74.768f;
+        constexpr float sliderFallbackWidth = 2.1166666f;
+        constexpr float sliderFallbackHeight = 15.875f;
         for (int i = 0; i < Torsion::kNumStages; ++i) {
-            addParam(createParamCentered<VintageSliderLED>(
-                centerPx(stageSliderIds[i], stageSliderFallbackX[i], stageSliderFallbackY),
-                module, Torsion::STAGE1_PARAM + i));
+            float fallbackCenterX = stageSliderFallbackX[i] + sliderGroupOffset.x + sliderFallbackWidth * 0.5f;
+            float fallbackCenterY = stageSliderFallbackY + sliderGroupOffset.y + sliderFallbackHeight * 0.5f;
+            createSlider(stageSliderIds[i], stageSliderFallbackX[i], stageSliderFallbackY,
+                        Torsion::STAGE1_PARAM + i,
+                        stageSliderDotIds[i],
+                        fallbackCenterX,
+                        fallbackCenterY);
         }
 
         const char* curveSliderIds[Torsion::kNumStages] = {
@@ -1431,13 +1281,27 @@ struct TorsionWidget : ModuleWidget {
             "curve_6_slider"
         };
         constexpr float curveSliderFallbackY = 97.526f;
+        const char* curveSliderDotIds[Torsion::kNumStages] = {
+            "curve_1_dot",
+            "curve_2_dot",
+            "curve_3_dot",
+            "curve_4_dot",
+            "curve_5_dot",
+            "curve_6_dot"
+        };
         for (int i = 0; i < Torsion::kNumStages; ++i) {
-            addParam(createParamCentered<VintageSliderLED>(
-                centerPx(curveSliderIds[i], stageSliderFallbackX[i], curveSliderFallbackY),
-                module, Torsion::CURVE1_PARAM + i));
+            float fallbackCenterX = stageSliderFallbackX[i] + sliderGroupOffset.x + sliderFallbackWidth * 0.5f;
+            float fallbackCenterY = curveSliderFallbackY + sliderGroupOffset.y + sliderFallbackHeight * 0.5f;
+            createSlider(curveSliderIds[i], stageSliderFallbackX[i], curveSliderFallbackY,
+                        Torsion::CURVE1_PARAM + i,
+                        curveSliderDotIds[i],
+                        fallbackCenterX,
+                        fallbackCenterY);
         }
 
         // Parse DCW stage LED positions directly from SVG
+        // These lights are positioned exactly between the two slider rows
+        // Stage position indicator LEDs (synchronized with SVG)
         const char* stageLightIds[Torsion::kNumStages] = {
             "stage_1_light",
             "stage_2_light",
@@ -1447,43 +1311,41 @@ struct TorsionWidget : ModuleWidget {
             "stage_6_light"
         };
         constexpr float stageLightFallbackX[Torsion::kNumStages] = {
-            22.47f, 29.87f, 37.27f, 44.67f, 52.07f, 59.47f
+            25.248032f, 32.648033f, 40.048035f, 47.448029f, 54.848045f, 62.248043f
         };
-        constexpr float stageLightFallbackY = 91.18f;
+        constexpr float stageLightFallbackY = 71.004715f;
 
         for (int i = 0; i < Torsion::kNumStages; ++i) {
             Vec lightPos = centerPx(stageLightIds[i], stageLightFallbackX[i], stageLightFallbackY);
-            addChild(createLightCentered<SmallLight<GreenLight>>(lightPos, module, Torsion::STAGE_LIGHT_1 + i));
+            addChild(createLightCentered<SmallLight<WhiteLight>>(lightPos, module, Torsion::STAGE_LIGHT_1 + i));
         }
 
-        addChild(createLightCentered<SmallLight<GreenLight>>(
-            centerPx("loop_forward_light", centerCol + 13.f, 42.f),
-            module,
-            Torsion::LOOP_FORWARD_LIGHT));
-        addChild(createLightCentered<SmallLight<RedLight>>(
-            centerPx("loop_reverse_light", centerCol - 13.f, 42.f),
-            module,
-            Torsion::LOOP_REVERSE_LIGHT));
+        // Loop direction LEDs removed - redundant with stage position indicators
+        // addChild(createLightCentered<SmallLight<GreenLight>>(
+        //     centerPx("loop_forward_light", centerCol + 13.f, 42.f),
+        //     module,
+        //     Torsion::LOOP_FORWARD_LIGHT));
+        // addChild(createLightCentered<SmallLight<RedLight>>(
+        //     centerPx("loop_reverse_light", centerCol - 13.f, 42.f),
+        //     module,
+        //     Torsion::LOOP_REVERSE_LIGHT));
 
         // === I/O Section (Bottom) ===
-        float ioY = 118.f;
         addInput(createInputCentered<ShapetakerBNCPort>(
-            centerPx("voct_cv", 10.f, ioY), module, Torsion::VOCT_INPUT));
+            centerPx("voct_cv", 11.953995f, 113.80865f), module, Torsion::VOCT_INPUT));
         addInput(createInputCentered<ShapetakerBNCPort>(
-            centerPx("torsion_cv", 20.f, ioY), module, Torsion::TORSION_CV_INPUT));
+            centerPx("gate_input", 21.795727f, 113.80865f), module, Torsion::GATE_INPUT));
         addInput(createInputCentered<ShapetakerBNCPort>(
-            centerPx("symmetry_cv", 30.f, ioY), module, Torsion::SYMMETRY_CV_INPUT));
+            centerPx("torsion_cv", 31.637459f, 113.80865f), module, Torsion::TORSION_CV_INPUT));
         addInput(createInputCentered<ShapetakerBNCPort>(
-            centerPx("stage_trig_cv", 40.f, ioY), module, Torsion::STAGE_TRIG_INPUT));
-        addInput(createInputCentered<ShapetakerBNCPort>(
-            centerPx("gate_input", 24.477f, 113.280f), module, Torsion::GATE_INPUT));
+            centerPx("stage_trig_cv", 41.479191f, 113.80865f), module, Torsion::STAGE_TRIG_INPUT));
 
         addOutput(createOutputCentered<ShapetakerBNCPort>(
-            centerPx("main_output", 55.f, ioY), module, Torsion::MAIN_L_OUTPUT));
+            centerPx("main_output", 51.320923f, 113.80865f), module, Torsion::MAIN_L_OUTPUT));
         addOutput(createOutputCentered<ShapetakerBNCPort>(
-            centerPx("main_output_r", 65.f, ioY), module, Torsion::MAIN_R_OUTPUT));
+            centerPx("main_output_r", 61.162655f, 113.80865f), module, Torsion::MAIN_R_OUTPUT));
         addOutput(createOutputCentered<ShapetakerBNCPort>(
-            centerPx("edge_output", 65.f, ioY), module, Torsion::EDGE_OUTPUT));
+            centerPx("edge_output", 71.004387f, 113.80865f), module, Torsion::EDGE_OUTPUT));
     }
 
     void draw(const DrawArgs& args) override {
@@ -1546,41 +1408,6 @@ struct TorsionWidget : ModuleWidget {
             item->text = labels[i];
             menu->addChild(item);
         }
-
-        // Loop mode menu section
-        menu->addChild(new ui::MenuSeparator());
-
-        struct LoopModeItem : ui::MenuItem {
-            Torsion* module;
-            Torsion::LoopMode mode;
-            void onAction(const event::Action& e) override {
-                module->params[Torsion::LOOP_MODE_PARAM].setValue((float)mode);
-            }
-            void step() override {
-                int currentMode = (int)module->params[Torsion::LOOP_MODE_PARAM].getValue();
-                rightText = (currentMode == mode) ? "✔" : "";
-                ui::MenuItem::step();
-            }
-        };
-
-        auto* loopHeading = new ui::MenuLabel;
-        loopHeading->text = "DCW Envelope loop mode";
-        menu->addChild(loopHeading);
-
-            const char* loopLabels[] = {
-                "Forward",
-                "Reverse",
-                "Ping-Pong",
-                "Random"
-            };
-
-            for (int i = 0; i < Torsion::LOOP_MODES_LEN; ++i) {
-                auto* item = new LoopModeItem;
-                item->module = module;
-                item->mode = (Torsion::LoopMode)i;
-                item->text = loopLabels[i];
-                menu->addChild(item);
-            }
 
         menu->addChild(new ui::MenuSeparator());
 

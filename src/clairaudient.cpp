@@ -14,7 +14,7 @@ struct ClairaudientModule : Module, IOscilloscopeSource {
     static constexpr float CV_XFADE_SCALE = 1.f / 10.f;
     static constexpr float OUTPUT_GAIN = 5.f;
     static constexpr float NOISE_V_PEAK = 0.45f;
-    static constexpr float HIGH_CUT_HZ = 10000.f;
+    static constexpr float HIGH_CUT_HZ = 14500.f;
     static constexpr float ANTI_ALIAS_CUTOFF = 0.45f;
 
     // Quantize voltage to discrete octave steps for oscillator V
@@ -145,10 +145,10 @@ struct ClairaudientModule : Module, IOscilloscopeSource {
         
         // Frequency controls
         // V oscillator snaps to whole octaves (5 total values: -2, -1, 0, +1, +2)
-        configParam(FREQ1_PARAM, -2.f, 2.f, 0.f, "V Oscillator Octave", " oct");
+        configParam(FREQ1_PARAM, -2.f, 2.f, 0.f, "v osc octave", " oct");
 
         // Z oscillator snaps to semitones (49 total values: -24 to +24 semitones)
-        configParam(FREQ2_PARAM, -24.f, 24.f, 0.f, "Z Oscillator Semitone", " st");
+        configParam(FREQ2_PARAM, -24.f, 24.f, 0.f, "z osc semitone", " st");
 
         // Initialize parameter snapping based on default quantization modes
         updateParameterSnapping();
@@ -157,43 +157,45 @@ struct ClairaudientModule : Module, IOscilloscopeSource {
         // FREQ2: Quantized to semitones within 4-octave range for musical intervals
         
         // Fine tune controls (±20 cents, centered at 0 for no detune)
-        configParam(FINE1_PARAM, -0.2f, 0.2f, 0.f, "V Fine Tune", "cents", 0.f, 100.f);
-        configParam(FINE2_PARAM, -0.2f, 0.2f, 0.f, "Z Fine Tune", "cents", 0.f, 100.f);
+        configParam(FINE1_PARAM, -0.2f, 0.2f, 0.f, "v fine", " cents", 0.f, 100.f);
+        configParam(FINE2_PARAM, -0.2f, 0.2f, 0.f, "z fine", " cents", 0.f, 100.f);
         
         // Fine tune CV attenuverters
-        ParameterHelper::configAttenuverter(this, FINE1_ATTEN_PARAM, "V Fine Tune CV Amount");
-        ParameterHelper::configAttenuverter(this, FINE2_ATTEN_PARAM, "Z Fine Tune CV Amount");
+        ParameterHelper::configAttenuverter(this, FINE1_ATTEN_PARAM, "v fine tune cv");
+        ParameterHelper::configAttenuverter(this, FINE2_ATTEN_PARAM, "z fine tune cv");
         
         // Shape morphing controls (default to 50% for proper sigmoid)
-        ParameterHelper::configGain(this, SHAPE1_PARAM, "V Shape", 0.5f);
-        ParameterHelper::configGain(this, SHAPE2_PARAM, "Z Shape", 0.5f);
+        ParameterHelper::configGain(this, SHAPE1_PARAM, "v shape", 0.5f);
+        ParameterHelper::configGain(this, SHAPE2_PARAM, "z shape", 0.5f);
         
         // Shape CV attenuverters
-        ParameterHelper::configAttenuverter(this, SHAPE1_ATTEN_PARAM, "V Shape CV Amount");
-        ParameterHelper::configAttenuverter(this, SHAPE2_ATTEN_PARAM, "Z Shape CV Amount");
+        ParameterHelper::configAttenuverter(this, SHAPE1_ATTEN_PARAM, "v shape cv");
+        ParameterHelper::configAttenuverter(this, SHAPE2_ATTEN_PARAM, "z shape cv");
         
         // Crossfade control (centered at 0.5)
-        ParameterHelper::configMix(this, XFADE_PARAM, "Crossfade", 0.5f);
+        ParameterHelper::configMix(this, XFADE_PARAM, "crossfade", 0.5f);
         
         // Crossfade CV attenuverter
-        ParameterHelper::configAttenuverter(this, XFADE_ATTEN_PARAM, "Crossfade CV Amount");
+        ParameterHelper::configAttenuverter(this, XFADE_ATTEN_PARAM, "crossfade cv");
         
         // Sync switches (default off for independent beating)
-        configSwitch(SYNC1_PARAM, 0.f, 1.f, 0.f, "V Sync", {"Independent", "Synced"});
-        configSwitch(SYNC2_PARAM, 0.f, 1.f, 0.f, "Z Sync", {"Independent", "Synced"});
+        configSwitch(SYNC1_PARAM, 0.f, 1.f, 0.f, "v sync", {"independent", "synced"});
+        configSwitch(SYNC2_PARAM, 0.f, 1.f, 0.f, "z sync", {"independent", "synced"});
         
         // Inputs
-        ParameterHelper::configCVInput(this, VOCT1_INPUT, "V Oscillator V/Oct");
-        ParameterHelper::configCVInput(this, VOCT2_INPUT, "Z Oscillator V/Oct");
-        ParameterHelper::configCVInput(this, FINE1_CV_INPUT, "V Fine Tune CV");
-        ParameterHelper::configCVInput(this, FINE2_CV_INPUT, "Z Fine Tune CV");
-        ParameterHelper::configCVInput(this, SHAPE1_CV_INPUT, "V Shape CV");
-        ParameterHelper::configCVInput(this, SHAPE2_CV_INPUT, "Z Shape CV");
-        ParameterHelper::configCVInput(this, XFADE_CV_INPUT, "Crossfade CV");
+        ParameterHelper::configCVInput(this, VOCT1_INPUT, "v osc v/oct");
+        ParameterHelper::configCVInput(this, VOCT2_INPUT, "z osc v/oct");
+        ParameterHelper::configCVInput(this, FINE1_CV_INPUT, "v fine tune cv");
+        ParameterHelper::configCVInput(this, FINE2_CV_INPUT, "z fine tune cv");
+        ParameterHelper::configCVInput(this, SHAPE1_CV_INPUT, "v shape cv");
+        ParameterHelper::configCVInput(this, SHAPE2_CV_INPUT, "z shape cv");
+        ParameterHelper::configCVInput(this, XFADE_CV_INPUT, "crossfade cv");
         
         // Outputs
-        ParameterHelper::configAudioOutput(this, LEFT_OUTPUT, "Left");
-        ParameterHelper::configAudioOutput(this, RIGHT_OUTPUT, "Right");
+        ParameterHelper::configAudioOutput(this, LEFT_OUTPUT, "L");
+        ParameterHelper::configAudioOutput(this, RIGHT_OUTPUT, "R");
+
+        shapetaker::ui::LabelFormatter::normalizeModuleControls(this);
     }
 
     json_t* dataToJson() override {
@@ -614,9 +616,7 @@ struct ClairaudientWidget : ModuleWidget {
         // Use shared panel parser utilities for control placement
         auto svgPath = asset::plugin(pluginInstance, "res/panels/Clairaudient.svg");
         LayoutHelper::PanelSVGParser parser(svgPath);
-        auto centerPx = [&](const std::string& id, float defx, float defy) -> Vec {
-            return parser.centerPx(id, defx, defy);
-        };
+        auto centerPx = LayoutHelper::createCenterPxHelper(parser);
 
         auto addKnobWithShadow = [&](app::ParamWidget* knob) {
             if (!knob) {

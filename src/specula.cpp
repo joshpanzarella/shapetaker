@@ -43,6 +43,8 @@ struct Specula : Module {
 
         leftNeedleFilter.setTau(0.3f);
         rightNeedleFilter.setTau(0.3f);
+
+        shapetaker::ui::LabelFormatter::normalizeModuleControls(this);
     }
 
     void process(const ProcessArgs& args) override {
@@ -115,6 +117,7 @@ struct SpeculaWidget : ModuleWidget {
 
         // Parse SVG panel for precise positioning
         shapetaker::ui::LayoutHelper::PanelSVGParser parser(asset::plugin(pluginInstance, "res/panels/Specula.svg"));
+        auto centerPx = shapetaker::ui::LayoutHelper::createCenterPxHelper(parser);
 
         if (module) {
             // VU meters with correct aspect ratio (259.09:271.04 ≈ 0.956)
@@ -142,11 +145,11 @@ struct SpeculaWidget : ModuleWidget {
         }
 
         // Use SVG positioning for inputs and outputs
-        addInput(createInputCentered<ShapetakerBNCPort>(parser.centerPx("left_input", mm2px(9.31), mm2px(116.59)), module, Specula::LEFT_INPUT));
-        addInput(createInputCentered<ShapetakerBNCPort>(parser.centerPx("right_input", mm2px(20.39), mm2px(116.59)), module, Specula::RIGHT_INPUT));
+        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("left_input", mm2px(9.31), mm2px(116.59)), module, Specula::LEFT_INPUT));
+        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("right_input", mm2px(20.39), mm2px(116.59)), module, Specula::RIGHT_INPUT));
 
-        addOutput(createOutputCentered<ShapetakerBNCPort>(parser.centerPx("left_output", mm2px(31.47), mm2px(116.59)), module, Specula::LEFT_OUTPUT));
-        addOutput(createOutputCentered<ShapetakerBNCPort>(parser.centerPx("right_output", mm2px(42.55), mm2px(116.59)), module, Specula::RIGHT_OUTPUT));
+        addOutput(createOutputCentered<ShapetakerBNCPort>(centerPx("left_output", mm2px(31.47), mm2px(116.59)), module, Specula::LEFT_OUTPUT));
+        addOutput(createOutputCentered<ShapetakerBNCPort>(centerPx("right_output", mm2px(42.55), mm2px(116.59)), module, Specula::RIGHT_OUTPUT));
     }
 };
 

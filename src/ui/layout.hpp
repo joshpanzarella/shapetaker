@@ -101,6 +101,16 @@ public:
         // Low-level helpers
         std::string findTagForId(const std::string& id) const { return findTagForIdInternal(id); }
         static float getAttr(const std::string& tag, const std::string& key, float defVal) { return getAttrInternal(tag, key, defVal); }
+        static std::string getAttrStr(const std::string& tag, const std::string& key, const std::string& defVal = {}) {
+            if (tag.empty()) return defVal;
+            std::string needle = key + "=\"";
+            size_t p = tag.find(needle);
+            if (p == std::string::npos) return defVal;
+            p += needle.size();
+            size_t q = tag.find('"', p);
+            if (q == std::string::npos) return defVal;
+            return tag.substr(p, q - p);
+        }
 
         // Get element center in millimeters (from circle cx/cy or rect x+width/2, y+height/2)
         Vec centerMm(const std::string& id, float defx, float defy) const {

@@ -640,6 +640,8 @@ struct Chiaroscuro : Module {
         currentSampleRate = APP->engine->getSampleRate();
         configureOversampling();
         resetLevelTracking();
+
+        shapetaker::ui::LabelFormatter::normalizeModuleControls(this);
     }
     
     void onSampleRateChange() override {

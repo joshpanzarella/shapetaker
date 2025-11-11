@@ -55,7 +55,13 @@
       "Bash(for:*)",
       "Bash(do echo \"=== $f ===\")",
       "Bash(git stash:*)",
-      "Bash(c++:*)"
+      "Bash(c++:*)",
+      "Bash(do echo \"=== Stage $i ===\")",
+      "Bash(paste:*)",
+      "Bash(do xmllint --xpath \"//*[@id=''''stage_$i_light'''']/@cx | //*[@id=''''stage_$i_light'''']/@cy\" res/panels/Torsion.svg)",
+      "Bash(chmod:*)",
+      "Bash(./update_torsion_positions.sh:*)",
+      "Bash(do echo \"=== $id ===\")"
     ],
     "deny": [],
     "ask": []

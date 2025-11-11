@@ -480,6 +480,8 @@ struct Fatebinder : Module {
         particles.reserve(256);
 
         onReset();
+
+        shapetaker::ui::LabelFormatter::normalizeModuleControls(this);
     }
 
     void onReset() override {
@@ -1888,6 +1890,9 @@ struct FatebinderWidget : ModuleWidget {
 
         using LayoutHelper = shapetaker::ui::LayoutHelper;
         auto mm = [](float x, float y) { return LayoutHelper::mm2px(Vec(x, y)); };
+        auto svgPath = asset::plugin(pluginInstance, "res/panels/Fatebinder.svg");
+        LayoutHelper::PanelSVGParser parser(svgPath);
+        auto centerPx = LayoutHelper::createCenterPxHelper(parser);
         auto resizeKnob = [&](app::ParamWidget* knob, float diameterMm) {
             if (!knob) {
                 return;
@@ -1908,8 +1913,9 @@ struct FatebinderWidget : ModuleWidget {
 
         UnifiedDisplayWidget* unifiedDisplay = new UnifiedDisplayWidget();
         unifiedDisplay->module = module;
-        unifiedDisplay->box.pos = mm(5.f, 12.0f);
-        unifiedDisplay->box.size = mm(81.44f, 35.f);  // Full width minus margins
+        Rect displayRect = parser.rectMm("unified-display", 5.f, 12.f, 81.44f, 35.f);
+        unifiedDisplay->box.pos = mm(displayRect.pos.x, displayRect.pos.y);
+        unifiedDisplay->box.size = mm(displayRect.size.x, displayRect.size.y);  // Full width minus margins
         addChild(unifiedDisplay);
 
         // ====================================================================
@@ -1924,59 +1930,59 @@ struct FatebinderWidget : ModuleWidget {
         const float rowSpacing = 10.5f;
 
         // Column 1: Rhythm controls
-        auto* stepsKnob = createParamCentered<ShapetakerKnobAltSmall>(mm(col1X, row1Y), module, Fatebinder::STEPS_PARAM);
+        auto* stepsKnob = createParamCentered<ShapetakerKnobAltSmall>(centerPx("steps-knob", col1X, row1Y), module, Fatebinder::STEPS_PARAM);
         resizeKnob(stepsKnob, 14.f);
         addParam(stepsKnob);
-        auto* hitsKnob = createParamCentered<ShapetakerKnobAltSmall>(mm(col1X, row1Y + rowSpacing), module, Fatebinder::HITS_PARAM);
+        auto* hitsKnob = createParamCentered<ShapetakerKnobAltSmall>(centerPx("hits-knob", col1X, row1Y + rowSpacing), module, Fatebinder::HITS_PARAM);
         resizeKnob(hitsKnob, 14.f);
         addParam(hitsKnob);
-        auto* rotationKnob = createParamCentered<ShapetakerKnobAltSmall>(mm(col1X, row1Y + rowSpacing * 2), module, Fatebinder::ROTATION_PARAM);
+        auto* rotationKnob = createParamCentered<ShapetakerKnobAltSmall>(centerPx("rotation-knob", col1X, row1Y + rowSpacing * 2), module, Fatebinder::ROTATION_PARAM);
         resizeKnob(rotationKnob, 14.f);
         addParam(rotationKnob);
-        auto* ring2Knob = createParamCentered<ShapetakerKnobAltSmall>(mm(col1X, row1Y + rowSpacing * 3), module, Fatebinder::RING_2_DIV_PARAM);
+        auto* ring2Knob = createParamCentered<ShapetakerKnobAltSmall>(centerPx("ring2-knob", col1X, row1Y + rowSpacing * 3), module, Fatebinder::RING_2_DIV_PARAM);
         resizeKnob(ring2Knob, 14.f);
         addParam(ring2Knob);
-        auto* ring3Knob = createParamCentered<ShapetakerKnobAltSmall>(mm(col1X, row1Y + rowSpacing * 4), module, Fatebinder::RING_3_DIV_PARAM);
+        auto* ring3Knob = createParamCentered<ShapetakerKnobAltSmall>(centerPx("ring3-knob", col1X, row1Y + rowSpacing * 4), module, Fatebinder::RING_3_DIV_PARAM);
         resizeKnob(ring3Knob, 14.f);
         addParam(ring3Knob);
 
         // Column 2: Probability controls
-        auto* probabilityKnob = createParamCentered<ShapetakerKnobAltSmall>(mm(col2X, row1Y + 2.f), module, Fatebinder::PROBABILITY_PARAM);
+        auto* probabilityKnob = createParamCentered<ShapetakerKnobAltSmall>(centerPx("probability-knob", col2X, row1Y + 2.f), module, Fatebinder::PROBABILITY_PARAM);
         resizeKnob(probabilityKnob, 16.f);
         addParam(probabilityKnob);
-        auto* chaosKnob = createParamCentered<ShapetakerKnobAltMedium>(mm(col2X, row1Y + rowSpacing + 7.f), module, Fatebinder::CHAOS_PARAM);
+        auto* chaosKnob = createParamCentered<ShapetakerKnobAltMedium>(centerPx("chaos-knob", col2X, row1Y + rowSpacing + 7.f), module, Fatebinder::CHAOS_PARAM);
         resizeKnob(chaosKnob, 20.f);
         addParam(chaosKnob);
-        auto* densityKnob = createParamCentered<ShapetakerKnobAltSmall>(mm(col2X, row1Y + rowSpacing * 2 + 12.f), module, Fatebinder::DENSITY_PARAM);
+        auto* densityKnob = createParamCentered<ShapetakerKnobAltSmall>(centerPx("density-knob", col2X, row1Y + rowSpacing * 2 + 12.f), module, Fatebinder::DENSITY_PARAM);
         resizeKnob(densityKnob, 14.f);
         addParam(densityKnob);
 
         // Column 3: Mutation controls
-        auto* tempoKnob = createParamCentered<ShapetakerKnobAltSmall>(mm(col3X, row1Y), module, Fatebinder::TEMPO_PARAM);
+        auto* tempoKnob = createParamCentered<ShapetakerKnobAltSmall>(centerPx("tempo-knob", col3X, row1Y), module, Fatebinder::TEMPO_PARAM);
         resizeKnob(tempoKnob, 16.f);
         addParam(tempoKnob);
-        auto* mutationKnob = createParamCentered<ShapetakerKnobAltSmall>(mm(col3X, row1Y + rowSpacing), module, Fatebinder::MUTATION_RATE_PARAM);
+        auto* mutationKnob = createParamCentered<ShapetakerKnobAltSmall>(centerPx("mutation-knob", col3X, row1Y + rowSpacing), module, Fatebinder::MUTATION_RATE_PARAM);
         resizeKnob(mutationKnob, 14.f);
         addParam(mutationKnob);
 
         // Freeze/Reset buttons
-        addParam(createParamCentered<ShapetakerVintageMomentary>(mm(col3X, row1Y + rowSpacing * 2), module, Fatebinder::FREEZE_PARAM));
-        addParam(createParamCentered<ShapetakerVintageMomentary>(mm(col3X, row1Y + rowSpacing * 3), module, Fatebinder::RESET_PARAM));
+        addParam(createParamCentered<ShapetakerVintageMomentary>(centerPx("freeze-btn", col3X, row1Y + rowSpacing * 2), module, Fatebinder::FREEZE_PARAM));
+        addParam(createParamCentered<ShapetakerVintageMomentary>(centerPx("reset-btn", col3X, row1Y + rowSpacing * 3), module, Fatebinder::RESET_PARAM));
 
         // Overlap mode switch
-        addParam(createParamCentered<ShapetakerVintageToggleSwitch>(mm(col3X, row1Y + rowSpacing * 4), module, Fatebinder::OVERLAP_MODE_PARAM));
+        addParam(createParamCentered<ShapetakerVintageToggleSwitch>(centerPx("overlap-switch", col3X, row1Y + rowSpacing * 4), module, Fatebinder::OVERLAP_MODE_PARAM));
 
         // Column 4: Envelope controls
-        auto* attackKnob = createParamCentered<ShapetakerKnobAltSmall>(mm(col4X, row1Y), module, Fatebinder::ATTACK_PARAM);
+        auto* attackKnob = createParamCentered<ShapetakerKnobAltSmall>(centerPx("attack-knob", col4X, row1Y), module, Fatebinder::ATTACK_PARAM);
         resizeKnob(attackKnob, 14.f);
         addParam(attackKnob);
-        auto* decayKnob = createParamCentered<ShapetakerKnobAltSmall>(mm(col4X, row1Y + rowSpacing), module, Fatebinder::DECAY_PARAM);
+        auto* decayKnob = createParamCentered<ShapetakerKnobAltSmall>(centerPx("decay-knob", col4X, row1Y + rowSpacing), module, Fatebinder::DECAY_PARAM);
         resizeKnob(decayKnob, 14.f);
         addParam(decayKnob);
-        auto* curveKnob = createParamCentered<ShapetakerKnobAltSmall>(mm(col4X, row1Y + rowSpacing * 2), module, Fatebinder::CURVE_PARAM);
+        auto* curveKnob = createParamCentered<ShapetakerKnobAltSmall>(centerPx("curve-knob", col4X, row1Y + rowSpacing * 2), module, Fatebinder::CURVE_PARAM);
         resizeKnob(curveKnob, 14.f);
         addParam(curveKnob);
-        auto* shapeKnob = createParamCentered<ShapetakerKnobAltSmall>(mm(col4X, row1Y + rowSpacing * 3), module, Fatebinder::SHAPE_PARAM);
+        auto* shapeKnob = createParamCentered<ShapetakerKnobAltSmall>(centerPx("shape-knob", col4X, row1Y + rowSpacing * 3), module, Fatebinder::SHAPE_PARAM);
         resizeKnob(shapeKnob, 14.f);
         addParam(shapeKnob);
 
@@ -1987,10 +1993,10 @@ struct FatebinderWidget : ModuleWidget {
         const float ioSpacing = 11.5f;
         const float ioStartX = 13.0f;
 
-        addInput(createInputCentered<ShapetakerBNCPort>(mm(ioStartX, inputY), module, Fatebinder::CLOCK_INPUT));
-        addInput(createInputCentered<ShapetakerBNCPort>(mm(ioStartX + ioSpacing, inputY), module, Fatebinder::RESET_INPUT));
-        addInput(createInputCentered<ShapetakerBNCPort>(mm(ioStartX + ioSpacing * 2, inputY), module, Fatebinder::CHAOS_CV_INPUT));
-        addInput(createInputCentered<ShapetakerBNCPort>(mm(ioStartX + ioSpacing * 3, inputY), module, Fatebinder::PROBABILITY_CV_INPUT));
+        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("clock-input", ioStartX, inputY), module, Fatebinder::CLOCK_INPUT));
+        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("reset-input", ioStartX + ioSpacing, inputY), module, Fatebinder::RESET_INPUT));
+        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("chaos-cv-input", ioStartX + ioSpacing * 2, inputY), module, Fatebinder::CHAOS_CV_INPUT));
+        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("probability-cv-input", ioStartX + ioSpacing * 3, inputY), module, Fatebinder::PROBABILITY_CV_INPUT));
 
         // ====================================================================
         // OUTPUTS - Bottom row
@@ -1998,15 +2004,15 @@ struct FatebinderWidget : ModuleWidget {
         const float outputY = 119.5f;
 
         // Bipolar/Unipolar toggle switch (above outputs)
-        addParam(createParamCentered<ShapetakerVintageRussianToggle>(mm(ioStartX + ioSpacing * 5, outputY - 10.f), module, Fatebinder::BIPOLAR_PARAM));
+        addParam(createParamCentered<ShapetakerVintageRussianToggle>(centerPx("bipolar-toggle", ioStartX + ioSpacing * 5, outputY - 10.f), module, Fatebinder::BIPOLAR_PARAM));
 
         // Ring outputs
-        addOutput(createOutputCentered<ShapetakerBNCPort>(mm(ioStartX, outputY), module, Fatebinder::RING_1_OUTPUT));
-        addOutput(createOutputCentered<ShapetakerBNCPort>(mm(ioStartX + ioSpacing, outputY), module, Fatebinder::RING_2_OUTPUT));
-        addOutput(createOutputCentered<ShapetakerBNCPort>(mm(ioStartX + ioSpacing * 2, outputY), module, Fatebinder::RING_3_OUTPUT));
-        addOutput(createOutputCentered<ShapetakerBNCPort>(mm(ioStartX + ioSpacing * 3, outputY), module, Fatebinder::GATE_OUTPUT));
-        addOutput(createOutputCentered<ShapetakerBNCPort>(mm(ioStartX + ioSpacing * 4, outputY), module, Fatebinder::ACCENT_OUTPUT));
-        addOutput(createOutputCentered<ShapetakerBNCPort>(mm(ioStartX + ioSpacing * 5, outputY), module, Fatebinder::MAIN_CV_OUTPUT));
+        addOutput(createOutputCentered<ShapetakerBNCPort>(centerPx("ring1-output", ioStartX, outputY), module, Fatebinder::RING_1_OUTPUT));
+        addOutput(createOutputCentered<ShapetakerBNCPort>(centerPx("ring2-output", ioStartX + ioSpacing, outputY), module, Fatebinder::RING_2_OUTPUT));
+        addOutput(createOutputCentered<ShapetakerBNCPort>(centerPx("ring3-output", ioStartX + ioSpacing * 2, outputY), module, Fatebinder::RING_3_OUTPUT));
+        addOutput(createOutputCentered<ShapetakerBNCPort>(centerPx("gate-output", ioStartX + ioSpacing * 3, outputY), module, Fatebinder::GATE_OUTPUT));
+        addOutput(createOutputCentered<ShapetakerBNCPort>(centerPx("accent-output", ioStartX + ioSpacing * 4, outputY), module, Fatebinder::ACCENT_OUTPUT));
+        addOutput(createOutputCentered<ShapetakerBNCPort>(centerPx("main-output", ioStartX + ioSpacing * 5, outputY), module, Fatebinder::MAIN_CV_OUTPUT));
     }
 
     void appendContextMenu(Menu* menu) override {

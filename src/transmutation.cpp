@@ -933,6 +933,8 @@ struct Transmutation : Module,
         // Initialize sticky (non-randomizable) params
         stickySeqBMode = (int)params[SEQ_B_MODE_PARAM].getValue();
         stickyScreenStyle = params[SCREEN_STYLE_PARAM].getValue();
+
+        shapetaker::ui::LabelFormatter::normalizeModuleControls(this);
     }
 
     void process(const ProcessArgs& args) override {
@@ -2942,36 +2944,17 @@ struct TransmutationWidget : ModuleWidget {
 
         // Read positions from SVG by id (simple attribute parser)
         auto svgPath = asset::plugin(pluginInstance, "res/panels/Transmutation.svg");
-        std::string svg;
-        {
-            std::ifstream f(svgPath);
-            if (f) {
-                std::stringstream ss; ss << f.rdbuf();
-                svg = ss.str();
-            }
-        }
+        using LayoutHelper = shapetaker::ui::LayoutHelper;
+        LayoutHelper::PanelSVGParser parser(svgPath);
+        auto centerPx = LayoutHelper::createCenterPxHelper(parser);
+        auto centerMm = [&](const std::string& id, float defx, float defy) -> Vec {
+            return parser.centerMm(id, defx, defy);
+        };
         auto findTagForId = [&](const std::string& id) -> std::string {
-            if (svg.empty()) return "";
-            std::string needle = "id=\"" + id + "\"";
-            size_t pos = svg.find(needle);
-            if (pos == std::string::npos) return "";
-            // Find start of tag
-            size_t start = svg.rfind('<', pos);
-            size_t end = svg.find('>', pos);
-            if (start == std::string::npos || end == std::string::npos || end <= start) return "";
-            return svg.substr(start, end - start + 1);
+            return parser.findTagForId(id);
         };
         auto getAttr = [&](const std::string& tag, const std::string& key, float defVal) -> float {
-            if (tag.empty()) return defVal;
-            std::string k = key + "=\"";
-            size_t p = tag.find(k);
-            if (p == std::string::npos) return defVal;
-            p += k.size();
-            size_t q = tag.find('"', p);
-            if (q == std::string::npos) return defVal;
-            try {
-                return std::stof(tag.substr(p, q - p));
-            } catch (...) { return defVal; }
+            return LayoutHelper::PanelSVGParser::getAttr(tag, key, defVal);
         };
 
         // High-Resolution 8x8 Matrix positioned from <rect id="main_screen" x y width height>
@@ -2980,13 +2963,9 @@ struct TransmutationWidget : ModuleWidget {
             static_cast<stx::transmutation::TransmutationController*>(module)
         );
         {
-            std::string tag = findTagForId("main_screen");
-            float mx = getAttr(tag, "x", 27.143473f);
-            float my = getAttr(tag, "y", 34.0f);
-            float mw = getAttr(tag, "width", 77.0f);
-            float mh = getAttr(tag, "height", 77.0f);
-            matrix->box.pos = Vec(mm2px(mx), mm2px(my));
-            matrix->box.size = Vec(mm2px(mw), mm2px(mh));
+            Rect screenRect = parser.rectMm("main_screen", 27.143473f, 34.0f, 77.0f, 77.0f);
+            matrix->box.pos = mm2px(screenRect.pos);
+            matrix->box.size = mm2px(screenRect.size);
         }
         addChild(matrix);
 
@@ -3003,14 +2982,8 @@ struct TransmutationWidget : ModuleWidget {
 
         // Edit mode buttons (above matrix) - from SVG circles edit_a_btn/edit_b_btn (cx, cy)
         {
-            std::string tA = findTagForId("edit_a_btn");
-            std::string tB = findTagForId("edit_b_btn");
-            float ax = getAttr(tA, "cx", 55.973103f);
-            float ay = getAttr(tA, "cy", 16.805513f);
-            float bx = getAttr(tB, "cx", 74.402115f);
-            float by = getAttr(tB, "cy", 16.678213f);
-            addMomentaryScaled(mm2px(Vec(ax, ay)), Transmutation::EDIT_A_PARAM);
-            addMomentaryScaled(mm2px(Vec(bx, by)), Transmutation::EDIT_B_PARAM);
+            addMomentaryScaled(centerPx("edit_a_btn", 55.973103f, 16.805513f), Transmutation::EDIT_A_PARAM);
+            addMomentaryScaled(centerPx("edit_b_btn", 74.402115f, 16.678213f), Transmutation::EDIT_B_PARAM);
         }
 
         // Edit mode lights removed
@@ -3018,18 +2991,7 @@ struct TransmutationWidget : ModuleWidget {
         // Left/Right controls - read from panel IDs to stay in sync with SVG
         {
             auto pos = [&](const std::string& id, float defx, float defy) {
-                std::string tag = findTagForId(id);
-                float cx = getAttr(tag, "cx", defx);
-                float cy = getAttr(tag, "cy", defy);
-                if (tag.find("<rect") != std::string::npos) {
-                    float rx = getAttr(tag, "x", defx);
-                    float ry = getAttr(tag, "y", defy);
-                    float rw = getAttr(tag, "width", 0.0f);
-                    float rh = getAttr(tag, "height", 0.0f);
-                    cx = rx + rw * 0.5f;
-                    cy = ry + rh * 0.5f;
-                }
-                return mm2px(Vec(cx, cy));
+                return centerPx(id, defx, defy);
             };
             // Sequence A
             // Hardware-realistic sizes: Medium for length, Small for BPM
@@ -3052,10 +3014,7 @@ struct TransmutationWidget : ModuleWidget {
         // I/O - read from panel IDs to stay in sync
         {
             auto cpos = [&](const std::string& id, float defx, float defy) {
-                std::string tag = findTagForId(id);
-                float cx = getAttr(tag, "cx", defx);
-                float cy = getAttr(tag, "cy", defy);
-                return mm2px(Vec(cx, cy));
+                return centerPx(id, defx, defy);
             };
             // A side
             addInput(createInputCentered<ShapetakerBNCPort>(cpos("a_clk_cv", 15.950586f, 95.834518f), module, Transmutation::CLOCK_A_INPUT));
@@ -3080,17 +3039,14 @@ struct TransmutationWidget : ModuleWidget {
         // Alchemical Symbol Buttons from SVG rects alchem_1..alchem_12 (x,y are top-left)
         for (int i = 0; i < 12; i++) {
             std::string id = std::string("alchem_") + std::to_string(i + 1);
-            std::string tag = findTagForId(id);
-            float x = getAttr(tag, "x", (i < 6 ? (36.0f + 10.65f * i) : (36.0f + 10.65f * (i - 6))));
-            float y = getAttr(tag, "y", (i < 6 ? 110.0f : 117.56f)); // Both rows at bottom of matrix
-            float wRect = getAttr(tag, "width", 6.0f);
-            float hRect = getAttr(tag, "height", 6.0f);
-            // Enlarge buttons but keep center aligned in their reserved rect
+            float defaultX = (i < 6 ? (36.0f + 10.65f * i) : (36.0f + 10.65f * (i - 6)));
+            float defaultY = (i < 6 ? 110.0f : 117.56f);
+            Rect rect = parser.rectMm(id, defaultX, defaultY, 6.0f, 6.0f);
             float scale = 1.22f; // ~22% larger while keeping separation
-            float w = wRect * scale;
-            float h = hRect * scale;
-            float cx = x + wRect * 0.5f;
-            float cy = y + hRect * 0.5f;
+            float w = rect.size.x * scale;
+            float h = rect.size.y * scale;
+            float cx = rect.pos.x + rect.size.x * 0.5f;
+            float cy = rect.pos.y + rect.size.y * 0.5f;
             float xPos = cx - w * 0.5f;
             float yPos = cy - h * 0.5f;
             AlchemicalSymbolWidget* symbolWidget = new AlchemicalSymbolWidget(
@@ -3106,42 +3062,27 @@ struct TransmutationWidget : ModuleWidget {
         // Rest and Tie buttons from SVG ids rest_btn/tie_button
         // Use alchemical-styled momentaries to match symbol buttons
         {
-            std::string tr = findTagForId("rest_btn");
-            if (tr.empty()) tr = findTagForId("rest_button");
-            std::string tt = findTagForId("tie_btn");
-            if (tt.empty()) tt = findTagForId("tie_button");
-            // Compute centers; support either <circle> (cx,cy) or <rect> with x,y,width,height
-            auto centerFromTag = [&](const std::string& tag, float defx, float defy) -> Vec {
-                if (tag.find("<rect") != std::string::npos) {
-                    float rx = getAttr(tag, "x", defx);
-                    float ry = getAttr(tag, "y", defy);
-                    float rw = getAttr(tag, "width", 0.0f);
-                    float rh = getAttr(tag, "height", 0.0f);
-                    return Vec(rx + rw * 0.5f, ry + rh * 0.5f);
+            auto pickId = [&](const std::initializer_list<const char*> ids) -> std::string {
+                for (const char* candidate : ids) {
+                    auto tag = findTagForId(candidate);
+                    if (!tag.empty()) return candidate;
                 }
-                float cx = getAttr(tag, "cx", defx);
-                float cy = getAttr(tag, "cy", defy);
-                return Vec(cx, cy);
+                return *ids.begin();
             };
-            Vec restMM = centerFromTag(tr, 15.950587f, 53.27956f);
-            Vec tieMM  = centerFromTag(tt, 115.02555f, 53.27956f);
+            std::string restId = pickId({"rest_btn", "rest_button"});
+            std::string tieId  = pickId({"tie_btn", "tie_button"});
+            Vec restMM = centerMm(restId, 15.950587f, 53.27956f);
+            Vec tieMM  = centerMm(tieId, 115.02555f, 53.27956f);
 
             // Match size of alchemical symbol buttons by reading a reference rect (alchem_1)
-            float refWmm = 6.0f, refHmm = 6.0f; // sensible defaults in mm
-            {
-                std::string ref = findTagForId("alchem_1");
-                if (!ref.empty()) {
-                    refWmm = getAttr(ref, "width", refWmm);
-                    refHmm = getAttr(ref, "height", refHmm);
-                } else {
-                    // Fallback to REST rect dims if available
-                    refWmm = getAttr(tr, "width", refWmm);
-                    refHmm = getAttr(tr, "height", refHmm);
-                }
+            Rect refRect = parser.rectMm("alchem_1", 36.f, 110.f, 6.0f, 6.0f);
+            if (refRect.size.isZero()) {
+                Rect restRect = parser.rectMm(restId, restMM.x - 3.f, restMM.y - 3.f, 6.0f, 6.0f);
+                if (!restRect.size.isZero()) refRect = restRect;
             }
             const float symbolScale = 1.22f; // same scale used for alchemical buttons
-            float targetWmm = refWmm * symbolScale;
-            float targetHmm = refHmm * symbolScale;
+            float targetWmm = refRect.size.x * symbolScale;
+            float targetHmm = refRect.size.y * symbolScale;
 
             auto* restW = createParamCentered<RestTieMomentary>(mm2px(restMM), module, Transmutation::REST_PARAM);
             auto* tieW  = createParamCentered<RestTieMomentary>(mm2px(tieMM), module, Transmutation::TIE_PARAM);
@@ -3160,14 +3101,10 @@ struct TransmutationWidget : ModuleWidget {
 
         // Running lights from SVG ids seq_a_led/seq_b_led (cx, cy)
         {
-            std::string la = findTagForId("seq_a_led");
-            std::string lb = findTagForId("seq_b_led");
-            float ax = getAttr(la, "cx", 29.029953f);
-            float ay = getAttr(la, "cy", 33.132351f);
-            float bx = getAttr(lb, "cx", 102.28805f);
-            float by = getAttr(lb, "cy", 33.5513f);
-            addChild(createLightCentered<shapetaker::transmutation::TealJewelLEDMedium>(mm2px(Vec(ax, ay)), module, Transmutation::RUNNING_A_LIGHT));
-            addChild(createLightCentered<shapetaker::transmutation::PurpleJewelLEDMedium>(mm2px(Vec(bx, by)), module, Transmutation::RUNNING_B_LIGHT));
+            addChild(createLightCentered<shapetaker::transmutation::TealJewelLEDMedium>(
+                centerPx("seq_a_led", 29.029953f, 33.132351f), module, Transmutation::RUNNING_A_LIGHT));
+            addChild(createLightCentered<shapetaker::transmutation::PurpleJewelLEDMedium>(
+                centerPx("seq_b_led", 102.28805f, 33.5513f), module, Transmutation::RUNNING_B_LIGHT));
         }
 
         // Panel-wide patina overlay for cohesive vintage appearance (added last so it sits on top subtly)

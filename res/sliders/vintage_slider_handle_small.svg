@@ -1,154 +1,318 @@
 <?xml version="1.0" encoding="UTF-8" standalone="no"?>
 <svg
-  width="12"
-  height="18"
-  viewBox="0 0 12 18"
-  version="1.1"
-  xmlns="http://www.w3.org/2000/svg">
-  <title>Vintage Slider Handle (Small)</title>
-  <desc>Compact chrome and brass slider handle</desc>
-
-  <defs>
+   width="12"
+   height="18"
+   viewBox="0 0 12 18"
+   version="1.1"
+   id="svg30"
+   sodipodi:docname="vintage_slider_handle_small.svg"
+   inkscape:version="1.4.2 (ebf0e940, 2025-05-08)"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <sodipodi:namedview
+     id="namedview30"
+     pagecolor="#505050"
+     bordercolor="#eeeeee"
+     borderopacity="1"
+     inkscape:showpageshadow="0"
+     inkscape:pageopacity="0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#505050"
+     inkscape:zoom="56.055556"
+     inkscape:cx="5.9940535"
+     inkscape:cy="9"
+     inkscape:window-width="2560"
+     inkscape:window-height="1387"
+     inkscape:window-x="0"
+     inkscape:window-y="25"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="svg30" />
+  <title
+     id="title1">Vintage Slider Handle (Small)</title>
+  <desc
+     id="desc1">Compact chrome and brass slider handle</desc>
+  <defs
+     id="defs21">
     <!-- Drop shadow for depth -->
-    <radialGradient id="sliderHandleShadowSmall" cx="0.5" cy="0.6" r="0.6">
-      <stop offset="0%" stop-color="#000000" stop-opacity="0.4"/>
-      <stop offset="70%" stop-color="#000000" stop-opacity="0.2"/>
-      <stop offset="100%" stop-color="#000000" stop-opacity="0"/>
+    <radialGradient
+       id="sliderHandleShadowSmall"
+       cx="0.5"
+       cy="0.6"
+       r="0.6">
+      <stop
+         offset="0%"
+         stop-color="#000000"
+         stop-opacity="0.4"
+         id="stop1" />
+      <stop
+         offset="70%"
+         stop-color="#000000"
+         stop-opacity="0.2"
+         id="stop2" />
+      <stop
+         offset="100%"
+         stop-color="#000000"
+         stop-opacity="0"
+         id="stop3" />
     </radialGradient>
-
     <!-- Main handle body - chrome/silver -->
-    <linearGradient id="handleBodySmall" x1="0" y1="0" x2="1" y2="0">
-      <stop offset="0%" stop-color="#4a4e58"/>
-      <stop offset="15%" stop-color="#b8bcc8"/>
-      <stop offset="30%" stop-color="#6b707d"/>
-      <stop offset="50%" stop-color="#959aa8"/>
-      <stop offset="70%" stop-color="#4f5460"/>
-      <stop offset="85%" stop-color="#a8adb8"/>
-      <stop offset="100%" stop-color="#3d4148"/>
+    <linearGradient
+       id="handleBodySmall"
+       x1="0"
+       y1="0"
+       x2="1"
+       y2="0">
+      <stop
+         offset="0%"
+         stop-color="#4a4e58"
+         id="stop4" />
+      <stop
+         offset="15%"
+         stop-color="#b8bcc8"
+         id="stop5" />
+      <stop
+         offset="30%"
+         stop-color="#6b707d"
+         id="stop6" />
+      <stop
+         offset="50%"
+         stop-color="#959aa8"
+         id="stop7" />
+      <stop
+         offset="70%"
+         stop-color="#4f5460"
+         id="stop8" />
+      <stop
+         offset="85%"
+         stop-color="#a8adb8"
+         id="stop9" />
+      <stop
+         offset="100%"
+         stop-color="#3d4148"
+         id="stop10" />
     </linearGradient>
-
     <!-- Handle highlight -->
-    <radialGradient id="handleHighlightSmall" cx="0.5" cy="0.3" r="0.5">
-      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.8"/>
-      <stop offset="50%" stop-color="#d5dae5" stop-opacity="0.3"/>
-      <stop offset="100%" stop-color="#6b707d" stop-opacity="0"/>
+    <radialGradient
+       id="handleHighlightSmall"
+       cx="0.5"
+       cy="0.3"
+       r="0.5">
+      <stop
+         offset="0%"
+         stop-color="#ffffff"
+         stop-opacity="0.8"
+         id="stop11" />
+      <stop
+         offset="50%"
+         stop-color="#d5dae5"
+         stop-opacity="0.3"
+         id="stop12" />
+      <stop
+         offset="100%"
+         stop-color="#6b707d"
+         stop-opacity="0"
+         id="stop13" />
     </radialGradient>
-
     <!-- Brass center strip -->
-    <linearGradient id="brassStripSmall" x1="0" y1="0" x2="1" y2="0">
-      <stop offset="0%" stop-color="#7a5a2a"/>
-      <stop offset="25%" stop-color="#d4a857"/>
-      <stop offset="50%" stop-color="#9a7536"/>
-      <stop offset="75%" stop-color="#c9a34d"/>
-      <stop offset="100%" stop-color="#6b4d24"/>
+    <linearGradient
+       id="brassStripSmall"
+       x1="0"
+       y1="0"
+       x2="1"
+       y2="0">
+      <stop
+         offset="0"
+         stop-color="#7a5a2a"
+         id="stop14"
+         style="stop-color:#2b241d;stop-opacity:1;" />
+      <stop
+         offset="25%"
+         stop-color="#d4a857"
+         id="stop15" />
+      <stop
+         offset="50%"
+         stop-color="#9a7536"
+         id="stop16" />
+      <stop
+         offset="0.8009091"
+         stop-color="#c9a34d"
+         id="stop17"
+         style="stop-color:#635226;stop-opacity:1;" />
+      <stop
+         offset="100%"
+         stop-color="#6b4d24"
+         id="stop18" />
     </linearGradient>
-
     <!-- Edge darkening -->
-    <linearGradient id="edgeDarkSmall" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="#0a0b0d" stop-opacity="0.6"/>
-      <stop offset="50%" stop-color="#0a0b0d" stop-opacity="0"/>
-      <stop offset="100%" stop-color="#0a0b0d" stop-opacity="0.7"/>
+    <linearGradient
+       id="edgeDarkSmall"
+       x1="0"
+       y1="0"
+       x2="0"
+       y2="1">
+      <stop
+         offset="0%"
+         stop-color="#0a0b0d"
+         stop-opacity="0.6"
+         id="stop19" />
+      <stop
+         offset="50%"
+         stop-color="#0a0b0d"
+         stop-opacity="0"
+         id="stop20" />
+      <stop
+         offset="100%"
+         stop-color="#0a0b0d"
+         stop-opacity="0.7"
+         id="stop21" />
     </linearGradient>
   </defs>
-
   <!-- Shadow beneath handle -->
   <ellipse
-    cx="6"
-    cy="10"
-    rx="5"
-    ry="2"
-    fill="url(#sliderHandleShadowSmall)"/>
-
+     cx="6"
+     cy="10"
+     rx="5"
+     ry="2"
+     fill="url(#sliderHandleShadowSmall)"
+     id="ellipse21" />
   <!-- Main handle body -->
-  <g id="handle-body">
+  <g
+     id="handle-body">
     <!-- Base shape with rounded ends -->
     <rect
-      x="1"
-      y="2"
-      width="10"
-      height="14"
-      rx="5"
-      ry="5"
-      fill="url(#handleBodySmall)"
-      stroke="#1a1d24"
-      stroke-width="0.4"/>
-
+       x="1"
+       y="2"
+       width="10"
+       height="14"
+       rx="5"
+       ry="5"
+       fill="url(#handleBodySmall)"
+       stroke="#1a1d24"
+       stroke-width="0.4"
+       id="rect21" />
     <!-- Chrome highlight overlay -->
     <rect
-      x="1"
-      y="2"
-      width="10"
-      height="14"
-      rx="5"
-      ry="5"
-      fill="url(#handleHighlightSmall)"
-      opacity="0.7"/>
-
+       x="1"
+       y="2"
+       width="10"
+       height="14"
+       rx="5"
+       ry="5"
+       fill="url(#handleHighlightSmall)"
+       opacity="0.7"
+       id="rect22" />
     <!-- Edge darkening for depth -->
     <rect
-      x="1"
-      y="2"
-      width="10"
-      height="14"
-      rx="5"
-      ry="5"
-      fill="url(#edgeDarkSmall)"
-      opacity="0.4"/>
-
+       x="1"
+       y="2"
+       width="10"
+       height="14"
+       rx="5"
+       ry="5"
+       fill="url(#edgeDarkSmall)"
+       opacity="0.4"
+       id="rect23" />
     <!-- Left edge highlight -->
     <path
-      d="M 3 6 Q 2.5 9 2.5 9 Q 2.5 9 3 12"
-      fill="none"
-      stroke="#ffffff"
-      stroke-width="0.5"
-      opacity="0.3"/>
-
+       d="M 3 6 Q 2.5 9 2.5 9 Q 2.5 9 3 12"
+       fill="none"
+       stroke="#ffffff"
+       stroke-width="0.5"
+       opacity="0.3"
+       id="path23" />
     <!-- Right edge shadow -->
     <path
-      d="M 9 6 Q 9.5 9 9.5 9 Q 9.5 9 9 12"
-      fill="none"
-      stroke="#0a0b0d"
-      stroke-width="0.7"
-      opacity="0.4"/>
+       d="M 9 6 Q 9.5 9 9.5 9 Q 9.5 9 9 12"
+       fill="none"
+       stroke="#0a0b0d"
+       stroke-width="0.7"
+       opacity="0.4"
+       id="path24" />
   </g>
-
   <!-- Brass center stripe -->
   <rect
-    x="4"
-    y="5"
-    width="4"
-    height="8"
-    rx="0.8"
-    fill="url(#brassStripSmall)"
-    stroke="#3d2a12"
-    stroke-width="0.3"/>
-
+     x="4"
+     y="5"
+     width="4"
+     height="8"
+     rx="0.8"
+     fill="url(#brassStripSmall)"
+     stroke="#3d2a12"
+     stroke-width="0.3"
+     id="rect24" />
   <!-- Brass highlight -->
   <rect
-    x="4.5"
-    y="5.5"
-    width="1.5"
-    height="7"
-    rx="0.5"
-    fill="#f4d882"
-    opacity="0.25"/>
-
+     x="4.5"
+     y="5.5"
+     width="1.5"
+     height="7"
+     rx="0.5"
+     fill="#f4d882"
+     opacity="0.25"
+     id="rect25"
+     style="fill:#463905;fill-opacity:1" />
   <!-- Knurling texture (horizontal lines) -->
-  <g id="knurling" opacity="0.5">
-    <line x1="2" y1="4" x2="10" y2="4" stroke="#2a2d34" stroke-width="0.3"/>
-    <line x1="2" y1="6" x2="10" y2="6" stroke="#2a2d34" stroke-width="0.3"/>
-    <line x1="2" y1="8" x2="10" y2="8" stroke="#2a2d34" stroke-width="0.3"/>
-    <line x1="2" y1="10" x2="10" y2="10" stroke="#2a2d34" stroke-width="0.3"/>
-    <line x1="2" y1="12" x2="10" y2="12" stroke="#2a2d34" stroke-width="0.3"/>
-    <line x1="2" y1="14" x2="10" y2="14" stroke="#2a2d34" stroke-width="0.3"/>
+  <g
+     id="knurling"
+     opacity="0.5">
+    <line
+       x1="2"
+       y1="4"
+       x2="10"
+       y2="4"
+       stroke="#2a2d34"
+       stroke-width="0.3"
+       id="line25" />
+    <line
+       x1="2"
+       y1="6"
+       x2="10"
+       y2="6"
+       stroke="#2a2d34"
+       stroke-width="0.3"
+       id="line26" />
+    <line
+       x1="2"
+       y1="8"
+       x2="10"
+       y2="8"
+       stroke="#2a2d34"
+       stroke-width="0.3"
+       id="line27" />
+    <line
+       x1="2"
+       y1="10"
+       x2="10"
+       y2="10"
+       stroke="#2a2d34"
+       stroke-width="0.3"
+       id="line28" />
+    <line
+       x1="2"
+       y1="12"
+       x2="10"
+       y2="12"
+       stroke="#2a2d34"
+       stroke-width="0.3"
+       id="line29" />
+    <line
+       x1="2"
+       y1="14"
+       x2="10"
+       y2="14"
+       stroke="#2a2d34"
+       stroke-width="0.3"
+       id="line30" />
   </g>
-
   <!-- Center shine -->
   <ellipse
-    cx="6"
-    cy="8"
-    rx="2"
-    ry="4"
-    fill="#ffffff"
-    opacity="0.12"/>
+     cx="6"
+     cy="8"
+     rx="2"
+     ry="4"
+     fill="#ffffff"
+     opacity="0.12"
+     id="ellipse30" />
 </svg>

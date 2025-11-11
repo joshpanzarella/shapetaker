@@ -56,6 +56,50 @@
      height="128.5"
      fill="url(#panelGradient)"
      id="rect2" />
+  <!-- Hidden control markers for precise hardware alignment -->
+  <g
+     id="patina-control-markers"
+     style="display:none;fill:#ff0000;fill-opacity:1;fill-rule:evenodd;stroke:#ff0000;stroke-width:0.3;stroke-linecap:round;stroke-opacity:1;paint-order:fill markers stroke">
+    <!-- Envelope follower -->
+    <circle id="patina-env-sensitivity" cx="15" cy="29" r="6.5" />
+    <circle id="patina-master-rate" cx="50.8" cy="29" r="6.5" />
+    <circle id="patina-env-depth" cx="86.6" cy="29" r="6.5" />
+    <circle id="patina-audio-input" cx="15" cy="41" r="3.5" />
+    <circle id="patina-env-output" cx="50.8" cy="41" r="3.5" />
+    <circle id="patina-reset-input" cx="86.6" cy="41" r="3.5" />
+    <circle id="patina-env-mode" cx="50.8" cy="48" r="4" />
+    <!-- LFO 1 -->
+    <circle id="patina-rate1" cx="33" cy="56" r="6.5" />
+    <circle id="patina-rate1-cv" cx="33" cy="70.5" r="3.5" />
+    <circle id="patina-shape1" cx="33" cy="80" r="4" />
+    <circle id="patina-drift1" cx="33" cy="89.5" r="4" />
+    <circle id="patina-jitter1" cx="33" cy="99" r="4" />
+    <circle id="patina-output1" cx="33" cy="108.5" r="3.5" />
+    <circle id="patina-light1" cx="33" cy="116" r="2" />
+    <!-- LFO 2 -->
+    <circle id="patina-rate2" cx="50.8" cy="56" r="6.5" />
+    <circle id="patina-rate2-cv" cx="50.8" cy="70.5" r="3.5" />
+    <circle id="patina-shape2" cx="50.8" cy="80" r="4" />
+    <circle id="patina-drift2" cx="50.8" cy="89.5" r="4" />
+    <circle id="patina-jitter2" cx="50.8" cy="99" r="4" />
+    <circle id="patina-output2" cx="50.8" cy="108.5" r="3.5" />
+    <circle id="patina-light2" cx="50.8" cy="116" r="2" />
+    <!-- LFO 3 -->
+    <circle id="patina-rate3" cx="68.6" cy="56" r="6.5" />
+    <circle id="patina-rate3-cv" cx="68.6" cy="70.5" r="3.5" />
+    <circle id="patina-shape3" cx="68.6" cy="80" r="4" />
+    <circle id="patina-drift3" cx="68.6" cy="89.5" r="4" />
+    <circle id="patina-jitter3" cx="68.6" cy="99" r="4" />
+    <circle id="patina-output3" cx="68.6" cy="108.5" r="3.5" />
+    <circle id="patina-light3" cx="68.6" cy="116" r="2" />
+    <!-- Character section -->
+    <circle id="patina-slew" cx="14" cy="121" r="4" />
+    <circle id="patina-complexity" cx="35" cy="121" r="4" />
+    <circle id="patina-alt-interval" cx="56" cy="121" r="4" />
+    <circle id="patina-xmod" cx="77" cy="121" r="4" />
+    <circle id="patina-vintage-button" cx="50.8" cy="125.5" r="3.2" />
+    <circle id="patina-vintage-light" cx="50.8" cy="125.5" r="2" />
+  </g>
   <!-- Title -->
   <text
      x="50.799999"

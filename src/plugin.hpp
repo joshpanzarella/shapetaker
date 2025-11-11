@@ -8,6 +8,7 @@ extern Plugin* pluginInstance;
 
 // Include reorganized utilities
 #include "utilities.hpp"
+#include "ui/label_formatter.hpp"
 
 extern Model* modelClairaudient;
 extern Model* modelChiaroscuro;
@@ -17,27 +18,39 @@ extern Model* modelEvocation;
 extern Model* modelIncantation;
 extern Model* modelTransmutation;
 extern Model* modelSpecula;
+extern Model* modelChimera;
 extern Model* modelTorsion;
 extern Model* modelTessellation;
 extern Model* modelPatina;
 
 /**
  * Base knob class with universal fallback indicator support.
- * If a knob uses blank_indicator.svg, this will draw a procedural
- * filled circle indicator on the knob skirt.
+ * ONLY draws a procedural indicator if the knob uses blank_indicator.svg.
+ * Knobs with custom indicators (set via setSvg after construction) are automatically skipped.
  */
 struct ShapetakerKnobBase : app::SvgKnob {
-    bool usesFallbackIndicator = false;
-    float indicatorRadiusFraction = 0.85f;  // Position on skirt (0.0 = center, 1.0 = edge)
-    float indicatorSizeFraction = 0.08f;    // Size relative to knob radius
+    std::shared_ptr<Svg> blankIndicatorSvg;  // Cache the blank indicator SVG for comparison
+    float indicatorRadiusFraction = 0.80f;   // Position on skirt - closer to center
+    float indicatorSizeFraction = 0.05f;     // Smaller, more subtle indicator
 
     void checkForFallbackIndicator(const std::string& svgPath) {
-        // Check if this knob is using the blank indicator
-        usesFallbackIndicator = (svgPath.find("blank_indicator.svg") != std::string::npos);
+        // Load and cache the blank indicator SVG for later comparison
+        if (svgPath.find("blank_indicator.svg") != std::string::npos) {
+            blankIndicatorSvg = Svg::load(svgPath);
+        }
+    }
+
+    bool shouldDrawFallback() const {
+        // Check at draw time if the current SVG is still the blank indicator
+        // This handles cases where setSvg() is called after construction to set a custom indicator
+        if (!blankIndicatorSvg) return false;
+        if (!sw || !sw->svg) return false;
+        return (sw->svg == blankIndicatorSvg);
     }
 
     void drawFallbackIndicator(const DrawArgs& args) {
-        if (!usesFallbackIndicator) return;
+        // Skip if not using blank indicator (i.e., has a custom indicator)
+        if (!shouldDrawFallback()) return;
 
         // Get the current knob value and convert to angle
         float value = 0.f;
@@ -56,16 +69,10 @@ struct ShapetakerKnobBase : app::SvgKnob {
         float x = center.x + indicatorDistance * std::sin(angle);
         float y = center.y - indicatorDistance * std::cos(angle);
 
-        // Draw filled circle indicator
+        // Draw small filled circle indicator using beige color from panel text (#c8c8b6)
         nvgBeginPath(args.vg);
         nvgCircle(args.vg, x, y, indicatorSize);
-        nvgFillColor(args.vg, nvgRGBA(0, 255, 200, 255));  // Teal indicator
-        nvgFill(args.vg);
-
-        // Add subtle glow
-        nvgBeginPath(args.vg);
-        nvgCircle(args.vg, x, y, indicatorSize * 1.5f);
-        nvgFillColor(args.vg, nvgRGBA(0, 255, 200, 60));
+        nvgFillColor(args.vg, nvgRGB(0xc8, 0xc8, 0xb6));  // Beige color matching panel aesthetics
         nvgFill(args.vg);
     }
 };
@@ -691,7 +698,7 @@ struct ShapetakerKnobAltHuge : ShapetakerKnobBase {
         if (fb && tw) fb->addChildBelow(bg, tw);
         box.size = mm2px(Vec(30.f, 30.f));
 
-        // Disable shadow for clean aesthetic
+        // Shadow disabled
         if (shadow) {
             shadow->visible = false;
         }
@@ -735,7 +742,7 @@ struct ShapetakerKnobAltLarge : ShapetakerKnobBase {
         if (fb && tw) fb->addChildBelow(bg, tw);
         box.size = mm2px(Vec(24.f, 24.f));
 
-        // Disable shadow for clean aesthetic
+        // Shadow disabled
         if (shadow) {
             shadow->visible = false;
         }
@@ -779,7 +786,7 @@ struct ShapetakerKnobAltMedium : ShapetakerKnobBase {
         if (fb && tw) fb->addChildBelow(bg, tw);
         box.size = mm2px(Vec(20.f, 20.f));
 
-        // Disable shadow for clean aesthetic
+        // Shadow disabled
         if (shadow) {
             shadow->visible = false;
         }
@@ -823,7 +830,7 @@ struct ShapetakerKnobAltSmall : ShapetakerKnobBase {
         if (fb && tw) fb->addChildBelow(bg, tw);
         box.size = mm2px(Vec(16.f, 16.f));
 
-        // Disable shadow for clean aesthetic
+        // Shadow disabled
         if (shadow) {
             shadow->visible = false;
         }

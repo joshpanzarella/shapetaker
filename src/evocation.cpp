@@ -374,6 +374,8 @@ struct Evocation : Module {
         configOutput(ENV_4_GATE_OUTPUT, "Envelope 4 Gate");
 
         resetADSREngine();
+
+        shapetaker::ui::LabelFormatter::normalizeModuleControls(this);
     }
     
     void process(const ProcessArgs& args) override {
@@ -3501,9 +3503,7 @@ struct EvocationWidget : ModuleWidget {
 
         // Parse SVG panel for precise positioning
         LayoutHelper::PanelSVGParser parser(asset::plugin(pluginInstance, "res/panels/Evocation.svg"));
-        auto centerPx = [&](const std::string& id, float defx, float defy) -> Vec {
-            return parser.centerPx(id, defx, defy);
-        };
+        auto centerPx = LayoutHelper::createCenterPxHelper(parser);
 
         addChild(createWidget<ScrewBlack>(Vec(RACK_GRID_WIDTH, 0)));
         addChild(createWidget<ScrewBlack>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, 0)));

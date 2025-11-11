@@ -13,6 +13,7 @@ void init(Plugin* p) {
     p->addModel(modelIncantation);
     p->addModel(modelTransmutation);
     p->addModel(modelSpecula);
+    p->addModel(modelChimera);
     p->addModel(modelTorsion);
     p->addModel(modelTessellation);
     p->addModel(modelPatina);

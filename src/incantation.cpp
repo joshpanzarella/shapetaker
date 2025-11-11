@@ -1,6 +1,7 @@
 #include "plugin.hpp"
 #include <cmath>
 #include <random>
+#include <string>
 
 struct Incantation : Module {
     enum ParamId {
@@ -338,8 +339,10 @@ struct Incantation : Module {
         // Initialize filters
         updateFilterVoicing();
         
-        // Initialize LFO
-        lfo.setFreq(1.f); // 1 Hz default
+       // Initialize LFO
+       lfo.setFreq(1.f); // 1 Hz default
+
+        shapetaker::ui::LabelFormatter::normalizeModuleControls(this);
     }
 
     void updateFilterVoicing() {
@@ -713,57 +716,64 @@ struct IncantationWidget : ModuleWidget {
         setModule(module);
         setPanel(createPanel(asset::plugin(pluginInstance, "res/panels/Incantation.svg")));
 
+        using LayoutHelper = shapetaker::ui::LayoutHelper;
+        auto svgPath = asset::plugin(pluginInstance, "res/panels/Incantation.svg");
+        LayoutHelper::PanelSVGParser parser(svgPath);
+        auto centerPx = LayoutHelper::createCenterPxHelper(parser);
+
         // Main controls (top section - more spaced out)
-        addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(25, 20)), module, Incantation::DRIVE_PARAM));
-        addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(45, 20)), module, Incantation::MIX_PARAM));
-        addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(65, 20)), module, Incantation::OUTPUT_PARAM));
+        addParam(createParamCentered<RoundBlackKnob>(centerPx("inc-drive-knob", 25.f, 20.f), module, Incantation::DRIVE_PARAM));
+        addParam(createParamCentered<RoundBlackKnob>(centerPx("inc-mix-knob", 45.f, 20.f), module, Incantation::MIX_PARAM));
+        addParam(createParamCentered<RoundBlackKnob>(centerPx("inc-output-knob", 65.f, 20.f), module, Incantation::OUTPUT_PARAM));
         
         // Second row of controls - more spaced
-        addParam(createParamCentered<RoundBlackSnapKnob>(mm2px(Vec(25, 35)), module, Incantation::PATTERN_PARAM));
-        addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(45, 35)), module, Incantation::ENVELOPE_PARAM));
-        addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(65, 35)), module, Incantation::RATE_PARAM));
+        addParam(createParamCentered<RoundBlackSnapKnob>(centerPx("inc-pattern-knob", 25.f, 35.f), module, Incantation::PATTERN_PARAM));
+        addParam(createParamCentered<RoundBlackKnob>(centerPx("inc-envelope-knob", 45.f, 35.f), module, Incantation::ENVELOPE_PARAM));
+        addParam(createParamCentered<RoundBlackKnob>(centerPx("inc-rate-knob", 65.f, 35.f), module, Incantation::RATE_PARAM));
         
         // Preset buttons - spread out more
-        addParam(createParamCentered<VCVButton>(mm2px(Vec(25, 48)), module, Incantation::PRESET_ZERO_PARAM));
-        addParam(createParamCentered<VCVButton>(mm2px(Vec(35, 48)), module, Incantation::PRESET_HALF_PARAM));
-        addParam(createParamCentered<VCVButton>(mm2px(Vec(45, 48)), module, Incantation::PRESET_FULL_PARAM));
+        addParam(createParamCentered<VCVButton>(centerPx("inc-preset-zero", 25.f, 48.f), module, Incantation::PRESET_ZERO_PARAM));
+        addParam(createParamCentered<VCVButton>(centerPx("inc-preset-half", 35.f, 48.f), module, Incantation::PRESET_HALF_PARAM));
+        addParam(createParamCentered<VCVButton>(centerPx("inc-preset-full", 45.f, 48.f), module, Incantation::PRESET_FULL_PARAM));
         
         // Filter sliders - more spacing between them
-        float sliderY = 65.f;
         for (int i = 0; i < 8; i++) {
-            addParam(createParamCentered<VintageSlider>(mm2px(Vec(18 + i * 9, sliderY)), module, Incantation::FILTER_1_PARAM + i));
+            std::string id = "inc-filter-slider-" + std::to_string(i);
+            float fallbackX = 18.f + i * 9.f;
+            addParam(createParamCentered<VintageSlider>(centerPx(id, fallbackX, 65.f), module, Incantation::FILTER_1_PARAM + i));
         }
         
         // Filter CV inputs - aligned below sliders with same spacing
-        float cvY = 85.f;
         for (int i = 0; i < 8; i++) {
-            addInput(createInputCentered<PJ301MPort>(mm2px(Vec(18 + i * 9, cvY)), module, Incantation::FILTER_1_CV_INPUT + i));
+            std::string id = "inc-filter-cv-" + std::to_string(i);
+            float fallbackX = 18.f + i * 9.f;
+            addInput(createInputCentered<PJ301MPort>(centerPx(id, fallbackX, 85.f), module, Incantation::FILTER_1_CV_INPUT + i));
         }
         
         // CV Bypass switch - positioned to the left of filter sliders
-        addParam(createParamCentered<CKSS>(mm2px(Vec(8, 75)), module, Incantation::CV_BYPASS_SWITCH_PARAM));
+        addParam(createParamCentered<CKSS>(centerPx("inc-cv-bypass-switch", 8.f, 75.f), module, Incantation::CV_BYPASS_SWITCH_PARAM));
         
         // Switches - spread out more
-        addParam(createParamCentered<CKSS>(mm2px(Vec(20, 100)), module, Incantation::FREQ_SWITCH_PARAM));
-        addParam(createParamCentered<CKSS>(mm2px(Vec(40, 100)), module, Incantation::LFO_SWITCH_PARAM));
-        addParam(createParamCentered<CKSS>(mm2px(Vec(60, 100)), module, Incantation::Q_FACTOR_SWITCH_PARAM));
+        addParam(createParamCentered<CKSS>(centerPx("inc-freq-switch", 20.f, 100.f), module, Incantation::FREQ_SWITCH_PARAM));
+        addParam(createParamCentered<CKSS>(centerPx("inc-lfo-switch", 40.f, 100.f), module, Incantation::LFO_SWITCH_PARAM));
+        addParam(createParamCentered<CKSS>(centerPx("inc-q-switch", 60.f, 100.f), module, Incantation::Q_FACTOR_SWITCH_PARAM));
         
         // Main inputs - better spacing  
-        addInput(createInputCentered<PJ301MPort>(mm2px(Vec(10, 115)), module, Incantation::AUDIO_LEFT_INPUT));
-        addInput(createInputCentered<PJ301MPort>(mm2px(Vec(20, 115)), module, Incantation::AUDIO_RIGHT_INPUT));
-        addInput(createInputCentered<PJ301MPort>(mm2px(Vec(35, 115)), module, Incantation::ENVELOPE_CV_INPUT));
-        addInput(createInputCentered<PJ301MPort>(mm2px(Vec(50, 115)), module, Incantation::RATE_CV_INPUT));
-        addInput(createInputCentered<PJ301MPort>(mm2px(Vec(65, 115)), module, Incantation::LFO_SWEEP_CV_INPUT));
-        addInput(createInputCentered<PJ301MPort>(mm2px(Vec(80, 115)), module, Incantation::MIX_CV_INPUT));
-        addInput(createInputCentered<PJ301MPort>(mm2px(Vec(95, 115)), module, Incantation::TAP_STEP_INPUT));
+        addInput(createInputCentered<PJ301MPort>(centerPx("inc-audio-left-in", 10.f, 115.f), module, Incantation::AUDIO_LEFT_INPUT));
+        addInput(createInputCentered<PJ301MPort>(centerPx("inc-audio-right-in", 20.f, 115.f), module, Incantation::AUDIO_RIGHT_INPUT));
+        addInput(createInputCentered<PJ301MPort>(centerPx("inc-envelope-cv-in", 35.f, 115.f), module, Incantation::ENVELOPE_CV_INPUT));
+        addInput(createInputCentered<PJ301MPort>(centerPx("inc-rate-cv-in", 50.f, 115.f), module, Incantation::RATE_CV_INPUT));
+        addInput(createInputCentered<PJ301MPort>(centerPx("inc-lfo-sweep-cv-in", 65.f, 115.f), module, Incantation::LFO_SWEEP_CV_INPUT));
+        addInput(createInputCentered<PJ301MPort>(centerPx("inc-mix-cv-in", 80.f, 115.f), module, Incantation::MIX_CV_INPUT));
+        addInput(createInputCentered<PJ301MPort>(centerPx("inc-tap-step-in", 95.f, 115.f), module, Incantation::TAP_STEP_INPUT));
         
         // Outputs - moved up to prevent cutoff
-        addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(20, 125)), module, Incantation::LEFT_MONO_OUTPUT));
-        addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(35, 125)), module, Incantation::RIGHT_OUTPUT));
+        addOutput(createOutputCentered<PJ301MPort>(centerPx("inc-left-output", 20.f, 125.f), module, Incantation::LEFT_MONO_OUTPUT));
+        addOutput(createOutputCentered<PJ301MPort>(centerPx("inc-right-output", 35.f, 125.f), module, Incantation::RIGHT_OUTPUT));
         
         // Lights - repositioned
-        addChild(createLightCentered<MediumLight<RedLight>>(mm2px(Vec(75, 35)), module, Incantation::RATE_LIGHT));
-        addChild(createLightCentered<MediumLight<GreenRedLight>>(mm2px(Vec(15, 20)), module, Incantation::DRIVE_LIGHT));
+        addChild(createLightCentered<MediumLight<RedLight>>(centerPx("inc-rate-light", 75.f, 35.f), module, Incantation::RATE_LIGHT));
+        addChild(createLightCentered<MediumLight<GreenRedLight>>(centerPx("inc-drive-light", 15.f, 20.f), module, Incantation::DRIVE_LIGHT));
     }
 };
 
