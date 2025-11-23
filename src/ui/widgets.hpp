@@ -3,6 +3,9 @@
 #include <nanovg.h>
 #include "../graphics/lighting.hpp"
 
+// Forward declaration so bezels can load bundled assets without including plugin.hpp here
+extern Plugin* pluginInstance;
+
 using namespace rack;
 
 namespace shapetaker {
@@ -141,6 +144,41 @@ public:
     }
 };
 
+// Jewel LED with integrated brass bezel (keeps lens smaller than the ring)
+class SmallBezelJewelLED : public SmallJewelLED {
+private:
+    widget::SvgWidget* bezel = nullptr;
+
+public:
+    SmallBezelJewelLED() {
+        // Overall footprint slightly larger so the bezel frames the lens
+        box.size = mm2px(Vec(9.f, 9.f));
+
+        bezel = new widget::SvgWidget;
+        bezel->setSvg(APP->window->loadSvg(asset::plugin(pluginInstance, "res/ui/brass_bezel_small.svg")));
+        bezel->box.size = box.size;
+        bezel->box.pos = Vec(0.f, 0.f);
+        this->addChild(bezel);
+    }
+
+    void onAdd(const widget::Widget::AddEvent& e) override {
+        SmallJewelLED::onAdd(e);
+        if (bezel && !bezel->parent) {
+            addChild(bezel);
+        }
+    }
+
+    void draw(const widget::Widget::DrawArgs& args) override {
+        // Draw bezel via child; just render the lens smaller than the ring
+        nvgSave(args.vg);
+        const float s = 0.6f;
+        nvgTranslate(args.vg, box.size.x * (1.f - s) * 0.5f, box.size.y * (1.f - s) * 0.5f);
+        nvgScale(args.vg, s, s);
+        SmallJewelLED::draw(args);
+        nvgRestore(args.vg);
+    }
+};
+
 // Medium-sized LEDs (20px) for transmutation module
 class MediumJewelLED : public JewelLEDBase<20> {
 public:
@@ -153,6 +191,128 @@ public:
         addBaseColor(nvgRGB(0, 0, 255));   // Blue
         // Hardware-friendly lens: 12 mm (matches large for prominent use)
         box.size = mm2px(Vec(12.f, 12.f));
+    }
+};
+
+/**
+ * Compact indicator light with an engraved brass bezel
+ * Used for stage position LEDs on Torsion (gives hardware depth around the emitter)
+ */
+template<typename LIGHT = WhiteLight>
+class BrassBezelSmallLight : public SmallLight<LIGHT> {
+private:
+    widget::SvgWidget* bezel = nullptr;
+
+public:
+    BrassBezelSmallLight() {
+        this->box.size = mm2px(Vec(5.0f, 5.0f)); // slightly larger to frame the LED
+        this->bgColor = nvgRGBA(0, 0, 0, 0);
+        this->borderColor = nvgRGBA(0, 0, 0, 0);
+
+        // Hide the stock SmallLight artwork and size the framebuffer to our bezel footprint
+        if (this->sw) {
+            this->sw->visible = false;
+        }
+        if (this->fb) {
+            this->fb->box.size = this->box.size;
+        }
+
+        bezel = new widget::SvgWidget;
+        bezel->setSvg(APP->window->loadSvg(asset::plugin(pluginInstance, "res/ui/brass_bezel_small.svg")));
+        bezel->box.size = this->box.size;
+        bezel->box.pos = Vec(0.f, 0.f);
+        this->addChild(bezel);
+    }
+
+    void drawLight(const widget::Widget::DrawArgs& args) override {
+        nvgSave(args.vg);
+
+        // Keep the lit lens well inside the bezel aperture (5 mm widget ≈ 14 px)
+        const float minSize = std::min(this->box.size.x, this->box.size.y);
+        const float centerX = this->box.size.x * 0.5f;
+        const float centerY = this->box.size.y * 0.5f;
+        const float lensOffsetX = -1.05f;
+        const float lensOffsetY = -1.05f;
+        const float cx = centerX + lensOffsetX;
+        const float cy = centerY + lensOffsetY;
+        const float radius = 0.23f * minSize;        // safely inside the 0.29f bezel opening
+        const float innerRadius = radius * 0.55f;
+        const float aperture = 0.28f * minSize;      // clip box roughly matching the bezel opening
+
+        // Clip lens drawing so nothing bleeds past the aperture
+        nvgScissor(args.vg, cx - aperture, cy - aperture, aperture * 2.f, aperture * 2.f);
+
+        // Determine brightness from the incoming light color; fall back to alpha if channels are zero
+        float brightness = std::max({this->color.a, this->color.r, this->color.g, this->color.b});
+
+        // Always draw a neutral “unlit” lens so all stages look consistent when off
+        NVGcolor unlitOuter = nvgRGBAf(0.82f, 0.82f, 0.82f, 0.04f);
+        NVGcolor unlitInner = nvgRGBAf(1.f, 1.f, 1.f, 0.08f);
+        NVGpaint unlitPaint = nvgRadialGradient(args.vg, cx, cy, innerRadius * 0.9f, radius,
+            unlitInner, unlitOuter);
+        nvgBeginPath(args.vg);
+        nvgCircle(args.vg, cx, cy, radius);
+        nvgFillPaint(args.vg, unlitPaint);
+        nvgFill(args.vg);
+
+        if (brightness > 1e-3f) {
+            NVGcolor inner = this->color;
+            inner.a *= 0.5f;
+            NVGcolor outer = this->color;
+            outer.a *= 0.06f;
+
+            NVGpaint paint = nvgRadialGradient(args.vg, cx, cy, innerRadius, radius, inner, outer);
+            nvgBeginPath(args.vg);
+            nvgCircle(args.vg, cx, cy, radius);
+            nvgFillPaint(args.vg, paint);
+            nvgFill(args.vg);
+
+            // Small highlight for depth, still within the aperture
+            NVGcolor highlight = nvgRGBAf(1.f, 1.f, 1.f, inner.a * 0.12f);
+            nvgBeginPath(args.vg);
+            nvgCircle(args.vg, cx - radius * 0.12f, cy - radius * 0.12f, radius * 0.14f);
+            nvgFillColor(args.vg, highlight);
+            nvgFill(args.vg);
+        }
+
+        nvgResetScissor(args.vg);
+        nvgRestore(args.vg);
+    }
+
+    void drawHalo(const widget::Widget::DrawArgs& args) override {
+        // Tuck the halo inside the bezel so the glow does not spill past the brass ring
+        float brightness = std::max({this->color.a, this->color.r, this->color.g, this->color.b});
+        if (brightness <= 1e-3f) {
+            return;
+        }
+
+        // Soften intensity and clamp radius aggressively to keep light inside brass
+        const float brightnessScale = 0.12f;
+        NVGcolor haloColor = this->color;
+        haloColor.a *= brightnessScale;
+
+        const float cx = this->box.size.x * 0.5f - 1.05f;
+        const float cy = this->box.size.y * 0.5f - 1.05f;
+        const float radius = 0.22f * std::min(this->box.size.x, this->box.size.y); // fits inside bezel opening
+        const float innerRadius = radius * 0.55f;
+
+        NVGcolor inner = haloColor;
+        inner.a *= 0.18f;
+        NVGcolor outer = haloColor;
+        outer.a *= 0.04f;
+
+        NVGpaint halo = nvgRadialGradient(args.vg, cx, cy, innerRadius, radius, inner, outer);
+        nvgBeginPath(args.vg);
+        nvgRect(args.vg, cx - radius, cy - radius, radius * 2.f, radius * 2.f);
+        nvgFillPaint(args.vg, halo);
+        nvgFill(args.vg);
+    }
+
+    void draw(const widget::Widget::DrawArgs& args) override {
+        // Draw lens/halo first, then bezel over the top to cover any overhang
+        drawLight(args);
+        drawHalo(args);
+        widget::Widget::draw(args);
     }
 };
 

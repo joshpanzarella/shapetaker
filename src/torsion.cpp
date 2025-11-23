@@ -150,6 +150,7 @@ struct Torsion : Module {
         CURVE5_PARAM,
         CURVE6_PARAM,
         FEEDBACK_PARAM,
+        FEEDBACK_ATTEN_PARAM,
         SAW_WAVE_PARAM,
         TRIANGLE_WAVE_PARAM,
         SQUARE_WAVE_PARAM,
@@ -163,6 +164,7 @@ struct Torsion : Module {
         VOCT_INPUT,
         GATE_INPUT,
         TORSION_CV_INPUT,
+        FEEDBACK_CV_INPUT,
         STAGE_TRIG_INPUT,
         INPUTS_LEN
     };
@@ -311,6 +313,7 @@ struct Torsion : Module {
         configParam(CURVE6_PARAM, -1.f, 1.f, 0.f, "stage 6 curve");
 
         shapetaker::ParameterHelper::configGain(this, FEEDBACK_PARAM, "feedback amount", 0.0f);
+        shapetaker::ParameterHelper::configAttenuverter(this, FEEDBACK_ATTEN_PARAM, "feedback cv");
 
         configParam(SAW_WAVE_PARAM, 0.f, 1.f, 0.f, "sawtooth wave");
         configParam(TRIANGLE_WAVE_PARAM, 0.f, 1.f, 0.f, "triangle wave");
@@ -333,6 +336,7 @@ struct Torsion : Module {
         shapetaker::ParameterHelper::configCVInput(this, VOCT_INPUT, "v/oct");
         shapetaker::ParameterHelper::configGateInput(this, GATE_INPUT, "dcw gate");
         shapetaker::ParameterHelper::configCVInput(this, TORSION_CV_INPUT, "torsion cv");
+        shapetaker::ParameterHelper::configCVInput(this, FEEDBACK_CV_INPUT, "feedback cv");
         shapetaker::ParameterHelper::configGateInput(this, STAGE_TRIG_INPUT, "dcw trigger");
 
         shapetaker::ParameterHelper::configAudioOutput(this, MAIN_L_OUTPUT, "L");
@@ -460,7 +464,7 @@ struct Torsion : Module {
 
     void process(const ProcessArgs& args) override {
         int channels = polyProcessor.updateChannels(
-            {inputs[VOCT_INPUT], inputs[GATE_INPUT], inputs[TORSION_CV_INPUT], inputs[STAGE_TRIG_INPUT]},
+            {inputs[VOCT_INPUT], inputs[GATE_INPUT], inputs[TORSION_CV_INPUT], inputs[FEEDBACK_CV_INPUT], inputs[STAGE_TRIG_INPUT]},
             {outputs[MAIN_L_OUTPUT], outputs[MAIN_R_OUTPUT], outputs[EDGE_OUTPUT]});
 
         // Update cached exponential coefficients if sample rate changed
@@ -504,7 +508,9 @@ struct Torsion : Module {
         bool dirtyMode = params[DIRTY_MODE_PARAM].getValue() > 0.5f;
 
         // Move these param reads outside the voice loop (optimization #2)
-        float feedbackAmount = params[FEEDBACK_PARAM].getValue();
+        float feedbackBase = params[FEEDBACK_PARAM].getValue();
+        float feedbackAtten = params[FEEDBACK_ATTEN_PARAM].getValue();
+        bool feedbackCvConnected = inputs[FEEDBACK_CV_INPUT].isConnected();
         float subLevel = params[SUB_LEVEL_PARAM].getValue();
         float subWarpParam = params[SUB_WARP_PARAM].getValue();
         bool subHardSync = params[SUB_SYNC_PARAM].getValue() > 0.5f;
@@ -870,6 +876,12 @@ struct Torsion : Module {
                 dcwB = rack::math::clamp(dcwEnv * influence, 0.f, 1.f);
             }
 
+            float feedbackAmount = feedbackBase;
+            if (feedbackCvConnected) {
+                feedbackAmount += inputs[FEEDBACK_CV_INPUT].getPolyVoltage(ch) * feedbackAtten * 0.1f;
+            }
+            feedbackAmount = rack::math::clamp(feedbackAmount, 0.f, 1.f);
+
             // Apply feedback to phase (use cached param read - optimization #2)
             float feedbackMod = feedbackSignal[ch] * feedbackAmount * 0.3f;
             float phaseAFinal = phaseA + feedbackMod;
@@ -1169,13 +1181,15 @@ struct TorsionWidget : ModuleWidget {
         addParam(createParamCentered<ShapetakerKnobAltSmall>(
             centerPx("stage_rate_knob", 50.811508f, 37.985481f), module, Torsion::STAGE_RATE_PARAM));
 
-        // Attenuverters
+        // Attenuverters / nearby CV helpers
         addParam(createParamCentered<ShapetakerAttenuverterOscilloscope>(
-            centerPx("torsion_atten", 72.277924f, 69.663483f), module, Torsion::TORSION_ATTEN_PARAM));
+            centerPx("torsion_atten", 11.407479f, 76.992867f), module, Torsion::TORSION_ATTEN_PARAM));
+        addParam(createParamCentered<ShapetakerAttenuverterOscilloscope>(
+            centerPx("feedback_atten", 70.494972f, 74.118011f), module, Torsion::FEEDBACK_ATTEN_PARAM));
 
         // Middle section knobs
         addParam(createParamCentered<ShapetakerKnobAltSmall>(
-            centerPx("dcw_depth_knob", 11.963207f, 59.011551f), module, Torsion::SUB_WARP_PARAM));
+            centerPx("sub_dcw_depth_knob", 11.407479f, 58.311234f), module, Torsion::SUB_WARP_PARAM));
         addParam(createParamCentered<ShapetakerKnobAltSmall>(
             centerPx("feedback_knob", 11.963207f, 80.037621f), module, Torsion::FEEDBACK_PARAM));
 
@@ -1334,7 +1348,8 @@ struct TorsionWidget : ModuleWidget {
 
         for (int i = 0; i < Torsion::kNumStages; ++i) {
             Vec lightPos = centerPx(stageLightIds[i], stageLightFallbackX[i], stageLightFallbackY);
-            addChild(createLightCentered<SmallLight<WhiteLight>>(lightPos, module, Torsion::STAGE_LIGHT_1 + i));
+            addChild(createLightCentered<shapetaker::ui::BrassBezelSmallLight<WhiteLight>>(
+                lightPos, module, Torsion::STAGE_LIGHT_1 + i));
         }
 
         // Loop direction LEDs removed - redundant with stage position indicators
@@ -1349,20 +1364,22 @@ struct TorsionWidget : ModuleWidget {
 
         // === I/O Section (Bottom) ===
         addInput(createInputCentered<ShapetakerBNCPort>(
-            centerPx("voct_cv", 11.953995f, 113.80865f), module, Torsion::VOCT_INPUT));
+            centerPx("voct_cv", 11.953995f, 114.70013f), module, Torsion::VOCT_INPUT));
         addInput(createInputCentered<ShapetakerBNCPort>(
-            centerPx("gate_input", 21.795727f, 113.80865f), module, Torsion::GATE_INPUT));
+            centerPx("gate_input", 23.764072f, 114.70013f), module, Torsion::GATE_INPUT));
         addInput(createInputCentered<ShapetakerBNCPort>(
-            centerPx("torsion_cv", 31.637459f, 113.80865f), module, Torsion::TORSION_CV_INPUT));
+            centerPx("torsion_cv", 11.407479f, 85.976151f), module, Torsion::TORSION_CV_INPUT));
         addInput(createInputCentered<ShapetakerBNCPort>(
-            centerPx("stage_trig_cv", 41.479191f, 113.80865f), module, Torsion::STAGE_TRIG_INPUT));
+            centerPx("feedback_cv", 70.494972f, 85.976151f), module, Torsion::FEEDBACK_CV_INPUT));
+        addInput(createInputCentered<ShapetakerBNCPort>(
+            centerPx("stage_trig_cv", 35.57415f, 114.70013f), module, Torsion::STAGE_TRIG_INPUT));
 
         addOutput(createOutputCentered<ShapetakerBNCPort>(
-            centerPx("main_output", 51.320923f, 113.80865f), module, Torsion::MAIN_L_OUTPUT));
+            centerPx("main_output", 47.384232f, 114.70013f), module, Torsion::MAIN_L_OUTPUT));
         addOutput(createOutputCentered<ShapetakerBNCPort>(
-            centerPx("main_output_r", 61.162655f, 113.80865f), module, Torsion::MAIN_R_OUTPUT));
+            centerPx("main_output_r", 59.194309f, 114.70013f), module, Torsion::MAIN_R_OUTPUT));
         addOutput(createOutputCentered<ShapetakerBNCPort>(
-            centerPx("edge_output", 71.004387f, 113.80865f), module, Torsion::EDGE_OUTPUT));
+            centerPx("edge_output", 71.004387f, 114.70013f), module, Torsion::EDGE_OUTPUT));
     }
 
     void draw(const DrawArgs& args) override {
