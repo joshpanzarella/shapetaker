@@ -74,10 +74,7 @@ struct Tessellation : Module {
     };
 
     enum LightId {
-        TEMPO_LIGHT,
-        ENUMS(DELAY1_VU_LIGHT, 3),  // RGB for Teal
-        ENUMS(DELAY2_VU_LIGHT, 3),  // RGB for Magenta
-        ENUMS(DELAY3_VU_LIGHT, 3),  // RGB for Amber
+        ENUMS(TEMPO_LIGHT, 3),      // RGB for green tempo light
         ENUMS(MIX1_LIGHT, 3),       // RGB for Teal
         ENUMS(MIX2_LIGHT, 3),       // RGB for Magenta
         ENUMS(MIX3_LIGHT, 3),       // RGB for Amber
@@ -302,9 +299,13 @@ struct Tessellation : Module {
     std::array<StereoDelayLine, 3> delayLines;
     float sampleRate = 44100.f;
     rack::dsp::SchmittTrigger tapButtonTrigger;
-    rack::dsp::PulseGenerator tempoLightPulse;
+    rack::dsp::PulseGenerator delay1Pulse;
+    rack::dsp::PulseGenerator delay2Pulse;
+    rack::dsp::PulseGenerator delay3Pulse;
     float tapTimer = 0.f;
-    float tempoPhase = 0.f;
+    float delay1Phase = 0.f;
+    float delay2Phase = 0.f;
+    float delay3Phase = 0.f;
 
     // Cross-feedback state: previous sample's delay 3 output (for Delay 3 → 1 feedback)
     static constexpr int MAX_CHANNELS = 16;
@@ -406,7 +407,8 @@ struct Tessellation : Module {
                     tessellation::MIN_DELAY_SECONDS,
                     tessellation::MAX_DELAY_SECONDS);
                 params[TIME1_PARAM].setValue(tapped);
-                tempoLightPulse.trigger(0.06f);
+                float tapPulseDuration = rack::math::clamp(tapped * 0.15f, 0.03f, 0.12f);
+                delay1Pulse.trigger(tapPulseDuration);
             }
             tapTimer = 0.f;
         }
@@ -476,7 +478,6 @@ struct Tessellation : Module {
         outputs[DELAY2_OUTPUT].setChannels(channels);
         outputs[DELAY3_OUTPUT].setChannels(channels);
 
-        std::array<float, 3> maxVU = {0.f, 0.f, 0.f};
         float wetGainComp = 1.f / std::max(1.f, mix1 + mix2 + mix3);
         wetGainComp = rack::math::clamp(wetGainComp, 0.5f, 1.f);
         float dryFactor = 1.f;
@@ -484,9 +485,6 @@ struct Tessellation : Module {
         // Hoist lambdas outside channel loop for better performance
         auto tapAvg = [](const StereoDelayLine::Result& res) {
             return (res.tapL + res.tapR) * 0.5f;
-        };
-        auto vuBrightness = [](const StereoDelayLine::Result& res) {
-            return rack::math::clamp((std::fabs(res.tapL) + std::fabs(res.tapR)) * 0.1f, 0.f, 1.f);
         };
 
         for (int c = 0; c < channels; ++c) {
@@ -558,66 +556,133 @@ struct Tessellation : Module {
             outputs[DELAY1_OUTPUT].setVoltage(send1, c);
             outputs[DELAY2_OUTPUT].setVoltage(send2, c);
             outputs[DELAY3_OUTPUT].setVoltage(send3, c);
-
-            maxVU[0] = std::max(maxVU[0], vuBrightness(res1));
-            maxVU[1] = std::max(maxVU[1], vuBrightness(res2));
-            maxVU[2] = std::max(maxVU[2], vuBrightness(res3));
         }
 
-        tempoPhase += args.sampleTime;
-        float tempoPeriod = rack::math::clamp(delay1Seconds, 0.05f, tessellation::MAX_DELAY_SECONDS);
-        if (tempoPhase >= tempoPeriod) {
-            tempoPhase -= tempoPeriod;
-            tempoLightPulse.trigger(0.06f);
+        // Track each delay's phase for LED pulsing
+        // Pulse duration scales with delay time: shorter delays = shorter pulses
+        delay1Phase += args.sampleTime;
+        float period1 = rack::math::clamp(delay1Seconds, 0.05f, tessellation::MAX_DELAY_SECONDS);
+        if (delay1Phase >= period1) {
+            delay1Phase -= period1;
+            float pulseDuration1 = rack::math::clamp(delay1Seconds * 0.15f, 0.03f, 0.12f);
+            delay1Pulse.trigger(pulseDuration1);
         }
-        float tempoBrightness = tempoLightPulse.process(args.sampleTime) ? 1.f : 0.f;
-        lights[TEMPO_LIGHT].setBrightness(tempoBrightness);
 
-        // Set RGB values for colored LEDs to match screen cubes
-        // Delay 1 VU: Teal (#00ffb4) = R:0, G:1, B:0.7
-        lights[DELAY1_VU_LIGHT + 0].setBrightness(0.f);           // Red
-        lights[DELAY1_VU_LIGHT + 1].setBrightness(maxVU[0]);      // Green
-        lights[DELAY1_VU_LIGHT + 2].setBrightness(maxVU[0] * 0.7f); // Blue
+        delay2Phase += args.sampleTime;
+        float period2 = rack::math::clamp(delay2Seconds, 0.05f, tessellation::MAX_DELAY_SECONDS);
+        if (delay2Phase >= period2) {
+            delay2Phase -= period2;
+            float pulseDuration2 = rack::math::clamp(delay2Seconds * 0.15f, 0.03f, 0.12f);
+            delay2Pulse.trigger(pulseDuration2);
+        }
 
-        // Delay 2 VU: Magenta (#ff00ff) = R:1, G:0, B:1
-        lights[DELAY2_VU_LIGHT + 0].setBrightness(maxVU[1]);      // Red
-        lights[DELAY2_VU_LIGHT + 1].setBrightness(0.f);           // Green
-        lights[DELAY2_VU_LIGHT + 2].setBrightness(maxVU[1]);      // Blue
+        delay3Phase += args.sampleTime;
+        float period3 = rack::math::clamp(delay3Seconds, 0.05f, tessellation::MAX_DELAY_SECONDS);
+        if (delay3Phase >= period3) {
+            delay3Phase -= period3;
+            float pulseDuration3 = rack::math::clamp(delay3Seconds * 0.15f, 0.03f, 0.12f);
+            delay3Pulse.trigger(pulseDuration3);
+        }
 
-        // Delay 3 VU: Amber (#ffb400) = R:1, G:0.7, B:0
-        lights[DELAY3_VU_LIGHT + 0].setBrightness(maxVU[2]);      // Red
-        lights[DELAY3_VU_LIGHT + 1].setBrightness(maxVU[2] * 0.7f); // Green
-        lights[DELAY3_VU_LIGHT + 2].setBrightness(0.f);           // Blue
+        // Tempo light: Disabled (timing now shown on mix LEDs)
+        lights[TEMPO_LIGHT + 0].setBrightness(0.f);
+        lights[TEMPO_LIGHT + 1].setBrightness(0.f);
+        lights[TEMPO_LIGHT + 2].setBrightness(0.f);
 
-        // Mix LEDs with same colors
+        // Mix LEDs: Pulse brightness based on mix level (off when not pulsing)
+        auto mixBrightness = [](float v) {
+            float clamped = rack::math::clamp(v, 0.f, 1.f);
+            return std::pow(clamped, 0.7f);
+        };
+        float mix1Led = mixBrightness(mix1);
+        float mix2Led = mixBrightness(mix2);
+        float mix3Led = mixBrightness(mix3);
+
+        // LEDs only light up when pulsing, brightness scaled by mix level
+        float bright1 = delay1Pulse.process(args.sampleTime) ? mix1Led : 0.f;
+        float bright2 = delay2Pulse.process(args.sampleTime) ? mix2Led : 0.f;
+        float bright3 = delay3Pulse.process(args.sampleTime) ? mix3Led : 0.f;
+
         // Mix 1: Teal
         lights[MIX1_LIGHT + 0].setBrightness(0.f);
-        lights[MIX1_LIGHT + 1].setBrightness(mix1);
-        lights[MIX1_LIGHT + 2].setBrightness(mix1 * 0.7f);
+        lights[MIX1_LIGHT + 1].setBrightness(bright1);
+        lights[MIX1_LIGHT + 2].setBrightness(bright1 * 0.7f);
 
         // Mix 2: Magenta
-        lights[MIX2_LIGHT + 0].setBrightness(mix2);
+        lights[MIX2_LIGHT + 0].setBrightness(bright2);
         lights[MIX2_LIGHT + 1].setBrightness(0.f);
-        lights[MIX2_LIGHT + 2].setBrightness(mix2);
+        lights[MIX2_LIGHT + 2].setBrightness(bright2);
 
         // Mix 3: Amber
-        lights[MIX3_LIGHT + 0].setBrightness(mix3);
-        lights[MIX3_LIGHT + 1].setBrightness(mix3 * 0.7f);
+        lights[MIX3_LIGHT + 0].setBrightness(bright3);
+        lights[MIX3_LIGHT + 1].setBrightness(bright3 * 0.7f);
         lights[MIX3_LIGHT + 2].setBrightness(0.f);
     }
 };
 
 #ifndef SHAPETAKER_TESSELLATION_NO_WIDGET
+
+// Custom jewel LED sized between Small (10mm) and Medium (12mm) - trimmed to 8mm
+class TessellationJewelLED : public shapetaker::ui::JewelLEDBase<18> {
+private:
+    std::shared_ptr<window::Svg> housingSvg;
+
+    void drawHousing(const DrawArgs& args) const {
+        if (!housingSvg || !housingSvg->handle) {
+            return;
+        }
+
+        nvgSave(args.vg);
+        const float scaleX = box.size.x / housingSvg->handle->width;
+        const float scaleY = box.size.y / housingSvg->handle->height;
+        nvgScale(args.vg, scaleX, scaleY);
+        svgDraw(args.vg, housingSvg->handle);
+        nvgRestore(args.vg);
+    }
+
+public:
+    TessellationJewelLED() {
+        bgColor = nvgRGBA(0, 0, 0, 0);
+        borderColor = nvgRGBA(0, 0, 0, 0);
+        // Add RGB base colors for the MultiLightWidget
+        addBaseColor(nvgRGB(255, 0, 0));   // Red
+        addBaseColor(nvgRGB(0, 255, 0));   // Green
+        addBaseColor(nvgRGB(0, 0, 255));   // Blue
+        // Hardware-friendly lens: 8mm for a tighter fit
+        box.size = mm2px(Vec(8.f, 8.f));
+
+        // Use medium bezel artwork scaled down so the ring frames the glow cleanly
+        housingSvg = APP->window->loadSvg(asset::plugin(pluginInstance, "res/leds/jewel_led_medium.svg"));
+    }
+
+    void draw(const DrawArgs& args) override {
+        // Draw the LED/glow first, then overlay the bezel so everything stays concentric
+        ModuleLightWidget::draw(args);
+        drawHousing(args);
+    }
+};
+
 struct TessellationWidget : ModuleWidget {
+    // Draw panel background texture to match the other modules
+    void draw(const DrawArgs& args) override {
+        std::shared_ptr<Image> bg = APP->window->loadImage(asset::plugin(pluginInstance, "res/panels/vcv-panel-background.png"));
+        if (bg) {
+            NVGpaint paint = nvgImagePattern(args.vg, 0.f, 0.f, box.size.x, box.size.y, 0.f, bg->handle, 1.0f);
+            nvgBeginPath(args.vg);
+            nvgRect(args.vg, 0.f, 0.f, box.size.x, box.size.y);
+            nvgFillPaint(args.vg, paint);
+            nvgFill(args.vg);
+        }
+        ModuleWidget::draw(args);
+    }
+
     TessellationWidget(Tessellation* module) {
         setModule(module);
         setPanel(createPanel(asset::plugin(pluginInstance, "res/panels/Tessellation.svg")));
 
         using LayoutHelper = shapetaker::ui::LayoutHelper;
 
-        LayoutHelper::ScrewPositions::addStandardScrews<ScrewSilver>(
-            this,
-            LayoutHelper::getModuleWidth(LayoutHelper::ModuleWidth::WIDTH_26HP));
+        LayoutHelper::ScrewPositions::addStandardScrews<ScrewBlack>(this, box.size.x);
 
         auto svgPath = asset::plugin(pluginInstance, "res/panels/Tessellation.svg");
         LayoutHelper::PanelSVGParser parser(svgPath);
@@ -634,16 +699,11 @@ struct TessellationWidget : ModuleWidget {
         const std::array<const char*, 3> mixLightPositions = {
             "tess-mix1-light", "tess-mix2-light", "tess-mix3-light"
         };
-        const std::array<const char*, 3> vuLightPositions = {
-            "tess-delay1-vu-light", "tess-delay2-vu-light", "tess-delay3-vu-light"
-        };
-        auto addMixLights = [&](float knobCol, int mixLightId, int vuLightId, float rowPos, int delayIndex) {
+        auto addMixLights = [&](float knobCol, int mixLightId, float rowPos, int delayIndex) {
             if (!module) return;
             // Use RGB lights - all use the same type, color is set by brightness values
-            addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(
+            addChild(createLightCentered<TessellationJewelLED>(
                 centerPx(mixLightPositions[delayIndex], knobCol - 8.f, rowPos - 3.f), module, mixLightId));
-            addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(
-                centerPx(vuLightPositions[delayIndex], knobCol + 8.f, rowPos - 3.f), module, vuLightId));
             (void)delayIndex;  // Unused, color is set by RGB brightness values in process()
         };
 
@@ -661,16 +721,16 @@ struct TessellationWidget : ModuleWidget {
         // Safe: 10mm (knob radius) to 40mm (10+20+10)
         addParam(createParamCentered<ShapetakerKnobAltMedium>(centerPx("tess-time1", 20.f, row1), module, Tessellation::TIME1_PARAM));
         addParam(createParamCentered<rack::componentlibrary::LEDButton>(centerPx("tess-tap", 38.f, row1), module, Tessellation::TAP_PARAM));
-        if (module) addChild(createLightCentered<SmallLight<GreenLight>>(centerPx("tess-tempo-light", 38.f, row1), module, Tessellation::TEMPO_LIGHT));
+        // Tempo light removed - timing now shown on mix LEDs
 
         // === ROW 2: 4 small knobs (16mm each) ===
         // Available: 8mm to 124mm (116mm width)
         // 4 knobs need 4*8mm = 32mm for radii, 84mm for spacing
         // Spacing: 84/3 = 28mm between centers
-        addParam(createParamCentered<ShapetakerKnobAltSmall>(centerPx("tess-subdiv2", 16.f, row2), module, Tessellation::SUBDIV2_PARAM));
-        addParam(createParamCentered<ShapetakerKnobAltSmall>(centerPx("tess-time2", 44.f, row2), module, Tessellation::TIME2_PARAM));
+        addParam(createParamCentered<ShapetakerKnobAltSmall>(centerPx("tess-subdiv-2", 16.f, row2), module, Tessellation::SUBDIV2_PARAM));
+        addParam(createParamCentered<ShapetakerKnobAltMedium>(centerPx("tess-time-2", 44.f, row2), module, Tessellation::TIME2_PARAM));
         addParam(createParamCentered<ShapetakerKnobAltSmall>(centerPx("tess-subdiv3", 72.f, row2), module, Tessellation::SUBDIV3_PARAM));
-        addParam(createParamCentered<ShapetakerKnobAltSmall>(centerPx("tess-time3", 100.f, row2), module, Tessellation::TIME3_PARAM));
+        addParam(createParamCentered<ShapetakerKnobAltMedium>(centerPx("tess-time3", 100.f, row2), module, Tessellation::TIME3_PARAM));
 
         // === ROW 3: 6 small knobs (3 pairs) ===
         // Layout: MIX1 REPT1 | MIX2 REPT2 | MIX3 REPT3
@@ -678,15 +738,15 @@ struct TessellationWidget : ModuleWidget {
         // Plus 2 gaps of ~20mm = 94mm total, fits in 116mm
         addParam(createParamCentered<ShapetakerKnobAltSmall>(centerPx("tess-mix1", 14.f, row3), module, Tessellation::MIX1_PARAM));
         addParam(createParamCentered<ShapetakerKnobAltSmall>(centerPx("tess-repeats1", 32.f, row3), module, Tessellation::REPEATS1_PARAM));
-        addMixLights(23.f, Tessellation::MIX1_LIGHT, Tessellation::DELAY1_VU_LIGHT, row3, 0);
+        addMixLights(23.f, Tessellation::MIX1_LIGHT, row3, 0);
 
         addParam(createParamCentered<ShapetakerKnobAltSmall>(centerPx("tess-mix2", 52.f, row3), module, Tessellation::MIX2_PARAM));
         addParam(createParamCentered<ShapetakerKnobAltSmall>(centerPx("tess-repeats2", 70.f, row3), module, Tessellation::REPEATS2_PARAM));
-        addMixLights(61.f, Tessellation::MIX2_LIGHT, Tessellation::DELAY2_VU_LIGHT, row3, 1);
+        addMixLights(61.f, Tessellation::MIX2_LIGHT, row3, 1);
 
         addParam(createParamCentered<ShapetakerKnobAltSmall>(centerPx("tess-mix3", 90.f, row3), module, Tessellation::MIX3_PARAM));
         addParam(createParamCentered<ShapetakerKnobAltSmall>(centerPx("tess-repeats3", 108.f, row3), module, Tessellation::REPEATS3_PARAM));
-        addMixLights(99.f, Tessellation::MIX3_LIGHT, Tessellation::DELAY3_VU_LIGHT, row3, 2);
+        addMixLights(99.f, Tessellation::MIX3_LIGHT, row3, 2);
 
         // === ROW 4: 3 TONE knobs aligned with pair centers ===
         addParam(createParamCentered<ShapetakerKnobAltSmall>(centerPx("tess-tone1", 23.f, row4), module, Tessellation::TONE1_PARAM));
