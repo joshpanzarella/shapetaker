@@ -29,7 +29,7 @@ Gesture-based envelope generator with multi-speed outputs.
 ### 6. Incantation
 Sophisticated animated filter bank inspired by the Moog MF-105 MuRF pedal. 8-band filter system with polyphonic processing.
 
-### 7. Transmutation (26HP) - Flagship Module
+### 7. Transmutation (32HP) - Flagship Module
 Dual chord sequencer with 8x8 LED matrix, 40 alchemical symbols, JSON chord packs, and polyphonic outputs. Uses clean modular architecture with view/controller interfaces.
 
 ## Project Structure

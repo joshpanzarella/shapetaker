@@ -1594,55 +1594,121 @@ struct ShapetakerVintageSelector : app::ParamWidget {
     }
 }; */
 
-/* struct JewelLEDSmall : ModuleLightWidget {
+struct JewelLEDSmall : ModuleLightWidget {
+    widget::SvgWidget* sw = nullptr;
+
     JewelLEDSmall() {
-        // Set a fixed size
-        box.size = Vec(15, 15);
-        
+        // Set a smaller size to reduce glow radius
+        box.size = Vec(10, 10);
+
         // Try to load the jewel SVG, fallback to simple shape if it fails
-        widget::SvgWidget* sw = new widget::SvgWidget;
+        sw = new widget::SvgWidget;
         std::shared_ptr<Svg> svg = APP->window->loadSvg(asset::plugin(pluginInstance, "res/leds/jewel_led_small.svg"));
-        
+
         if (svg) {
             // SVG loaded successfully
             sw->setSvg(svg);
+            // Center the SVG within the smaller box (SVG is ~15px, box is 10px)
+            sw->box.pos = Vec(-2.5, -2.5);
             addChild(sw);
         }
-        
+
         // Set up proper RGB color mixing like RedGreenBlueLight
         addBaseColor(nvgRGB(0xff, 0x00, 0x00)); // Red channel
-        addBaseColor(nvgRGB(0x00, 0xff, 0x00)); // Green channel  
+        addBaseColor(nvgRGB(0x00, 0xff, 0x00)); // Green channel
         addBaseColor(nvgRGB(0x00, 0x00, 0xff)); // Blue channel
     }
-    
+
     void step() override {
         ModuleLightWidget::step();
-        
+
         if (module) {
             float r = module->lights[firstLightId + 0].getBrightness();
             float g = module->lights[firstLightId + 1].getBrightness();
             float b = module->lights[firstLightId + 2].getBrightness();
-            
+
             color = nvgRGBAf(r, g, b, fmaxf(r, g));
         }
     }
-    
+
     void draw(const DrawArgs& args) override {
         if (children.empty()) {
+            // Fallback drawing if SVG fails to load (centered on 5,5 instead of 7.5,7.5)
             nvgBeginPath(args.vg);
-            nvgCircle(args.vg, 7.5, 7.5, 7.2);
+            nvgCircle(args.vg, 5, 5, 4.8);
             nvgFillColor(args.vg, nvgRGB(0xc0, 0xc0, 0xc0));
             nvgFill(args.vg);
-            
+
             nvgBeginPath(args.vg);
-            nvgCircle(args.vg, 7.5, 7.5, 4.8);
+            nvgCircle(args.vg, 5, 5, 3.2);
             nvgFillColor(args.vg, nvgRGB(0x33, 0x33, 0x33));
             nvgFill(args.vg);
         }
-        
+
         ModuleLightWidget::draw(args);
     }
-}; */
+};
+
+struct JewelLEDCompact : ModuleLightWidget {
+    widget::SvgWidget* sw = nullptr;
+
+    JewelLEDCompact() {
+        // Intermediate size between Small (10px) and Medium (30px)
+        box.size = Vec(18.f, 18.f);
+
+        // Use the medium SVG, scaled to fit
+        sw = new widget::SvgWidget;
+        std::shared_ptr<Svg> svg = APP->window->loadSvg(asset::plugin(pluginInstance, "res/leds/jewel_led_medium.svg"));
+
+        if (svg) {
+            sw->setSvg(svg);
+            addChild(sw);
+        }
+
+        // Set up proper RGB color mixing
+        addBaseColor(nvgRGB(0xff, 0x00, 0x00));
+        addBaseColor(nvgRGB(0x00, 0xff, 0x00));
+        addBaseColor(nvgRGB(0x00, 0x00, 0xff));
+    }
+
+    void step() override {
+        ModuleLightWidget::step();
+
+        if (module) {
+            float r = module->lights[firstLightId + 0].getBrightness();
+            float g = module->lights[firstLightId + 1].getBrightness();
+            float b = module->lights[firstLightId + 2].getBrightness();
+
+            color = nvgRGBAf(r, g, b, fmaxf(fmaxf(r, g), b));
+        }
+    }
+
+    void draw(const DrawArgs& args) override {
+        constexpr float svgSize = 20.f;
+        float s = std::min(box.size.x, box.size.y) / svgSize;
+        float tx = (box.size.x - svgSize * s) * 0.5f;
+        float ty = (box.size.y - svgSize * s) * 0.5f;
+
+        nvgSave(args.vg);
+        nvgTranslate(args.vg, tx, ty);
+        nvgScale(args.vg, s, s);
+
+        if (children.empty()) {
+            nvgBeginPath(args.vg);
+            nvgCircle(args.vg, 10, 10, 9.6);
+            nvgFillColor(args.vg, nvgRGB(0xc0, 0xc0, 0xc0));
+            nvgFill(args.vg);
+
+            nvgBeginPath(args.vg);
+            nvgCircle(args.vg, 10, 10, 8.0);
+            nvgFillColor(args.vg, nvgRGB(0x33, 0x33, 0x33));
+            nvgFill(args.vg);
+        }
+
+        ModuleLightWidget::draw(args);
+        nvgRestore(args.vg);
+    }
+};
 
 struct JewelLEDMedium : ModuleLightWidget {
     widget::SvgWidget* sw = nullptr;

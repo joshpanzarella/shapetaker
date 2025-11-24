@@ -258,7 +258,7 @@ public:
         if (!module)
             return;
 
-        for (int i = 0; i < module->paramQuantities.size(); ++i) {
+        for (size_t i = 0; i < module->paramQuantities.size(); ++i) {
             rack::engine::ParamQuantity* pq = module->paramQuantities[i];
             if (!pq)
                 continue;
@@ -267,13 +267,13 @@ public:
 
         // Note: Input/Output port names are managed through configInput/configOutput
         // and stored in the module's inputInfos/outputInfos, not directly on the ports
-        for (int i = 0; i < (int)module->inputInfos.size(); ++i) {
+        for (size_t i = 0; i < module->inputInfos.size(); ++i) {
             if (module->inputInfos[i]) {
                 module->inputInfos[i]->name = normalizeInputLabel(module->inputInfos[i]->name);
             }
         }
 
-        for (int i = 0; i < (int)module->outputInfos.size(); ++i) {
+        for (size_t i = 0; i < module->outputInfos.size(); ++i) {
             if (module->outputInfos[i]) {
                 module->outputInfos[i]->name = normalizeOutputLabel(module->outputInfos[i]->name);
             }

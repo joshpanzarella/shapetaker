@@ -229,10 +229,7 @@ void HighResMatrixWidget::onButton(const event::Button& e) {
 
 void HighResMatrixWidget::onMatrixClick(int x, int y) {
     if (!view || !ctrl) return;
-    int cols = 8, rows = 8;
     int gs = view->getGridSteps();
-    if (gs == 16) { cols = rows = 4; }
-    else if (gs == 32) { cols = rows = 6; }
     int stepIndex = -1;
     if (gs == 16) stepIndex = y * 4 + x;
     else if (gs == 32) { if (y < 5) stepIndex = y * 6 + x; else if (y == 5 && x >= 2 && x <= 3) stepIndex = 30 + (x - 2); }
@@ -244,10 +241,7 @@ void HighResMatrixWidget::onMatrixClick(int x, int y) {
 
 void HighResMatrixWidget::onMatrixRightClick(int x, int y) {
     if (!view || !ctrl) return;
-    int cols = 8, rows = 8;
     int gs = view->getGridSteps();
-    if (gs == 16) { cols = rows = 4; }
-    else if (gs == 32) { cols = rows = 6; }
     int stepIndex = -1;
     if (gs == 16) stepIndex = y * 4 + x;
     else if (gs == 32) { if (y < 5) stepIndex = y * 6 + x; else if (y == 5 && x >= 2 && x <= 3) stepIndex = 30 + (x - 2); }

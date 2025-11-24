@@ -2906,7 +2906,7 @@ struct TransmutationWidget : ModuleWidget {
     TransmutationWidget(Transmutation* module) {
         setModule(module);
 
-        // 26HP = 131.318mm width
+        // 32HP = 162.56mm width
         setPanel(createPanel(asset::plugin(pluginInstance, "res/panels/Transmutation.svg")));
 
         // Add screws
@@ -2928,9 +2928,10 @@ struct TransmutationWidget : ModuleWidget {
         auto findTagForId = [&](const std::string& id) -> std::string {
             return parser.findTagForId(id);
         };
-        auto getAttr = [&](const std::string& tag, const std::string& key, float defVal) -> float {
-            return LayoutHelper::PanelSVGParser::getAttr(tag, key, defVal);
-        };
+        // getAttr helper removed - was unused
+        // auto getAttr = [&](const std::string& tag, const std::string& key, float defVal) -> float {
+        //     return LayoutHelper::PanelSVGParser::getAttr(tag, key, defVal);
+        // };
 
         // High-Resolution 8x8 Matrix positioned from <rect id="main_screen" x y width height>
         matrix = new HighResMatrixWidget(
@@ -2969,15 +2970,15 @@ struct TransmutationWidget : ModuleWidget {
                 return centerPx(id, defx, defy);
             };
             // Sequence A
-            // Hardware-realistic sizes: Medium for length, Small for BPM
-            addParam(createParamCentered<ShapetakerKnobMedium>(pos("seq_a_length", 15.950587f, 37.849998f), module, Transmutation::LENGTH_A_PARAM));
-            addParam(createParamCentered<ShapetakerKnobOscilloscopeSmall>(pos("main_bpm", 15.950588f, 18.322521f), module, Transmutation::INTERNAL_CLOCK_PARAM));
+            // Hardware-realistic sizes: Medium knobs for length and BPM, attenuverter for multiplier
+            addParam(createParamCentered<ShapetakerKnobAltMedium>(pos("seq_a_length", 15.950587f, 37.849998f), module, Transmutation::LENGTH_A_PARAM));
+            addParam(createParamCentered<ShapetakerKnobAltMedium>(pos("main_bpm", 15.950588f, 18.322521f), module, Transmutation::INTERNAL_CLOCK_PARAM));
             addParam(createParamCentered<ShapetakerAttenuverterOscilloscope>(pos("clk_mult_select", 34.340317f, 18.322521f), module, Transmutation::BPM_MULTIPLIER_PARAM));
             addMomentaryScaled(pos("a_play_btn", 22.586929f, 67.512939f), Transmutation::START_A_PARAM);
             addMomentaryScaled(pos("a_stop_btn", 22.784245f, 75.573959f), Transmutation::STOP_A_PARAM);
             addMomentaryScaled(pos("a_reset_btn", 22.784245f, 83.509323f), Transmutation::RESET_A_PARAM);
             // Sequence B
-            addParam(createParamCentered<ShapetakerKnobMedium>(pos("seq_b_length", 115.02555f, 37.849998f), module, Transmutation::LENGTH_B_PARAM));
+            addParam(createParamCentered<ShapetakerKnobAltMedium>(pos("seq_b_length", 115.02555f, 37.849998f), module, Transmutation::LENGTH_B_PARAM));
             addMomentaryScaled(pos("b_play_btn", 108.43727f, 67.450111f), Transmutation::START_B_PARAM);
             addMomentaryScaled(pos("b_stop_btn", 108.43727f, 75.511131f), Transmutation::STOP_B_PARAM);
             addMomentaryScaled(pos("b_reset_btn", 108.43728f, 83.446495f), Transmutation::RESET_B_PARAM);
