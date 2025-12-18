@@ -94,6 +94,8 @@ struct ClairaudientModule : Module, IOscilloscopeSource {
     // Anti-aliasing filters per voice (8 voices)
     shapetaker::dsp::VoiceArray<shapetaker::dsp::OnePoleLowpass, MAX_POLY_VOICES> antiAliasFilterLeft;
     shapetaker::dsp::VoiceArray<shapetaker::dsp::OnePoleLowpass, MAX_POLY_VOICES> antiAliasFilterRight;
+    shapetaker::dsp::VoiceArray<shapetaker::dsp::OnePoleLowpass, MAX_POLY_VOICES> antiAliasFilterLeftStage2;
+    shapetaker::dsp::VoiceArray<shapetaker::dsp::OnePoleLowpass, MAX_POLY_VOICES> antiAliasFilterRightStage2;
     shapetaker::dsp::VoiceArray<shapetaker::dsp::OnePoleLowpass, MAX_POLY_VOICES> highCutFilterLeft;
     shapetaker::dsp::VoiceArray<shapetaker::dsp::OnePoleLowpass, MAX_POLY_VOICES> highCutFilterRight;
 
@@ -145,6 +147,8 @@ struct ClairaudientModule : Module, IOscilloscopeSource {
     void resetFilters() {
         antiAliasFilterLeft.reset();
         antiAliasFilterRight.reset();
+        antiAliasFilterLeftStage2.reset();
+        antiAliasFilterRightStage2.reset();
         highCutFilterLeft.reset();
         highCutFilterRight.reset();
     }
@@ -274,6 +278,9 @@ struct ClairaudientModule : Module, IOscilloscopeSource {
         float shapedNoise = std::pow(clamp(oscNoiseAmount, 0.f, 1.f), 0.65f);
         float antiAliasCutoffHz = args.sampleRate * ANTI_ALIAS_CUTOFF;
         float invOversampleRate = 1.f / oversampleRate; // Pre-compute reciprocal for faster multiplication
+        bool doAntiAlias = oversample > 1;
+        float antiAliasAlpha = doAntiAlias ? shapetaker::dsp::OnePoleLowpass::computeAlpha(antiAliasCutoffHz, oversampleRate) : 0.f;
+        float highCutAlpha = (highCutEnabled ? shapetaker::dsp::OnePoleLowpass::computeAlpha(HIGH_CUT_HZ, args.sampleRate) : 0.f);
 
         // Parameter decimation: only read parameters every N samples for performance
         // ~0.7ms latency at 44.1kHz is imperceptible but saves ~15-20% CPU
@@ -369,7 +376,7 @@ struct ClairaudientModule : Module, IOscilloscopeSource {
             float xfadeClamped = clamp(xfade, 0.f, 1.f);
 
             // Add organic frequency drift (very subtle) for this voice - once per process() call
-            updateOrganicDrift(ch, args.sampleTime * oversample, driftAmount);
+            updateOrganicDrift(ch, args.sampleTime, driftAmount);
 
             // Pre-calculate frequencies outside oversample loop (major optimization)
             // Use exp2f() instead of std::pow(2.f, x) for ~2-3x faster computation
@@ -392,24 +399,10 @@ struct ClairaudientModule : Module, IOscilloscopeSource {
             float xfadeAngle = xfadeClamped * (float)M_PI_2;
             float xfadeCos = std::cos(xfadeAngle);
             float xfadeSin = std::sin(xfadeAngle);
-
-            // Pre-calculate stereo swap crossfade coefficients if needed
-            float swapT = 0.f, swapAngle1 = 0.f, swapAngle2 = 0.f;
-            float swapCos1 = 0.f, swapSin1 = 0.f, swapCos2 = 0.f, swapSin2 = 0.f;
-            bool useFirstHalf = (xfadeClamped <= 0.5f);
-            if (crossfadeMode == CROSSFADE_STEREO_SWAP) {
-                if (useFirstHalf) {
-                    swapT = xfadeClamped * 2.f;
-                    swapAngle1 = swapT * (float)M_PI_2;
-                    swapCos1 = std::cos(swapAngle1);
-                    swapSin1 = std::sin(swapAngle1);
-                } else {
-                    swapT = (xfadeClamped - 0.5f) * 2.f;
-                    swapAngle2 = swapT * (float)M_PI_2;
-                    swapCos2 = std::cos(swapAngle2);
-                    swapSin2 = std::sin(swapAngle2);
-                }
-            }
+            bool stereoSwap = (crossfadeMode == CROSSFADE_STEREO_SWAP);
+            // Width accent for swap: crossfeed with opposite polarity peaks at mid fade
+            float widthBlend = std::sin(xfadeClamped * (float)M_PI);
+            float widthGain = 0.35f * widthBlend;
 
             for (int os = 0; os < oversample; os++) {
 
@@ -454,22 +447,30 @@ struct ClairaudientModule : Module, IOscilloscopeSource {
                 float rightOutput;
 
                 // Use pre-calculated trig values to avoid sin/cos in hot loop
-                if (crossfadeMode == CROSSFADE_EQUAL_POWER) {
+                if (!stereoSwap) {
                     leftOutput = osc1A * xfadeCos + osc2A * xfadeSin;
                     rightOutput = osc1B * xfadeCos + osc2B * xfadeSin;
                 } else {
-                    if (useFirstHalf) {
-                        leftOutput = osc1A * swapCos1 + osc2B * swapSin1;
-                        rightOutput = osc1B * swapCos1 + osc1A * swapSin1;
-                    } else {
-                        leftOutput = osc2B * swapCos2 + osc2A * swapSin2;
-                        rightOutput = osc1A * swapCos2 + osc2B * swapSin2;
-                    }
+                    float baseLeft = osc1A * xfadeCos + osc2B * xfadeSin;
+                    float baseRight = osc1B * xfadeCos + osc2A * xfadeSin;
+                    // Out-of-phase crossfeed widens and makes swap distinct from equal-power
+                    float leftCross = -(osc1B * (1.f - xfadeClamped) + osc2A * xfadeClamped);
+                    float rightCross = -(osc1A * (1.f - xfadeClamped) + osc2B * xfadeClamped);
+                    leftOutput = baseLeft + widthGain * leftCross;
+                    rightOutput = baseRight + widthGain * rightCross;
                 }
 
                 // Apply anti-aliasing filter to each channel separately for true stereo
-                float filteredLeft = antiAliasFilterLeft[ch].process(leftOutput, antiAliasCutoffHz, oversampleRate);
-                float filteredRight = antiAliasFilterRight[ch].process(rightOutput, antiAliasCutoffHz, oversampleRate);
+                float filteredLeft = doAntiAlias
+                    ? antiAliasFilterLeftStage2[ch].processWithAlpha(
+                        antiAliasFilterLeft[ch].processWithAlpha(leftOutput, antiAliasAlpha),
+                        antiAliasAlpha)
+                    : leftOutput;
+                float filteredRight = doAntiAlias
+                    ? antiAliasFilterRightStage2[ch].processWithAlpha(
+                        antiAliasFilterRight[ch].processWithAlpha(rightOutput, antiAliasAlpha),
+                        antiAliasAlpha)
+                    : rightOutput;
 
                 finalLeft += filteredLeft;
                 finalRight += filteredRight;
@@ -487,9 +488,9 @@ struct ClairaudientModule : Module, IOscilloscopeSource {
                 outR += nR;
             }
 
-            if (highCutEnabled) {
-                outL = highCutFilterLeft[ch].process(outL, HIGH_CUT_HZ, args.sampleRate);
-                outR = highCutFilterRight[ch].process(outR, HIGH_CUT_HZ, args.sampleRate);
+            if (highCutEnabled && highCutAlpha > 0.f) {
+                outL = highCutFilterLeft[ch].processWithAlpha(outL, highCutAlpha);
+                outR = highCutFilterRight[ch].processWithAlpha(outR, highCutAlpha);
             }
 
             outputs[LEFT_OUTPUT].setVoltage(outL, ch);
@@ -562,45 +563,7 @@ private:
     }
 };
 
-struct KnobShadowWidget : widget::TransparentWidget {
-    float padding = 6.f;
-    float alpha = 0.32f;
-    float offset = 0.f;
-    float verticalScale = 0.7f;
-
-    KnobShadowWidget(const Vec& knobSize, float paddingPx, float alpha_) {
-        padding = paddingPx;
-        alpha = alpha_;
-        box.size = knobSize.plus(Vec(padding * 2.f, padding * 2.f));
-        offset = padding * 0.48f;
-        verticalScale = 0.6f;
-    }
-
-    void draw(const DrawArgs& args) override {
-        Vec center = box.size.div(2.f);
-        float outerR = std::max(box.size.x, box.size.y) * 0.5f;
-        float innerR = std::max(0.f, outerR - padding);
-
-        nvgSave(args.vg);
-        nvgTranslate(args.vg, center.x, center.y + offset);
-        nvgScale(args.vg, 1.f, verticalScale);
-
-        NVGpaint paint = nvgRadialGradient(
-            args.vg,
-            0.f,
-            0.f,
-            innerR * 0.25f,
-            outerR,
-            nvgRGBAf(0.f, 0.f, 0.f, alpha),
-            nvgRGBAf(0.f, 0.f, 0.f, 0.f));
-        nvgBeginPath(args.vg);
-        nvgCircle(args.vg, 0.f, 0.f, outerR);
-        nvgFillPaint(args.vg, paint);
-        nvgFill(args.vg);
-
-        nvgRestore(args.vg);
-    }
-};
+// KnobShadowWidget is now defined in plugin.hpp and shared across all modules
 
 struct ClairaudientWidget : ModuleWidget {
     // Draw panel background texture to match Transmutation
@@ -629,17 +592,9 @@ struct ClairaudientWidget : ModuleWidget {
         LayoutHelper::PanelSVGParser parser(svgPath);
         auto centerPx = LayoutHelper::createCenterPxHelper(parser);
 
-        auto addKnobWithShadow = [&](app::ParamWidget* knob) {
-            if (!knob) {
-                return;
-            }
-            float diameter = std::max(knob->box.size.x, knob->box.size.y);
-            float padding = std::max(6.f, std::min(diameter * 0.26f, 14.f));
-            float alpha = std::max(0.26f, std::min(0.42f, 0.2f + diameter * 0.0035f));
-            auto* shadow = new KnobShadowWidget(knob->box.size, padding, alpha);
-            shadow->box.pos = knob->box.pos.minus(Vec(padding, padding));
-            addChild(shadow);
-            addParam(knob);
+        // Use global shadow helper from plugin.hpp
+        auto addKnobWithShadow = [this](app::ParamWidget* knob) {
+            ::addKnobWithShadow(this, knob);
         };
 
         // V/Z oscillator large frequency knobs (alt style)

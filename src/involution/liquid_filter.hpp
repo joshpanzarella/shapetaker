@@ -57,13 +57,12 @@ private:
 
     // Multiple saturation curves for different analog characteristics
     float saturate(float input, float drive) {
-        drive = rack::math::clamp(drive, 0.1f, 10.f);
+        drive = rack::math::clamp(drive, 0.1f, 12.f);
 
-        // Expand the saturation headroom so nominal ±5V signals remain full-scale
-        // while still letting the shaper tame runaway resonance peaks.
-        constexpr float SATURATION_HEADROOM = 18.f;
+        // Lower headroom to let harmonics through sooner; still protect runaway resonance.
+        constexpr float SATURATION_HEADROOM = 12.f;
         float normalized = (input * drive) / SATURATION_HEADROOM;
-        normalized = rack::math::clamp(normalized, -2.5f, 2.5f);
+        normalized = rack::math::clamp(normalized, -2.8f, 2.8f);
 
         switch (satMode) {
             case SOFT_CLIP:
@@ -117,20 +116,20 @@ private:
     }
 
     float driveSaturate(float input, float drive) {
-        drive = rack::math::clamp(drive, 1.f, 8.f);
-        float driveMix = rack::math::clamp((drive - 1.f) / 7.f, 0.f, 1.f);
+        drive = rack::math::clamp(drive, 1.f, 9.f);
+        float driveMix = rack::math::clamp((drive - 1.f) / 8.f, 0.f, 1.f);
 
         // Pre-emphasis: add a small boost before saturation to get character.
         auto lerp = [](float a, float b, float t) {
             return a + (b - a) * t;
         };
 
-        float driven = input * lerp(1.f, drive * 0.8f + 0.2f, driveMix);
-        float shaped = saturate(driven, 1.f);
+        float driven = input * lerp(1.f, drive * 0.9f + 0.2f, driveMix);
+        float shaped = saturate(driven, 1.0f);
 
         // Drive-dependent gain scaling keeps unity at low settings and normalises hot drive.
-        float makeup = lerp(1.f, 1.0f / (drive * 0.6f + 0.4f), driveMix);
-        float wet = lerp(0.25f, 0.85f, driveMix);
+        float makeup = lerp(1.f, 1.0f / (drive * 0.5f + 0.5f), driveMix);
+        float wet = lerp(0.35f, 0.95f, driveMix);
         float dry = 1.f - wet;
 
         float result = dry * input + wet * shaped * makeup;
@@ -179,10 +178,10 @@ public:
         float resonanceClamped = rack::math::clamp(resonance, resonanceMin, resonanceSoftMax);
         float resonanceNormalized = rack::math::clamp((resonanceClamped - resonanceMin) / resonanceRange, 0.f, 1.f);
 
-        float cutoffNormalized = rack::math::clamp(cutoff / 1200.f, 0.f, 1.f);
+        float cutoffNormalized = rack::math::clamp(cutoff / 900.f, 0.f, 1.f);
         float lowFreqPenalty = 1.f - cutoffNormalized;
-        float resonanceScale = 1.f - 0.8f * lowFreqPenalty * resonanceNormalized;
-        resonanceScale = rack::math::clamp(resonanceScale, 0.5f, 1.f);
+        float resonanceScale = 1.f - 0.6f * lowFreqPenalty * resonanceNormalized;
+        resonanceScale = rack::math::clamp(resonanceScale, 0.55f, 1.05f);
 
         resonance = resonanceClamped * resonanceScale;
 
@@ -204,13 +203,13 @@ public:
             g = rack::math::clamp(g, 0.f, 0.99f);  // Prevent instability
 
             // Distribute resonance across stages with guarded damping factors
-            constexpr float stageWeights[3] = {0.25f, 0.45f, 0.6f};
-            float k1 = 2.f * (1.f - rack::math::clamp(resonance * stageWeights[0], 0.f, 0.95f));
-            float k2 = 2.f * (1.f - rack::math::clamp(resonance * stageWeights[1], 0.f, 0.95f));
-            float k3 = 2.f * (1.f - rack::math::clamp(resonance * stageWeights[2], 0.f, 0.95f));
-            k1 = rack::math::clamp(k1, 0.2f, 1.999f);
-            k2 = rack::math::clamp(k2, 0.2f, 1.999f);
-            k3 = rack::math::clamp(k3, 0.2f, 1.999f);
+            constexpr float stageWeights[3] = {0.3f, 0.5f, 0.7f};
+            float k1 = 2.f * (1.f - rack::math::clamp(resonance * stageWeights[0], 0.f, 0.92f));
+            float k2 = 2.f * (1.f - rack::math::clamp(resonance * stageWeights[1], 0.f, 0.92f));
+            float k3 = 2.f * (1.f - rack::math::clamp(resonance * stageWeights[2], 0.f, 0.92f));
+            k1 = rack::math::clamp(k1, 0.15f, 1.999f);
+            k2 = rack::math::clamp(k2, 0.15f, 1.999f);
+            k3 = rack::math::clamp(k3, 0.15f, 1.999f);
 
             // Cascade the three 2-pole stages
             x = stage1.process(x, g, k1);
@@ -232,10 +231,10 @@ public:
 
         // Apply resonance-dependent gain compensation so peak levels stay near ±5V
         // even when the control is maxed and the cutoff is very low.
-        float resonanceGainComp = 1.f - 0.25f * resonanceNormalized;
-        float lowFreqComp = 1.f - 0.4f * resonanceNormalized * lowFreqPenalty;
-        resonanceGainComp = rack::math::clamp(resonanceGainComp, 0.55f, 1.f);
-        lowFreqComp = rack::math::clamp(lowFreqComp, 0.5f, 1.f);
+        float resonanceGainComp = 1.f - 0.18f * resonanceNormalized;
+        float lowFreqComp = 1.f - 0.32f * resonanceNormalized * lowFreqPenalty;
+        resonanceGainComp = rack::math::clamp(resonanceGainComp, 0.65f, 1.05f);
+        lowFreqComp = rack::math::clamp(lowFreqComp, 0.6f, 1.05f);
         output *= resonanceGainComp * lowFreqComp;
 
         // Final safety shaping to corral extreme resonant peaks without

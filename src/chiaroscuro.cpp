@@ -382,35 +382,44 @@ struct Chiaroscuro : Module {
         float prevInput = 0.0f;
         float lp1 = 0.0f;
         float lp2 = 0.0f;
+        float lp3 = 0.0f;
         float a1 = 0.0f;
         float b1 = 0.0f;
         float a2 = 0.0f;
         float b2 = 0.0f;
+        float a3 = 0.0f;
+        float b3 = 0.0f;
 
         void configure(float baseSampleRate, int newFactor) {
             factor = rack::math::clamp(newFactor, 1, 8);
             bypass = (factor <= 1);
             if (bypass) {
-                a1 = b1 = a2 = b2 = 0.0f;
+                a1 = b1 = a2 = b2 = a3 = b3 = 0.0f;
                 return;
             }
 
             float oversampleRate = baseSampleRate * factor;
-            float cutoff = baseSampleRate * 0.45f; // Keep below Nyquist of base rate
+            float cutoff = baseSampleRate * 0.38f; // Keep below Nyquist of base rate with more attenuation
             float alpha1 = expf(-2.0f * M_PI * cutoff / oversampleRate);
             a1 = 1.0f - alpha1;
             b1 = alpha1;
 
-            float cutoff2 = cutoff * 0.6f; // Slightly lower for second pole
+            float cutoff2 = cutoff * 0.55f; // Slightly lower for second pole
             float alpha2 = expf(-2.0f * M_PI * cutoff2 / oversampleRate);
             a2 = 1.0f - alpha2;
             b2 = alpha2;
+
+            float cutoff3 = cutoff2 * 0.55f; // Third pole for extra rejection
+            float alpha3 = expf(-2.0f * M_PI * cutoff3 / oversampleRate);
+            a3 = 1.0f - alpha3;
+            b3 = alpha3;
         }
 
         void reset() {
             prevInput = 0.0f;
             lp1 = 0.0f;
             lp2 = 0.0f;
+            lp3 = 0.0f;
         }
 
         float filter(float input) {
@@ -419,7 +428,8 @@ struct Chiaroscuro : Module {
             }
             lp1 = a1 * input + b1 * lp1;
             lp2 = a2 * lp1 + b2 * lp2;
-            return lp2;
+            lp3 = a3 * lp2 + b3 * lp3;
+            return lp3;
         }
     };
 
@@ -440,6 +450,12 @@ struct Chiaroscuro : Module {
     // Smoothed distortion value for LED color calculation (same value LEDs use)
     float smoothed_distortion_for_leds = 0.0f;
 
+    // Audio-rate smoothing for control CVs
+    float smoothed_drive = 0.0f;
+    float smoothed_mix = 0.0f;
+    float smoothed_type = 0.0f;
+    bool smoothersInitialized = false;
+
     // Cached LED color for sharing with widgets (calculated once per process cycle)
     shapetaker::RGBColor currentLEDColor;
 
@@ -458,6 +474,14 @@ struct Chiaroscuro : Module {
     float prev_distortion = 0.0f;
     float prev_drive = 0.0f;
     float prev_mix = 0.0f;
+
+    // Cached smoothing coefficients (updated on sample-rate changes)
+    float displaySmoothFast = 0.0f;
+    float displaySmoothSlow = 0.0f;
+    float controlSmoothCoeff = 0.0f;
+    float typeSmoothCoeff = 0.0f;
+    float levelSmoothCoeff = 0.0f;
+    float makeupSmoothCoeff = 0.0f;
 
     // Sidechain mode (context menu): 0=Enhancement, 1=Ducking, 2=Direct
     int sidechainMode = 0;
@@ -492,22 +516,26 @@ struct Chiaroscuro : Module {
         
         shapetaker::ParameterHelper::configAudioOutput(this, AUDIO_L_OUTPUT, "L");
         shapetaker::ParameterHelper::configAudioOutput(this, AUDIO_R_OUTPUT, "R");
-        detector.setTiming(10.0f, 200.0f);
-        
         // Initialize distortion smoothing - fast enough to be responsive but slow enough to avoid clicks
         distortion_slew.setRiseFall(1000.f, 1000.f);
 
         currentSampleRate = APP->engine->getSampleRate();
+        detector.setTiming(10.0f, 200.0f, currentSampleRate);
+        updateSmoothingCoeffs();
         configureOversampling();
         resetLevelTracking();
+        resetSmoothers();
 
         shapetaker::ui::LabelFormatter::normalizeModuleControls(this);
     }
     
     void onSampleRateChange() override {
         currentSampleRate = APP->engine->getSampleRate();
+        detector.setTiming(10.0f, 200.0f, currentSampleRate);
+        updateSmoothingCoeffs();
         configureOversampling();
         resetLevelTracking();
+        resetSmoothers();
     }
 
     void resetLevelTracking() {
@@ -523,6 +551,26 @@ struct Chiaroscuro : Module {
         for (auto& state : oversampleStateR) {
             state.reset();
         }
+    }
+
+    void resetSmoothers() {
+        smoothersInitialized = false;
+        smoothed_drive = 0.0f;
+        smoothed_mix = 0.0f;
+        smoothed_type = 0.0f;
+    }
+
+    void updateSmoothingCoeffs() {
+        float sampleTime = 1.0f / std::max(currentSampleRate, 1.0f);
+        auto coeffForHz = [sampleTime](float hz) {
+            return 1.0f - expf(-2.0f * M_PI * hz * sampleTime);
+        };
+        displaySmoothFast = coeffForHz(15.0f);
+        displaySmoothSlow = coeffForHz(2.0f);
+        controlSmoothCoeff = coeffForHz(60.0f);  // ~60 Hz for CV smoothing
+        typeSmoothCoeff = coeffForHz(80.0f);     // slightly quicker to catch CV moves
+        levelSmoothCoeff = displaySmoothFast;    // 15 Hz
+        makeupSmoothCoeff = coeffForHz(6.0f);
     }
 
     void configureOversampling() {
@@ -569,8 +617,10 @@ struct Chiaroscuro : Module {
     }
 
     void process(const ProcessArgs& args) override {
-        // Update polyphonic channel count and set outputs
-        int channels = polyProcessor.updateChannels(inputs[AUDIO_L_INPUT], {outputs[AUDIO_L_OUTPUT], outputs[AUDIO_R_OUTPUT]});
+        // Update polyphonic channel count and set outputs (use max of L/R for full stereo poly)
+        int channels = polyProcessor.updateChannels(
+            {inputs[AUDIO_L_INPUT], inputs[AUDIO_R_INPUT]},
+            {outputs[AUDIO_L_OUTPUT], outputs[AUDIO_R_OUTPUT]});
         
         // Link switch state
         bool linked = params[LINK_PARAM].getValue() > 0.5f;
@@ -581,32 +631,49 @@ struct Chiaroscuro : Module {
         sidechain = clamp(fabsf(sidechain) * 0.1f, 0.0f, 1.0f);
         
         float sc_env = detector.process(sidechain);
+        lights[SIDECHAIN_LED].setBrightness(sc_env);
         
         // Global parameters (shared across all voices)
-        // Drive parameter with CV
-        float drive = params[DRIVE_PARAM].getValue();
+        // Drive parameter with CV (smoothed to avoid zippering)
+        float driveTarget = params[DRIVE_PARAM].getValue();
         if (inputs[DRIVE_CV_INPUT].isConnected()) {
             float cv_amount = params[DRIVE_ATT_PARAM].getValue(); // -1.0 to +1.0
             float cv_voltage = inputs[DRIVE_CV_INPUT].getVoltage(); // Typically 0-10V or -5V to +5V
-            drive += (cv_voltage / 10.0f) * cv_amount; // 10V CV = 100% parameter change when attenuverter = 100%
+            driveTarget += (cv_voltage / 10.0f) * cv_amount; // 10V CV = 100% parameter change when attenuverter = 100%
         }
-        drive = clamp(drive, 0.0f, 1.0f);
+        driveTarget = clamp(driveTarget, 0.0f, 1.0f);
 
-        // Mix parameter with CV
-        float mix = params[MIX_PARAM].getValue();
+        // Mix parameter with CV (smoothed to avoid zippering)
+        float mixTarget = params[MIX_PARAM].getValue();
         if (inputs[MIX_CV_INPUT].isConnected()) {
             float cv_amount = params[MIX_ATT_PARAM].getValue(); // -1.0 to +1.0
             float cv_voltage = inputs[MIX_CV_INPUT].getVoltage(); // Typically 0-10V or -5V to +5V
-            mix += (cv_voltage / 10.0f) * cv_amount; // 10V CV = 100% parameter change when attenuverter = 100%
+            mixTarget += (cv_voltage / 10.0f) * cv_amount; // 10V CV = 100% parameter change when attenuverter = 100%
         }
-        mix = clamp(mix, 0.0f, 1.0f);
+        mixTarget = clamp(mixTarget, 0.0f, 1.0f);
         
-        int distortion_type = (int)params[TYPE_PARAM].getValue();
+        // Distortion type with CV (light smoothing to prevent chatter)
+        float typeTarget = params[TYPE_PARAM].getValue();
         if (inputs[TYPE_CV_INPUT].isConnected()) {
             float cv = inputs[TYPE_CV_INPUT].getVoltage() * 0.1f;
-            distortion_type = (int)(params[TYPE_PARAM].getValue() + cv * 6.0f);
+            typeTarget = params[TYPE_PARAM].getValue() + cv * 6.0f;
         }
-        distortion_type = clamp(distortion_type, 0, 5);
+        typeTarget = clamp(typeTarget, 0.0f, 5.0f);
+
+        if (!smoothersInitialized) {
+            smoothed_drive = driveTarget;
+            smoothed_mix = mixTarget;
+            smoothed_type = typeTarget;
+            smoothersInitialized = true;
+        } else {
+            smoothed_drive += controlSmoothCoeff * (driveTarget - smoothed_drive);
+            smoothed_mix += controlSmoothCoeff * (mixTarget - smoothed_mix);
+            smoothed_type += typeSmoothCoeff * (typeTarget - smoothed_type);
+        }
+
+        float drive = clamp(smoothed_drive, 0.0f, 1.0f);
+        float mix = clamp(smoothed_mix, 0.0f, 1.0f);
+        int distortion_type = clamp((int)std::round(smoothed_type), 0, 5);
         
         // Distortion amount parameter with CV
         float dist_amount = params[DIST_PARAM].getValue();
@@ -617,39 +684,10 @@ struct Chiaroscuro : Module {
         }
         dist_amount = clamp(dist_amount, 0.0f, 1.0f);
 
-        // Store processed values for UI display (pixel ring)
+        // Store processed values for UI display (pixel ring) using smoothed controls
         processed_distortion = dist_amount;
         processed_drive = drive;
         processed_mix = mix;
-
-        // Apply adaptive smoothing to display values to prevent audio-rate flickering
-        // Calculate rate of change for each parameter
-        float dist_rate = fabsf(processed_distortion - prev_distortion) / args.sampleTime;
-        float drive_rate = fabsf(processed_drive - prev_drive) / args.sampleTime;
-        float mix_rate = fabsf(processed_mix - prev_mix) / args.sampleTime;
-
-        // Update previous values
-        prev_distortion = processed_distortion;
-        prev_drive = processed_drive;
-        prev_mix = processed_mix;
-
-        // Adaptive cutoff frequency: good response up to 10Hz, then averaging above
-        // Rate threshold of ~6.28 corresponds to 10Hz sine wave at full amplitude
-        float rate_threshold = 6.28f; // 2 * pi * 10Hz
-
-        // Calculate adaptive cutoff frequencies
-        float dist_cutoff = (dist_rate > rate_threshold) ? 2.0f : 15.0f; // 2Hz avg, 15Hz responsive
-        float drive_cutoff = (drive_rate > rate_threshold) ? 2.0f : 15.0f;
-        float mix_cutoff = (mix_rate > rate_threshold) ? 2.0f : 15.0f;
-
-        // Apply adaptive smoothing filters
-        float dist_smooth_factor = 1.0f - expf(-2.0f * M_PI * dist_cutoff * args.sampleTime);
-        float drive_smooth_factor = 1.0f - expf(-2.0f * M_PI * drive_cutoff * args.sampleTime);
-        float mix_smooth_factor = 1.0f - expf(-2.0f * M_PI * mix_cutoff * args.sampleTime);
-
-        smoothed_distortion_display += (processed_distortion - smoothed_distortion_display) * dist_smooth_factor;
-        smoothed_drive_display += (processed_drive - smoothed_drive_display) * drive_smooth_factor;
-        smoothed_mix_display += (processed_mix - smoothed_mix_display) * mix_smooth_factor;
 
         // Enhanced sidechain behavior with three modes
         float combined_distortion, effective_drive, effective_mix;
@@ -701,6 +739,32 @@ struct Chiaroscuro : Module {
         float smoothed_distortion = distortion_slew.process(args.sampleTime, combined_distortion);
         // Store for LED color matching in dot matrix
         smoothed_distortion_for_leds = smoothed_distortion;
+        processed_distortion = smoothed_distortion;
+        processed_drive = drive;
+        processed_mix = mix;
+
+        // Apply adaptive smoothing to display values to prevent audio-rate flickering
+        // Calculate rate of change for each parameter
+        float dist_rate = fabsf(processed_distortion - prev_distortion) / args.sampleTime;
+        float drive_rate = fabsf(processed_drive - prev_drive) / args.sampleTime;
+        float mix_rate = fabsf(processed_mix - prev_mix) / args.sampleTime;
+
+        // Update previous values
+        prev_distortion = processed_distortion;
+        prev_drive = processed_drive;
+        prev_mix = processed_mix;
+
+        // Adaptive cutoff frequency: good response up to 10Hz, then averaging above
+        // Rate threshold of ~6.28 corresponds to 10Hz sine wave at full amplitude
+        float rate_threshold = 6.28f; // 2 * pi * 10Hz
+
+        float dist_smooth_factor = (dist_rate > rate_threshold) ? displaySmoothSlow : displaySmoothFast;
+        float drive_smooth_factor = (drive_rate > rate_threshold) ? displaySmoothSlow : displaySmoothFast;
+        float mix_smooth_factor = (mix_rate > rate_threshold) ? displaySmoothSlow : displaySmoothFast;
+
+        smoothed_distortion_display += (processed_distortion - smoothed_distortion_display) * dist_smooth_factor;
+        smoothed_drive_display += (processed_drive - smoothed_drive_display) * drive_smooth_factor;
+        smoothed_mix_display += (processed_mix - smoothed_mix_display) * mix_smooth_factor;
 
         // The actual distortion amount used in processing - use effective drive for sidechain mode
         float distortion_amount = smoothed_distortion * effective_drive;
@@ -719,8 +783,6 @@ struct Chiaroscuro : Module {
         
         const float normalizationVoltage = NOMINAL_LEVEL;
         const float invNormalization = 1.0f / normalizationVoltage;
-        const float levelSmoothing = 1.0f - expf(-2.0f * M_PI * 15.0f * args.sampleTime);
-        const float makeupSmoothing = 1.0f - expf(-2.0f * M_PI * 6.0f * args.sampleTime);
         const float minLevel = 1e-4f;
 
         // Process each voice
@@ -813,13 +875,13 @@ struct Chiaroscuro : Module {
             // Track RMS-like envelopes for wet/dry signals
             float cleanAbsL = fabsf(vca_l);
             float wetAbsL = fabsf(wet_l);
-            cleanLevelL[ch] += (cleanAbsL - cleanLevelL[ch]) * levelSmoothing;
-            wetLevelL[ch] += (wetAbsL - wetLevelL[ch]) * levelSmoothing;
+            cleanLevelL[ch] += (cleanAbsL - cleanLevelL[ch]) * levelSmoothCoeff;
+            wetLevelL[ch] += (wetAbsL - wetLevelL[ch]) * levelSmoothCoeff;
 
             float cleanAbsR = fabsf(vca_r);
             float wetAbsR = fabsf(wet_r);
-            cleanLevelR[ch] += (cleanAbsR - cleanLevelR[ch]) * levelSmoothing;
-            wetLevelR[ch] += (wetAbsR - wetLevelR[ch]) * levelSmoothing;
+            cleanLevelR[ch] += (cleanAbsR - cleanLevelR[ch]) * levelSmoothCoeff;
+            wetLevelR[ch] += (wetAbsR - wetLevelR[ch]) * levelSmoothCoeff;
 
             float desiredGainL = 1.0f;
             float desiredGainR = 1.0f;
@@ -828,13 +890,13 @@ struct Chiaroscuro : Module {
                 desiredGainL = (cleanLevelL[ch] > minLevel) ? cleanLevelL[ch] / wetLevelL[ch] : 1.0f;
             }
             desiredGainL = clamp(desiredGainL, 0.25f, 4.0f);
-            makeupGainL[ch] += (desiredGainL - makeupGainL[ch]) * makeupSmoothing;
+            makeupGainL[ch] += (desiredGainL - makeupGainL[ch]) * makeupSmoothCoeff;
 
             if (wetLevelR[ch] > minLevel) {
                 desiredGainR = (cleanLevelR[ch] > minLevel) ? cleanLevelR[ch] / wetLevelR[ch] : 1.0f;
             }
             desiredGainR = clamp(desiredGainR, 0.25f, 4.0f);
-            makeupGainR[ch] += (desiredGainR - makeupGainR[ch]) * makeupSmoothing;
+            makeupGainR[ch] += (desiredGainR - makeupGainR[ch]) * makeupSmoothCoeff;
 
             float compensated_l = wet_l * makeupGainL[ch];
             float compensated_r = wet_r * makeupGainR[ch];
@@ -970,31 +1032,32 @@ struct PixelRingWidget : TransparentWidget {
         }
 
         // Get base colors based on distortion type (retro palette)
+        // Each type has unique distortedColor for clear visual distinction
         Pixel cleanColor, distortedColor;
         switch (distortionType) {
-            case 0: // Hard Clip - classic green/black computer terminal
+            case 0: // Hard Clip - classic green terminal to bright red
                 cleanColor = Pixel(0, 255, 0);
-                distortedColor = Pixel(255, 0, 0);
+                distortedColor = Pixel(255, 0, 0);  // Bright Red
                 break;
-            case 1: // Wave Fold - amber monochrome
+            case 1: // Wave Fold - amber to deep orange red
                 cleanColor = Pixel(255, 191, 0);
-                distortedColor = Pixel(255, 100, 0);
+                distortedColor = Pixel(255, 69, 0);  // Deep Orange (OrangeRed)
                 break;
-            case 2: // Bit Crush - classic C64 blue/cyan
+            case 2: // Bit Crush - cyan to electric blue
                 cleanColor = Pixel(0, 255, 255);
-                distortedColor = Pixel(0, 0, 255);
+                distortedColor = Pixel(0, 100, 255);  // Electric Blue
                 break;
-            case 3: // Destroy - aggressive red/orange
+            case 3: // Destroy - yellow to crimson
                 cleanColor = Pixel(255, 255, 0);
-                distortedColor = Pixel(255, 0, 0);
+                distortedColor = Pixel(220, 20, 60);  // Crimson
                 break;
-            case 4: // Ring Mod - retro purple/magenta
+            case 4: // Ring Mod - cool white to magenta
                 cleanColor = Pixel(255, 255, 255);
-                distortedColor = Pixel(255, 0, 255);
+                distortedColor = Pixel(255, 0, 255);  // Magenta
                 break;
-            case 5: // Tube Sat - warm white/orange
+            case 5: // Tube Sat - warm white to gold
                 cleanColor = Pixel(255, 220, 160);
-                distortedColor = Pixel(255, 100, 0);
+                distortedColor = Pixel(255, 165, 0);  // Gold
                 break;
             default:
                 cleanColor = Pixel(255, 255, 255);
@@ -1202,7 +1265,7 @@ struct ChiaroscuroWidget : ModuleWidget {
         addOutput(createOutputCentered<ShapetakerBNCPort>(centerPx("audio-out-r", 50.997887f, 114.8209f), module, Chiaroscuro::AUDIO_R_OUTPUT));
         
         // Main VCA knob
-        addParam(createParamCentered<ShapetakerKnobAltMedium>(centerPx("vca-knob", 18.328495f, 50.193539f), module, Chiaroscuro::VCA_PARAM));
+        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltMedium>(centerPx("vca-knob", 18.328495f, 50.193539f), module, Chiaroscuro::VCA_PARAM));
         
         // VCA CV input
         addInput(createInputCentered<ShapetakerBNCPort>(centerPx("vca-cv", 7.5756836f, 98.635521f), module, Chiaroscuro::VCA_CV_INPUT));
@@ -1224,19 +1287,19 @@ struct ChiaroscuroWidget : ModuleWidget {
         addInput(createInputCentered<ShapetakerBNCPort>(centerPx("dist-type-cv", 36.523819f, 82.450134f), module, Chiaroscuro::TYPE_CV_INPUT));
         
         // Distortion knob
-        addParam(createParamCentered<ShapetakerKnobAltSmall>(centerPx("dist-knob", 50.997887f, 66.264755f), module, Chiaroscuro::DIST_PARAM));
+        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltSmall>(centerPx("dist-knob", 50.997887f, 66.264755f), module, Chiaroscuro::DIST_PARAM));
 
         // Distortion CV input
         addInput(createInputCentered<ShapetakerBNCPort>(centerPx("dist-cv", 7.5756836f, 82.450134f), module, Chiaroscuro::DIST_CV_INPUT));
         
         // Drive knob
-        addParam(createParamCentered<ShapetakerKnobAltSmall>(centerPx("drive-knob", 50.997887f, 82.717743f), module, Chiaroscuro::DRIVE_PARAM));
+        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltSmall>(centerPx("drive-knob", 50.997887f, 82.717743f), module, Chiaroscuro::DRIVE_PARAM));
 
         // Drive CV input
         addInput(createInputCentered<ShapetakerBNCPort>(centerPx("drive-cv", 22.049751f, 82.450134f), module, Chiaroscuro::DRIVE_CV_INPUT));
         
         // Mix knob
-        addParam(createParamCentered<ShapetakerKnobAltSmall>(centerPx("mix-knob", 50.997887f, 99.170738f), module, Chiaroscuro::MIX_PARAM));
+        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltSmall>(centerPx("mix-knob", 50.997887f, 99.170738f), module, Chiaroscuro::MIX_PARAM));
 
         // ATTENUVERTERS (knobs)
         // Distortion attenuverter
@@ -1251,10 +1314,7 @@ struct ChiaroscuroWidget : ModuleWidget {
         // Mix CV input
         addInput(createInputCentered<ShapetakerBNCPort>(centerPx("mix-cv", 36.523819f, 99.170738f), module, Chiaroscuro::MIX_CV_INPUT));
 
-        // Distortion type selector
-        addParam(createParamCentered<ShapetakerVintageSelector>(centerPx("dist-type-select", 42.631508f, 50.193539f), module, Chiaroscuro::TYPE_PARAM));
-
-        // 8-bit pixel ring around distortion selector
+        // 8-bit pixel ring around distortion selector (add first so it draws behind)
         PixelRingWidget* pixelRing = new PixelRingWidget();
         Vec selectorCenter = centerPx("dist-type-select", 42.631508f, 50.193539f);
         pixelRing->box.pos = selectorCenter.minus(pixelRing->box.size.div(2));
@@ -1265,6 +1325,9 @@ struct ChiaroscuroWidget : ModuleWidget {
         pixelRing->mixParamId = Chiaroscuro::MIX_PARAM;
         pixelRing->typeParamId = Chiaroscuro::TYPE_PARAM;
         addChild(pixelRing);
+
+        // Distortion type selector (add after ring so it draws on top)
+        addParam(createParamCentered<ShapetakerVintageSelector>(selectorCenter, module, Chiaroscuro::TYPE_PARAM));
 
         // Vintage dot matrix display with sun/moon eclipse
 #if 0

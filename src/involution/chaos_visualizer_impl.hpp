@@ -119,22 +119,28 @@ inline void ChaosVisualizer::drawLayer(const DrawArgs& args, int layer) {
     }
 
     if (module) {
-        float deltaTime = 1.0f / APP->window->getMonitorRefreshRate();
+        // Only show pattern if output cables are connected (module has power)
+        bool outputsConnected = module->outputs[Involution::AUDIO_A_OUTPUT].isConnected() ||
+                               module->outputs[Involution::AUDIO_B_OUTPUT].isConnected();
 
-        float chaosAmount = visualChaosAmountSmoother.process(
-            module->params[Involution::CHAOS_AMOUNT_PARAM].getValue(), deltaTime);
-        float filterMorph = visualFilterMorphSmoother.getValue();
-        float orbitAmount = visualOrbitSmoother.getValue();
-        float tideAmount = visualTideSmoother.getValue();
-        float cutoffA = visualCutoffASmoother.process(module->effectiveCutoffA, deltaTime);
-        float cutoffB = visualCutoffBSmoother.process(module->effectiveCutoffB, deltaTime);
-        float resonanceA = visualResonanceASmoother.process(module->effectiveResonanceA, deltaTime);
-        float resonanceB = visualResonanceBSmoother.process(module->effectiveResonanceB, deltaTime);
+        if (outputsConnected) {
+            float deltaTime = 1.0f / APP->window->getMonitorRefreshRate();
 
-        drawSquareChaos(vg, centerX, centerY, screenSize * 0.4f, chaosAmount, chaosPhase,
-                      filterMorph, orbitAmount, tideAmount,
-                      cutoffA, cutoffB, resonanceA, resonanceB,
-                      filterMorphPhase, cutoffPhase, resonancePhase);
+            float chaosAmount = visualChaosAmountSmoother.process(
+                module->params[Involution::CHAOS_AMOUNT_PARAM].getValue(), deltaTime);
+            float filterMorph = visualFilterMorphSmoother.getValue();
+            float orbitAmount = visualOrbitSmoother.getValue();
+            float tideAmount = visualTideSmoother.getValue();
+            float cutoffA = visualCutoffASmoother.process(module->effectiveCutoffA, deltaTime);
+            float cutoffB = visualCutoffBSmoother.process(module->effectiveCutoffB, deltaTime);
+            float resonanceA = visualResonanceASmoother.process(module->effectiveResonanceA, deltaTime);
+            float resonanceB = visualResonanceBSmoother.process(module->effectiveResonanceB, deltaTime);
+
+            drawSquareChaos(vg, centerX, centerY, screenSize * 0.4f, chaosAmount, chaosPhase,
+                          filterMorph, orbitAmount, tideAmount,
+                          cutoffA, cutoffB, resonanceA, resonanceB,
+                          filterMorphPhase, cutoffPhase, resonancePhase);
+        }
     }
 
     // CRT Effects

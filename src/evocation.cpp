@@ -7,6 +7,7 @@
 #include <memory>
 #include <string>
 #include <cctype>
+#include "ui/menu_helpers.hpp"
 
 // Forward declaration
 struct Evocation;
@@ -42,7 +43,7 @@ struct TouchStripWidget : Widget {
     std::vector<LightPulse> lightPulses;
     float lastSampleTime = -1.0f;
     // Capture gesture samples at ~480 Hz for higher resolution playback
-    static constexpr float MIN_SAMPLE_INTERVAL = 1.f / 480.f;
+    static constexpr float MIN_SAMPLE_INTERVAL = 1.f / 960.f;
     float lastADSRSustainLevel = -1.f;
     float lastADSRReleaseTime = -1.f;
     float lastADSRReleaseContour = -1.f;
@@ -144,6 +145,10 @@ struct Evocation : Module {
         INVERT_2_LIGHT,
         INVERT_3_LIGHT,
         INVERT_4_LIGHT,
+        ENV_SELECT_1_LIGHT,
+        ENV_SELECT_2_LIGHT,
+        ENV_SELECT_3_LIGHT,
+        ENV_SELECT_4_LIGHT,
         LIGHTS_LEN
     };
 
@@ -191,9 +196,23 @@ struct Evocation : Module {
     bool isRecording = false;
     bool bufferHasData = false;
     bool debugTouchLogging = false;
+    float liquidShapeAmount = 0.3f;   // 0..1 shaping/soft-slew blend
+    float jitterAmount = 0.0f;        // 0..1 phase jitter depth
+    bool adsrPhaseQuantize = true;
 
     // Polyphony configuration
     static const int MAX_POLY_CHANNELS = 8;
+
+    // Parameter smoothers to keep CV-driven speed/phase motion liquid
+    shapetaker::FastSmoother speedSmoothers[NUM_ENVELOPES];
+    shapetaker::FastSmoother phaseSmoothers[NUM_ENVELOPES];
+
+    // Lightweight decimation to cut per-sample recalcs
+    int paramDecim = 0;
+    static constexpr int PARAM_DECIM_RATE = 8; // recompute speed/phase/jitter every 8 samples
+    float cachedSpeed[NUM_ENVELOPES] = {1.f, 2.f, 4.f, 8.f};
+    float cachedPhaseOffset[NUM_ENVELOPES] = {0.f, 0.f, 0.f, 0.f};
+    float cachedJitter[NUM_ENVELOPES] = {0.f, 0.f, 0.f, 0.f};
 
     // Individual loop states for each envelope player
     bool loopStates[4] = {false, false, false, false};
@@ -374,6 +393,12 @@ struct Evocation : Module {
         configOutput(ENV_4_GATE_OUTPUT, "Envelope 4 Gate");
 
         resetADSREngine();
+
+        // Initialize smoothers to current knob defaults
+        for (int i = 0; i < NUM_ENVELOPES; ++i) {
+            speedSmoothers[i].reset(params[SPEED_1_PARAM + i].getValue());
+            phaseSmoothers[i].reset(phaseOffsets[i]);
+        }
 
         shapetaker::ui::LabelFormatter::normalizeModuleControls(this);
     }
@@ -663,6 +688,57 @@ struct Evocation : Module {
         if (currentEnvelopeIndex >= 0 && currentEnvelopeIndex < NUM_ENVELOPES) {
             lights[LOOP_1_LIGHT].setBrightness(loopStates[currentEnvelopeIndex] ? 1.0f : 0.15f);
             lights[INVERT_1_LIGHT].setBrightness(invertStates[currentEnvelopeIndex] ? 1.0f : 0.15f);
+        }
+
+        // Update envelope select button LEDs
+        if (mode == EnvelopeMode::ADSR) {
+            // In ADSR mode: show which stage is active
+            // Button 1 = Attack, 2 = Decay, 3 = Sustain, 4 = Release
+            float stageBrightness[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+
+            // Check all voices to find active stages
+            for (int voice = 0; voice < MAX_POLY_CHANNELS; voice++) {
+                shapetaker::dsp::EnvelopeGenerator::Stage stage = adsrVoices[voice].env.getCurrentStage();
+                float envValue = adsrValues[voice];
+
+                // Map stage to button (Attack=0, Decay=1, Sustain=2, Release=3)
+                int buttonIndex = -1;
+                if (stage == shapetaker::dsp::EnvelopeGenerator::ATTACK) {
+                    buttonIndex = 0;
+                } else if (stage == shapetaker::dsp::EnvelopeGenerator::DECAY) {
+                    buttonIndex = 1;
+                } else if (stage == shapetaker::dsp::EnvelopeGenerator::SUSTAIN) {
+                    buttonIndex = 2;
+                } else if (stage == shapetaker::dsp::EnvelopeGenerator::RELEASE) {
+                    buttonIndex = 3;
+                }
+
+                // Update brightness for this stage (use maximum across all voices)
+                if (buttonIndex >= 0) {
+                    stageBrightness[buttonIndex] = std::max(stageBrightness[buttonIndex], envValue);
+                }
+            }
+
+            // Set LED brightness for each stage
+            for (int i = 0; i < 4; i++) {
+                lights[ENV_SELECT_1_LIGHT + i].setBrightness(stageBrightness[i]);
+            }
+        } else {
+            // In Gesture mode: show envelope output intensity
+            for (int i = 0; i < 4; i++) {
+                float maxVoltage = 0.0f;
+                int channels = outputs[ENV_1_OUTPUT + i].getChannels();
+
+                // Get the maximum voltage across all polyphonic channels
+                for (int c = 0; c < channels; c++) {
+                    float voltage = outputs[ENV_1_OUTPUT + i].getVoltage(c);
+                    maxVoltage = std::max(maxVoltage, std::abs(voltage));
+                }
+
+                // Normalize to 0-1 range (envelope outputs are 0-10V)
+                float brightness = clamp(maxVoltage / 10.0f, 0.0f, 1.0f);
+                lights[ENV_SELECT_1_LIGHT + i].setBrightness(brightness);
+            }
         }
     }
     
@@ -1482,24 +1558,36 @@ struct Evocation : Module {
                 continue;
             }
 
-            // Get speed from knob and CV
+            // Get speed from knob and CV (smoothed)
             float speed;
             if (mode == EnvelopeMode::ADSR) {
                 // ADSR mode: all outputs use 1x speed (timing baked into envelope)
                 speed = 1.0f;
                 // Still allow CV modulation if connected
                 if (inputs[SPEED_1_INPUT + outputIndex].isConnected()) {
-                    speed += inputs[SPEED_1_INPUT + outputIndex].getPolyVoltage(c);
-                    speed = clamp(speed, 0.1f, 16.0f);
+                    float cv = inputs[SPEED_1_INPUT + outputIndex].getPolyVoltage(c);
+                    // Treat CV as exponential rate modulation (approx 1V/oct-ish)
+                    speed *= std::pow(2.f, cv * 0.2f);
                 }
             } else {
                 // Gesture mode: each output has individual speed
                 speed = params[SPEED_1_PARAM + outputIndex].getValue();
                 if (inputs[SPEED_1_INPUT + outputIndex].isConnected()) {
-                    speed += inputs[SPEED_1_INPUT + outputIndex].getPolyVoltage(c); // 1V/oct style
+                    float cv = inputs[SPEED_1_INPUT + outputIndex].getPolyVoltage(c);
+                    speed *= std::pow(2.f, cv * 0.2f); // ~1V/oct
                 }
-                speed = clamp(speed, 0.1f, 16.0f); // Reasonable speed limits
             }
+            speed = clamp(speed, 0.05f, 32.0f); // Reasonable speed limits with wider range
+
+            // Decimate speed/phase/jitter calculations to cut per-sample cost
+            if (paramDecim == 0) {
+                cachedSpeed[outputIndex] = speedSmoothers[outputIndex].process(speed, sampleTime, 0.008f);
+                cachedPhaseOffset[outputIndex] = phaseSmoothers[outputIndex].getValue(); // current smoothed phase
+                cachedJitter[outputIndex] = (jitterAmount > 0.f)
+                    ? ((rack::random::uniform() - 0.5f) * 2.f * 0.02f * jitterAmount)
+                    : 0.f;
+            }
+            speed = cachedSpeed[outputIndex];
 
             // Advance phase
             float envDuration = getEnvelopeDuration();
@@ -1537,12 +1625,17 @@ struct Evocation : Module {
             if (mode == EnvelopeMode::ADSR) {
                 // ADSR mode: use phase CV for quantized delays
                 if (inputs[PHASE_1_INPUT + outputIndex].isConnected()) {
-                    // Quantize to 16th notes (16 steps per full envelope)
                     float cv = inputs[PHASE_1_INPUT + outputIndex].getPolyVoltage(c) / 10.0f; // 0-1 range
-                    phaseOffset = std::floor(cv * 16.0f) / 16.0f; // Quantize to 1/16th increments
+                    if (adsrPhaseQuantize) {
+                        // Quantize to 16th notes (16 steps per full envelope)
+                        phaseOffset = std::floor(cv * 16.0f) / 16.0f; // Quantize to 1/16th increments
+                    } else {
+                        phaseOffset = cv;
+                    }
                 }
                 samplePhase = pb.phase[c] + phaseOffset;
                 samplePhase -= std::floor(samplePhase);
+                if (samplePhase < 0.f) samplePhase += 1.f;
             } else {
                 // Gesture mode: apply phase offset for each output
                 phaseOffset = phaseOffsets[outputIndex];
@@ -1551,8 +1644,18 @@ struct Evocation : Module {
                 if (inputs[PHASE_1_INPUT + outputIndex].isConnected()) {
                     phaseOffset += inputs[PHASE_1_INPUT + outputIndex].getPolyVoltage(c) / 10.0f;
                 }
+                if (paramDecim == 0) {
+                    cachedPhaseOffset[outputIndex] = phaseSmoothers[outputIndex].process(phaseOffset, sampleTime, 0.01f);
+                }
+                phaseOffset = cachedPhaseOffset[outputIndex];
 
                 samplePhase = pb.phase[c] + phaseOffset;
+                samplePhase -= std::floor(samplePhase);
+                if (samplePhase < 0.f) samplePhase += 1.f;
+            }
+
+            if (jitterAmount > 0.f) {
+                samplePhase += cachedJitter[outputIndex]; // decimated jitter
                 samplePhase -= std::floor(samplePhase);
                 if (samplePhase < 0.f) samplePhase += 1.f;
             }
@@ -1563,13 +1666,22 @@ struct Evocation : Module {
                 envelopeValue = 1.0f - envelopeValue;
             }
 
+            // Apply gentle liquid shaping
+            if (liquidShapeAmount > 0.f) {
+                float centered = (envelopeValue * 2.f) - 1.f;
+                float shaped = std::tanh(centered * (1.f + liquidShapeAmount * 6.f));
+                envelopeValue = 0.5f * (shaped + 1.f);
+            }
+
             float targetVoltage = envelopeValue * 10.0f;
             float outputVoltage = targetVoltage;
 
             if (mode == EnvelopeMode::GESTURE) {
                 float speedFactor = std::max(speed, 0.1f);
                 float smoothingTau = 0.0002f / std::max(speedFactor, 1.0f); // shorter tau for higher speeds
-                smoothingTau = clamp(smoothingTau, 1e-5f, 0.0005f);
+                // Add extra glide based on liquid shaping
+                smoothingTau *= (1.f + liquidShapeAmount * 2.f);
+                smoothingTau = clamp(smoothingTau, 1e-5f, 0.0012f);
                 float alpha = smoothingTau <= 0.f ? 1.f : sampleTime / (smoothingTau + sampleTime);
                 alpha = clamp(alpha, 0.f, 1.f);
                 float previousVoltage = pb.smoothedVoltage[c];
@@ -2107,6 +2219,10 @@ struct Evocation : Module {
             json_object_set_new(rootJ, "gestureEnvelopeBackup", gestureBackupJ);
         }
 
+        json_object_set_new(rootJ, "liquidShapeAmount", json_real(liquidShapeAmount));
+        json_object_set_new(rootJ, "jitterAmount", json_real(jitterAmount));
+        json_object_set_new(rootJ, "adsrPhaseQuantize", json_boolean(adsrPhaseQuantize));
+
         return rootJ;
     }
 
@@ -2235,6 +2351,19 @@ struct Evocation : Module {
             debugTouchLogging = json_boolean_value(debugTouchJ);
         }
 
+        json_t* shapeJ = json_object_get(rootJ, "liquidShapeAmount");
+        if (shapeJ) {
+            liquidShapeAmount = clamp((float)json_real_value(shapeJ), 0.f, 1.f);
+        }
+        json_t* jitterJ = json_object_get(rootJ, "jitterAmount");
+        if (jitterJ) {
+            jitterAmount = clamp((float)json_real_value(jitterJ), 0.f, 1.f);
+        }
+        json_t* quantizeJ = json_object_get(rootJ, "adsrPhaseQuantize");
+        if (quantizeJ) {
+            adsrPhaseQuantize = json_boolean_value(quantizeJ);
+        }
+
         json_t* durationJ = json_object_get(rootJ, "recordedDuration");
         if (durationJ) {
             recordedDuration = clamp((float)json_real_value(durationJ), 1e-3f, maxRecordingTime);
@@ -2261,6 +2390,11 @@ struct Evocation : Module {
             setCurrentParameterIndex((int)json_integer_value(currentParameterIndexJ));
         }
 
+        for (int i = 0; i < NUM_ENVELOPES; ++i) {
+            speedSmoothers[i].reset(params[SPEED_1_PARAM + i].getValue());
+            phaseSmoothers[i].reset(phaseOffsets[i]);
+        }
+
         onEnvelopeSelectionChanged(false);
     }
 
@@ -2270,6 +2404,8 @@ struct Evocation : Module {
             loopStates[i] = false;
             invertStates[i] = false;
             phaseOffsets[i] = 0.f;
+            speedSmoothers[i].reset(params[SPEED_1_PARAM + i].getValue());
+            phaseSmoothers[i].reset(phaseOffsets[i]);
         }
         selectionFlashTimer = 0.f;
         onEnvelopeSelectionChanged(false);
@@ -3481,11 +3617,11 @@ struct EvocationWidget : ModuleWidget {
     TouchStripWidget* touchStrip = nullptr;
     EvocationOLEDDisplay* oledDisplay = nullptr;
 
+    // Draw panel background texture to match Transmutation
     void draw(const DrawArgs& args) override {
-        // Reapply shared panel background without caching across shutdown
         std::shared_ptr<Image> bg = APP->window->loadImage(asset::plugin(pluginInstance, "res/panels/vcv-panel-background.png"));
         if (bg) {
-            NVGpaint paint = nvgImagePattern(args.vg, 0.f, 0.f, box.size.x, box.size.y, 0.f, bg->handle, 1.f);
+            NVGpaint paint = nvgImagePattern(args.vg, 0.f, 0.f, box.size.x, box.size.y, 0.f, bg->handle, 1.0f);
             nvgBeginPath(args.vg);
             nvgRect(args.vg, 0.f, 0.f, box.size.x, box.size.y);
             nvgFillPaint(args.vg, paint);
@@ -3549,8 +3685,8 @@ struct EvocationWidget : ModuleWidget {
         addInput(createInputCentered<ShapetakerBNCPort>(centerPx("phase4-cv-in", 92.5f, 119.5f), module, Evocation::PHASE_4_INPUT));
 
         // Envelope controls
-        addParam(createParamCentered<ShapetakerKnobAltMedium>(centerPx("env-speed", 49.159584f, 47.892654f), module, Evocation::ENV_SPEED_PARAM));
-        addParam(createParamCentered<ShapetakerKnobAltSmall>(centerPx("env-phase-offset", 78.077148f, 47.892654f), module, Evocation::ENV_PHASE_PARAM));
+        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltMedium>(centerPx("env-speed", 49.159584f, 47.892654f), module, Evocation::ENV_SPEED_PARAM));
+        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltSmall>(centerPx("env-phase-offset", 78.077148f, 47.892654f), module, Evocation::ENV_PHASE_PARAM));
 
         // Loop and invert capacitive touch switches with outer LED rings
         Vec loopCenter = centerPx("loop-sw", 78.077148f, 66.94957f);
@@ -3591,11 +3727,28 @@ struct EvocationWidget : ModuleWidget {
         invertRing->color = nvgRGBA(255, 140, 255, 255);
         addChild(invertRing);
 
-        // Envelope selection buttons
-        addParam(createParamCentered<ShapetakerVintageMomentary>(centerPx("env1-select-btn", 46.216522f, 92.244675f), module, Evocation::ENV_SELECT_1_PARAM));
-        addParam(createParamCentered<ShapetakerVintageMomentary>(centerPx("env2-select-btn", 58.543388f, 92.244675f), module, Evocation::ENV_SELECT_2_PARAM));
-        addParam(createParamCentered<ShapetakerVintageMomentary>(centerPx("env3-select-btn", 70.870247f, 92.244675f), module, Evocation::ENV_SELECT_3_PARAM));
-        addParam(createParamCentered<ShapetakerVintageMomentary>(centerPx("env4-select-btn", 83.197113f, 92.244675f), module, Evocation::ENV_SELECT_4_PARAM));
+        // Envelope selection buttons with integrated LED feedback
+        {
+            auto* btn1 = createParamCentered<ShapetakerVintageMomentaryLight>(centerPx("env1-select-btn", 46.216522f, 92.244675f), module, Evocation::ENV_SELECT_1_PARAM);
+            btn1->module = module;
+            btn1->lightId = Evocation::ENV_SELECT_1_LIGHT;
+            addParam(btn1);
+
+            auto* btn2 = createParamCentered<ShapetakerVintageMomentaryLight>(centerPx("env2-select-btn", 58.543388f, 92.244675f), module, Evocation::ENV_SELECT_2_PARAM);
+            btn2->module = module;
+            btn2->lightId = Evocation::ENV_SELECT_2_LIGHT;
+            addParam(btn2);
+
+            auto* btn3 = createParamCentered<ShapetakerVintageMomentaryLight>(centerPx("env3-select-btn", 70.870247f, 92.244675f), module, Evocation::ENV_SELECT_3_PARAM);
+            btn3->module = module;
+            btn3->lightId = Evocation::ENV_SELECT_3_LIGHT;
+            addParam(btn3);
+
+            auto* btn4 = createParamCentered<ShapetakerVintageMomentaryLight>(centerPx("env4-select-btn", 83.197113f, 92.244675f), module, Evocation::ENV_SELECT_4_PARAM);
+            btn4->module = module;
+            btn4->lightId = Evocation::ENV_SELECT_4_LIGHT;
+            addParam(btn4);
+        }
 
         // EOC outputs per envelope
         addOutput(createOutputCentered<ShapetakerBNCPort>(centerPx("env1-eoc", 46.216522f, 92.957283f), module, Evocation::ENV_1_EOC_OUTPUT));
@@ -3656,6 +3809,22 @@ struct EvocationWidget : ModuleWidget {
             evocation->debugTouchLogging = !evocation->debugTouchLogging;
             INFO("Evocation debug logging %s", evocation->debugTouchLogging ? "enabled" : "disabled");
         }));
+
+        menu->addChild(new MenuSeparator);
+        menu->addChild(createMenuLabel("Fluid Options"));
+        menu->addChild(shapetaker::ui::createPercentageSlider(
+            evocation,
+            [](Evocation* m, float v) { m->liquidShapeAmount = clamp(v, 0.f, 1.f); },
+            [](Evocation* m) { return m->liquidShapeAmount; },
+            "Liquid Shaping"));
+        menu->addChild(shapetaker::ui::createPercentageSlider(
+            evocation,
+            [](Evocation* m, float v) { m->jitterAmount = clamp(v, 0.f, 1.f); },
+            [](Evocation* m) { return m->jitterAmount; },
+            "Phase Jitter"));
+        menu->addChild(createCheckMenuItem("Quantize ADSR Phase CV", "",
+            [=] { return evocation->adsrPhaseQuantize; },
+            [=] { evocation->adsrPhaseQuantize = !evocation->adsrPhaseQuantize; }));
     }
 };
 

@@ -61,7 +61,18 @@
       "Bash(do xmllint --xpath \"//*[@id=''''stage_$i_light'''']/@cx | //*[@id=''''stage_$i_light'''']/@cy\" res/panels/Torsion.svg)",
       "Bash(chmod:*)",
       "Bash(./update_torsion_positions.sh:*)",
-      "Bash(do echo \"=== $id ===\")"
+      "Bash(do echo \"=== $id ===\")",
+      "Bash(sysctl:*)",
+      "Bash(time make:*)",
+      "Bash(ccache --version:*)",
+      "Bash(~/.zshrc)",
+      "Bash(export PATH=\"/opt/homebrew/opt/ccache/libexec:$PATH\")",
+      "Bash(ccache:*)",
+      "Bash(ccache -s:*)",
+      "Bash(CCACHE_LOGFILE=/tmp/ccache.log make:*)",
+      "Bash(/opt/homebrew/opt/ccache/libexec/c++:*)",
+      "Bash(nm:*)",
+      "Bash(git status:*)"
     ],
     "deny": [],
     "ask": []

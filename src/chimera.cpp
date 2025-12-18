@@ -838,17 +838,17 @@ struct ChimeraWidget : ModuleWidget {
         const std::array<float, Chimera::kNumChannels> channelFallbackX = {20.f, 48.f, 76.f, 104.f};
 
         for (int i = 0; i < Chimera::kNumChannels; ++i) {
-            addParam(createParamCentered<ShapetakerKnobAltLarge>(
+            addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltLarge>(
                 centerPx(levelIds[i], channelFallbackX[i], 20.f), module, Chimera::CH_LEVEL_PARAM + i));
-            addParam(createParamCentered<ShapetakerKnobAltSmall>(
+            addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltSmall>(
                 centerPx(panIds[i], channelFallbackX[i], 44.f), module, Chimera::CH_PAN_PARAM + i));
-            addParam(createParamCentered<ShapetakerKnobAltSmall>(
+            addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltSmall>(
                 centerPx(morphIds[i], channelFallbackX[i], 68.f), module, Chimera::CH_MORPH_PARAM + i));
-            addParam(createParamCentered<ShapetakerKnobAltSmall>(
+            addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltSmall>(
                 centerPx(tiltIds[i], channelFallbackX[i], 92.f), module, Chimera::CH_TILT_PARAM + i));
             addParam(createParamCentered<rack::componentlibrary::CKSSThree>(
                 centerPx(busIds[i], channelFallbackX[i], 116.f), module, Chimera::CH_BUS_PARAM + i));
-            addParam(createParamCentered<ShapetakerKnobAltSmall>(
+            addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltSmall>(
                 centerPx(loopThresholdIds[i], channelFallbackX[i], 80.f), module, Chimera::CH_LOOP_THRESHOLD_PARAM + i));
             addParam(createParamCentered<rack::componentlibrary::CKSS>(
                 centerPx(loopArmIds[i], channelFallbackX[i], 102.f), module, Chimera::CH_LOOP_ARM_PARAM + i));
@@ -859,32 +859,32 @@ struct ChimeraWidget : ModuleWidget {
                 centerPx(inputRightIds[i], channelFallbackX[i] + 6.f, 110.f), module, Chimera::CH_INPUT_R + i));
         }
 
-        addParam(createParamCentered<ShapetakerKnobAltMedium>(
+        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltMedium>(
             centerPx("slot_a_rate", 120.f, 22.f), module, Chimera::SLOT_A_RATE_PARAM));
-        addParam(createParamCentered<ShapetakerKnobAltMedium>(
+        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltMedium>(
             centerPx("slot_a_depth", 120.f, 44.f), module, Chimera::SLOT_A_DEPTH_PARAM));
-        addParam(createParamCentered<ShapetakerKnobAltMedium>(
+        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltMedium>(
             centerPx("slot_a_texture", 120.f, 66.f), module, Chimera::SLOT_A_TEXTURE_PARAM));
 
-        addParam(createParamCentered<ShapetakerKnobAltMedium>(
+        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltMedium>(
             centerPx("slot_b_rate", 138.f, 22.f), module, Chimera::SLOT_B_RATE_PARAM));
-        addParam(createParamCentered<ShapetakerKnobAltMedium>(
+        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltMedium>(
             centerPx("slot_b_depth", 138.f, 44.f), module, Chimera::SLOT_B_DEPTH_PARAM));
-        addParam(createParamCentered<ShapetakerKnobAltMedium>(
+        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltMedium>(
             centerPx("slot_b_texture", 138.f, 66.f), module, Chimera::SLOT_B_TEXTURE_PARAM));
 
-        addParam(createParamCentered<ShapetakerKnobAltMedium>(
+        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltMedium>(
             centerPx("morph_master_knob", 156.f, 90.f), module, Chimera::MORPH_MASTER_PARAM));
-        addParam(createParamCentered<ShapetakerKnobAltMedium>(
+        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltMedium>(
             centerPx("glue_threshold_knob", 170.f, 90.f), module, Chimera::GLUE_THRESHOLD_PARAM));
 
-        addParam(createParamCentered<ShapetakerKnobAltSmall>(
+        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltSmall>(
             centerPx("glue_attack_knob", 156.f, 110.f), module, Chimera::GLUE_ATTACK_PARAM));
-        addParam(createParamCentered<ShapetakerKnobAltSmall>(
+        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltSmall>(
             centerPx("glue_release_knob", 170.f, 110.f), module, Chimera::GLUE_RELEASE_PARAM));
-        addParam(createParamCentered<ShapetakerKnobAltSmall>(
+        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltSmall>(
             centerPx("glue_mix_knob", 156.f, 126.f), module, Chimera::GLUE_MIX_PARAM));
-        addParam(createParamCentered<ShapetakerKnobAltSmall>(
+        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltSmall>(
             centerPx("glue_makeup_knob", 170.f, 126.f), module, Chimera::GLUE_MAKEUP_PARAM));
 
         addParam(createParamCentered<rack::componentlibrary::CKSSThree>(
@@ -898,7 +898,7 @@ struct ChimeraWidget : ModuleWidget {
         addParam(createParamCentered<rack::componentlibrary::CKSSThree>(
             centerPx("glue_sidechain_switch", 163.f, 78.f), module, Chimera::GLUE_SIDECHAIN_SRC_PARAM));
 
-        addParam(createParamCentered<ShapetakerKnobAltSmall>(
+        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltSmall>(
             centerPx("clock_bpm_knob", 178.f, 24.f), module, Chimera::CLOCK_BPM_PARAM));
         addParam(createParamCentered<rack::componentlibrary::CKSS>(
             centerPx("clock_run_switch", 178.f, 38.f), module, Chimera::CLOCK_RUN_PARAM));
@@ -910,7 +910,7 @@ struct ChimeraWidget : ModuleWidget {
             centerPx("clock_mix_switch", 178.f, 68.f), module, Chimera::CLOCK_MIX_PARAM));
         addParam(createParamCentered<rack::componentlibrary::CKSSThree>(
             centerPx("loop_bar_switch", 178.f, 80.f), module, Chimera::LOOP_BARS_PARAM));
-        addParam(createParamCentered<ShapetakerKnobAltSmall>(
+        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltSmall>(
             centerPx("clock_click_level_knob", 178.f, 92.f), module, Chimera::CLOCK_CLICK_LEVEL_PARAM));
 
         addInput(createInputCentered<ShapetakerBNCPort>(

@@ -1,0 +1,89 @@
+<svg xmlns="http://www.w3.org/2000/svg"
+     width="60" height="60" viewBox="0 0 60 60">
+  <defs>
+    <!-- Skirt: slight cone, lighter near knob, darker outer edge -->
+    <radialGradient id="skirtGrad" cx="35%" cy="30%" r="85%">
+      <stop offset="0%"   stop-color="#2f3032"/>
+      <stop offset="50%"  stop-color="#1c1d1f"/>
+      <stop offset="100%" stop-color="#08090b"/>
+    </radialGradient>
+
+    <!-- Soft shadow where knob body meets the skirt -->
+    <radialGradient id="skirtShadow" cx="50%" cy="45%" r="65%">
+      <stop offset="0%"   stop-color="#000000" stop-opacity="0.55"/>
+      <stop offset="45%"  stop-color="#000000" stop-opacity="0.20"/>
+      <stop offset="100%" stop-color="#000000" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- Outer rounded cap (big outer ring) -->
+    <radialGradient id="outerCapGrad" cx="28%" cy="22%" r="80%">
+      <stop offset="0%"   stop-color="#5b5f63"/>   <!-- upper-left highlight -->
+      <stop offset="30%"  stop-color="#383a3d"/>
+      <stop offset="60%"  stop-color="#1f2023"/>
+      <stop offset="100%" stop-color="#050506"/> <!-- lower-right shadow -->
+    </radialGradient>
+
+    <!-- Outer cap edge highlight -->
+    <linearGradient id="outerCapEdge" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%"   stop-color="#8b8f93"/>
+      <stop offset="40%"  stop-color="#4a4d51"/>
+      <stop offset="100%" stop-color="#151618"/>
+    </linearGradient>
+
+    <!-- SINGLE recessed ring (embossed band) -->
+    <radialGradient id="recessedRingGrad" cx="50%" cy="60%" r="85%">
+      <stop offset="0%"   stop-color="#141516"/>
+      <stop offset="45%"  stop-color="#0c0d0e"/>
+      <stop offset="100%" stop-color="#030304"/>
+    </radialGradient>
+
+    <!-- Inner lip highlight for the recessed ring -->
+    <linearGradient id="innerLipGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%"   stop-color="#4b4d50"/>
+      <stop offset="50%"  stop-color="#2b2d2f"/>
+      <stop offset="100%" stop-color="#1a1b1d"/>
+    </linearGradient>
+
+    <!-- Center flat puck -->
+    <linearGradient id="centerDiscGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%"   stop-color="#2b2c2e"/>
+      <stop offset="50%"  stop-color="#18191b"/>
+      <stop offset="100%" stop-color="#101113"/>
+    </linearGradient>
+
+    <!-- Edge darkening for center disc (rounded edge, flat top) -->
+    <radialGradient id="centerEdgeShadow" cx="50%" cy="50%" r="85%">
+      <stop offset="0%"   stop-color="#00000000"/>
+      <stop offset="60%"  stop-color="#00000052"/>
+      <stop offset="100%" stop-color="#00000000"/>
+    </radialGradient>
+  </defs>
+
+  <g transform="translate(30 30)">
+
+    <!-- SKIRT (blank, for your legends / rotating overlay) -->
+    <circle r="24" fill="url(#skirtGrad)"/>
+    <circle r="24" fill="none" stroke="#030304" stroke-width="0.8"/>
+    <!-- Shadow where the knob sits on the skirt -->
+    <circle r="20.5" fill="none" stroke="url(#skirtShadow)" stroke-width="5"/>
+
+    <!-- OUTER ROUNDED CAP (visible outer ring of the knob) -->
+    <circle r="18" fill="url(#outerCapGrad)"/>
+    <circle r="18" fill="none" stroke="url(#outerCapEdge)" stroke-width="1.6"/>
+
+    <!-- SINGLE RECESSED / EMBOSSED RING -->
+    <!-- Draw the darker trough first -->
+    <circle r="14.4" fill="url(#recessedRingGrad)"/>
+    <!-- Inner lip highlight: one subtle line, not a second ring -->
+    <circle r="11.5" fill="none" stroke="url(#innerLipGrad)" stroke-width="1.0" opacity="0.9"/>
+
+    <!-- CENTER FLAT PUCK -->
+    <circle r="9.2" fill="url(#centerDiscGrad)"/>
+    <!-- Edge shadow for rounded edge illusion -->
+    <circle r="9.2" fill="url(#centerEdgeShadow)"/>
+    <!-- Crisp bevel edge, like the real knob -->
+    <circle r="9.2" fill="none" stroke="#222326" stroke-width="0.8"/>
+    <circle r="8.4" fill="none" stroke="#0a0b0c" stroke-width="0.8"/>
+
+  </g>
+</svg>

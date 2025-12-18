@@ -80,18 +80,11 @@ protected:
         float cy = box.size.y * 0.5f;
         float radius = 0.5f * std::min(box.size.x, box.size.y);
         
-        // Dark background
+        // Dark background (no hard rim to keep bezel clean)
         nvgBeginPath(args.vg);
         nvgCircle(args.vg, cx, cy, radius * 0.8f);
-        nvgFillColor(args.vg, nvgRGBA(20, 20, 25, 180));
+        nvgFillColor(args.vg, nvgRGBA(24, 24, 28, 160));
         nvgFill(args.vg);
-        
-        // Subtle rim
-        nvgBeginPath(args.vg);
-        nvgCircle(args.vg, cx, cy, radius * 0.8f);
-        nvgStrokeWidth(args.vg, 0.5f);
-        nvgStrokeColor(args.vg, nvgRGBA(60, 60, 70, 100));
-        nvgStroke(args.vg);
     }
     
 public:
@@ -231,13 +224,13 @@ public:
         const float minSize = std::min(this->box.size.x, this->box.size.y);
         const float centerX = this->box.size.x * 0.5f;
         const float centerY = this->box.size.y * 0.5f;
-        const float lensOffsetX = -1.05f;
-        const float lensOffsetY = -1.05f;
+        const float lensOffsetX = -0.35f;
+        const float lensOffsetY = -0.35f;
         const float cx = centerX + lensOffsetX;
         const float cy = centerY + lensOffsetY;
-        const float radius = 0.23f * minSize;        // safely inside the 0.29f bezel opening
-        const float innerRadius = radius * 0.55f;
-        const float aperture = 0.28f * minSize;      // clip box roughly matching the bezel opening
+        const float radius = 0.26f * minSize;        // slightly larger lens within the bezel
+        const float innerRadius = radius * 0.58f;
+        const float aperture = 0.3f * minSize;       // clip box roughly matching the bezel opening
 
         // Clip lens drawing so nothing bleeds past the aperture
         nvgScissor(args.vg, cx - aperture, cy - aperture, aperture * 2.f, aperture * 2.f);
@@ -291,15 +284,15 @@ public:
         NVGcolor haloColor = this->color;
         haloColor.a *= brightnessScale;
 
-        const float cx = this->box.size.x * 0.5f - 1.05f;
-        const float cy = this->box.size.y * 0.5f - 1.05f;
-        const float radius = 0.22f * std::min(this->box.size.x, this->box.size.y); // fits inside bezel opening
-        const float innerRadius = radius * 0.55f;
+        const float cx = this->box.size.x * 0.5f - 0.35f;
+        const float cy = this->box.size.y * 0.5f - 0.35f;
+        const float radius = 0.25f * std::min(this->box.size.x, this->box.size.y); // fits inside bezel opening
+        const float innerRadius = radius * 0.58f;
 
         NVGcolor inner = haloColor;
-        inner.a *= 0.18f;
+        inner.a *= 0.22f;
         NVGcolor outer = haloColor;
-        outer.a *= 0.04f;
+        outer.a *= 0.06f;
 
         NVGpaint halo = nvgRadialGradient(args.vg, cx, cy, innerRadius, radius, inner, outer);
         nvgBeginPath(args.vg);

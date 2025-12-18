@@ -16,15 +16,25 @@ class OnePoleLowpass {
 public:
     float z1 = 0.f;
 
-    float process(float input, float cutoff, float sampleRate) {
-        if (cutoff <= 0.f || !std::isfinite(cutoff)) {
-            return z1;
+    static float computeAlpha(float cutoff, float sampleRate) {
+        if (cutoff <= 0.f || sampleRate <= 0.f || !std::isfinite(cutoff) || !std::isfinite(sampleRate)) {
+            return 0.f;
         }
         float dt = 1.f / sampleRate;
         float RC = 1.f / (2.f * M_PI * cutoff);
-        float alpha = dt / (RC + dt);
+        return dt / (RC + dt);
+    }
+
+    float processWithAlpha(float input, float alpha) {
+        if (alpha <= 0.f || !std::isfinite(alpha)) {
+            return z1;
+        }
         z1 += alpha * (input - z1);
         return z1;
+    }
+
+    float process(float input, float cutoff, float sampleRate) {
+        return processWithAlpha(input, computeAlpha(cutoff, sampleRate));
     }
 
     void reset() {

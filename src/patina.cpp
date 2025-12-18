@@ -1,6 +1,9 @@
 #include "plugin.hpp"
 #include "dsp/polyphony.hpp"
 #include "utilities.hpp"
+#include <algorithm>
+#include <array>
+#include <string>
 #include <vector>
 #include <cmath>
 
@@ -60,6 +63,9 @@ struct PatinaLFOCore {
     // Slew limiter state
     float slewedOutput = 0.f;
 
+    // Random waveform sample-and-hold state
+    float randomSH = 0.f;
+
     enum Shape {
         SINE = 0,
         TRIANGLE,
@@ -92,6 +98,7 @@ struct PatinaLFOCore {
         driftHold = 0.f;
         jitterAccum = 0.f;
         slewedOutput = 0.f;
+        randomSH = 0.f;
     }
 
     float process(float frequency, float sampleRate, float shapeParam,
@@ -177,11 +184,11 @@ struct PatinaLFOCore {
                     return 2.f * phase - 1.f;
                 case 3: // SQUARE
                     return (phase < 0.5f) ? 1.f : -1.f;
-                case 4: // RANDOM
+                case 4: // RANDOM (sample-and-hold)
                     if (phase < phaseInc) {
-                        output = getNextNoise();
+                        randomSH = getNextNoise();
                     }
-                    return output;
+                    return randomSH;
                 default:
                     return std::sin(2.f * M_PI * phase);
             }
@@ -214,10 +221,16 @@ struct PatinaLFOCore {
         }
 
         // ====================================================================
-        // SLEW LIMITING (smoothness control)
+        // SLEW LIMITING (smoothness control) - frequency-aware
         // ====================================================================
-        float slewRate = 1.f - slew; // 0 = instant, 1 = very slow
-        float maxChange = (1.f + slewRate * 100.f) / sampleRate;
+        // Make slew rate proportional to frequency so it maintains consistent
+        // smoothing across the entire frequency range without amplitude collapse
+
+        // Scale maxChange by frequency to prevent amplitude collapse at high rates
+        // At low slew, allow instant changes. At high slew, limit based on frequency
+        float cyclesPerSample = frequency / sampleRate;
+        float baseMaxChange = 4.f * cyclesPerSample; // Allow 4x the phase increment for smooth waveforms
+        float maxChange = baseMaxChange + (1.f - slew) * 100.f / sampleRate;
 
         float delta = rawOutput - slewedOutput;
         if (std::abs(delta) > maxChange) {
@@ -237,13 +250,26 @@ struct PatinaLFOCore {
 // PATINA MODULE
 // ============================================================================
 
+// Clock subdivision ratios (file scope to avoid C++11 linking issues)
+static constexpr std::array<float, 11> kClockSubdivisionRatios = {
+    0.125f, // /8
+    0.166667f, // /6
+    0.25f,  // /4
+    0.333333f, // /3
+    0.5f,   // /2
+    1.f,    // 1x
+    2.f,    // 2x
+    3.f,    // 3x
+    4.f,    // 4x
+    6.f,    // 6x
+    8.f     // 8x
+};
+
 struct Patina : Module {
     enum ParamId {
         // Global controls
-        ENV_SENSITIVITY_PARAM,
         MASTER_RATE_PARAM,
         ENV_DEPTH_PARAM,
-        ENV_MODE_PARAM,  // 0=Frequency, 1=Amplitude, 2=Alternating
 
         // Per-core controls (3x)
         RATE_1_PARAM,
@@ -254,26 +280,19 @@ struct Patina : Module {
         SHAPE_2_PARAM,
         SHAPE_3_PARAM,
 
-        DRIFT_1_PARAM,
-        DRIFT_2_PARAM,
-        DRIFT_3_PARAM,
-
-        JITTER_1_PARAM,
-        JITTER_2_PARAM,
-        JITTER_3_PARAM,
-
         // Global character controls
-        SLEW_PARAM,
-        COMPLEXITY_PARAM,
-        ALT_INTERVAL_PARAM,  // Alternating mode interval
-        XMOD_PARAM,          // Cross-modulation depth
-        VINTAGE_MODE_PARAM,
+        DRIFT_PARAM,            // Global drift (affects all 3 LFOs)
+        JITTER_PARAM,           // Global jitter (affects all 3 LFOs)
+        GRAVITY_PARAM,          // Orbital phase coupling strength
+        LOCK_MODE_PARAM,        // Harmonic lock mode button
 
         PARAMS_LEN
     };
 
     enum InputId {
         AUDIO_INPUT,
+
+        CLOCK_INPUT,
 
         RATE_1_INPUT,
         RATE_2_INPUT,
@@ -290,6 +309,9 @@ struct Patina : Module {
         LFO_3_OUTPUT,
 
         ENV_OUTPUT, // Envelope follower output
+
+        STEREO_L_OUTPUT, // Stereo field L (phase-based mix)
+        STEREO_R_OUTPUT, // Stereo field R (phase-based mix)
 
         OUTPUTS_LEN
     };
@@ -313,21 +335,44 @@ struct Patina : Module {
 
     // Reset detection
     dsp::SchmittTrigger resetTrigger;
+    dsp::SchmittTrigger clockTrigger;
+    dsp::SchmittTrigger lockModeTrigger;
 
-    // Alternating mode state
-    float alternatingTimer = 0.f;
-    bool alternatingUseAmplitude = false;
+    // External clock tracking
+    float clockElapsed = 0.f;
+    float clockInterval = 0.f;
+    float clockFrequency = 0.f;
+    bool clockLocked = false;
+    bool clockPrimed = false;
+
+    // Envelope smoothing to prevent pops
+    float slewedEnvelope = 0.f;
+
+    // Harmonic lock mode state
+    bool harmonicLockEnabled = false;
+
+    // Context menu settings
+    bool unipolarMode = false;     // Output voltage range: false = bipolar (-5V to +5V), true = unipolar (0-10V)
+    int envelopeMode = 0;          // 0=Frequency, 1=Amplitude
+    bool bipolarEnvelope = false;  // Bipolar envelope conversion
+    bool lfoClockModes[3] = {false, false, false}; // false = free, true = clock subdivisions
+
+    float getClockSubdivision(float rateControl) const {
+        float normalized = rack::math::clamp(rateControl, -6.f, 3.f);
+        float scaled = rack::math::rescale(normalized, -6.f, 3.f, 0.f, static_cast<float>(kClockSubdivisionRatios.size() - 1));
+        int idx = static_cast<int>(std::round(scaled));
+        idx = rack::math::clamp(idx, 0, static_cast<int>(kClockSubdivisionRatios.size() - 1));
+        return kClockSubdivisionRatios[idx];
+    }
 
     Patina() {
         config(PARAMS_LEN, INPUTS_LEN, OUTPUTS_LEN, LIGHTS_LEN);
 
         // Global controls
-        configParam(ENV_SENSITIVITY_PARAM, 0.f, 1.f, 0.5f, "Envelope Sensitivity", "%", 0.f, 100.f);
         configParam(MASTER_RATE_PARAM, -6.f, 3.f, 0.f, "Master Rate", " Hz", 2.f, 1.f);
         configParam(ENV_DEPTH_PARAM, 0.f, 1.f, 0.5f, "Envelope Depth", "%", 0.f, 100.f);
-        configSwitch(ENV_MODE_PARAM, 0.f, 3.f, 2.f, "Envelope Mode", {"Frequency", "Amplitude", "Alternating", "Bipolar"});
 
-        // Per-core rate controls
+        // Per-LFO rate controls
         configParam(RATE_1_PARAM, -6.f, 3.f, 0.f, "LFO 1 Rate", " Hz", 2.f, 1.f);
         configParam(RATE_2_PARAM, -6.f, 3.f, 0.f, "LFO 2 Rate", " Hz", 2.f, 1.f);
         configParam(RATE_3_PARAM, -6.f, 3.f, 0.f, "LFO 3 Rate", " Hz", 2.f, 1.f);
@@ -337,24 +382,15 @@ struct Patina : Module {
         configParam(SHAPE_2_PARAM, 0.f, 4.99f, 0.f, "LFO 2 Shape");
         configParam(SHAPE_3_PARAM, 0.f, 4.99f, 0.f, "LFO 3 Shape");
 
-        // Character controls per core
-        configParam(DRIFT_1_PARAM, 0.f, 1.f, 0.3f, "LFO 1 Drift", "%", 0.f, 100.f);
-        configParam(DRIFT_2_PARAM, 0.f, 1.f, 0.3f, "LFO 2 Drift", "%", 0.f, 100.f);
-        configParam(DRIFT_3_PARAM, 0.f, 1.f, 0.3f, "LFO 3 Drift", "%", 0.f, 100.f);
-
-        configParam(JITTER_1_PARAM, 0.f, 1.f, 0.2f, "LFO 1 Jitter", "%", 0.f, 100.f);
-        configParam(JITTER_2_PARAM, 0.f, 1.f, 0.2f, "LFO 2 Jitter", "%", 0.f, 100.f);
-        configParam(JITTER_3_PARAM, 0.f, 1.f, 0.2f, "LFO 3 Jitter", "%", 0.f, 100.f);
-
         // Global character controls
-        configParam(SLEW_PARAM, 0.f, 1.f, 0.1f, "Slew", "%", 0.f, 100.f);
-        configParam(COMPLEXITY_PARAM, 0.f, 1.f, 0.f, "Complexity", "%", 0.f, 100.f);
-        configParam(ALT_INTERVAL_PARAM, 0.1f, 10.f, 2.f, "Alternating Interval", " s");
-        configParam(XMOD_PARAM, 0.f, 1.f, 0.f, "Cross-Modulation", "%", 0.f, 100.f);
-        configButton(VINTAGE_MODE_PARAM, "Vintage Mode");
+        configParam(DRIFT_PARAM, 0.f, 1.f, 0.3f, "Drift", "%", 0.f, 100.f);
+        configParam(JITTER_PARAM, 0.f, 1.f, 0.2f, "Jitter", "%", 0.f, 100.f);
+        configParam(GRAVITY_PARAM, 0.f, 1.f, 0.f, "Gravity (Orbital Coupling)", "%", 0.f, 100.f);
+        configButton(LOCK_MODE_PARAM, "Harmonic Lock Mode");
 
         // Configure inputs
         configInput(AUDIO_INPUT, "Audio (for envelope follower)");
+        configInput(CLOCK_INPUT, "External clock (positive edge)");
         configInput(RATE_1_INPUT, "LFO 1 Rate CV");
         configInput(RATE_2_INPUT, "LFO 2 Rate CV");
         configInput(RATE_3_INPUT, "LFO 3 Rate CV");
@@ -365,6 +401,8 @@ struct Patina : Module {
         configOutput(LFO_2_OUTPUT, "LFO 2");
         configOutput(LFO_3_OUTPUT, "LFO 3");
         configOutput(ENV_OUTPUT, "Envelope");
+        configOutput(STEREO_L_OUTPUT, "Stereo Field L");
+        configOutput(STEREO_R_OUTPUT, "Stereo Field R");
 
         // Initialize LFO cores with phase offsets
         for (int i = 0; i < 3; ++i) {
@@ -377,10 +415,9 @@ struct Patina : Module {
     void onSampleRateChange() override {
         float sr = APP->engine->getSampleRate();
 
-        // Update envelope follower time constants
-        float sensitivity = params[ENV_SENSITIVITY_PARAM].getValue();
-        float attackMs = rack::math::rescale(sensitivity, 0.f, 1.f, 10.f, 1.f);
-        float releaseMs = rack::math::rescale(sensitivity, 0.f, 1.f, 100.f, 20.f);
+        // Update envelope follower time constants with good defaults
+        float attackMs = 5.f;   // Fast attack
+        float releaseMs = 50.f; // Medium release
         envFollower.setSampleRate(sr, attackMs, releaseMs);
     }
 
@@ -390,6 +427,12 @@ struct Patina : Module {
             lfoCores[i].reset();
             lfoCores[i].phase = phaseOffsets[i];
         }
+        clockTrigger.reset();
+        clockElapsed = 0.f;
+        clockInterval = 0.f;
+        clockFrequency = 0.f;
+        clockLocked = false;
+        clockPrimed = false;
     }
 
     void process(const ProcessArgs& args) override {
@@ -407,13 +450,7 @@ struct Patina : Module {
         // ====================================================================
         float envelopeValue = 0.f;
         if (inputs[AUDIO_INPUT].isConnected()) {
-            // Update envelope follower time constants based on sensitivity
-            float sensitivity = params[ENV_SENSITIVITY_PARAM].getValue();
-            float attackMs = rack::math::rescale(sensitivity, 0.f, 1.f, 10.f, 1.f);
-            float releaseMs = rack::math::rescale(sensitivity, 0.f, 1.f, 100.f, 20.f);
-            envFollower.setSampleRate(args.sampleRate, attackMs, releaseMs);
-
-            // Process envelope
+            // Process envelope with fixed time constants
             float audioIn = inputs[AUDIO_INPUT].getVoltage();
             envelopeValue = envFollower.process(audioIn);
 
@@ -421,9 +458,65 @@ struct Patina : Module {
             envelopeValue = rack::math::clamp(envelopeValue / 5.f, 0.f, 1.f);
         }
 
-        // Output envelope follower value
+        // Apply bipolar conversion if enabled (from context menu)
+        if (bipolarEnvelope) {
+            envelopeValue = envelopeValue * 2.f - 1.f; // Convert 0-1 to -1 to +1
+        }
+
+        // Apply slew limiting to envelope to prevent pops from rapid changes
+        // Use a fast slew rate (10ms time constant) for smooth transitions
+        float slewCoeff = std::exp(-1.f / (args.sampleRate * 0.01f)); // 10ms slew
+        slewedEnvelope += (envelopeValue - slewedEnvelope) * (1.f - slewCoeff);
+
+        // Output envelope follower value (0-10V or -10V to +10V if bipolar)
         if (outputs[ENV_OUTPUT].isConnected()) {
-            outputs[ENV_OUTPUT].setVoltage(envelopeValue * 10.f); // 0-10V
+            outputs[ENV_OUTPUT].setVoltage(envelopeValue * 10.f);
+        }
+
+        // ====================================================================
+        // EXTERNAL CLOCK (global)
+        // ====================================================================
+        clockElapsed += args.sampleTime;
+        bool clockConnected = inputs[CLOCK_INPUT].isConnected();
+        bool wasClockLocked = clockLocked;
+
+        if (clockConnected && clockTrigger.process(inputs[CLOCK_INPUT].getVoltage())) {
+            // Ignore ultra-fast double triggers; expect musical clocks (sub-100 Hz)
+            constexpr float kMinInterval = 0.0025f;
+            constexpr float kMaxInterval = 12.f;
+            if (clockPrimed && clockElapsed >= kMinInterval) {
+                float newInterval = rack::math::clamp(clockElapsed, kMinInterval, kMaxInterval);
+                if (clockInterval <= 0.f) {
+                    clockInterval = newInterval;
+                } else {
+                    // Light smoothing to avoid drastic jitter on the detected tempo
+                    clockInterval = rack::math::crossfade(clockInterval, newInterval, 0.2f);
+                }
+                clockFrequency = 1.f / clockInterval;
+                clockLocked = true;
+            }
+            clockElapsed = 0.f;
+            clockPrimed = true;
+        }
+
+        // Drop lock if the clock disappears for a few beats
+        float timeout = (clockInterval > 0.f) ? std::max(clockInterval * 4.f, 0.5f) : 2.f;
+        if (!clockConnected || clockElapsed > timeout) {
+            clockLocked = false;
+            clockInterval = 0.f;
+            clockFrequency = 0.f;
+            clockPrimed = false;
+        }
+
+        bool clockActive = clockConnected && clockLocked && clockFrequency > 0.f;
+        bool clockJustLocked = clockActive && !wasClockLocked;
+        float clockBaseHz = clockActive ? rack::math::clamp(clockFrequency, 0.01f, args.sampleRate * 0.25f) : 0.f;
+
+        if (clockJustLocked) {
+            // Align LFOs to their intended offsets on the first valid clock edge
+            for (int i = 0; i < 3; ++i) {
+                lfoCores[i].phase = phaseOffsets[i];
+            }
         }
 
         // ====================================================================
@@ -431,48 +524,139 @@ struct Patina : Module {
         // ====================================================================
         float masterRate = params[MASTER_RATE_PARAM].getValue();
         float envelopeDepth = params[ENV_DEPTH_PARAM].getValue();
-        float slew = params[SLEW_PARAM].getValue();
-        float complexity = params[COMPLEXITY_PARAM].getValue();
-        bool vintageMode = params[VINTAGE_MODE_PARAM].getValue() > 0.5f;
-
-        // Vintage mode light
-        lights[VINTAGE_LIGHT].setBrightness(vintageMode ? 1.f : 0.f);
-
-        // Apply vintage mode to character controls
-        float vintageMult = vintageMode ? 2.f : 1.f;
+        float drift = params[DRIFT_PARAM].getValue();
+        float jitter = params[JITTER_PARAM].getValue();
 
         // ====================================================================
-        // ENVELOPE MODE SELECTION
+        // ENVELOPE MODE SELECTION (from context menu)
         // ====================================================================
-        int envMode = (int)params[ENV_MODE_PARAM].getValue();
-        bool useAmplitudeMode = false;
-        bool useBipolarMode = false;
+        bool useAmplitudeMode = (envelopeMode == 1);
 
-        if (envMode == 0) {
-            // Frequency mode
-            useAmplitudeMode = false;
-        } else if (envMode == 1) {
-            // Amplitude mode
-            useAmplitudeMode = true;
-        } else if (envMode == 2) {
-            // Alternating mode
-            float alternatingInterval = params[ALT_INTERVAL_PARAM].getValue();
-            alternatingTimer += args.sampleTime;
-            if (alternatingTimer >= alternatingInterval) {
-                alternatingTimer -= alternatingInterval;
-                alternatingUseAmplitude = !alternatingUseAmplitude;
-            }
-            useAmplitudeMode = alternatingUseAmplitude;
-        } else {
-            // Bipolar mode (mode 3)
-            useAmplitudeMode = false;
-            useBipolarMode = true;
+        // ====================================================================
+        // HARMONIC LOCK MODE (toggle button)
+        // ====================================================================
+        if (lockModeTrigger.process(params[LOCK_MODE_PARAM].getValue())) {
+            harmonicLockEnabled = !harmonicLockEnabled;
         }
 
         // ====================================================================
-        // PROCESS 3 LFO CORES with cross-modulation
+        // ORBITAL PHASE COUPLING (gravity parameter)
         // ====================================================================
-        float crossModDepth = params[XMOD_PARAM].getValue();
+        float gravity = params[GRAVITY_PARAM].getValue();
+
+        // Apply gravitational phase coupling between the three LFOs
+        // Each LFO is attracted to the others based on gravity strength
+        if (gravity > 0.01f) {
+            // Calculate phase differences and apply attractive forces
+            for (int i = 0; i < 3; ++i) {
+                float attraction = 0.f;
+
+                // Calculate attraction from other two LFOs
+                for (int j = 0; j < 3; ++j) {
+                    if (i != j) {
+                        // Calculate shortest phase distance (wrapping around 0-1)
+                        float phaseDiff = lfoCores[j].phase - lfoCores[i].phase;
+                        if (phaseDiff > 0.5f) phaseDiff -= 1.f;
+                        if (phaseDiff < -0.5f) phaseDiff += 1.f;
+
+                        // Attraction strength falls off with distance (inverse square-ish)
+                        float distance = std::abs(phaseDiff);
+                        float strength = 1.f / (1.f + distance * distance * 20.f);
+
+                        attraction += phaseDiff * strength * 0.5f;
+                    }
+                }
+
+                // Apply orbital coupling as phase nudge
+                // Scale by gravity and sample time for frame-rate independence
+                lfoCores[i].phase += attraction * gravity * 0.02f * args.sampleTime;
+
+                // Wrap phase
+                if (lfoCores[i].phase >= 1.f) lfoCores[i].phase -= 1.f;
+                if (lfoCores[i].phase < 0.f) lfoCores[i].phase += 1.f;
+            }
+        }
+
+        // ====================================================================
+        // CALCULATE FREQUENCIES FOR ALL 3 LFOs
+        // ====================================================================
+        float frequencies[3];
+        for (int i = 0; i < 3; ++i) {
+            // Get rate from parameter and CV
+            float rateParam = params[RATE_1_PARAM + i].getValue();
+            float rateCV = inputs[RATE_1_INPUT + i].isConnected() ? inputs[RATE_1_INPUT + i].getVoltage() : 0.f;
+            float rateControl = rateParam + rateCV;
+
+            // Combine master rate, per-core rate, and CV
+            // Shift everything down ~1.5 octaves so the master/rate knobs reach slower zones.
+            constexpr float rangeShiftOctaves = 1.5f;
+            float frequency = std::pow(2.f, masterRate + rateControl - rangeShiftOctaves);
+            frequency = rack::math::clamp(frequency, 0.005f, args.sampleRate / 2.f);
+
+            // Optionally override with external clock subdivisions per LFO
+            if (clockActive && lfoClockModes[i]) {
+                float subdivision = getClockSubdivision(rateControl);
+                frequency = rack::math::clamp(clockBaseHz * subdivision, 0.005f, args.sampleRate / 2.f);
+            }
+
+            frequencies[i] = frequency;
+        }
+
+        // ====================================================================
+        // HARMONIC LOCK MODE (quantize frequency ratios to musical intervals)
+        // ====================================================================
+        if (harmonicLockEnabled) {
+            // Musical ratios: 1:1, 1:2, 2:3, 3:4, 3:5, 4:5, 5:6, etc.
+            // Find the slowest LFO as the fundamental
+            float fundamental = std::min({frequencies[0], frequencies[1], frequencies[2]});
+
+            // Quantize each frequency to nearest musical ratio
+            for (int i = 0; i < 3; ++i) {
+                if (fundamental < 0.01f) break; // Avoid division by zero
+
+                float ratio = frequencies[i] / fundamental;
+
+                // Common musical ratios (sorted)
+                static const float musicalRatios[] = {
+                    1.0f,      // 1:1 (unison)
+                    1.125f,    // 9:8 (major second)
+                    1.2f,      // 6:5 (minor third)
+                    1.25f,     // 5:4 (major third)
+                    1.333f,    // 4:3 (perfect fourth)
+                    1.5f,      // 3:2 (perfect fifth)
+                    1.6f,      // 8:5 (minor sixth)
+                    1.667f,    // 5:3 (major sixth)
+                    1.75f,     // 7:4 (harmonic seventh)
+                    2.0f,      // 2:1 (octave)
+                    2.5f,      // 5:2 (octave + major third)
+                    3.0f,      // 3:1 (octave + fifth)
+                    4.0f,      // 4:1 (two octaves)
+                    5.0f,      // 5:1
+                    6.0f,      // 6:1
+                    8.0f       // 8:1 (three octaves)
+                };
+
+                // Find nearest musical ratio
+                float nearestRatio = musicalRatios[0];
+                float nearestDist = std::abs(ratio - nearestRatio);
+
+                for (float mr : musicalRatios) {
+                    float dist = std::abs(ratio - mr);
+                    if (dist < nearestDist) {
+                        nearestDist = dist;
+                        nearestRatio = mr;
+                    }
+                }
+
+                // Apply quantized ratio
+                frequencies[i] = fundamental * nearestRatio;
+                frequencies[i] = rack::math::clamp(frequencies[i], 0.005f, args.sampleRate / 2.f);
+            }
+        }
+
+        // ====================================================================
+        // PROCESS 3 LFO CORES
+        // ====================================================================
         float lfoOutputs[3] = {0.f, 0.f, 0.f};
 
         for (int i = 0; i < 3; ++i) {
@@ -480,59 +664,41 @@ struct Patina : Module {
                 continue;
             }
 
-            // Get rate from parameter and CV
-            float rateParam = params[RATE_1_PARAM + i].getValue();
-            float rateCV = 0.f;
-            if (inputs[RATE_1_INPUT + i].isConnected()) {
-                rateCV = inputs[RATE_1_INPUT + i].getVoltage();
-            }
+            float frequency = frequencies[i];
 
-            // Combine master rate, per-core rate, and CV
-            // Shift everything down ~1.5 octaves so the master/rate knobs reach slower zones.
-            constexpr float rangeShiftOctaves = 1.5f;
-            float frequency = std::pow(2.f, masterRate + rateParam + rateCV - rangeShiftOctaves);
-            frequency = rack::math::clamp(frequency, 0.005f, args.sampleRate / 2.f);
-
-            // Get shape parameter (now supports morphing)
+            // Get shape parameter (supports morphing)
             float shapeParam = params[SHAPE_1_PARAM + i].getValue();
 
-            // Get character controls
-            float drift = params[DRIFT_1_PARAM + i].getValue() * vintageMult;
-            float jitter = params[JITTER_1_PARAM + i].getValue() * vintageMult;
-
-            // Calculate cross-modulation: previous LFO modulates current one
-            // LFO chain: 3→1, 1→2, 2→3
-            int prevIndex = (i + 2) % 3;
-            float crossModAmount = lfoOutputs[prevIndex] * crossModDepth * 0.2f;
-
-            // Handle bipolar envelope mode
-            float bipolarEnvelope = envelopeValue;
-            if (useBipolarMode) {
-                bipolarEnvelope = envelopeValue * 2.f - 1.f; // Convert 0-1 to -1 to +1
-            }
-
-            // Process LFO
+            // Process LFO with global drift and jitter
+            // Use slewed envelope to prevent pops from rapid envelope changes
             float lfoOut = lfoCores[i].process(
                 frequency,
                 args.sampleRate,
                 shapeParam,
-                drift,
-                jitter,
-                slew,
-                complexity,
+                drift,             // Global drift
+                jitter,            // Global jitter
+                0.f,               // No slew (removed)
+                0.f,               // No complexity (removed)
                 envelopeDepth,
-                useBipolarMode ? bipolarEnvelope : envelopeValue,
+                slewedEnvelope,    // Use slewed envelope for smooth modulation
                 useAmplitudeMode,
-                crossModAmount
+                0.f                // No cross-modulation (removed)
             );
 
-            // Store output for cross-modulation
+            // Store output for stereo field generation
             lfoOutputs[i] = lfoOut;
 
-            // Output
-            outputs[LFO_1_OUTPUT + i].setVoltage(lfoOut);
+            // Apply voltage range conversion for output
+            float finalOutput = lfoOut;
+            if (unipolarMode) {
+                // Convert from ±5V to 0-10V
+                finalOutput = (lfoOut + 5.f) * 1.f;  // Shift and scale to 0-10V
+            }
 
-            // Update RGB lights with colored indicators
+            // Output with proper normalization
+            outputs[LFO_1_OUTPUT + i].setVoltage(finalOutput);
+
+            // Update RGB lights with colored indicators (based on bipolar output)
             // LFO 1: Teal (#00ffb4) = R:0, G:1, B:0.7
             // LFO 2: Purple (#b400ff) = R:0.7, G:0, B:1
             // LFO 3: Amber (#ffb400) = R:1, G:0.7, B:0
@@ -554,6 +720,50 @@ struct Patina : Module {
                 lights[LFO_3_LIGHT + 2].setBrightness(0.f);
             }
         }
+
+        // ====================================================================
+        // STEREO FIELD GENERATION (phase-based panning)
+        // ====================================================================
+        if (outputs[STEREO_L_OUTPUT].isConnected() || outputs[STEREO_R_OUTPUT].isConnected()) {
+            float stereoL = 0.f;
+            float stereoR = 0.f;
+
+            // Pan each LFO based on its phase position in the cycle
+            // Phase 0 = center, phase 0.25 = right, phase 0.5 = center, phase 0.75 = left
+            for (int i = 0; i < 3; ++i) {
+                float phase = lfoCores[i].phase;
+
+                // Convert phase to stereo position using sine/cosine
+                // This creates a smooth circular panning motion
+                float pan = std::sin(2.f * M_PI * phase); // -1 (left) to +1 (right)
+
+                // Equal-power panning law
+                float panRight = (pan + 1.f) * 0.5f; // 0 to 1
+                float panLeft = 1.f - panRight;
+
+                // Use square root for equal-power panning
+                panRight = std::sqrt(panRight);
+                panLeft = std::sqrt(panLeft);
+
+                // Mix each LFO into stereo field
+                stereoL += lfoOutputs[i] * panLeft;
+                stereoR += lfoOutputs[i] * panRight;
+            }
+
+            // Average the three LFOs (divide by 3) to prevent clipping
+            stereoL *= 0.333f;
+            stereoR *= 0.333f;
+
+            // Apply voltage range conversion if needed
+            if (unipolarMode) {
+                stereoL = (stereoL + 5.f) * 1.f;
+                stereoR = (stereoR + 5.f) * 1.f;
+            }
+
+            // Output stereo field
+            outputs[STEREO_L_OUTPUT].setVoltage(stereoL);
+            outputs[STEREO_R_OUTPUT].setVoltage(stereoR);
+        }
     }
 
     json_t* dataToJson() override {
@@ -565,6 +775,17 @@ struct Patina : Module {
             json_array_append_new(phasesJ, json_real(lfoCores[i].phase));
         }
         json_object_set_new(rootJ, "phases", phasesJ);
+
+        // Save context menu settings
+        json_object_set_new(rootJ, "unipolarMode", json_boolean(unipolarMode));
+        json_object_set_new(rootJ, "envelopeMode", json_integer(envelopeMode));
+        json_object_set_new(rootJ, "bipolarEnvelope", json_boolean(bipolarEnvelope));
+        json_object_set_new(rootJ, "harmonicLockEnabled", json_boolean(harmonicLockEnabled));
+        json_t* clockModesJ = json_array();
+        for (int i = 0; i < 3; ++i) {
+            json_array_append_new(clockModesJ, json_boolean(lfoClockModes[i]));
+        }
+        json_object_set_new(rootJ, "lfoClockModes", clockModesJ);
 
         return rootJ;
     }
@@ -580,6 +801,37 @@ struct Patina : Module {
                 }
             }
         }
+
+        // Restore context menu settings
+        json_t* unipolarJ = json_object_get(rootJ, "unipolarMode");
+        if (unipolarJ) {
+            unipolarMode = json_boolean_value(unipolarJ);
+        }
+
+        json_t* envModeJ = json_object_get(rootJ, "envelopeMode");
+        if (envModeJ) {
+            envelopeMode = json_integer_value(envModeJ);
+        }
+
+        json_t* bipolarEnvJ = json_object_get(rootJ, "bipolarEnvelope");
+        if (bipolarEnvJ) {
+            bipolarEnvelope = json_boolean_value(bipolarEnvJ);
+        }
+
+        json_t* harmonicLockJ = json_object_get(rootJ, "harmonicLockEnabled");
+        if (harmonicLockJ) {
+            harmonicLockEnabled = json_boolean_value(harmonicLockJ);
+        }
+
+        json_t* clockModesJ = json_object_get(rootJ, "lfoClockModes");
+        if (clockModesJ) {
+            for (int i = 0; i < 3; ++i) {
+                json_t* modeJ = json_array_get(clockModesJ, i);
+                if (modeJ) {
+                    lfoClockModes[i] = json_boolean_value(modeJ);
+                }
+            }
+        }
     }
 };
 
@@ -588,15 +840,30 @@ struct Patina : Module {
 // ============================================================================
 
 struct PatinaWidget : ModuleWidget {
+    // Match the shared textured background used across other modules
+    void draw(const DrawArgs& args) override {
+        std::shared_ptr<Image> bg = APP->window->loadImage(asset::plugin(pluginInstance, "res/panels/vcv-panel-background.png"));
+        if (bg) {
+            NVGpaint paint = nvgImagePattern(args.vg, 0.f, 0.f, box.size.x, box.size.y, 0.f, bg->handle, 1.0f);
+            nvgBeginPath(args.vg);
+            nvgRect(args.vg, 0.f, 0.f, box.size.x, box.size.y);
+            nvgFillPaint(args.vg, paint);
+            nvgFill(args.vg);
+        }
+        ModuleWidget::draw(args);
+    }
+
     PatinaWidget(Patina* module) {
         setModule(module);
         setPanel(createPanel(asset::plugin(pluginInstance, "res/panels/Patina.svg")));
 
+        // Add screws (black, all four corners)
+        addChild(createWidget<ScrewBlack>(Vec(RACK_GRID_WIDTH, 0)));
+        addChild(createWidget<ScrewBlack>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, 0)));
+        addChild(createWidget<ScrewBlack>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
+        addChild(createWidget<ScrewBlack>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
+
         using LayoutHelper = shapetaker::ui::LayoutHelper;
-        // Add screws
-        LayoutHelper::ScrewPositions::addStandardScrews<ScrewSilver>(
-            this,
-            LayoutHelper::getModuleWidth(LayoutHelper::ModuleWidth::WIDTH_20HP));
 
         auto svgPath = asset::plugin(pluginInstance, "res/panels/Patina.svg");
         LayoutHelper::PanelSVGParser parser(svgPath);
@@ -620,99 +887,212 @@ struct PatinaWidget : ModuleWidget {
         const float rightCol = 86.6f;
 
         // ====================================================================
-        // ENVELOPE FOLLOWER SECTION (Top)
+        // ENVELOPE FOLLOWER SECTION (Top) - Simplified
         // ====================================================================
         const float envRow1 = 29.f;  // Main knobs (medium, 9mm radius)
         const float envRow2 = 41.f;  // Jacks (BNC, 4mm radius)
-        const float envRow3 = 48.f;  // Mode knob (small, 4mm radius)
 
-        // Three knobs: Sensitivity, Master Rate, Envelope Depth
-        addParam(createParamCentered<ShapetakerKnobAltMedium>(centerPx("patina-env-sensitivity", leftCol, envRow1), module, Patina::ENV_SENSITIVITY_PARAM));
-        addParam(createParamCentered<ShapetakerKnobAltMedium>(centerPx("patina-master-rate", centerX, envRow1), module, Patina::MASTER_RATE_PARAM));
-        addParam(createParamCentered<ShapetakerKnobAltMedium>(centerPx("patina-env-depth", rightCol, envRow1), module, Patina::ENV_DEPTH_PARAM));
+        // Two knobs: Master Rate, Envelope Depth
+        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltMedium>(centerPx("patina-master-rate", leftCol, envRow1), module, Patina::MASTER_RATE_PARAM));
+        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltMedium>(centerPx("patina-env-depth", rightCol, envRow1), module, Patina::ENV_DEPTH_PARAM));
 
-        // Jacks: Audio In, Envelope Out, Reset
+        // Jacks: Audio In, Envelope Out, Clock, Reset
         addInput(createInputCentered<ShapetakerBNCPort>(centerPx("patina-audio-input", leftCol, envRow2), module, Patina::AUDIO_INPUT));
         addOutput(createOutputCentered<ShapetakerBNCPort>(centerPx("patina-env-output", centerX, envRow2), module, Patina::ENV_OUTPUT));
+        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("patina-clock-input", midRightCol, envRow2), module, Patina::CLOCK_INPUT));
         addInput(createInputCentered<ShapetakerBNCPort>(centerPx("patina-reset-input", rightCol, envRow2), module, Patina::RESET_INPUT));
 
-        // Envelope mode switch (Frequency / Amplitude / Alternating / Bipolar) - using CKSS (2-position) stacked
-        // Since we need 4 positions and don't have a CKSSFour, we'll use a custom approach
-        // For now, use a knob that snaps to 4 positions
-        addParam(createParamCentered<ShapetakerKnobAltSmall>(centerPx("patina-env-mode", centerX, envRow3), module, Patina::ENV_MODE_PARAM));
-
         // ====================================================================
-        // LFO CORES SECTION (Middle - 3 columns)
+        // LFO CORES SECTION (Middle - 3 columns) - Simplified
         // ====================================================================
-        // Vertical spacing calculation with tighter 1.5mm clearances to fit everything:
-        // Row1: 56mm (rate medium knobs, 9mm radius): bottom at 65mm
-        // Row2: 65+1.5+4 = 70.5mm (rate CV BNC, 4mm radius): bottom at 74.5mm
-        // Row3: 74.5+1.5+4 = 80mm (shape small knobs, 4mm radius): bottom at 84mm
-        // Row4: 84+1.5+4 = 89.5mm (drift small knobs, 4mm radius): bottom at 93.5mm
-        // Row5: 93.5+1.5+4 = 99mm (jitter small knobs, 4mm radius): bottom at 103mm
-        // Row6: 103+1.5+4 = 108.5mm (output BNC, 4mm radius): bottom at 112.5mm
-        // Row7: 112.5+1.5+2 = 116mm (output lights, 2mm radius): bottom at 118mm
+        // Simplified vertical spacing:
+        // Row1: 56mm (rate medium knobs, 9mm radius)
+        // Row2: 70.5mm (rate CV inputs, 4mm radius)
+        // Row3: 80mm (shape small knobs, 4mm radius)
+        // Row4: 95mm (output jacks, 4mm radius)
+        // Row5: 106mm (output lights, 2mm radius)
         const float lfoRow1 = 56.f;    // Rate knobs (medium, 9mm radius)
         const float lfoRow2 = 70.5f;   // Rate CV inputs (BNC, 4mm radius)
         const float lfoRow3 = 80.f;    // Shape knobs (small, 4mm radius)
-        const float lfoRow4 = 89.5f;   // Drift knobs (small, 4mm radius)
-        const float lfoRow5 = 99.f;    // Jitter knobs (small, 4mm radius)
-        const float lfoRow6 = 108.5f;  // Output jacks (BNC, 4mm radius)
-        const float lfoRow7 = 116.f;   // Output lights (2mm radius)
+        const float lfoRow4 = 95.f;    // Output jacks (BNC, 4mm radius)
+        const float lfoRow5 = 106.f;   // Output lights (2mm radius)
 
         // LFO 1 (Left - Teal)
-        addParam(createParamCentered<ShapetakerKnobAltMedium>(centerPx("patina-rate1", midLeftCol, lfoRow1), module, Patina::RATE_1_PARAM));
+        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltMedium>(centerPx("patina-rate1", midLeftCol, lfoRow1), module, Patina::RATE_1_PARAM));
         addInput(createInputCentered<ShapetakerBNCPort>(centerPx("patina-rate1-cv", midLeftCol, lfoRow2), module, Patina::RATE_1_INPUT));
-        addParam(createParamCentered<ShapetakerKnobAltSmall>(centerPx("patina-shape1", midLeftCol, lfoRow3), module, Patina::SHAPE_1_PARAM));
-        addParam(createParamCentered<ShapetakerKnobAltSmall>(centerPx("patina-drift1", midLeftCol, lfoRow4), module, Patina::DRIFT_1_PARAM));
-        addParam(createParamCentered<ShapetakerKnobAltSmall>(centerPx("patina-jitter1", midLeftCol, lfoRow5), module, Patina::JITTER_1_PARAM));
-        addOutput(createOutputCentered<ShapetakerBNCPort>(centerPx("patina-output1", midLeftCol, lfoRow6), module, Patina::LFO_1_OUTPUT));
-        if (module) addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(centerPx("patina-light1", midLeftCol, lfoRow7), module, Patina::LFO_1_LIGHT));
+        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltSmall>(centerPx("patina-shape1", midLeftCol, lfoRow3), module, Patina::SHAPE_1_PARAM));
+        addOutput(createOutputCentered<ShapetakerBNCPort>(centerPx("patina-output1", midLeftCol, lfoRow4), module, Patina::LFO_1_OUTPUT));
+        if (module) addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(centerPx("patina-light1", midLeftCol, lfoRow5), module, Patina::LFO_1_LIGHT));
 
         // LFO 2 (Center - Purple)
-        addParam(createParamCentered<ShapetakerKnobAltMedium>(centerPx("patina-rate2", centerX, lfoRow1), module, Patina::RATE_2_PARAM));
+        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltMedium>(centerPx("patina-rate2", centerX, lfoRow1), module, Patina::RATE_2_PARAM));
         addInput(createInputCentered<ShapetakerBNCPort>(centerPx("patina-rate2-cv", centerX, lfoRow2), module, Patina::RATE_2_INPUT));
-        addParam(createParamCentered<ShapetakerKnobAltSmall>(centerPx("patina-shape2", centerX, lfoRow3), module, Patina::SHAPE_2_PARAM));
-        addParam(createParamCentered<ShapetakerKnobAltSmall>(centerPx("patina-drift2", centerX, lfoRow4), module, Patina::DRIFT_2_PARAM));
-        addParam(createParamCentered<ShapetakerKnobAltSmall>(centerPx("patina-jitter2", centerX, lfoRow5), module, Patina::JITTER_2_PARAM));
-        addOutput(createOutputCentered<ShapetakerBNCPort>(centerPx("patina-output2", centerX, lfoRow6), module, Patina::LFO_2_OUTPUT));
-        if (module) addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(centerPx("patina-light2", centerX, lfoRow7), module, Patina::LFO_2_LIGHT));
+        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltSmall>(centerPx("patina-shape2", centerX, lfoRow3), module, Patina::SHAPE_2_PARAM));
+        addOutput(createOutputCentered<ShapetakerBNCPort>(centerPx("patina-output2", centerX, lfoRow4), module, Patina::LFO_2_OUTPUT));
+        if (module) addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(centerPx("patina-light2", centerX, lfoRow5), module, Patina::LFO_2_LIGHT));
 
         // LFO 3 (Right - Amber)
-        addParam(createParamCentered<ShapetakerKnobAltMedium>(centerPx("patina-rate3", midRightCol, lfoRow1), module, Patina::RATE_3_PARAM));
+        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltMedium>(centerPx("patina-rate3", midRightCol, lfoRow1), module, Patina::RATE_3_PARAM));
         addInput(createInputCentered<ShapetakerBNCPort>(centerPx("patina-rate3-cv", midRightCol, lfoRow2), module, Patina::RATE_3_INPUT));
-        addParam(createParamCentered<ShapetakerKnobAltSmall>(centerPx("patina-shape3", midRightCol, lfoRow3), module, Patina::SHAPE_3_PARAM));
-        addParam(createParamCentered<ShapetakerKnobAltSmall>(centerPx("patina-drift3", midRightCol, lfoRow4), module, Patina::DRIFT_3_PARAM));
-        addParam(createParamCentered<ShapetakerKnobAltSmall>(centerPx("patina-jitter3", midRightCol, lfoRow5), module, Patina::JITTER_3_PARAM));
-        addOutput(createOutputCentered<ShapetakerBNCPort>(centerPx("patina-output3", midRightCol, lfoRow6), module, Patina::LFO_3_OUTPUT));
-        if (module) addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(centerPx("patina-light3", midRightCol, lfoRow7), module, Patina::LFO_3_LIGHT));
+        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltSmall>(centerPx("patina-shape3", midRightCol, lfoRow3), module, Patina::SHAPE_3_PARAM));
+        addOutput(createOutputCentered<ShapetakerBNCPort>(centerPx("patina-output3", midRightCol, lfoRow4), module, Patina::LFO_3_OUTPUT));
+        if (module) addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(centerPx("patina-light3", midRightCol, lfoRow5), module, Patina::LFO_3_LIGHT));
 
         // ====================================================================
-        // CHARACTER SECTION (Bottom)
+        // CHARACTER SECTION (Bottom) - Orbital/Harmonic Controls
         // ====================================================================
-        // Starts after lfoRow7 bottom (118mm), need to fit 2 rows before 128.5mm
-        // CharRow1: 121mm (character knobs, 4mm radius): bottom at 125mm
-        // CharRow2: Panel bottom - 3mm (button margin) = 125.5mm works
-        const float charRow1 = 121.f;   // Four character knobs (small, 4mm radius)
-        const float charRow2 = 125.5f;  // Vintage mode button (LEDButton, 3mm radius)
+        // Global character controls with orbital/harmonic features
+        const float charRow = 115.f;   // Character knobs row
+        const float lockRow = 125.f;   // Lock button row
 
-        // Four character knobs (recalculated to avoid horizontal overlaps)
-        // Small knobs are 4mm radius. Need 8mm + 2mm clearance = 10mm spacing minimum
-        // Available width: 101.6mm. With 4mm margins: 93.6mm usable
-        // 4 knobs at 8mm width = 32mm, leaving 61.6mm for 3 gaps = ~20.5mm spacing
-        const float char1X = 14.f;    // Small knob: 10-18mm
-        const float char2X = 35.f;    // Small knob: 31-39mm
-        const float char3X = 56.f;    // Small knob: 52-60mm
-        const float char4X = 77.f;    // Small knob: 73-81mm
+        // Three character knobs with even spacing
+        const float char1X = 23.f;     // Drift knob (left)
+        const float char2X = 50.8f;    // Gravity knob (center)
+        const float char3X = 78.6f;    // Jitter knob (right)
 
-        addParam(createParamCentered<ShapetakerKnobAltSmall>(centerPx("patina-slew", char1X, charRow1), module, Patina::SLEW_PARAM));
-        addParam(createParamCentered<ShapetakerKnobAltSmall>(centerPx("patina-complexity", char2X, charRow1), module, Patina::COMPLEXITY_PARAM));
-        addParam(createParamCentered<ShapetakerKnobAltSmall>(centerPx("patina-alt-interval", char3X, charRow1), module, Patina::ALT_INTERVAL_PARAM));
-        addParam(createParamCentered<ShapetakerKnobAltSmall>(centerPx("patina-xmod", char4X, charRow1), module, Patina::XMOD_PARAM));
+        addKnobWithShadow(this, createParamCentered<ShapetakerAttenuverterOscilloscope>(centerPx("patina-drift", char1X, charRow), module, Patina::DRIFT_PARAM));
+        addKnobWithShadow(this, createParamCentered<ShapetakerAttenuverterOscilloscope>(centerPx("patina-gravity", char2X, charRow), module, Patina::GRAVITY_PARAM));
+        addKnobWithShadow(this, createParamCentered<ShapetakerAttenuverterOscilloscope>(centerPx("patina-jitter", char3X, charRow), module, Patina::JITTER_PARAM));
 
-        // Vintage mode button with light
-        addParam(createParamCentered<rack::componentlibrary::LEDButton>(centerPx("patina-vintage-button", centerX, charRow2), module, Patina::VINTAGE_MODE_PARAM));
-        if (module) addChild(createLightCentered<MediumLight<RedLight>>(centerPx("patina-vintage-light", centerX, charRow2), module, Patina::VINTAGE_LIGHT));
+        // Lock mode button (below gravity knob)
+        addParam(createParamCentered<VCVButton>(centerPx("patina-lock", char2X, lockRow), module, Patina::LOCK_MODE_PARAM));
+
+        // Stereo output jacks (bottom right)
+        const float stereoRow = 118.f;
+        const float stereoLX = 15.f;
+        const float stereoRX = 86.6f;
+
+        addOutput(createOutputCentered<ShapetakerBNCPort>(centerPx("patina-stereo-l", stereoLX, stereoRow), module, Patina::STEREO_L_OUTPUT));
+        addOutput(createOutputCentered<ShapetakerBNCPort>(centerPx("patina-stereo-r", stereoRX, stereoRow), module, Patina::STEREO_R_OUTPUT));
+    }
+
+    void appendContextMenu(Menu* menu) override {
+        Patina* module = dynamic_cast<Patina*>(this->module);
+        if (!module)
+            return;
+
+        menu->addChild(new MenuSeparator);
+
+        // ====================================================================
+        // LFO Output Range
+        // ====================================================================
+        menu->addChild(createMenuLabel("LFO Output Range"));
+
+        struct UnipolarModeItem : MenuItem {
+            Patina* module;
+            bool unipolar;
+
+            void onAction(const event::Action& e) override {
+                module->unipolarMode = unipolar;
+            }
+
+            void step() override {
+                rightText = (module->unipolarMode == unipolar) ? "✔" : "";
+                MenuItem::step();
+            }
+        };
+
+        UnipolarModeItem* bipolarItem = createMenuItem<UnipolarModeItem>("Bipolar (-5V to +5V)");
+        bipolarItem->module = module;
+        bipolarItem->unipolar = false;
+        menu->addChild(bipolarItem);
+
+        UnipolarModeItem* unipolarItem = createMenuItem<UnipolarModeItem>("Unipolar (0V to 10V)");
+        unipolarItem->module = module;
+        unipolarItem->unipolar = true;
+        menu->addChild(unipolarItem);
+
+        menu->addChild(new MenuSeparator);
+
+        // ====================================================================
+        // Envelope Mode
+        // ====================================================================
+        menu->addChild(createMenuLabel("Envelope Mode"));
+
+        struct EnvelopeModeItem : MenuItem {
+            Patina* module;
+            int mode;
+
+            void onAction(const event::Action& e) override {
+                module->envelopeMode = mode;
+            }
+
+            void step() override {
+                rightText = (module->envelopeMode == mode) ? "✔" : "";
+                MenuItem::step();
+            }
+        };
+
+        EnvelopeModeItem* freqModeItem = createMenuItem<EnvelopeModeItem>("Frequency Modulation");
+        freqModeItem->module = module;
+        freqModeItem->mode = 0;
+        menu->addChild(freqModeItem);
+
+        EnvelopeModeItem* ampModeItem = createMenuItem<EnvelopeModeItem>("Amplitude Modulation");
+        ampModeItem->module = module;
+        ampModeItem->mode = 1;
+        menu->addChild(ampModeItem);
+
+        menu->addChild(new MenuSeparator);
+
+        // ====================================================================
+        // Clocking
+        // ====================================================================
+        menu->addChild(createMenuLabel("Clock Modes"));
+
+        struct LFOClockModeItem : MenuItem {
+            Patina* module;
+            int lfoIndex;
+            bool useClock;
+
+            void onAction(const event::Action& e) override {
+                module->lfoClockModes[lfoIndex] = useClock;
+            }
+
+            void step() override {
+                rightText = (module->lfoClockModes[lfoIndex] == useClock) ? "✔" : "";
+                MenuItem::step();
+            }
+        };
+
+        for (int i = 0; i < 3; ++i) {
+            std::string labelBase = "LFO " + std::to_string(i + 1) + " ";
+            auto freeItem = createMenuItem<LFOClockModeItem>(labelBase + "Free");
+            freeItem->module = module;
+            freeItem->lfoIndex = i;
+            freeItem->useClock = false;
+            menu->addChild(freeItem);
+
+            auto clockItem = createMenuItem<LFOClockModeItem>(labelBase + "Clocked (subdiv)");
+            clockItem->module = module;
+            clockItem->lfoIndex = i;
+            clockItem->useClock = true;
+            menu->addChild(clockItem);
+        }
+
+        menu->addChild(new MenuSeparator);
+
+        // ====================================================================
+        // Envelope Settings
+        // ====================================================================
+        menu->addChild(createMenuLabel("Envelope Settings"));
+
+        struct BipolarEnvelopeItem : MenuItem {
+            Patina* module;
+
+            void onAction(const event::Action& e) override {
+                module->bipolarEnvelope = !module->bipolarEnvelope;
+            }
+
+            void step() override {
+                rightText = module->bipolarEnvelope ? "✔" : "";
+                MenuItem::step();
+            }
+        };
+
+        BipolarEnvelopeItem* bipolarEnvItem = createMenuItem<BipolarEnvelopeItem>("Bipolar Envelope (-1 to +1)");
+        bipolarEnvItem->module = module;
+        menu->addChild(bipolarEnvItem);
     }
 };
 

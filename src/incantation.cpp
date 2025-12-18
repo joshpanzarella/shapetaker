@@ -722,14 +722,14 @@ struct IncantationWidget : ModuleWidget {
         auto centerPx = LayoutHelper::createCenterPxHelper(parser);
 
         // Main controls (top section - more spaced out)
-        addParam(createParamCentered<ShapetakerKnobAltLarge>(centerPx("inc-drive-knob", 24.f, 20.f), module, Incantation::DRIVE_PARAM));
-        addParam(createParamCentered<ShapetakerKnobAltLarge>(centerPx("inc-mix-knob", 47.f, 20.f), module, Incantation::MIX_PARAM));
-        addParam(createParamCentered<ShapetakerKnobAltLarge>(centerPx("inc-output-knob", 70.f, 20.f), module, Incantation::OUTPUT_PARAM));
-        
+        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltLarge>(centerPx("inc-drive-knob", 24.f, 20.f), module, Incantation::DRIVE_PARAM));
+        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltLarge>(centerPx("inc-mix-knob", 47.f, 20.f), module, Incantation::MIX_PARAM));
+        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltLarge>(centerPx("inc-output-knob", 70.f, 20.f), module, Incantation::OUTPUT_PARAM));
+
         // Second row of controls - more spaced
-        addParam(createParamCentered<ShapetakerKnobAltMedium>(centerPx("inc-pattern-knob", 24.f, 35.f), module, Incantation::PATTERN_PARAM));
-        addParam(createParamCentered<ShapetakerKnobAltMedium>(centerPx("inc-envelope-knob", 47.f, 35.f), module, Incantation::ENVELOPE_PARAM));
-        addParam(createParamCentered<ShapetakerKnobAltMedium>(centerPx("inc-rate-knob", 70.f, 35.f), module, Incantation::RATE_PARAM));
+        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltMedium>(centerPx("inc-pattern-knob", 24.f, 35.f), module, Incantation::PATTERN_PARAM));
+        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltMedium>(centerPx("inc-envelope-knob", 47.f, 35.f), module, Incantation::ENVELOPE_PARAM));
+        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltMedium>(centerPx("inc-rate-knob", 70.f, 35.f), module, Incantation::RATE_PARAM));
         
         // Preset buttons - spread out more
         addParam(createParamCentered<ShapetakerVintageMomentary>(centerPx("inc-preset-zero", 24.f, 48.f), module, Incantation::PRESET_ZERO_PARAM));

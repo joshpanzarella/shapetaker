@@ -1932,38 +1932,38 @@ struct FatebinderWidget : ModuleWidget {
         // Column 1: Rhythm controls
         auto* stepsKnob = createParamCentered<ShapetakerKnobAltSmall>(centerPx("steps-knob", col1X, row1Y), module, Fatebinder::STEPS_PARAM);
         resizeKnob(stepsKnob, 14.f);
-        addParam(stepsKnob);
+        addKnobWithShadow(this, stepsKnob);
         auto* hitsKnob = createParamCentered<ShapetakerKnobAltSmall>(centerPx("hits-knob", col1X, row1Y + rowSpacing), module, Fatebinder::HITS_PARAM);
         resizeKnob(hitsKnob, 14.f);
-        addParam(hitsKnob);
+        addKnobWithShadow(this, hitsKnob);
         auto* rotationKnob = createParamCentered<ShapetakerKnobAltSmall>(centerPx("rotation-knob", col1X, row1Y + rowSpacing * 2), module, Fatebinder::ROTATION_PARAM);
         resizeKnob(rotationKnob, 14.f);
-        addParam(rotationKnob);
+        addKnobWithShadow(this, rotationKnob);
         auto* ring2Knob = createParamCentered<ShapetakerKnobAltSmall>(centerPx("ring2-knob", col1X, row1Y + rowSpacing * 3), module, Fatebinder::RING_2_DIV_PARAM);
         resizeKnob(ring2Knob, 14.f);
-        addParam(ring2Knob);
+        addKnobWithShadow(this, ring2Knob);
         auto* ring3Knob = createParamCentered<ShapetakerKnobAltSmall>(centerPx("ring3-knob", col1X, row1Y + rowSpacing * 4), module, Fatebinder::RING_3_DIV_PARAM);
         resizeKnob(ring3Knob, 14.f);
-        addParam(ring3Knob);
+        addKnobWithShadow(this, ring3Knob);
 
         // Column 2: Probability controls
         auto* probabilityKnob = createParamCentered<ShapetakerKnobAltSmall>(centerPx("probability-knob", col2X, row1Y + 2.f), module, Fatebinder::PROBABILITY_PARAM);
         resizeKnob(probabilityKnob, 16.f);
-        addParam(probabilityKnob);
+        addKnobWithShadow(this, probabilityKnob);
         auto* chaosKnob = createParamCentered<ShapetakerKnobAltMedium>(centerPx("chaos-knob", col2X, row1Y + rowSpacing + 7.f), module, Fatebinder::CHAOS_PARAM);
         resizeKnob(chaosKnob, 20.f);
-        addParam(chaosKnob);
+        addKnobWithShadow(this, chaosKnob);
         auto* densityKnob = createParamCentered<ShapetakerKnobAltSmall>(centerPx("density-knob", col2X, row1Y + rowSpacing * 2 + 12.f), module, Fatebinder::DENSITY_PARAM);
         resizeKnob(densityKnob, 14.f);
-        addParam(densityKnob);
+        addKnobWithShadow(this, densityKnob);
 
         // Column 3: Mutation controls
         auto* tempoKnob = createParamCentered<ShapetakerKnobAltSmall>(centerPx("tempo-knob", col3X, row1Y), module, Fatebinder::TEMPO_PARAM);
         resizeKnob(tempoKnob, 16.f);
-        addParam(tempoKnob);
+        addKnobWithShadow(this, tempoKnob);
         auto* mutationKnob = createParamCentered<ShapetakerKnobAltSmall>(centerPx("mutation-knob", col3X, row1Y + rowSpacing), module, Fatebinder::MUTATION_RATE_PARAM);
         resizeKnob(mutationKnob, 14.f);
-        addParam(mutationKnob);
+        addKnobWithShadow(this, mutationKnob);
 
         // Freeze/Reset buttons
         addParam(createParamCentered<ShapetakerVintageMomentary>(centerPx("freeze-btn", col3X, row1Y + rowSpacing * 2), module, Fatebinder::FREEZE_PARAM));
@@ -1975,16 +1975,16 @@ struct FatebinderWidget : ModuleWidget {
         // Column 4: Envelope controls
         auto* attackKnob = createParamCentered<ShapetakerKnobAltSmall>(centerPx("attack-knob", col4X, row1Y), module, Fatebinder::ATTACK_PARAM);
         resizeKnob(attackKnob, 14.f);
-        addParam(attackKnob);
+        addKnobWithShadow(this, attackKnob);
         auto* decayKnob = createParamCentered<ShapetakerKnobAltSmall>(centerPx("decay-knob", col4X, row1Y + rowSpacing), module, Fatebinder::DECAY_PARAM);
         resizeKnob(decayKnob, 14.f);
-        addParam(decayKnob);
+        addKnobWithShadow(this, decayKnob);
         auto* curveKnob = createParamCentered<ShapetakerKnobAltSmall>(centerPx("curve-knob", col4X, row1Y + rowSpacing * 2), module, Fatebinder::CURVE_PARAM);
         resizeKnob(curveKnob, 14.f);
-        addParam(curveKnob);
+        addKnobWithShadow(this, curveKnob);
         auto* shapeKnob = createParamCentered<ShapetakerKnobAltSmall>(centerPx("shape-knob", col4X, row1Y + rowSpacing * 3), module, Fatebinder::SHAPE_PARAM);
         resizeKnob(shapeKnob, 14.f);
-        addParam(shapeKnob);
+        addKnobWithShadow(this, shapeKnob);
 
         // ====================================================================
         // CV INPUTS - Spread across bottom

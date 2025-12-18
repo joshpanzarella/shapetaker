@@ -77,6 +77,79 @@ struct ShapetakerKnobBase : app::SvgKnob {
     }
 };
 
+/**
+ * Knob shadow widget - draws a realistic drop shadow beneath knobs.
+ * Used by all Shapetaker modules for consistent visual depth.
+ */
+struct KnobShadowWidget : widget::TransparentWidget {
+    float padding = 6.f;
+    float alpha = 0.32f;
+    float offset = 0.f;
+    float verticalScale = 0.7f;
+
+    KnobShadowWidget(const Vec& knobSize, float paddingPx, float alpha_) {
+        padding = paddingPx;
+        alpha = alpha_;
+        box.size = knobSize.plus(Vec(padding * 2.f, padding * 2.f));
+        offset = padding * 0.58f;
+        verticalScale = 0.65f;
+    }
+
+    void draw(const DrawArgs& args) override {
+        Vec center = box.size.div(2.f);
+        float outerR = std::max(box.size.x, box.size.y) * 0.5f;
+        float innerR = std::max(0.f, outerR - padding);
+
+        nvgSave(args.vg);
+        nvgTranslate(args.vg, center.x, center.y + offset);
+        nvgScale(args.vg, 1.f, verticalScale);
+
+        NVGpaint paint = nvgRadialGradient(
+            args.vg,
+            0.f,
+            0.f,
+            innerR * 0.25f,
+            outerR,
+            nvgRGBAf(0.f, 0.f, 0.f, alpha),
+            nvgRGBAf(0.f, 0.f, 0.f, 0.f));
+        nvgBeginPath(args.vg);
+        nvgCircle(args.vg, 0.f, 0.f, outerR);
+        nvgFillPaint(args.vg, paint);
+        nvgFill(args.vg);
+
+        nvgRestore(args.vg);
+    }
+};
+
+/**
+ * Helper function to add a knob with shadow to a module widget.
+ * Usage: addKnobWithShadow(this, knob) instead of addParam(knob)
+ */
+inline void addKnobWithShadow(ModuleWidget* widget, app::ParamWidget* knob) {
+    if (!knob || !widget) return;
+
+    float diameter = std::max(knob->box.size.x, knob->box.size.y);
+    float padding = std::max(7.f, std::min(diameter * 0.32f, 18.f));
+    float alpha = std::max(0.32f, std::min(0.60f, 0.25f + diameter * 0.006f));
+
+    auto* shadow = new KnobShadowWidget(knob->box.size, padding, alpha);
+    shadow->box.pos = knob->box.pos.minus(Vec(padding, padding));
+    widget->addChild(shadow);
+    widget->addParam(knob);
+}
+
+// Shadow helpers currently disabled per request (leave hooks for future tuning).
+inline void applyCircularShadow(app::SvgKnob* knob, float, float, float = 0.f, float = 0.f) {
+    if (!knob || !knob->shadow) return;
+    knob->shadow->visible = false;
+}
+
+// Hexagonal attenuverter shadow helper (disabled).
+inline void applyHexShadow(app::SvgKnob* knob, float = 0.f, float = 0.f, float = 0.f, float = 0.f) {
+    if (!knob || !knob->shadow) return;
+    knob->shadow->visible = false;
+}
+
 struct ShapetakerKnobLarge : ShapetakerKnobBase {
     widget::SvgWidget* bg;
     Vec nativeSize = Vec(100.f, 100.f);
@@ -95,18 +168,7 @@ struct ShapetakerKnobLarge : ShapetakerKnobBase {
         if (fb && tw) fb->addChildBelow(bg, tw);
         // Target: Large = 24 mm
         box.size = mm2px(Vec(24.f, 24.f));
-        // Configure Fundamental-style shadow, tightened to the knob face
-        if (shadow && sw) {
-            shadow->visible = true;
-            shadow->blurRadius = 0.f;
-            shadow->opacity = 0.15f;
-            Vec s = sw->box.size;
-            float f = 0.90f; // Large: face diameter ~56.5 of 63 viewBox
-            Vec shr = Vec(s.x * f, s.y * f);
-            shadow->box.size = shr;
-            shadow->box.pos = Vec((s.x - shr.x) * 0.5f,
-                                   (s.y - shr.y) * 0.5f + s.y * 0.10f);
-        }
+        applyCircularShadow(this, 0.90f, 0.10f); // Large: face diameter ~56.5 of 63 viewBox
     }
     void draw(const DrawArgs& args) override {
         nvgSave(args.vg);
@@ -142,18 +204,7 @@ struct ShapetakerKnobMedium : app::SvgKnob {
         if (fb && tw) fb->addChildBelow(bg, tw);
         // Target: Medium = 20 mm
         box.size = mm2px(Vec(20.f, 20.f));
-        // Configure Fundamental-style shadow, tightened to the knob face
-        if (shadow && sw) {
-            shadow->visible = true;
-            shadow->blurRadius = 0.f;
-            shadow->opacity = 0.15f;
-            Vec s = sw->box.size;
-            float f = 0.78f; // Medium: face diameter ~40.4 of 52 viewBox
-            Vec shr = Vec(s.x * f, s.y * f);
-            shadow->box.size = shr;
-            shadow->box.pos = Vec((s.x - shr.x) * 0.5f,
-                                   (s.y - shr.y) * 0.5f + s.y * 0.10f);
-        }
+        applyCircularShadow(this, 0.78f, 0.10f); // Medium: face diameter ~40.4 of 52 viewBox
     }
     void draw(const DrawArgs& args) override {
         nvgSave(args.vg);
@@ -189,18 +240,7 @@ struct ShapetakerKnobOscilloscopeMedium : app::SvgKnob {
         if (fb && tw) fb->addChildBelow(bg, tw);
         // Target: Medium = 20 mm
         box.size = mm2px(Vec(20.f, 20.f));
-        // Configure Fundamental-style shadow, tightened to the knob face
-        if (shadow && sw) {
-            shadow->visible = true;
-            shadow->blurRadius = 0.f;
-            shadow->opacity = 0.15f;
-            Vec s = sw->box.size;
-            float f = 0.78f; // Medium variant
-            Vec shr = Vec(s.x * f, s.y * f);
-            shadow->box.size = shr;
-            shadow->box.pos = Vec((s.x - shr.x) * 0.5f,
-                                   (s.y - shr.y) * 0.5f + s.y * 0.10f);
-        }
+        applyCircularShadow(this, 0.78f, 0.10f); // Medium variant
     }
     void draw(const DrawArgs& args) override {
         nvgSave(args.vg);
@@ -236,18 +276,7 @@ struct ShapetakerKnobOscilloscopeLarge : app::SvgKnob {
         if (fb && tw) fb->addChildBelow(bg, tw);
         // Target: Large = 24 mm
         box.size = mm2px(Vec(24.f, 24.f));
-        // Configure Fundamental-style shadow, tightened to the knob face
-        if (shadow && sw) {
-            shadow->visible = true;
-            shadow->blurRadius = 0.f;
-            shadow->opacity = 0.15f;
-            Vec s = sw->box.size;
-            float f = 0.90f;
-            Vec shr = Vec(s.x * f, s.y * f);
-            shadow->box.size = shr;
-            shadow->box.pos = Vec((s.x - shr.x) * 0.5f,
-                                   (s.y - shr.y) * 0.5f + s.y * 0.10f);
-        }
+        applyCircularShadow(this, 0.90f, 0.10f);
     }
     void draw(const DrawArgs& args) override {
         nvgSave(args.vg);
@@ -283,18 +312,7 @@ struct ShapetakerKnobOscilloscopeSmall : app::SvgKnob {
         if (fb && tw) fb->addChildBelow(bg, tw);
         // Target: Small = 16 mm
         box.size = mm2px(Vec(16.f, 16.f));
-        // Configure Fundamental-style shadow, tightened to the knob face
-        if (shadow && sw) {
-            shadow->visible = true;
-            shadow->blurRadius = 0.f;
-            shadow->opacity = 0.15f;
-            Vec s = sw->box.size;
-            float f = 0.80f; // Small: face diameter 24 of 30 viewBox
-            Vec shr = Vec(s.x * f, s.y * f);
-            shadow->box.size = shr;
-            shadow->box.pos = Vec((s.x - shr.x) * 0.5f,
-                                   (s.y - shr.y) * 0.5f + s.y * 0.10f);
-        }
+        applyCircularShadow(this, 0.80f, 0.10f); // Small: face diameter 24 of 30 viewBox
     }
     void draw(const DrawArgs& args) override {
         nvgSave(args.vg);
@@ -330,18 +348,7 @@ struct ShapetakerKnobOscilloscopeXLarge : app::SvgKnob {
         if (fb && tw) fb->addChildBelow(bg, tw);
         // Target: XLarge = 28 mm
         box.size = mm2px(Vec(28.f, 28.f));
-        // Configure Fundamental-style shadow, tightened to the knob face
-        if (shadow && sw) {
-            shadow->visible = true;
-            shadow->blurRadius = 0.f;
-            shadow->opacity = 0.15f;
-            Vec s = sw->box.size;
-            float f = 0.92f; // XLarge: face diameter ~44 of 48 viewBox
-            Vec shr = Vec(s.x * f, s.y * f);
-            shadow->box.size = shr;
-            shadow->box.pos = Vec((s.x - shr.x) * 0.5f,
-                                   (s.y - shr.y) * 0.5f + s.y * 0.10f);
-        }
+        applyCircularShadow(this, 0.92f, 0.10f); // XLarge: face diameter ~44 of 48 viewBox
     }
     void draw(const DrawArgs& args) override {
         nvgSave(args.vg);
@@ -377,18 +384,7 @@ struct ShapetakerKnobOscilloscopeHuge : app::SvgKnob {
         if (fb && tw) fb->addChildBelow(bg, tw);
         // Target: Huge = 30 mm
         box.size = mm2px(Vec(30.f, 30.f));
-        // Configure Fundamental-style shadow, tightened to the knob face
-        if (shadow && sw) {
-            shadow->visible = true;
-            shadow->blurRadius = 0.f;
-            shadow->opacity = 0.15f;
-            Vec s = sw->box.size;
-            float f = 0.93f; // Huge: face diameter ~54 of 58 viewBox
-            Vec shr = Vec(s.x * f, s.y * f);
-            shadow->box.size = shr;
-            shadow->box.pos = Vec((s.x - shr.x) * 0.5f,
-                                   (s.y - shr.y) * 0.5f + s.y * 0.10f);
-        }
+        applyCircularShadow(this, 0.93f, 0.10f); // Huge: face diameter ~54 of 58 viewBox
     }
     void draw(const DrawArgs& args) override {
         nvgSave(args.vg);
@@ -426,17 +422,7 @@ struct ShapetakerKnobCharredSmall : app::SvgKnob {
         if (fb && tw) fb->addChildBelow(bg, tw);
         box.size = mm2px(Vec(16.f, 16.f));
 
-        if (shadow && sw) {
-            shadow->visible = true;
-            shadow->blurRadius = 0.f;
-            shadow->opacity = 0.15f;
-            Vec s = sw->box.size;
-            float f = 0.80f;
-            Vec shr = Vec(s.x * f, s.y * f);
-            shadow->box.size = shr;
-            shadow->box.pos = Vec((s.x - shr.x) * 0.5f,
-                                   (s.y - shr.y) * 0.5f + s.y * 0.10f);
-        }
+        applyCircularShadow(this, 0.80f, 0.10f);
     }
     void draw(const DrawArgs& args) override {
         nvgSave(args.vg);
@@ -470,17 +456,7 @@ struct ShapetakerKnobCharredMedium : app::SvgKnob {
         if (fb && tw) fb->addChildBelow(bg, tw);
         box.size = mm2px(Vec(18.f, 18.f));
 
-        if (shadow && sw) {
-            shadow->visible = true;
-            shadow->blurRadius = 0.f;
-            shadow->opacity = 0.15f;
-            Vec s = sw->box.size;
-            float f = 0.82f;
-            Vec shr = Vec(s.x * f, s.y * f);
-            shadow->box.size = shr;
-            shadow->box.pos = Vec((s.x - shr.x) * 0.5f,
-                                   (s.y - shr.y) * 0.5f + s.y * 0.10f);
-        }
+        applyCircularShadow(this, 0.82f, 0.10f);
     }
     void draw(const DrawArgs& args) override {
         nvgSave(args.vg);
@@ -518,10 +494,7 @@ struct ShapetakerKnobVintageSmall : app::SvgKnob {
         if (fb && tw) fb->addChildBelow(bg, tw);
         box.size = mm2px(Vec(20.f, 20.f));  // Much bigger! (was 16mm)
 
-        // Disable shadow since indicator is on outer edge
-        if (shadow) {
-            shadow->visible = false;
-        }
+        applyCircularShadow(this, 0.90f, 0.10f);
     }
     void draw(const DrawArgs& args) override {
         nvgSave(args.vg);
@@ -555,10 +528,7 @@ struct ShapetakerKnobVintageMedium : app::SvgKnob {
         if (fb && tw) fb->addChildBelow(bg, tw);
         box.size = mm2px(Vec(22.f, 22.f));  // Much bigger! (was 18mm)
 
-        // Disable shadow since indicator is on outer edge
-        if (shadow) {
-            shadow->visible = false;
-        }
+        applyCircularShadow(this, 0.90f, 0.10f);
     }
 
     void draw(const DrawArgs& args) override {
@@ -593,10 +563,7 @@ struct ShapetakerKnobDarkSmall : app::SvgKnob {
         if (fb && tw) fb->addChildBelow(bg, tw);
         box.size = mm2px(Vec(8.f, 8.f));
 
-        // Disable shadow for clean dark aesthetic
-        if (shadow) {
-            shadow->visible = false;
-        }
+        applyCircularShadow(this, 0.88f, 0.08f);
     }
 
     void draw(const DrawArgs& args) override {
@@ -627,10 +594,7 @@ struct ShapetakerKnobDarkMedium : app::SvgKnob {
         if (fb && tw) fb->addChildBelow(bg, tw);
         box.size = mm2px(Vec(18.f, 18.f));
 
-        // Disable shadow for clean dark aesthetic
-        if (shadow) {
-            shadow->visible = false;
-        }
+        applyCircularShadow(this, 0.88f, 0.08f);
     }
 
     void draw(const DrawArgs& args) override {
@@ -661,10 +625,7 @@ struct ShapetakerKnobDarkLarge : app::SvgKnob {
         if (fb && tw) fb->addChildBelow(bg, tw);
         box.size = mm2px(Vec(22.f, 22.f));
 
-        // Disable shadow for clean dark aesthetic
-        if (shadow) {
-            shadow->visible = false;
-        }
+        applyCircularShadow(this, 0.88f, 0.08f);
     }
 
     void draw(const DrawArgs& args) override {
@@ -698,10 +659,7 @@ struct ShapetakerKnobAltHuge : ShapetakerKnobBase {
         if (fb && tw) fb->addChildBelow(bg, tw);
         box.size = mm2px(Vec(30.f, 30.f));
 
-        // Shadow disabled
-        if (shadow) {
-            shadow->visible = false;
-        }
+        applyCircularShadow(this, 0.90f, 0.10f);
     }
 
     void draw(const DrawArgs& args) override {
@@ -742,10 +700,7 @@ struct ShapetakerKnobAltLarge : ShapetakerKnobBase {
         if (fb && tw) fb->addChildBelow(bg, tw);
         box.size = mm2px(Vec(24.f, 24.f));
 
-        // Shadow disabled
-        if (shadow) {
-            shadow->visible = false;
-        }
+        applyCircularShadow(this, 0.90f, 0.10f);
     }
 
     void draw(const DrawArgs& args) override {
@@ -786,10 +741,7 @@ struct ShapetakerKnobAltMedium : ShapetakerKnobBase {
         if (fb && tw) fb->addChildBelow(bg, tw);
         box.size = mm2px(Vec(20.f, 20.f));
 
-        // Shadow disabled
-        if (shadow) {
-            shadow->visible = false;
-        }
+        applyCircularShadow(this, 0.90f, 0.10f);
     }
 
     void draw(const DrawArgs& args) override {
@@ -830,10 +782,7 @@ struct ShapetakerKnobAltSmall : ShapetakerKnobBase {
         if (fb && tw) fb->addChildBelow(bg, tw);
         box.size = mm2px(Vec(16.f, 16.f));
 
-        // Shadow disabled
-        if (shadow) {
-            shadow->visible = false;
-        }
+        applyCircularShadow(this, 0.90f, 0.10f);
     }
 
     void draw(const DrawArgs& args) override {
@@ -871,10 +820,7 @@ struct ShapetakerKnobDarkChicken : app::SvgKnob {
         if (fb && tw) fb->addChildBelow(bg, tw);
         box.size = mm2px(Vec(22.f, 22.f));
 
-        // Disable shadow for clean dark aesthetic
-        if (shadow) {
-            shadow->visible = false;
-        }
+        applyCircularShadow(this, 0.90f, 0.08f);
     }
     void draw(const DrawArgs& args) override {
         nvgSave(args.vg);
@@ -1167,16 +1113,7 @@ struct ShapetakerAttenuverterOscilloscope : app::SvgKnob {
         nativeSize = Vec(maxDim, maxDim);
         // Target: Attenuverter = 10 mm (closer to compact 4ms-style attenuverters)
         box.size = mm2px(Vec(10.f, 10.f));
-        // Configure Fundamental-style shadow (no shrink; face matches SVG)
-        if (shadow && sw) {
-            shadow->visible = true;
-            shadow->blurRadius = 0.f;
-            shadow->opacity = 0.15f;
-            // Force shadow to be square to match the square box.size
-            float size = std::max(box.size.x, box.size.y);
-            shadow->box.size = Vec(size, size);
-            shadow->box.pos = Vec(0.f, size * 0.10f);
-        }
+        applyHexShadow(this, 0.94f, 0.08f, 0.20f, 0.65f);
     }
     void draw(const DrawArgs& args) override {
         nvgSave(args.vg);
@@ -1212,8 +1149,108 @@ struct ShapetakerVintageMomentary : app::SvgSwitch {
         nvgSave(args.vg);
         // Incoming SVG viewBox is 100x100; scale to our box
         const float s = box.size.x / 100.f;
+        // Simulate a mechanical press: nudge downward and darken slightly when active
+        const bool pressed = (getParamQuantity() && getParamQuantity()->getValue() > 0.5f);
+        if (pressed) {
+            nvgTranslate(args.vg, 0.f, 0.9f * s);
+        }
         nvgScale(args.vg, s, s);
         app::SvgSwitch::draw(args);
+        if (pressed) {
+            // Subtle dark overlay to convey depth
+            nvgBeginPath(args.vg);
+            nvgCircle(args.vg, 50.f, 50.f, 35.f);
+            nvgFillColor(args.vg, nvgRGBA(0, 0, 0, 40));
+            nvgFill(args.vg);
+        }
+        nvgRestore(args.vg);
+    }
+};
+
+// Lighted version of the vintage momentary button
+struct ShapetakerVintageMomentaryLight : ShapetakerVintageMomentary {
+    Module* module = nullptr;
+    int lightId = -1;
+
+    void draw(const DrawArgs& args) override {
+        // Get light brightness
+        float brightness = 0.f;
+        if (module && lightId >= 0) {
+            brightness = module->lights[lightId].getBrightness();
+        }
+
+        nvgSave(args.vg);
+        // Incoming SVG viewBox is 100x100; scale to our box
+        const float s = box.size.x / 100.f;
+        // Simulate a mechanical press: nudge downward and darken slightly when active
+        const bool pressed = (getParamQuantity() && getParamQuantity()->getValue() > 0.5f);
+        if (pressed) {
+            nvgTranslate(args.vg, 0.f, 0.9f * s);
+        }
+        nvgScale(args.vg, s, s);
+
+        // Draw the button with brightness modulation
+        if (brightness > 0.f) {
+            // Add a bright glow to the button when lit
+            nvgGlobalAlpha(args.vg, 1.0f);
+        }
+
+        app::SvgSwitch::draw(args);
+
+        // Add white glow overlay when lit
+        if (brightness > 0.f) {
+            nvgBeginPath(args.vg);
+            nvgCircle(args.vg, 50.f, 50.f, 35.f);
+            // White glow proportional to brightness
+            nvgFillColor(args.vg, nvgRGBA(255, 255, 255, (int)(brightness * 180.f)));
+            nvgFill(args.vg);
+
+            // Outer glow halo
+            NVGcolor innerGlow = nvgRGBA(255, 255, 255, (int)(brightness * 100.f));
+            NVGcolor outerGlow = nvgRGBA(255, 255, 255, 0);
+            NVGpaint glow = nvgRadialGradient(args.vg, 50.f, 50.f, 35.f, 55.f, innerGlow, outerGlow);
+            nvgBeginPath(args.vg);
+            nvgCircle(args.vg, 50.f, 50.f, 55.f);
+            nvgFillPaint(args.vg, glow);
+            nvgFill(args.vg);
+        }
+
+        if (pressed) {
+            // Subtle dark overlay to convey depth
+            nvgBeginPath(args.vg);
+            nvgCircle(args.vg, 50.f, 50.f, 35.f);
+            nvgFillColor(args.vg, nvgRGBA(0, 0, 0, 40));
+            nvgFill(args.vg);
+        }
+        nvgRestore(args.vg);
+    }
+};
+
+// Latching vintage button with built-in amber backlight
+struct ShapetakerVintageLatchLED : app::SvgSwitch {
+    ShapetakerVintageLatchLED() {
+        momentary = false;
+        auto svgUp = Svg::load(asset::plugin(pluginInstance, "res/buttons/vintage_momentary_button.svg"));
+        addFrame(svgUp);
+        addFrame(svgUp);
+        if (shadow) shadow->visible = false;
+        box.size = mm2px(Vec(9.f, 9.f));
+    }
+    void draw(const DrawArgs& args) override {
+        nvgSave(args.vg);
+        const float s = box.size.x / 100.f;
+        bool active = getParamQuantity() && getParamQuantity()->getValue() > 0.5f;
+        if (active) {
+            nvgTranslate(args.vg, 0.f, 0.8f * s);
+        }
+        nvgScale(args.vg, s, s);
+        app::SvgSwitch::draw(args);
+        if (active) {
+            nvgBeginPath(args.vg);
+            nvgCircle(args.vg, 50.f, 50.f, 33.f);
+            nvgFillColor(args.vg, nvgRGBA(0xff, 0xb4, 0x3a, 120)); // warm amber
+            nvgFill(args.vg);
+        }
         nvgRestore(args.vg);
     }
 };
@@ -1460,8 +1497,8 @@ struct ShapetakerVintageSelector : app::ParamWidget {
         bgSvg = Svg::load(asset::plugin(pluginInstance, "res/switches/distortion_selector.svg"));
         pointerSvg = Svg::load(asset::plugin(pluginInstance, "res/switches/distortion_selector_pointer.svg"));
 
-        // Force large size - no SvgKnob to interfere
-        box.size = mm2px(Vec(22.0f, 22.0f));
+        // Size to fit within 80px LED ring (20mm ≈ 75.6px)
+        box.size = mm2px(Vec(20.0f, 20.0f));
     }
 
     void onDragMove(const event::DragMove& e) override {

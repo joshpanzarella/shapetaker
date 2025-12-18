@@ -119,6 +119,7 @@ struct Involution : Module {
         std::array<float, ETHEREAL_STAGES> drift{};
         std::array<float, ETHEREAL_STAGES> smoothedStageBlend{};
         std::array<float, ETHEREAL_STAGES> smoothedDelay{};
+        std::array<float, ETHEREAL_STAGES> dcBlock{};
         float smoothedDiffusion = 0.f;
         float smoothedFeedback = 0.f;
         float smoothedHaloMix = 0.f;
@@ -133,6 +134,7 @@ struct Involution : Module {
             modPhase.fill(0.f);
             smoothedStageBlend.fill(0.f);
             smoothedDelay.fill(12.f);
+            dcBlock.fill(0.f);
             smoothedDiffusion = 0.f;
             smoothedFeedback = 0.f;
             smoothedHaloMix = 0.f;
@@ -161,12 +163,14 @@ struct Involution : Module {
     shapetaker::FastSmoother cutoffASmooth, cutoffBSmooth, resonanceASmooth, resonanceBSmooth;
     shapetaker::FastSmoother auraSmooth, orbitSmooth, tideSmooth;
     shapetaker::FastSmoother chaosRateSmooth;
+    shapetaker::FastSmoother driveSmooth;
     shapetaker::FastSmoother effectGateSmooth;
 
     static constexpr float CHARACTER_SMOOTH_TC = 0.015f;
     static constexpr float EFFECT_GATE_SMOOTH_TC = 0.04f;
     static constexpr float ETHEREAL_PARAM_SMOOTH_TC = 0.05f;
     static constexpr float CUTOFF_CV_SMOOTH_TC = 0.002f;  // Very fast smoothing to preserve modulation character while eliminating zipper noise
+    static constexpr float DRIVE_SMOOTH_TC = 0.012f;
 
     // Character drama shaping - set mix to 0 to revert to legacy linear response
     static constexpr float AURA_DRAMA_MIX = 1.f;
@@ -183,6 +187,7 @@ struct Involution : Module {
 
     // Smoothed values for visualizer access
     float smoothedChaosRate = 0.5f;
+    float smoothedDrive = 1.0f;
     float effectiveResonanceA = 0.707f;
     float effectiveResonanceB = 0.707f;
     float effectiveCutoffA = 1.0f; // Store final modulated cutoff values
@@ -197,7 +202,7 @@ struct Involution : Module {
         configParam(RESONANCE_B_PARAM, 0.707f, 1.5f, 0.707f, "Filter B Resonance");
         
         // Drive / character controls
-        configParam(CHAOS_AMOUNT_PARAM, 0.f, 1.f, 1.f, "Drive", "%", 0.f, 100.f);
+        configParam(CHAOS_AMOUNT_PARAM, 0.f, 1.f, 0.75f, "Drive", "%", 0.f, 100.f);
         configParam(AURA_PARAM, 0.f, 1.f, 0.35f, "Aura", "%", 0.f, 100.f);
         configParam(ORBIT_PARAM, 0.f, 1.f, 0.4f, "Orbit", "%", 0.f, 100.f);
         configParam(TIDE_PARAM, 0.f, 1.f, 0.5f, "Tide", "%", 0.f, 100.f);
@@ -206,6 +211,10 @@ struct Involution : Module {
         chaosTargetRate = clamp(params[CHAOS_RATE_PARAM].getValue(), CHAOS_RATE_MIN_HZ, CHAOS_RATE_MAX_HZ);
         smoothedChaosRate = chaosTargetRate;
         chaosRateSmooth.reset(chaosTargetRate);
+        smoothedDrive = params[CHAOS_AMOUNT_PARAM].getValue();
+        driveSmooth.reset(smoothedDrive);
+        smoothedDrive = params[CHAOS_AMOUNT_PARAM].getValue();
+        driveSmooth.reset(smoothedDrive);
 
         std::mt19937 etherealRng(rack::random::u32());
         std::uniform_real_distribution<float> phaseDistrib(0.f, 2.f * static_cast<float>(M_PI));
@@ -400,8 +409,6 @@ struct Involution : Module {
         
         // Magical parameters - smoothed for immediate response
         // Drive is locked at maximum; Aura/Orbit/Tide sculpt the ethereal diffusion.
-        constexpr float DRIVE_FIXED_NORMALIZED = 1.f;
-        constexpr float DRIVE_FIXED_AMOUNT = 1.f + DRIVE_FIXED_NORMALIZED * 4.f;
 
         float auraAmount = auraSmooth.process(params[AURA_PARAM].getValue(), args.sampleTime, CHARACTER_SMOOTH_TC);
         float orbitAmount = orbitSmooth.process(params[ORBIT_PARAM].getValue(), args.sampleTime, CHARACTER_SMOOTH_TC);
@@ -436,43 +443,36 @@ struct Involution : Module {
         orbitAmount = applyCharacterDrama(orbitRaw, ORBIT_DRAMA_MIX, ORBIT_DRAMA_EXP);
         tideAmount = applyCharacterDrama(tideRaw, TIDE_DRAMA_MIX, TIDE_DRAMA_EXP);
 
+        // Drive amount now follows knob/CV (chaos amount)
+        float driveTarget = clamp(params[CHAOS_AMOUNT_PARAM].getValue(), 0.f, 1.f);
+        // Let the chaos CV add some drive excitement too
+        if (inputs[CHAOS_RATE_CV_INPUT].isConnected()) {
+            driveTarget += clamp(inputs[CHAOS_RATE_CV_INPUT].getVoltage(0) / 10.f, -1.f, 1.f) * 0.25f; // small CV influence
+        }
+        driveTarget = clamp(driveTarget, 0.f, 1.25f);
+        smoothedDrive = driveSmooth.process(driveTarget, args.sampleTime, DRIVE_SMOOTH_TC);
+
         float rawEffectIntensity = std::max(auraAmount, std::max(orbitAmount, tideAmount));
+        rawEffectIntensity = rack::math::clamp(rawEffectIntensity + smoothedDrive * 0.35f, 0.f, 1.35f);
         float effectGateTarget = rack::math::clamp(rawEffectIntensity, 0.f, 1.f);
         float effectBlend = effectGateSmooth.process(effectGateTarget, args.sampleTime, EFFECT_GATE_SMOOTH_TC);
 
-        float driveLight = DRIVE_FIXED_NORMALIZED;
+        float driveLight = smoothedDrive;
         float auraLight = auraRaw;
         float orbitLight = orbitRaw;
         float tideLight = tideRaw;
 
         float knobChaosRate = clamp(params[CHAOS_RATE_PARAM].getValue(), CHAOS_RATE_MIN_HZ, CHAOS_RATE_MAX_HZ);
         float chaosTarget = knobChaosRate;
-        bool chaosClockConnected = inputs[CHAOS_RATE_CV_INPUT].isConnected();
 
-        if (chaosClockConnected) {
-            float clockVoltage = inputs[CHAOS_RATE_CV_INPUT].getVoltage();
-            chaosClockElapsed += args.sampleTime;
-            if (chaosClockTrigger.process(clockVoltage)) {
-                if (chaosClockElapsed > 1e-5f) {
-                    chaosClockPeriod = chaosClockElapsed;
-                }
-                chaosClockElapsed = 0.f;
-            }
-
-            if (chaosClockPeriod > 0.f) {
-                chaosTarget = clamp(1.f / chaosClockPeriod, CHAOS_RATE_MIN_HZ, CHAOS_RATE_MAX_HZ);
-            } else if (chaosClockElapsed > CHAOS_CLOCK_TIMEOUT) {
-                chaosClockPeriod = 0.f;
-                chaosTarget = knobChaosRate;
-            } else {
-                chaosTarget = chaosTargetRate;
-            }
-        } else {
-            chaosClockTrigger.reset();
-            chaosClockElapsed = 0.f;
-            chaosClockPeriod = 0.f;
+        // Treat CHAOS_RATE_CV_INPUT as bipolar CV (continuous) instead of clock-only
+        if (inputs[CHAOS_RATE_CV_INPUT].isConnected()) {
+            float cvRate = inputs[CHAOS_RATE_CV_INPUT].getVoltage(0); // allow poly but use first channel as global rate mod
+            // 10V moves full range; small bias for negative voltages
+            chaosTarget += cvRate * 0.5f; // 2 V/Oct-ish scaling
         }
 
+        chaosTarget = clamp(chaosTarget, CHAOS_RATE_MIN_HZ, CHAOS_RATE_MAX_HZ);
         chaosTargetRate = chaosTarget;
         float chaosRate = chaosRateSmooth.process(chaosTargetRate, args.sampleTime);
         chaosRate = clamp(chaosRate, CHAOS_RATE_MIN_HZ, CHAOS_RATE_MAX_HZ);
@@ -602,9 +602,10 @@ struct Involution : Module {
                     float cutoffAHz = 20.f * std::pow(2.f, voiceCutoffA * 10.f);
                     float cutoffBHz = 20.f * std::pow(2.f, voiceCutoffB * 10.f);
 
-                    // Process through liquid filters with fixed drive amount
-                    processedA = filtersA[c].process(audioA, cutoffAHz, voiceResonanceA, DRIVE_FIXED_AMOUNT);
-                    processedB = filtersB[c].process(audioB, cutoffBHz, voiceResonanceB, DRIVE_FIXED_AMOUNT);
+                    // Process through liquid filters with drive tied to Chaos Amount
+                    float driveScaled = 1.f + smoothedDrive * 7.f;
+                    processedA = filtersA[c].process(audioA, cutoffAHz, voiceResonanceA, driveScaled);
+                    processedB = filtersB[c].process(audioB, cutoffBHz, voiceResonanceB, driveScaled);
 
                     float resonanceNormA = clamp((voiceResonanceA - 0.707f) / (1.5f - 0.707f), 0.f, 1.f);
                     float resonanceNormB = clamp((voiceResonanceB - 0.707f) / (1.5f - 0.707f), 0.f, 1.f);
@@ -627,34 +628,39 @@ struct Involution : Module {
                         float lowFreqBlend = rack::math::clamp((cutoffDrama - 0.18f) / 0.22f, 0.f, 1.f);
                         lowFreqBlend = lowFreqBlend * lowFreqBlend * (3.f - 2.f * lowFreqBlend);
 
-                        float diffusionTarget = effectAmount * (0.25f
-                            + auraAmount * 0.95f
-                            + tideAmount * 0.2f
-                            + resonanceInfluence * 0.25f);
-                        diffusionTarget = clamp(diffusionTarget, 0.f, 0.92f);
-                        float diffusion = smoothScalar(state.smoothedDiffusion, diffusionTarget, 0.f, 0.92f);
+                        float diffusionTarget = effectAmount * (0.32f
+                            + auraAmount * 1.05f
+                            + tideAmount * 0.28f
+                            + resonanceInfluence * 0.25f
+                            + smoothedDrive * 0.18f);
+                        diffusionTarget = clamp(diffusionTarget, 0.f, 0.97f);
+                        float diffusion = smoothScalar(state.smoothedDiffusion, diffusionTarget, 0.f, 0.97f);
 
-                        float feedbackTarget = effectAmount * (0.12f
-                            + orbitAmount * 0.75f
-                            + auraAmount * 0.15f);
+                        float feedbackTarget = effectAmount * (0.18f
+                            + orbitAmount * 0.9f
+                            + auraAmount * 0.22f
+                            + smoothedDrive * 0.25f);
+                        // Higher ceiling but still clamped for stability
                         feedbackTarget = clamp(feedbackTarget, 0.f, 0.82f);
                         float feedback = smoothScalar(state.smoothedFeedback, feedbackTarget, 0.f, 0.82f);
 
-                        float shimmerTarget = effectAmount * (tideAmount * 0.75f + auraAmount * 0.45f);
-                        float shimmerLift = smoothScalar(state.smoothedShimmer, shimmerTarget, 0.f, 0.8f);
+                        float shimmerTarget = effectAmount * (tideAmount * 0.9f + auraAmount * 0.55f + smoothedDrive * 0.25f);
+                        float shimmerLift = smoothScalar(state.smoothedShimmer, shimmerTarget, 0.f, 1.0f);
 
-                        float haloBlendTarget = effectAmount * (0.32f
-                            + auraAmount * 0.6f
-                            + orbitAmount * 0.2f);
-                        haloBlendTarget = clamp(haloBlendTarget, 0.f, 0.85f);
-                        float haloBlend = smoothScalar(state.smoothedHaloMix, haloBlendTarget, 0.f, 0.85f);
+                        float haloBlendTarget = effectAmount * (0.4f
+                            + auraAmount * 0.7f
+                            + orbitAmount * 0.28f
+                            + smoothedDrive * 0.22f);
+                        haloBlendTarget = clamp(haloBlendTarget, 0.f, 0.95f);
+                        float haloBlend = smoothScalar(state.smoothedHaloMix, haloBlendTarget, 0.f, 0.95f);
 
                         float modulationDepthTarget = effectAmount * (
-                            0.0015f
-                            + tideAmount * 0.004f
-                            + auraAmount * 0.0025f
+                            0.0025f
+                            + tideAmount * 0.006f
+                            + auraAmount * 0.0035f
+                            + smoothedDrive * 0.002f
                         ) * args.sampleRate;
-                        float modDepth = smoothScalar(state.smoothedModDepth, modulationDepthTarget, 0.f, args.sampleRate * 0.045f);
+                        float modDepth = smoothScalar(state.smoothedModDepth, modulationDepthTarget, 0.f, args.sampleRate * 0.065f);
 
                         float stereoWidthTarget = stereoSkew * (0.35f + orbitAmount * 0.55f);
                         stereoWidthTarget += (orbitAmount - 0.5f) * 0.2f;
@@ -678,39 +684,44 @@ struct Involution : Module {
                             float stereoBias = 1.f + effectiveStereoSkew * 0.08f * (s + 1);
                             float tonalBias = 0.85f + 0.3f * cutoffDrama + 0.12f * resonanceNorm;
                             float modulation = std::sin(state.modPhase[s] + state.phaseOffset[s] + swirlSeed * (0.28f + 0.18f * s));
-                            float delayTarget = baseDelay * sizeScale * tonalBias * stereoBias + modulation * modDepth * (1.1f + 0.22f * s);
+                            float delayTarget = baseDelay * sizeScale * tonalBias * stereoBias + modulation * modDepth * (1.2f + 0.25f * s);
                             float maxDelaySamples = std::max(state.delays[s].maxDelaySamples(), 16.f);
                             float smoothedDelay = smoothScalar(state.smoothedDelay[s], delayTarget, 12.f, maxDelaySamples);
 
                             float stageBlendBase =
-                                effectAmount * (0.2f + 0.09f * s)
-                                + auraAmount * 0.18f
-                                + orbitAmount * 0.14f;
-                            float stageBlendTarget = clamp(stageBlendBase, 0.f, 0.65f);
-                            stageBlendTarget = smoothScalar(state.smoothedStageBlend[s], stageBlendTarget, 0.f, 0.6f);
+                                effectAmount * (0.3f + 0.12f * s)
+                                + auraAmount * 0.24f
+                                + orbitAmount * 0.18f
+                                + smoothedDrive * 0.18f;
+                            float stageBlendTarget = clamp(stageBlendBase, 0.f, 0.82f);
+                            stageBlendTarget = smoothScalar(state.smoothedStageBlend[s], stageBlendTarget, 0.f, 0.8f);
                             float stageBlend = stageBlendTarget;
 
                             float stageInputDry = rack::math::crossfade(feed, cloud, stageBlend);
                             float stageInput = stageInputDry + shimmerLift * cloud * 0.25f;
                             float stageOutputRaw = state.delays[s].process(stageInput, smoothedDelay, feedback);
-                            float stageOutput = stageOutputRaw;
+                            // DC block and soft saturation to prevent long-tail runaway
+                            constexpr float dcCoeff = 0.995f;
+                            state.dcBlock[s] = dcCoeff * state.dcBlock[s] + (1.f - dcCoeff) * stageOutputRaw;
+                            float stageOutput = stageOutputRaw - state.dcBlock[s];
+                            stageOutput = std::tanh(stageOutput * 0.85f) * 1.05f;
                             cloud += stageOutput * stageWeights[s];
                             feed = rack::math::crossfade(feed, stageOutput, diffusion);
                         }
 
-                        float halo = cloud * (1.f + shimmerLift * 0.5f);
-                        halo = rack::math::clamp(halo, -12.f, 12.f);
-                        float haloMix = clamp(haloBlend, 0.f, 0.9f);
+                        float halo = cloud * (1.f + shimmerLift * 0.6f);
+                        halo = rack::math::clamp(halo, -14.f, 14.f);
+                        float haloMix = clamp(haloBlend, 0.f, 0.95f);
 
-                        // Treat halo as an additive ambience so the dry tone never fully disappears.
-                        float wetGain = haloMix * (0.6f + 0.28f * effectAmount);
-                        float blended = input + wetGain * halo;
+                        // Treat halo as an additive ambience but allow wetter blends for "juicy" tone.
+                        float wetGain = haloMix * (0.75f + 0.32f * effectAmount + 0.18f * smoothedDrive);
+                        float blended = input * (1.f - haloMix * 0.25f) + wetGain * halo;
 
                         // Subtle makeup gain tied to Aura keeps perceived loudness closer to the dry tone
-                        constexpr float MAKEUP_MAX_DB = 2.8f;
+                        constexpr float MAKEUP_MAX_DB = 3.6f;
                         float makeupLinear = std::pow(10.f, (auraAmount * MAKEUP_MAX_DB) / 20.f);
                         blended *= makeupLinear;
-                        return rack::math::clamp(blended, -12.f, 12.f);
+                        return rack::math::clamp(blended, -14.f, 14.f);
                     };
 
                     processedA = processEthereal(processedA, voiceCutoffA, resonanceNormA, etherealVoicesA[c], -0.6f);
@@ -851,16 +862,16 @@ struct InvolutionWidget : ModuleWidget {
         );
         
         // Main Filter Section - using SVG parser for automatic positioning
-        addParam(createParamCentered<ShapetakerKnobAltHuge>(
+        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltHuge>(
             centerPx("cutoff_v", 24.026f, 24.174f),
             module, Involution::CUTOFF_A_PARAM));
-        addParam(createParamCentered<ShapetakerKnobAltSmall>(
+        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltSmall>(
             centerPx("resonance_v", 11.935f, 57.750f),
             module, Involution::RESONANCE_A_PARAM));
-        addParam(createParamCentered<ShapetakerKnobAltHuge>(
+        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltHuge>(
             centerPx("cutoff_z", 66.305f, 24.174f),
             module, Involution::CUTOFF_B_PARAM));
-        addParam(createParamCentered<ShapetakerKnobAltSmall>(
+        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltSmall>(
             centerPx("resonance_z", 78.397f, 57.750f),
             module, Involution::RESONANCE_B_PARAM));
         
@@ -889,9 +900,9 @@ struct InvolutionWidget : ModuleWidget {
         // Character Controls - using SVG parser with fallbacks
         // Highpass is now static at 12Hz - no control needed
         // Drive knob is fixed; reuse area for Aura/Orbit/Tide controls
-        addParam(createParamCentered<ShapetakerKnobAltSmall>(centerPx("aura_knob", 15.910f, 94.088f), module, Involution::AURA_PARAM));
-        addParam(createParamCentered<ShapetakerKnobAltSmall>(centerPx("orbit_knob", 45.166f, 94.088f), module, Involution::ORBIT_PARAM));
-        addParam(createParamCentered<ShapetakerKnobAltSmall>(centerPx("tide_knob", 74.422f, 94.088f), module, Involution::TIDE_PARAM));
+        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltSmall>(centerPx("aura_knob", 15.910f, 94.088f), module, Involution::AURA_PARAM));
+        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltSmall>(centerPx("orbit_knob", 45.166f, 94.088f), module, Involution::ORBIT_PARAM));
+        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltSmall>(centerPx("tide_knob", 74.422f, 94.088f), module, Involution::TIDE_PARAM));
         addParam(createParamCentered<ShapetakerAttenuverterOscilloscope>(centerPx("chaos_rate_knob", 60.922f, 108.088f), module, Involution::CHAOS_RATE_PARAM));
         
         // Chaos Visualizer - using SVG parser for automatic positioning

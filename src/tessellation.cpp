@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdio>
 #include <vector>
 
 namespace tessellation {
@@ -25,6 +26,31 @@ namespace tessellation {
         }
     }
 }
+
+// Human-readable subdivision names for tooltips
+inline const char* subdivisionName(int index) {
+    switch (index) {
+        case 0: return "Triplet";
+        case 1: return "Eighth";
+        case 2: return "Golden";
+        case 3: return "Dotted 8th";
+        case 4: return "Dotted Quarter";
+        default: return "Free";
+    }
+}
+
+struct Tessellation;
+
+// Custom ParamQuantity declarations (defined after Tessellation is complete)
+struct TessTime2Quantity : rack::engine::ParamQuantity {
+    std::string getLabel() override;
+    std::string getDisplayValueString() override;
+};
+
+struct TessTime3Quantity : rack::engine::ParamQuantity {
+    std::string getLabel() override;
+    std::string getDisplayValueString() override;
+};
 
 struct Tessellation : Module {
     enum ParamId {
@@ -103,12 +129,14 @@ struct Tessellation : Module {
         std::array<std::vector<float>, MAX_CHANNELS> bufferR;
         std::array<size_t, MAX_CHANNELS> writeIndex{};
         std::array<float, MAX_CHANNELS> delaySamples{};
+        std::array<float, MAX_CHANNELS> targetDelaySamples{};  // Target delay time for smoothing
         std::array<float, MAX_CHANNELS> toneStateL{};
         std::array<float, MAX_CHANNELS> toneStateR{};
         std::array<float, MAX_CHANNELS> modPhase{};
         VoiceType voice = VoiceType::Voice24_96;
         float enginePhaseOffset = 0.f;
         PingPongMode pingPongMode = PingPongMode::Off;
+        float smoothingCoeff = 0.9995f;  // Smoothing coefficient for delay time changes
 
         // Tone filter coefficient cache
         float cachedTone = -1.f;
@@ -134,12 +162,13 @@ struct Tessellation : Module {
             enginePhaseOffset = phaseOffset;
             float defaultSamples = tessellation::DEFAULT_DELAY_SECONDS * sampleRate;
             delaySamples.fill(defaultSamples);
+            targetDelaySamples.fill(defaultSamples);
         }
 
         void setDelaySeconds(int channel, float seconds) {
             channel = rack::math::clamp(channel, 0, MAX_CHANNELS - 1);
             float samples = rack::math::clamp(seconds * sampleRate, 1.f, static_cast<float>(bufferSize - 2));
-            delaySamples[channel] = samples;
+            targetDelaySamples[channel] = samples;  // Set target instead of directly changing delay
         }
 
         void setVoice(int v) {
@@ -148,6 +177,19 @@ struct Tessellation : Module {
 
         void setPingPong(int mode) {
             pingPongMode = static_cast<PingPongMode>(rack::math::clamp(mode, 0, 2));
+        }
+
+        void resetChannel(int channel, float delaySeconds) {
+            channel = rack::math::clamp(channel, 0, MAX_CHANNELS - 1);
+            std::fill(bufferL[channel].begin(), bufferL[channel].end(), 0.f);
+            std::fill(bufferR[channel].begin(), bufferR[channel].end(), 0.f);
+            toneStateL[channel] = 0.f;
+            toneStateR[channel] = 0.f;
+            modPhase[channel] = enginePhaseOffset;
+            writeIndex[channel] = 0;
+            float samples = rack::math::clamp(delaySeconds * sampleRate, 1.f, static_cast<float>(bufferSize - 2));
+            delaySamples[channel] = samples;
+            targetDelaySamples[channel] = samples;
         }
 
         struct Result {
@@ -160,6 +202,10 @@ struct Tessellation : Module {
         Result process(int channel, float inL, float inR, float feedback, float tone,
                         float modDepthSeconds, float modRateHz, float sampleTime) {
             channel = rack::math::clamp(channel, 0, MAX_CHANNELS - 1);
+
+            // Smooth delay time changes to avoid artifacts when modulating
+            delaySamples[channel] = delaySamples[channel] * smoothingCoeff +
+                                    targetDelaySamples[channel] * (1.f - smoothingCoeff);
 
             float depthSamples = rack::math::clamp(modDepthSeconds * sampleRate, 0.f, static_cast<float>(bufferSize) * 0.45f);
             float phase = modPhase[channel];
@@ -336,10 +382,16 @@ struct Tessellation : Module {
     float cachedModDepthSeconds = 0.002f;
     float cachedModRateHz = 1.57f;
     float cachedCrossFeedback = 0.0f;
+    // Input de-click
+    bool lastLeftConnected = false;
+    bool lastRightConnected = false;
+    float leftFade = 1.f;
+    float rightFade = 1.f;
     int cachedVoice1 = 0;
     int cachedVoice2 = 1;
     int cachedVoice3 = 2;
     int cachedPingPongMode = 0;
+    int activeChannels = 1;
 
     void initDelayLines(float sr) {
         sampleRate = sr;
@@ -364,7 +416,7 @@ struct Tessellation : Module {
 
         configSwitch(SUBDIV2_PARAM, 0.f, 5.f, 1.f, "Delay 2 subdivision",
             {"Triplet", "Eighth", "Golden", "Dotted 8th", "Dotted Quarter", "Free"});
-        configParam(TIME2_PARAM,
+        configParam<TessTime2Quantity>(TIME2_PARAM,
             tessellation::MIN_DELAY_SECONDS,
             tessellation::MAX_DELAY_SECONDS,
             tessellation::DEFAULT_DELAY_SECONDS,
@@ -376,7 +428,7 @@ struct Tessellation : Module {
 
         configSwitch(SUBDIV3_PARAM, 0.f, 5.f, 2.f, "Delay 3 subdivision",
             {"Triplet", "Eighth", "Golden", "Dotted 8th", "Dotted Quarter", "Free"});
-        configParam(TIME3_PARAM,
+        configParam<TessTime3Quantity>(TIME3_PARAM,
             tessellation::MIN_DELAY_SECONDS,
             tessellation::MAX_DELAY_SECONDS,
             tessellation::DEFAULT_DELAY_SECONDS,
@@ -478,19 +530,45 @@ struct Tessellation : Module {
 
             float time2CV = inputs[TIME2_CV_INPUT].isConnected() ? inputs[TIME2_CV_INPUT].getVoltage() * 0.25f : 0.f;
             int subdiv2 = rack::math::clamp(static_cast<int>(std::round(params[SUBDIV2_PARAM].getValue())), 0, 5);
-            cachedDelay2Seconds = (subdiv2 == 5)
-                ? rack::math::clamp(params[TIME2_PARAM].getValue() + time2CV,
-                    tessellation::MIN_DELAY_SECONDS, tessellation::MAX_DELAY_SECONDS)
-                : rack::math::clamp(cachedDelay1Seconds * tessellation::subdivisionMultiplier(subdiv2),
+            if (subdiv2 == 5) {
+                // Free mode: TIME2 directly controls delay time
+                cachedDelay2Seconds = rack::math::clamp(params[TIME2_PARAM].getValue() + time2CV,
                     tessellation::MIN_DELAY_SECONDS, tessellation::MAX_DELAY_SECONDS);
+            } else {
+                // Musical mode: TIME2 nudges the subdivision (±2 steps) around the selected value,
+                // then applies a gentle 0.5x–2x multiplier for fine trim.
+                float normalized = rack::math::rescale(params[TIME2_PARAM].getValue() + time2CV,
+                    tessellation::MIN_DELAY_SECONDS, tessellation::MAX_DELAY_SECONDS, 0.f, 1.f);
+                normalized = rack::math::clamp(normalized, 0.f, 1.f);
+                int subdivisionOffset = rack::math::clamp(static_cast<int>(std::round((normalized - 0.5f) * 4.f)), -2, 2);
+                int effectiveSubdiv = rack::math::clamp(subdiv2 + subdivisionOffset, 0, 4);
+
+                float multiplier = rack::math::clamp(normalized * 1.5f + 0.5f, 0.5f, 2.0f);
+                float baseMusicalTime = cachedDelay1Seconds * tessellation::subdivisionMultiplier(effectiveSubdiv);
+                cachedDelay2Seconds = rack::math::clamp(baseMusicalTime * multiplier,
+                    tessellation::MIN_DELAY_SECONDS, tessellation::MAX_DELAY_SECONDS);
+            }
 
             float time3CV = inputs[TIME3_CV_INPUT].isConnected() ? inputs[TIME3_CV_INPUT].getVoltage() * 0.25f : 0.f;
             int subdiv3 = rack::math::clamp(static_cast<int>(std::round(params[SUBDIV3_PARAM].getValue())), 0, 5);
-            cachedDelay3Seconds = (subdiv3 == 5)
-                ? rack::math::clamp(params[TIME3_PARAM].getValue() + time3CV,
-                    tessellation::MIN_DELAY_SECONDS, tessellation::MAX_DELAY_SECONDS)
-                : rack::math::clamp(cachedDelay1Seconds * tessellation::subdivisionMultiplier(subdiv3),
+            if (subdiv3 == 5) {
+                // Free mode: TIME3 directly controls delay time
+                cachedDelay3Seconds = rack::math::clamp(params[TIME3_PARAM].getValue() + time3CV,
                     tessellation::MIN_DELAY_SECONDS, tessellation::MAX_DELAY_SECONDS);
+            } else {
+                // Musical mode: TIME3 nudges the subdivision (±2 steps) around the selected value,
+                // then applies a gentle 0.5x–2x multiplier for fine trim.
+                float normalized = rack::math::rescale(params[TIME3_PARAM].getValue() + time3CV,
+                    tessellation::MIN_DELAY_SECONDS, tessellation::MAX_DELAY_SECONDS, 0.f, 1.f);
+                normalized = rack::math::clamp(normalized, 0.f, 1.f);
+                int subdivisionOffset = rack::math::clamp(static_cast<int>(std::round((normalized - 0.5f) * 4.f)), -2, 2);
+                int effectiveSubdiv = rack::math::clamp(subdiv3 + subdivisionOffset, 0, 4);
+
+                float multiplier = rack::math::clamp(normalized * 1.5f + 0.5f, 0.5f, 2.0f);
+                float baseMusicalTime = cachedDelay1Seconds * tessellation::subdivisionMultiplier(effectiveSubdiv);
+                cachedDelay3Seconds = rack::math::clamp(baseMusicalTime * multiplier,
+                    tessellation::MIN_DELAY_SECONDS, tessellation::MAX_DELAY_SECONDS);
+            }
 
             // Voice and ping-pong modes
             cachedVoice1 = static_cast<int>(std::round(params[VOICE1_PARAM].getValue()));
@@ -539,9 +617,69 @@ struct Tessellation : Module {
         delayLines[1].setPingPong(cachedPingPongMode);
         delayLines[2].setPingPong(cachedPingPongMode);
 
+        // Detect input (dis)connects and ramp to avoid clicks
+        bool leftConnectedNow = inputs[IN_L_INPUT].isConnected();
+        bool rightConnectedNow = inputs[IN_R_INPUT].isConnected();
+        if (leftConnectedNow != lastLeftConnected) {
+            if (!leftConnectedNow) {
+                // Disconnecting: Clear delay buffers to prevent feedback clicks
+                for (int c = 0; c < activeChannels; ++c) {
+                    delayLines[0].resetChannel(c, cachedDelay1Seconds);
+                    delayLines[1].resetChannel(c, cachedDelay2Seconds);
+                    delayLines[2].resetChannel(c, cachedDelay3Seconds);
+                    xfeedDelay3L[c] = 0.f;
+                    xfeedDelay3R[c] = 0.f;
+                }
+            }
+            leftFade = 0.f;
+            lastLeftConnected = leftConnectedNow;
+        }
+        if (rightConnectedNow != lastRightConnected) {
+            if (!rightConnectedNow && !leftConnectedNow) {
+                // Both disconnected: Clear delay buffers
+                for (int c = 0; c < activeChannels; ++c) {
+                    delayLines[0].resetChannel(c, cachedDelay1Seconds);
+                    delayLines[1].resetChannel(c, cachedDelay2Seconds);
+                    delayLines[2].resetChannel(c, cachedDelay3Seconds);
+                    xfeedDelay3L[c] = 0.f;
+                    xfeedDelay3R[c] = 0.f;
+                }
+            }
+            rightFade = 0.f;
+            lastRightConnected = rightConnectedNow;
+        }
+        auto advanceFade = [&](float& fade) {
+            fade += args.sampleTime * 400.f; // ~2.5 ms ramp (faster fade)
+            if (fade > 1.f) fade = 1.f;
+            return fade;
+        };
+        float leftGain = advanceFade(leftFade);
+        float rightGain = advanceFade(rightFade);
+
         int lChannels = inputs[IN_L_INPUT].getChannels();
         int rChannels = inputs[IN_R_INPUT].getChannels();
         int channels = std::max(std::max(lChannels, rChannels), 1);
+        if (channels != activeChannels) {
+            int maxCh = std::min(StereoDelayLine::MAX_CHANNELS, std::max(channels, activeChannels));
+            for (int c = 0; c < maxCh; ++c) {
+                if (c >= channels) {
+                    // Channel going inactive: clear state
+                    delayLines[0].resetChannel(c, cachedDelay1Seconds);
+                    delayLines[1].resetChannel(c, cachedDelay2Seconds);
+                    delayLines[2].resetChannel(c, cachedDelay3Seconds);
+                    xfeedDelay3L[c] = 0.f;
+                    xfeedDelay3R[c] = 0.f;
+                } else if (c >= activeChannels) {
+                    // New channel becoming active: clear before use
+                    delayLines[0].resetChannel(c, cachedDelay1Seconds);
+                    delayLines[1].resetChannel(c, cachedDelay2Seconds);
+                    delayLines[2].resetChannel(c, cachedDelay3Seconds);
+                    xfeedDelay3L[c] = 0.f;
+                    xfeedDelay3R[c] = 0.f;
+                }
+            }
+            activeChannels = channels;
+        }
 
         outputs[OUT_L_OUTPUT].setChannels(channels);
         outputs[OUT_R_OUTPUT].setChannels(channels);
@@ -568,6 +706,8 @@ struct Tessellation : Module {
             else {
                 inR = inL;
             }
+            inL *= leftGain;
+            inR *= rightGain;
 
             delayLines[0].setDelaySeconds(c, cachedDelay1Seconds);
             delayLines[1].setDelaySeconds(c, cachedDelay2Seconds);
@@ -658,10 +798,11 @@ struct Tessellation : Module {
             delay3Pulse.trigger(pulseDuration3);
         }
 
-        // Tempo light: Disabled (timing now shown on mix LEDs)
-        lights[TEMPO_LIGHT + 0].setBrightness(0.f);
-        lights[TEMPO_LIGHT + 1].setBrightness(0.f);
-        lights[TEMPO_LIGHT + 2].setBrightness(0.f);
+        // Tempo light: Light up when tap button is pressed
+        float tapPressed = params[TAP_PARAM].getValue();
+        lights[TEMPO_LIGHT + 0].setBrightness(tapPressed);
+        lights[TEMPO_LIGHT + 1].setBrightness(tapPressed);
+        lights[TEMPO_LIGHT + 2].setBrightness(tapPressed);
 
         // Mix LEDs: Pulse brightness based on mix level (off when not pulsing)
         auto mixBrightness = [](float v) {
@@ -793,39 +934,43 @@ struct TessellationWidget : ModuleWidget {
 
         // === ROW 1: TIME1 (20mm medium) + TAP button ===
         // Safe: 10mm (knob radius) to 40mm (10+20+10)
-        addParam(createParamCentered<ShapetakerKnobAltMedium>(centerPx("tess-time1", 20.f, row1), module, Tessellation::TIME1_PARAM));
-        addParam(createParamCentered<rack::componentlibrary::LEDButton>(centerPx("tess-tap", 38.f, row1), module, Tessellation::TAP_PARAM));
-        // Tempo light removed - timing now shown on mix LEDs
+        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltMedium>(centerPx("tess-time1", 20.f, row1), module, Tessellation::TIME1_PARAM));
+
+        // Tap tempo button with integrated LED
+        auto* tapBtn = createParamCentered<ShapetakerVintageMomentaryLight>(centerPx("tess-tap", 38.f, row1), module, Tessellation::TAP_PARAM);
+        tapBtn->module = module;
+        tapBtn->lightId = Tessellation::TEMPO_LIGHT;
+        addParam(tapBtn);
 
         // === ROW 2: 4 small knobs (16mm each) ===
         // Available: 8mm to 124mm (116mm width)
         // 4 knobs need 4*8mm = 32mm for radii, 84mm for spacing
         // Spacing: 84/3 = 28mm between centers
-        addParam(createParamCentered<ShapetakerKnobAltSmall>(centerPx("tess-subdiv-2", 16.f, row2), module, Tessellation::SUBDIV2_PARAM));
-        addParam(createParamCentered<ShapetakerKnobAltMedium>(centerPx("tess-time-2", 44.f, row2), module, Tessellation::TIME2_PARAM));
-        addParam(createParamCentered<ShapetakerKnobAltSmall>(centerPx("tess-subdiv3", 72.f, row2), module, Tessellation::SUBDIV3_PARAM));
-        addParam(createParamCentered<ShapetakerKnobAltMedium>(centerPx("tess-time3", 100.f, row2), module, Tessellation::TIME3_PARAM));
+        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltSmall>(centerPx("tess-subdiv-2", 16.f, row2), module, Tessellation::SUBDIV2_PARAM));
+        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltMedium>(centerPx("tess-time-2", 44.f, row2), module, Tessellation::TIME2_PARAM));
+        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltSmall>(centerPx("tess-subdiv3", 72.f, row2), module, Tessellation::SUBDIV3_PARAM));
+        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltMedium>(centerPx("tess-time3", 100.f, row2), module, Tessellation::TIME3_PARAM));
 
         // === ROW 3: 6 small knobs (3 pairs) ===
         // Layout: MIX1 REPT1 | MIX2 REPT2 | MIX3 REPT3
         // Each pair needs 18mm spacing (16mm + 2mm), 54mm total for 3 pairs
         // Plus 2 gaps of ~20mm = 94mm total, fits in 116mm
-        addParam(createParamCentered<ShapetakerKnobAltSmall>(centerPx("tess-mix1", 14.f, row3), module, Tessellation::MIX1_PARAM));
-        addParam(createParamCentered<ShapetakerKnobAltSmall>(centerPx("tess-repeats1", 32.f, row3), module, Tessellation::REPEATS1_PARAM));
+        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltSmall>(centerPx("tess-mix1", 14.f, row3), module, Tessellation::MIX1_PARAM));
+        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltSmall>(centerPx("tess-repeats1", 32.f, row3), module, Tessellation::REPEATS1_PARAM));
         addMixLights(23.f, Tessellation::MIX1_LIGHT, row3, 0);
 
-        addParam(createParamCentered<ShapetakerKnobAltSmall>(centerPx("tess-mix2", 52.f, row3), module, Tessellation::MIX2_PARAM));
-        addParam(createParamCentered<ShapetakerKnobAltSmall>(centerPx("tess-repeats2", 70.f, row3), module, Tessellation::REPEATS2_PARAM));
+        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltSmall>(centerPx("tess-mix2", 52.f, row3), module, Tessellation::MIX2_PARAM));
+        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltSmall>(centerPx("tess-repeats2", 70.f, row3), module, Tessellation::REPEATS2_PARAM));
         addMixLights(61.f, Tessellation::MIX2_LIGHT, row3, 1);
 
-        addParam(createParamCentered<ShapetakerKnobAltSmall>(centerPx("tess-mix3", 90.f, row3), module, Tessellation::MIX3_PARAM));
-        addParam(createParamCentered<ShapetakerKnobAltSmall>(centerPx("tess-repeats3", 108.f, row3), module, Tessellation::REPEATS3_PARAM));
+        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltSmall>(centerPx("tess-mix3", 90.f, row3), module, Tessellation::MIX3_PARAM));
+        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltSmall>(centerPx("tess-repeats3", 108.f, row3), module, Tessellation::REPEATS3_PARAM));
         addMixLights(99.f, Tessellation::MIX3_LIGHT, row3, 2);
 
         // === ROW 4: 3 TONE knobs aligned with pair centers ===
-        addParam(createParamCentered<ShapetakerKnobAltSmall>(centerPx("tess-tone1", 23.f, row4), module, Tessellation::TONE1_PARAM));
-        addParam(createParamCentered<ShapetakerKnobAltSmall>(centerPx("tess-tone2", 61.f, row4), module, Tessellation::TONE2_PARAM));
-        addParam(createParamCentered<ShapetakerKnobAltSmall>(centerPx("tess-tone3", 99.f, row4), module, Tessellation::TONE3_PARAM));
+        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltSmall>(centerPx("tess-tone1", 23.f, row4), module, Tessellation::TONE1_PARAM));
+        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltSmall>(centerPx("tess-tone2", 61.f, row4), module, Tessellation::TONE2_PARAM));
+        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltSmall>(centerPx("tess-tone3", 99.f, row4), module, Tessellation::TONE3_PARAM));
 
         // === ROW 5: 3 VOICE switches ===
         addParam(createParamCentered<rack::componentlibrary::CKSSThree>(centerPx("tess-voice1", 23.f, row5), module, Tessellation::VOICE1_PARAM));
@@ -833,9 +978,9 @@ struct TessellationWidget : ModuleWidget {
         addParam(createParamCentered<rack::componentlibrary::CKSSThree>(centerPx("tess-voice3", 99.f, row5), module, Tessellation::VOICE3_PARAM));
 
         // === ROW 6: 3 global knobs (MOD_DEPTH, MOD_RATE, XFEED) ===
-        addParam(createParamCentered<ShapetakerKnobAltSmall>(centerPx("tess-mod-depth", 28.f, row6), module, Tessellation::MOD_DEPTH_PARAM));
-        addParam(createParamCentered<ShapetakerKnobAltSmall>(centerPx("tess-mod-rate", 66.f, row6), module, Tessellation::MOD_RATE_PARAM));
-        addParam(createParamCentered<ShapetakerKnobAltSmall>(centerPx("tess-xfeed", 104.f, row6), module, Tessellation::XFEED_PARAM));
+        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltSmall>(centerPx("tess-mod-depth", 28.f, row6), module, Tessellation::MOD_DEPTH_PARAM));
+        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltSmall>(centerPx("tess-mod-rate", 66.f, row6), module, Tessellation::MOD_RATE_PARAM));
+        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltSmall>(centerPx("tess-xfeed", 104.f, row6), module, Tessellation::XFEED_PARAM));
 
         // === ROW 7: Ping-pong selector + audio inputs + clock ===
         addParam(createParamCentered<rack::componentlibrary::CKSSThree>(centerPx("tess-pingpong", 23.f, row7), module, Tessellation::PINGPONG_PARAM));
@@ -878,3 +1023,80 @@ struct TessellationWidget : ModuleWidget {
 
 Model* modelTessellation = createModel<Tessellation, TessellationWidget>("Tessellation");
 #endif
+
+// ParamQuantity label implementations (after Tessellation definition)
+std::string TessTime2Quantity::getLabel() {
+    auto* m = dynamic_cast<Tessellation*>(module);
+    if (m) {
+        int subdiv = rack::math::clamp(static_cast<int>(std::round(m->params[Tessellation::SUBDIV2_PARAM].getValue())), 0, 5);
+        if (subdiv != 5) {
+            return std::string("Delay 2 trim (") + subdivisionName(subdiv) + " subdivision)";
+        }
+    }
+    return "Delay 2 time (Free)";
+}
+
+std::string TessTime3Quantity::getLabel() {
+    auto* m = dynamic_cast<Tessellation*>(module);
+    if (m) {
+        int subdiv = rack::math::clamp(static_cast<int>(std::round(m->params[Tessellation::SUBDIV3_PARAM].getValue())), 0, 5);
+        if (subdiv != 5) {
+            return std::string("Delay 3 trim (") + subdivisionName(subdiv) + " subdivision)";
+        }
+    }
+    return "Delay 3 time (Free)";
+}
+
+namespace {
+    std::string divisionLabel(int subdivIndex) {
+        switch (subdivIndex) {
+            case 0: return "1/8T";         // Triplet
+            case 1: return "1/8";          // Eighth
+            case 2: return "5/8";          // Golden (rounded to nearest usable fraction)
+            case 3: return "1/8.";         // Dotted eighth (3/16)
+            case 4: return "3/8";          // Dotted quarter
+            default: return "Free";
+        }
+    }
+
+    // Compute the effective subdivision and fine multiplier using the same mapping as process(),
+    // but ignoring CV (tooltip can't see CV).
+    std::pair<int, float> computeEffectiveSubdiv(Tessellation* m, rack::engine::ParamQuantity* q, int baseParamId, int timeParamId) {
+        if (!m || !q) return {5, 1.f};
+        int subdiv = rack::math::clamp(static_cast<int>(std::round(m->params[baseParamId].getValue())), 0, 5);
+        if (subdiv == 5) {
+            return {5, 1.f};
+        }
+        float minV = q->getMinValue();
+        float maxV = q->getMaxValue();
+        float normalized = rack::math::clamp((q->getValue() - minV) / std::max(1e-6f, maxV - minV), 0.f, 1.f);
+        int subdivisionOffset = rack::math::clamp(static_cast<int>(std::round((normalized - 0.5f) * 4.f)), -2, 2);
+        int effectiveSubdiv = rack::math::clamp(subdiv + subdivisionOffset, 0, 4);
+        float multiplier = rack::math::clamp(normalized * 1.5f + 0.5f, 0.5f, 2.0f);
+        return {effectiveSubdiv, multiplier};
+    }
+
+    std::string formatTrimmedDivision(Tessellation* m, rack::engine::ParamQuantity* q, int baseParamId, int timeParamId) {
+        auto [effSubdiv, multiplier] = computeEffectiveSubdiv(m, q, baseParamId, timeParamId);
+        if (effSubdiv == 5 || !q) {
+            return q ? q->ParamQuantity::getDisplayValueString() : std::string();
+        }
+        std::string base = divisionLabel(effSubdiv);
+        if (std::abs(multiplier - 1.f) < 0.01f) {
+            return base;
+        }
+        char buf[64];
+        std::snprintf(buf, sizeof(buf), "%s ×%.2f", base.c_str(), multiplier);
+        return std::string(buf);
+    }
+}
+
+std::string TessTime2Quantity::getDisplayValueString() {
+    auto* m = dynamic_cast<Tessellation*>(module);
+    return formatTrimmedDivision(m, this, Tessellation::SUBDIV2_PARAM, Tessellation::TIME2_PARAM);
+}
+
+std::string TessTime3Quantity::getDisplayValueString() {
+    auto* m = dynamic_cast<Tessellation*>(module);
+    return formatTrimmedDivision(m, this, Tessellation::SUBDIV3_PARAM, Tessellation::TIME3_PARAM);
+}
