@@ -712,6 +712,23 @@ struct Incantation : Module {
 };
 
 struct IncantationWidget : ModuleWidget {
+    // Draw leather texture background
+    void draw(const DrawArgs& args) override {
+        std::shared_ptr<Image> bg = APP->window->loadImage(asset::plugin(pluginInstance, "res/panels/black_leather_seamless.jpg"));
+        if (bg) {
+            // Scale < 1.0 = finer grain appearance
+            float scale = 0.4f;
+            float textureHeight = box.size.y * scale;
+            float textureWidth = textureHeight * (1.f);
+            NVGpaint paint = nvgImagePattern(args.vg, 0.f, 0.f, textureWidth, textureHeight, 0.f, bg->handle, 1.0f);
+            nvgBeginPath(args.vg);
+            nvgRect(args.vg, 0.f, 0.f, box.size.x, box.size.y);
+            nvgFillPaint(args.vg, paint);
+            nvgFill(args.vg);
+        }
+        ModuleWidget::draw(args);
+    }
+
     IncantationWidget(Incantation* module) {
         setModule(module);
         setPanel(createPanel(asset::plugin(pluginInstance, "res/panels/Incantation.svg")));
@@ -721,63 +738,20 @@ struct IncantationWidget : ModuleWidget {
         LayoutHelper::PanelSVGParser parser(svgPath);
         auto centerPx = LayoutHelper::createCenterPxHelper(parser);
 
-        // Main controls (top section - more spaced out)
-        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltLarge>(centerPx("inc-drive-knob", 24.f, 20.f), module, Incantation::DRIVE_PARAM));
-        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltLarge>(centerPx("inc-mix-knob", 47.f, 20.f), module, Incantation::MIX_PARAM));
-        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltLarge>(centerPx("inc-output-knob", 70.f, 20.f), module, Incantation::OUTPUT_PARAM));
+        // Controls currently present on the panel SVG.
+        addKnobWithShadow(this, createParamCentered<ShapetakerDavies1900hLargeDot>(centerPx("drive_knob", 13.208855f, 19.975176f), module, Incantation::DRIVE_PARAM));
+        addKnobWithShadow(this, createParamCentered<ShapetakerDavies1900hLargeDot>(centerPx("mix_knob", 46.762012f, 19.582415f), module, Incantation::MIX_PARAM));
+        addKnobWithShadow(this, createParamCentered<ShapetakerDavies1900hLargeDot>(centerPx("output_knob", 80.315178f, 19.2085f), module, Incantation::OUTPUT_PARAM));
 
-        // Second row of controls - more spaced
-        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltMedium>(centerPx("inc-pattern-knob", 24.f, 35.f), module, Incantation::PATTERN_PARAM));
-        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltMedium>(centerPx("inc-envelope-knob", 47.f, 35.f), module, Incantation::ENVELOPE_PARAM));
-        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltMedium>(centerPx("inc-rate-knob", 70.f, 35.f), module, Incantation::RATE_PARAM));
-        
-        // Preset buttons - spread out more
-        addParam(createParamCentered<ShapetakerVintageMomentary>(centerPx("inc-preset-zero", 24.f, 48.f), module, Incantation::PRESET_ZERO_PARAM));
-        addParam(createParamCentered<ShapetakerVintageMomentary>(centerPx("inc-preset-half", 37.f, 48.f), module, Incantation::PRESET_HALF_PARAM));
-        addParam(createParamCentered<ShapetakerVintageMomentary>(centerPx("inc-preset-full", 50.f, 48.f), module, Incantation::PRESET_FULL_PARAM));
-        
-        // Filter sliders - more spacing between them
+        addKnobWithShadow(this, createParamCentered<ShapetakerDavies1900hSmallDot>(centerPx("pattern_knob", 28.202541f, 36.118465f), module, Incantation::PATTERN_PARAM));
+        addKnobWithShadow(this, createParamCentered<ShapetakerDavies1900hSmallDot>(centerPx("env_knob", 64.797302f, 36.118465f), module, Incantation::ENVELOPE_PARAM));
+        addKnobWithShadow(this, createParamCentered<ShapetakerDavies1900hSmallDot>(centerPx("rate_knob", 48.417404f, 54.276268f), module, Incantation::RATE_PARAM));
+
         for (int i = 0; i < 8; i++) {
-            std::string id = "inc-filter-slider-" + std::to_string(i);
-            float fallbackX = 16.f + i * 10.f;
-            addParam(createParamCentered<VintageSlider>(centerPx(id, fallbackX, 65.f), module, Incantation::FILTER_1_PARAM + i));
+            std::string id = "fader_" + std::to_string(i + 1);
+            float fallbackX = 7.9228535f + 11.161139f * i;
+            addParam(createParamCentered<VintageSlider>(centerPx(id, fallbackX, 81.385406f), module, Incantation::FILTER_1_PARAM + i));
         }
-        
-        // Filter CV inputs - aligned below sliders with same spacing
-        for (int i = 0; i < 8; i++) {
-            std::string id = "inc-filter-cv-" + std::to_string(i);
-            float fallbackX = 16.f + i * 10.f;
-            addInput(createInputCentered<ShapetakerBNCPort>(centerPx(id, fallbackX, 85.f), module, Incantation::FILTER_1_CV_INPUT + i));
-        }
-        
-        // CV Bypass switch - positioned to the left of filter sliders
-        addParam(createParamCentered<ShapetakerVintageToggleSwitch>(
-            centerPx("inc-cv-bypass-switch", 10.5f, 75.f), module, Incantation::CV_BYPASS_SWITCH_PARAM));
-        
-        // Switches - spread out more
-        addParam(createParamCentered<ShapetakerVintageToggleSwitch>(
-            centerPx("inc-freq-switch", 26.f, 100.f), module, Incantation::FREQ_SWITCH_PARAM));
-        addParam(createParamCentered<ShapetakerVintageToggleSwitch>(
-            centerPx("inc-lfo-switch", 47.f, 100.f), module, Incantation::LFO_SWITCH_PARAM));
-        addParam(createParamCentered<ShapetakerVintageToggleSwitch>(
-            centerPx("inc-q-switch", 68.f, 100.f), module, Incantation::Q_FACTOR_SWITCH_PARAM));
-        
-        // Main inputs - better spacing  
-        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("inc-audio-left-in", 14.f, 115.f), module, Incantation::AUDIO_LEFT_INPUT));
-        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("inc-audio-right-in", 26.f, 115.f), module, Incantation::AUDIO_RIGHT_INPUT));
-        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("inc-envelope-cv-in", 38.f, 115.f), module, Incantation::ENVELOPE_CV_INPUT));
-        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("inc-rate-cv-in", 50.f, 115.f), module, Incantation::RATE_CV_INPUT));
-        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("inc-lfo-sweep-cv-in", 62.f, 115.f), module, Incantation::LFO_SWEEP_CV_INPUT));
-        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("inc-mix-cv-in", 74.f, 115.f), module, Incantation::MIX_CV_INPUT));
-        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("inc-tap-step-in", 86.f, 115.f), module, Incantation::TAP_STEP_INPUT));
-        
-        // Outputs - moved up to prevent cutoff
-        addOutput(createOutputCentered<ShapetakerBNCPort>(centerPx("inc-left-output", 66.f, 125.f), module, Incantation::LEFT_MONO_OUTPUT));
-        addOutput(createOutputCentered<ShapetakerBNCPort>(centerPx("inc-right-output", 80.f, 125.f), module, Incantation::RIGHT_OUTPUT));
-        
-        // Lights - repositioned
-        addChild(createLightCentered<MediumLight<RedLight>>(centerPx("inc-rate-light", 82.f, 35.f), module, Incantation::RATE_LIGHT));
-        addChild(createLightCentered<MediumLight<GreenRedLight>>(centerPx("inc-drive-light", 15.f, 20.f), module, Incantation::DRIVE_LIGHT));
     }
 };
 

@@ -6,42 +6,16 @@
 
 using namespace shapetaker;
 
+PanelPatinaOverlay::PanelPatinaOverlay() {
+    baseSeed = rack::random::u32();
+}
+
 void PanelPatinaOverlay::draw(const DrawArgs& args) {
     float w = box.size.x;
     float h = box.size.y;
-    // Vignette
-    NVGpaint vignette = nvgRadialGradient(args.vg, w * 0.5f, h * 0.5f,
-                                          std::min(w, h) * 0.6f, std::min(w, h) * 0.95f,
-                                          nvgRGBA(0, 0, 0, 0), nvgRGBA(0, 0, 0, 20));
-    nvgBeginPath(args.vg);
-    nvgRect(args.vg, 0, 0, w, h);
-    nvgFillPaint(args.vg, vignette);
-    nvgFill(args.vg);
 
-    // Gentle patina wash
-    NVGpaint wash = nvgLinearGradient(args.vg, 0, 0, w, h,
-                                      nvgRGBA(22, 28, 18, 8), nvgRGBA(50, 40, 22, 6));
-    nvgBeginPath(args.vg);
-    nvgRect(args.vg, 0, 0, w, h);
-    nvgFillPaint(args.vg, wash);
-    nvgFill(args.vg);
-
-    // Sparse micro-scratches
-    unsigned seed = 99173u;
-    auto rnd = [&]() {
-        seed ^= seed << 13; seed ^= seed >> 17; seed ^= seed << 5; return (seed & 0xFFFF) / 65535.f; };
-    nvgStrokeColor(args.vg, nvgRGBA(255, 255, 255, 8));
-    nvgStrokeWidth(args.vg, 0.7f);
-    for (int i = 0; i < 8; ++i) {
-        float x1 = rnd() * w;
-        float y1 = rnd() * h;
-        float dx = (rnd() - 0.5f) * (w * 0.15f);
-        float dy = (rnd() - 0.5f) * (h * 0.15f);
-        nvgBeginPath(args.vg);
-        nvgMoveTo(args.vg, x1, y1);
-        nvgLineTo(args.vg, x1 + dx, y1 + dy);
-        nvgStroke(args.vg);
-    }
+    // Sparse micro-scratches with subtle highlight/shadow for depth
+    shapetaker::graphics::drawMicroScratches(args, 0.0f, 0.0f, w, h, 7, baseSeed, 1.0f);
 }
 
 void TransmutationDisplayWidget::draw(const DrawArgs& args) {

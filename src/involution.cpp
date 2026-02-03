@@ -51,9 +51,7 @@ struct Involution : Module {
         CHAOS_LIGHT,
         CHAOS_LIGHT_GREEN,
         CHAOS_LIGHT_BLUE,
-        AURA_LIGHT,
-        ORBIT_LIGHT,
-        TIDE_LIGHT,
+        CHAOS_RATE_LIGHT,
         LIGHTS_LEN
     };
     // Liquid 6th-order filters - one per voice per channel
@@ -192,6 +190,10 @@ struct Involution : Module {
     float effectiveResonanceB = 0.707f;
     float effectiveCutoffA = 1.0f; // Store final modulated cutoff values
     float effectiveCutoffB = 1.0f;
+    float chaosRateBlinkPhase = 0.f;
+
+    // Chaos visualizer screen color theme (0=Cyan, 1=Amber, 2=Phosphor, 3=Ice)
+    int chaosTheme = 0;
 
     Involution() {
         config(PARAMS_LEN, INPUTS_LEN, OUTPUTS_LEN, LIGHTS_LEN);
@@ -277,9 +279,7 @@ struct Involution : Module {
         configOutput(AUDIO_B_OUTPUT, "Audio B");
 
         configLight(CHAOS_LIGHT, "Drive Activity");
-        configLight(AURA_LIGHT, "Aura Activity");
-        configLight(ORBIT_LIGHT, "Orbit Activity");
-        configLight(TIDE_LIGHT, "Tide Activity");
+        configLight(CHAOS_RATE_LIGHT, "Chaos Rate");
 
         // Initialize filters with default sample rate
         onSampleRateChange();
@@ -290,6 +290,19 @@ struct Involution : Module {
         effectGateSmooth.reset(0.f);
 
         shapetaker::ui::LabelFormatter::normalizeModuleControls(this);
+    }
+
+    json_t* dataToJson() override {
+        json_t* rootJ = json_object();
+        json_object_set_new(rootJ, "chaosTheme", json_integer(chaosTheme));
+        return rootJ;
+    }
+
+    void dataFromJson(json_t* rootJ) override {
+        json_t* chaosThemeJ = json_object_get(rootJ, "chaosTheme");
+        if (chaosThemeJ) {
+            chaosTheme = clamp((int)json_integer_value(chaosThemeJ), 0, 3);
+        }
     }
 
     void onSampleRateChange() override {
@@ -738,28 +751,33 @@ struct Involution : Module {
         
         // Update lights to show parameter values with Chiaroscuro-style color progression
         // Both lights: Teal (0%) -> Bright blue-purple (50%) -> Dark purple (100%)
-        const float base_brightness = 0.4f;
+        const float base_brightness = 0.25f;
         const float max_brightness = base_brightness;
         
-        // Drive light retains the original Chiaroscuro color morph
-        float driveValue = driveLight;
-        float drive_red, drive_green, drive_blue;
-        if (driveValue <= 0.5f) {
-            drive_red = driveValue * 2.0f * max_brightness;
-            drive_green = max_brightness;
-            drive_blue = max_brightness;
-        } else {
-            drive_red = max_brightness;
-            drive_green = 2.0f * (1.0f - driveValue) * max_brightness;
-            drive_blue = max_brightness * (1.7f - driveValue * 0.7f);
+        // Chaos rate indicator: slower blink at low rates, capped brightness.
+        // Nonlinear mapping: make low rates slower and keep fast rates readable.
+        float blinkHz = std::pow(chaosRate, 1.1f);
+        blinkHz = clamp(blinkHz, 0.02f, 6.f);
+        chaosRateBlinkPhase += blinkHz * args.sampleTime;
+        if (chaosRateBlinkPhase >= 1.f) {
+            chaosRateBlinkPhase -= std::floor(chaosRateBlinkPhase);
         }
-        lights[CHAOS_LIGHT].setBrightness(drive_red);
-        lights[CHAOS_LIGHT + 1].setBrightness(drive_green);
-        lights[CHAOS_LIGHT + 2].setBrightness(drive_blue);
+        float pulse = 0.5f * (1.f + std::sinf(2.f * static_cast<float>(M_PI) * chaosRateBlinkPhase));
+        float blinkScale = 1.f;
+        float chaosRateBrightness = 0.f;
+        lights[CHAOS_RATE_LIGHT].setBrightness(chaosRateBrightness);
 
-        lights[AURA_LIGHT].setBrightness(auraLight);
-        lights[ORBIT_LIGHT].setBrightness(orbitLight);
-        lights[TIDE_LIGHT].setBrightness(tideLight);
+        // Mix aura/orbit/tide into the jewel RGB, then pulse with the rate.
+        float auraValue = clamp(auraLight, 0.f, 1.f);
+        float orbitValue = clamp(orbitLight, 0.f, 1.f);
+        float tideValue = clamp(tideLight, 0.f, 1.f);
+        float auraRed = auraValue * max_brightness * blinkScale;
+        float orbitGreen = orbitValue * max_brightness * blinkScale;
+        float tideBlue = tideValue * max_brightness * blinkScale;
+        lights[CHAOS_LIGHT].setBrightness(auraRed);
+        lights[CHAOS_LIGHT + 1].setBrightness(orbitGreen);
+        lights[CHAOS_LIGHT + 2].setBrightness(tideBlue);
+        (void)driveLight;
     }
     
     // Integrate with Rack's default "Randomize" menu item
@@ -801,6 +819,7 @@ struct Involution : Module {
         params[LINK_CUTOFF_PARAM].setValue((float)linkDist(rng));
         params[LINK_RESONANCE_PARAM].setValue((float)linkDist(rng));
     }
+
 };
 
 // Chaos visualizer widget - extracted to separate files
@@ -821,10 +840,25 @@ struct ChaosJewelLED : ModuleLightWidget {
             addChild(sw);
         }
 
-        // Set up RGB colors for chaos activity
-        addBaseColor(nvgRGB(255, 0, 0));   // Red
-        addBaseColor(nvgRGB(0, 255, 0));   // Green
-        addBaseColor(nvgRGB(0, 0, 255));   // Blue
+        // Default base colors (Cyan theme) - updated dynamically in step()
+        addBaseColor(nvgRGB(186, 92, 220));  // Violet
+        addBaseColor(nvgRGB(148, 124, 255)); // Periwinkle
+        addBaseColor(nvgRGB(255, 118, 214)); // Rose
+    }
+
+    void step() override {
+        // Update base colors from theme before ModuleLightWidget blends them
+        if (module) {
+            Involution* inv = dynamic_cast<Involution*>(module);
+            if (inv) {
+                int themeIdx = clamp(inv->chaosTheme, 0, NUM_CHAOS_THEMES - 1);
+                const ChaosThemePalette& t = CHAOS_THEMES[themeIdx];
+                for (int i = 0; i < 3; i++) {
+                    baseColors[i] = t.ledBaseColors[i];
+                }
+            }
+        }
+        ModuleLightWidget::step();
     }
 
     void draw(const DrawArgs& args) override {
@@ -845,6 +879,61 @@ struct ChaosJewelLED : ModuleLightWidget {
     }
 };
 
+// Glow-only halo for chaos rate (drawn behind the jewel lens)
+struct ChaosRateGlow : ModuleLightWidget {
+    ChaosRateGlow() {
+        // Match the chaos jewel footprint so the glow stays concentric.
+        box.size = Vec(20.f, 20.f);
+    }
+
+    void draw(const DrawArgs& args) override {
+        float brightness = module ? module->lights[firstLightId].getBrightness() : 0.f;
+        brightness = clamp(brightness, 0.f, 1.f);
+        if (brightness <= 0.f) {
+            return;
+        }
+
+        // Resolve glow color from theme
+        NVGcolor glowBase = nvgRGB(255, 0, 255); // default
+        if (module) {
+            Involution* inv = dynamic_cast<Involution*>(module);
+            if (inv) {
+                int themeIdx = clamp(inv->chaosTheme, 0, NUM_CHAOS_THEMES - 1);
+                glowBase = CHAOS_THEMES[themeIdx].ledGlowColor;
+            }
+        }
+
+        NVGcontext* vg = args.vg;
+        float cx = box.size.x * 0.5f;
+        float cy = box.size.y * 0.5f;
+        float radius = std::min(box.size.x, box.size.y) * 0.5f;
+
+        nvgSave(vg);
+
+        // Soft halo behind the jewel
+        NVGcolor haloInner = glowBase;
+        haloInner.a = brightness * (90.f / 255.f);
+        NVGcolor haloOuter = glowBase;
+        haloOuter.a = 0.f;
+        NVGpaint glow = nvgRadialGradient(vg, cx, cy, radius * 0.2f, radius * 1.2f,
+            haloInner, haloOuter);
+        nvgBeginPath(vg);
+        nvgCircle(vg, cx, cy, radius * 1.15f);
+        nvgFillPaint(vg, glow);
+        nvgFill(vg);
+
+        // Inner emitter core
+        NVGcolor coreColor = glowBase;
+        coreColor.a = brightness * (140.f / 255.f);
+        nvgBeginPath(vg);
+        nvgCircle(vg, cx, cy, radius * 0.45f);
+        nvgFillColor(vg, coreColor);
+        nvgFill(vg);
+
+        nvgRestore(vg);
+    }
+};
+
 struct InvolutionWidget : ModuleWidget {
     InvolutionWidget(Involution* module) {
         setModule(module);
@@ -862,24 +951,24 @@ struct InvolutionWidget : ModuleWidget {
         );
         
         // Main Filter Section - using SVG parser for automatic positioning
-        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltHuge>(
+        addParam(createParamCentered<ShapetakerDavies1900hXLargeDot>(
             centerPx("cutoff_v", 24.026f, 24.174f),
             module, Involution::CUTOFF_A_PARAM));
-        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltSmall>(
+        addParam(createParamCentered<ShapetakerDavies1900hSmallDot>(
             centerPx("resonance_v", 11.935f, 57.750f),
             module, Involution::RESONANCE_A_PARAM));
-        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltHuge>(
+        addParam(createParamCentered<ShapetakerDavies1900hXLargeDot>(
             centerPx("cutoff_z", 66.305f, 24.174f),
             module, Involution::CUTOFF_B_PARAM));
-        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltSmall>(
+        addParam(createParamCentered<ShapetakerDavies1900hSmallDot>(
             centerPx("resonance_z", 78.397f, 57.750f),
             module, Involution::RESONANCE_B_PARAM));
         
         // Link switches - using SVG parser with fallbacks
-        addParam(createParamCentered<ShapetakerVintageRussianToggle>(
+        addParam(createParamCentered<ShapetakerDarkToggle>(
             centerPx("link_cutoff", 45.166f, 29.894f),
             module, Involution::LINK_CUTOFF_PARAM));
-        addParam(createParamCentered<ShapetakerVintageRussianToggle>(
+        addParam(createParamCentered<ShapetakerDarkToggle>(
             centerPx("link_resonance", 45.166f, 84.630f),
             module, Involution::LINK_RESONANCE_PARAM));
 
@@ -900,9 +989,9 @@ struct InvolutionWidget : ModuleWidget {
         // Character Controls - using SVG parser with fallbacks
         // Highpass is now static at 12Hz - no control needed
         // Drive knob is fixed; reuse area for Aura/Orbit/Tide controls
-        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltSmall>(centerPx("aura_knob", 15.910f, 94.088f), module, Involution::AURA_PARAM));
-        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltSmall>(centerPx("orbit_knob", 45.166f, 94.088f), module, Involution::ORBIT_PARAM));
-        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltSmall>(centerPx("tide_knob", 74.422f, 94.088f), module, Involution::TIDE_PARAM));
+        addParam(createParamCentered<ShapetakerDavies1900hSmallDot>(centerPx("aura_knob", 15.910f, 94.088f), module, Involution::AURA_PARAM));
+        addParam(createParamCentered<ShapetakerDavies1900hSmallDot>(centerPx("orbit_knob", 45.166f, 94.088f), module, Involution::ORBIT_PARAM));
+        addParam(createParamCentered<ShapetakerDavies1900hSmallDot>(centerPx("tide_knob", 74.422f, 94.088f), module, Involution::TIDE_PARAM));
         addParam(createParamCentered<ShapetakerAttenuverterOscilloscope>(centerPx("chaos_rate_knob", 60.922f, 108.088f), module, Involution::CHAOS_RATE_PARAM));
         
         // Chaos Visualizer - using SVG parser for automatic positioning
@@ -917,10 +1006,11 @@ struct InvolutionWidget : ModuleWidget {
         addChild(chaosViz);
         
         // Chaos light - using SVG parser and custom JewelLED
-        addChild(createLightCentered<ChaosJewelLED>(centerPx("chaos_light", 29.559f, 103.546f), module, Involution::CHAOS_LIGHT));
-        addChild(createLightCentered<MediumLight<BlueLight>>(centerPx("aura_light", 15.910f, 103.546f), module, Involution::AURA_LIGHT));
-        addChild(createLightCentered<MediumLight<RedLight>>(centerPx("orbit_light", 45.166f, 103.546f), module, Involution::ORBIT_LIGHT));
-        addChild(createLightCentered<MediumLight<GreenLight>>(centerPx("tide_light", 74.422f, 103.546f), module, Involution::TIDE_LIGHT));
+        Vec chaosCenter = centerPx("chaos_rate_light", 29.559f, 103.546f);
+        // Rate glow behind the jewel lens.
+        addChild(createLightCentered<ChaosRateGlow>(chaosCenter, module, Involution::CHAOS_RATE_LIGHT));
+        // Jewel lens for drive activity.
+        addChild(createLightCentered<ChaosJewelLED>(chaosCenter, module, Involution::CHAOS_LIGHT));
 
         // CV inputs - using SVG parser with updated coordinates
         addInput(createInputCentered<ShapetakerBNCPort>(centerPx("cutoff_v_cv", 24.027f, 44.322f), module, Involution::CUTOFF_A_CV_INPUT));
@@ -937,18 +1027,40 @@ struct InvolutionWidget : ModuleWidget {
         addOutput(createOutputCentered<ShapetakerBNCPort>(centerPx("audio_l_output", 63.436f, 119.347f), module, Involution::AUDIO_A_OUTPUT));
         addOutput(createOutputCentered<ShapetakerBNCPort>(centerPx("audio_r_output", 81.706f, 119.347f), module, Involution::AUDIO_B_OUTPUT));
     }
-    
-    // Draw panel background texture to match other modules
+
+    // Draw leather texture background
     void draw(const DrawArgs& args) override {
-        std::shared_ptr<Image> bg = APP->window->loadImage(asset::plugin(pluginInstance, "res/panels/vcv-panel-background.png"));
+        std::shared_ptr<Image> bg = APP->window->loadImage(asset::plugin(pluginInstance, "res/panels/black_leather_seamless.jpg"));
         if (bg) {
-            NVGpaint paint = nvgImagePattern(args.vg, 0.f, 0.f, box.size.x, box.size.y, 0.f, bg->handle, 1.0f);
+            // Scale < 1.0 = finer grain appearance
+            float scale = 0.4f;
+            float textureHeight = box.size.y * scale;
+            float textureWidth = textureHeight * (1.f);
+            NVGpaint paint = nvgImagePattern(args.vg, 0.f, 0.f, textureWidth, textureHeight, 0.f, bg->handle, 1.0f);
             nvgBeginPath(args.vg);
             nvgRect(args.vg, 0.f, 0.f, box.size.x, box.size.y);
             nvgFillPaint(args.vg, paint);
             nvgFill(args.vg);
         }
         ModuleWidget::draw(args);
+    }
+
+    void appendContextMenu(Menu* menu) override {
+        ModuleWidget::appendContextMenu(menu);
+        auto* involution = dynamic_cast<Involution*>(module);
+        if (!involution)
+            return;
+
+        menu->addChild(new MenuSeparator);
+        menu->addChild(createSubmenuItem("Screen Theme", CHAOS_THEME_NAMES[clamp(involution->chaosTheme, 0, NUM_CHAOS_THEMES - 1)], [=](Menu* childMenu) {
+            for (int i = 0; i < NUM_CHAOS_THEMES; i++) {
+                childMenu->addChild(createCheckMenuItem(CHAOS_THEME_NAMES[i], "", [=] {
+                    return involution->chaosTheme == i;
+                }, [=] {
+                    involution->chaosTheme = i;
+                }));
+            }
+        }));
     }
 };
 

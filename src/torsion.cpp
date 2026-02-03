@@ -1312,9 +1312,26 @@ struct VintageSliderLED : app::SvgSlider {
     }
 };
 
-// VintageFourWaySwitch removed - replaced with ShapetakerKnobAltSmall for cleaner aesthetic
+// VintageFourWaySwitch removed - replaced with ShapetakerDavies1900hSmallDot for cleaner aesthetic
 
 struct TorsionWidget : ModuleWidget {
+    // Draw leather texture background
+    void draw(const DrawArgs& args) override {
+        std::shared_ptr<Image> bg = APP->window->loadImage(asset::plugin(pluginInstance, "res/panels/black_leather_seamless.jpg"));
+        if (bg) {
+            // Scale < 1.0 = finer grain appearance
+            float scale = 0.4f;
+            float textureHeight = box.size.y * scale;
+            float textureWidth = textureHeight * (1.f);
+            NVGpaint paint = nvgImagePattern(args.vg, 0.f, 0.f, textureWidth, textureHeight, 0.f, bg->handle, 1.0f);
+            nvgBeginPath(args.vg);
+            nvgRect(args.vg, 0.f, 0.f, box.size.x, box.size.y);
+            nvgFillPaint(args.vg, paint);
+            nvgFill(args.vg);
+        }
+        ModuleWidget::draw(args);
+    }
+
     TorsionWidget(Torsion* module) {
         setModule(module);
         setPanel(createPanel(asset::plugin(pluginInstance, "res/panels/Torsion.svg")));
@@ -1329,21 +1346,21 @@ struct TorsionWidget : ModuleWidget {
         // Note: centerPx() reads from SVG first, fallback values provided for safety
 
         // Top row knobs
-        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltSmall>(
+        addKnobWithShadow(this, createParamCentered<ShapetakerDavies1900hSmallDot>(
             centerPx("coarse_knob", 11.44458f, 17.659729f), module, Torsion::COARSE_PARAM));
-        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltSmall>(
+        addKnobWithShadow(this, createParamCentered<ShapetakerDavies1900hSmallDot>(
             centerPx("torsion_knob", 31.128044f, 17.659729f), module, Torsion::TORSION_PARAM));
-        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltSmall>(
+        addKnobWithShadow(this, createParamCentered<ShapetakerDavies1900hSmallDot>(
             centerPx("sub_level_knob", 50.811508f, 17.659729f), module, Torsion::SUB_LEVEL_PARAM));
-        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltSmall>(
+        addKnobWithShadow(this, createParamCentered<ShapetakerDavies1900hSmallDot>(
             centerPx("warp_shape_knob", 70.494972f, 17.659729f), module, Torsion::WARP_SHAPE_PARAM));
 
         // Second row knobs
-        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltSmall>(
+        addKnobWithShadow(this, createParamCentered<ShapetakerDavies1900hSmallDot>(
             centerPx("detune_knob", 11.44458f, 37.985481f), module, Torsion::DETUNE_PARAM));
-        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltSmall>(
+        addKnobWithShadow(this, createParamCentered<ShapetakerDavies1900hSmallDot>(
             centerPx("symmetry_knob", 31.128044f, 37.985481f), module, Torsion::SYMMETRY_PARAM));
-        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltSmall>(
+        addKnobWithShadow(this, createParamCentered<ShapetakerDavies1900hSmallDot>(
             centerPx("stage_rate_knob", 50.811508f, 37.985481f), module, Torsion::STAGE_RATE_PARAM));
 
         // Attenuverters / nearby CV helpers
@@ -1353,21 +1370,21 @@ struct TorsionWidget : ModuleWidget {
             centerPx("feedback_atten", 70.494972f, 74.118011f), module, Torsion::FEEDBACK_ATTEN_PARAM));
 
         // Middle section knobs
-        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltSmall>(
+        addKnobWithShadow(this, createParamCentered<ShapetakerDavies1900hSmallDot>(
             centerPx("sub_dcw_depth_knob", 11.407479f, 58.311234f), module, Torsion::SUB_WARP_PARAM));
-        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltSmall>(
+        addKnobWithShadow(this, createParamCentered<ShapetakerDavies1900hSmallDot>(
             centerPx("feedback_knob", 11.963207f, 80.037621f), module, Torsion::FEEDBACK_PARAM));
 
         // Toggle switches (bottom row)
-        addParam(createParamCentered<ShapetakerVintageRussianToggle>(
+        addParam(createParamCentered<ShapetakerDarkToggle>(
             centerPx("saw_wave_switch", 11.953995f, 102.31097f), module, Torsion::SAW_WAVE_PARAM));
-        addParam(createParamCentered<ShapetakerVintageRussianToggle>(
+        addParam(createParamCentered<ShapetakerDarkToggle>(
             centerPx("tri_wave_switch", 26.716593f, 102.10995f), module, Torsion::TRIANGLE_WAVE_PARAM));
-        addParam(createParamCentered<ShapetakerVintageRussianToggle>(
+        addParam(createParamCentered<ShapetakerDarkToggle>(
             centerPx("dirty_mode_switch", 41.479195f, 102.10995f), module, Torsion::DIRTY_MODE_PARAM));
-        addParam(createParamCentered<ShapetakerVintageRussianToggle>(
+        addParam(createParamCentered<ShapetakerDarkToggle>(
             centerPx("square_wave_switch", 56.241791f, 102.10995f), module, Torsion::SQUARE_WAVE_PARAM));
-        addParam(createParamCentered<ShapetakerVintageRussianToggle>(
+        addParam(createParamCentered<ShapetakerDarkToggle>(
             centerPx("sub_sync_switch", 71.004387f, 102.10995f), module, Torsion::SUB_SYNC_PARAM));
 
         // Helper lambda to position sliders by their top-left corner from SVG rect coords
@@ -1545,26 +1562,6 @@ struct TorsionWidget : ModuleWidget {
             centerPx("main_output_r", 59.194309f, 114.70013f), module, Torsion::MAIN_R_OUTPUT));
         addOutput(createOutputCentered<ShapetakerBNCPort>(
             centerPx("edge_output", 71.004387f, 114.70013f), module, Torsion::EDGE_OUTPUT));
-    }
-
-    void draw(const DrawArgs& args) override {
-        std::shared_ptr<Image> panelTexture = APP->window->loadImage(
-            asset::plugin(pluginInstance, "res/panels/vcv-panel-background.png"));
-
-        if (panelTexture) {
-            NVGpaint paint = nvgImagePattern(
-                args.vg, 0.f, 0.f, box.size.x, box.size.y, 0.f, panelTexture->handle, 1.f);
-            nvgBeginPath(args.vg);
-            nvgRect(args.vg, 0.f, 0.f, box.size.x, box.size.y);
-            nvgFillPaint(args.vg, paint);
-            nvgFill(args.vg);
-        } else {
-            nvgBeginPath(args.vg);
-            nvgRect(args.vg, 0.f, 0.f, box.size.x, box.size.y);
-            nvgFillColor(args.vg, nvgRGB(0xf0, 0xeb, 0xe4));
-            nvgFill(args.vg);
-        }
-        ModuleWidget::draw(args);
     }
 
     void appendContextMenu(ui::Menu* menu) override {

@@ -159,23 +159,23 @@
        gradientUnits="userSpaceOnUse">
       <stop
          offset="0%"
-         style="stop-color:#cacdd4;stop-opacity:1"
+         style="stop-color:#d9bf79;stop-opacity:1"
          id="stop22" />
       <stop
          offset="20%"
-         style="stop-color:#a8acb4;stop-opacity:1"
+         style="stop-color:#c8a45b;stop-opacity:1"
          id="stop23" />
       <stop
          offset="50%"
-         style="stop-color:#8a8e96;stop-opacity:1"
+         style="stop-color:#a58137;stop-opacity:1"
          id="stop24" />
       <stop
          offset="80%"
-         style="stop-color:#6a6e76;stop-opacity:1"
+         style="stop-color:#7a612a;stop-opacity:1"
          id="stop25" />
       <stop
          offset="100%"
-         style="stop-color:#5a5e66;stop-opacity:1"
+         style="stop-color:#5d4621;stop-opacity:1"
          id="stop26" />
     </linearGradient>
     <!-- Guard rail gradient with chrome shine (cleaner) -->

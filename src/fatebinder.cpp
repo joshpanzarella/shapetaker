@@ -1871,11 +1871,15 @@ struct ParticleDisplayWidget : TransparentWidget {
 // ============================================================================
 
 struct FatebinderWidget : ModuleWidget {
-    // Draw panel background texture to match other modules
+    // Draw leather texture background
     void draw(const DrawArgs& args) override {
-        std::shared_ptr<Image> bg = APP->window->loadImage(asset::plugin(pluginInstance, "res/panels/vcv-panel-background.png"));
+        std::shared_ptr<Image> bg = APP->window->loadImage(asset::plugin(pluginInstance, "res/panels/black_leather_seamless.jpg"));
         if (bg) {
-            NVGpaint paint = nvgImagePattern(args.vg, 0.f, 0.f, box.size.x, box.size.y, 0.f, bg->handle, 1.0f);
+            // Scale < 1.0 = finer grain appearance
+            float scale = 0.4f;
+            float textureHeight = box.size.y * scale;
+            float textureWidth = textureHeight * (1.f);
+            NVGpaint paint = nvgImagePattern(args.vg, 0.f, 0.f, textureWidth, textureHeight, 0.f, bg->handle, 1.0f);
             nvgBeginPath(args.vg);
             nvgRect(args.vg, 0.f, 0.f, box.size.x, box.size.y);
             nvgFillPaint(args.vg, paint);
@@ -1906,62 +1910,62 @@ struct FatebinderWidget : ModuleWidget {
         // Add screws
         LayoutHelper::ScrewPositions::addStandardScrews<ScrewBlack>(this, box.size.x);
 
-        // Panel width: 91.44mm (18HP), height: 128.5mm
+        // Panel width: 101.6mm (20HP), height: 128.5mm
         // ====================================================================
         // TOP DISPLAY - Unified radar + terminal with CRT bezel
         // ====================================================================
 
         UnifiedDisplayWidget* unifiedDisplay = new UnifiedDisplayWidget();
         unifiedDisplay->module = module;
-        Rect displayRect = parser.rectMm("unified-display", 5.f, 12.f, 81.44f, 35.f);
+        Rect displayRect = parser.rectMm("unified-display", 10.08f, 12.f, 81.44f, 35.f);
         unifiedDisplay->box.pos = mm(displayRect.pos.x, displayRect.pos.y);
         unifiedDisplay->box.size = mm(displayRect.size.x, displayRect.size.y);  // Full width minus margins
         addChild(unifiedDisplay);
 
         // ====================================================================
-        // CONTROLS - 4 columns with better spacing for 18HP
+        // CONTROLS - 4 columns with better spacing for 20HP
         // ====================================================================
-        const float col1X = 13.0f;   // Rhythm
-        const float col2X = 32.0f;   // Probability
-        const float col3X = 59.5f;   // Mutation
-        const float col4X = 78.5f;   // Envelope
+        const float col1X = 18.08f;  // Rhythm
+        const float col2X = 37.08f;  // Probability
+        const float col3X = 64.58f;  // Mutation
+        const float col4X = 83.58f;  // Envelope
 
         const float row1Y = 54.0f;
         const float rowSpacing = 10.5f;
 
         // Column 1: Rhythm controls
-        auto* stepsKnob = createParamCentered<ShapetakerKnobAltSmall>(centerPx("steps-knob", col1X, row1Y), module, Fatebinder::STEPS_PARAM);
+        auto* stepsKnob = createParamCentered<ShapetakerDavies1900hSmallDot>(centerPx("steps-knob", col1X, row1Y), module, Fatebinder::STEPS_PARAM);
         resizeKnob(stepsKnob, 14.f);
         addKnobWithShadow(this, stepsKnob);
-        auto* hitsKnob = createParamCentered<ShapetakerKnobAltSmall>(centerPx("hits-knob", col1X, row1Y + rowSpacing), module, Fatebinder::HITS_PARAM);
+        auto* hitsKnob = createParamCentered<ShapetakerDavies1900hSmallDot>(centerPx("hits-knob", col1X, row1Y + rowSpacing), module, Fatebinder::HITS_PARAM);
         resizeKnob(hitsKnob, 14.f);
         addKnobWithShadow(this, hitsKnob);
-        auto* rotationKnob = createParamCentered<ShapetakerKnobAltSmall>(centerPx("rotation-knob", col1X, row1Y + rowSpacing * 2), module, Fatebinder::ROTATION_PARAM);
+        auto* rotationKnob = createParamCentered<ShapetakerDavies1900hSmallDot>(centerPx("rotation-knob", col1X, row1Y + rowSpacing * 2), module, Fatebinder::ROTATION_PARAM);
         resizeKnob(rotationKnob, 14.f);
         addKnobWithShadow(this, rotationKnob);
-        auto* ring2Knob = createParamCentered<ShapetakerKnobAltSmall>(centerPx("ring2-knob", col1X, row1Y + rowSpacing * 3), module, Fatebinder::RING_2_DIV_PARAM);
+        auto* ring2Knob = createParamCentered<ShapetakerDavies1900hSmallDot>(centerPx("ring2-knob", col1X, row1Y + rowSpacing * 3), module, Fatebinder::RING_2_DIV_PARAM);
         resizeKnob(ring2Knob, 14.f);
         addKnobWithShadow(this, ring2Knob);
-        auto* ring3Knob = createParamCentered<ShapetakerKnobAltSmall>(centerPx("ring3-knob", col1X, row1Y + rowSpacing * 4), module, Fatebinder::RING_3_DIV_PARAM);
+        auto* ring3Knob = createParamCentered<ShapetakerDavies1900hSmallDot>(centerPx("ring3-knob", col1X, row1Y + rowSpacing * 4), module, Fatebinder::RING_3_DIV_PARAM);
         resizeKnob(ring3Knob, 14.f);
         addKnobWithShadow(this, ring3Knob);
 
         // Column 2: Probability controls
-        auto* probabilityKnob = createParamCentered<ShapetakerKnobAltSmall>(centerPx("probability-knob", col2X, row1Y + 2.f), module, Fatebinder::PROBABILITY_PARAM);
+        auto* probabilityKnob = createParamCentered<ShapetakerDavies1900hSmallDot>(centerPx("probability-knob", col2X, row1Y + 2.f), module, Fatebinder::PROBABILITY_PARAM);
         resizeKnob(probabilityKnob, 16.f);
         addKnobWithShadow(this, probabilityKnob);
-        auto* chaosKnob = createParamCentered<ShapetakerKnobAltMedium>(centerPx("chaos-knob", col2X, row1Y + rowSpacing + 7.f), module, Fatebinder::CHAOS_PARAM);
+        auto* chaosKnob = createParamCentered<ShapetakerDavies1900hLargeDot>(centerPx("chaos-knob", col2X, row1Y + rowSpacing + 7.f), module, Fatebinder::CHAOS_PARAM);
         resizeKnob(chaosKnob, 20.f);
         addKnobWithShadow(this, chaosKnob);
-        auto* densityKnob = createParamCentered<ShapetakerKnobAltSmall>(centerPx("density-knob", col2X, row1Y + rowSpacing * 2 + 12.f), module, Fatebinder::DENSITY_PARAM);
+        auto* densityKnob = createParamCentered<ShapetakerDavies1900hSmallDot>(centerPx("density-knob", col2X, row1Y + rowSpacing * 2 + 12.f), module, Fatebinder::DENSITY_PARAM);
         resizeKnob(densityKnob, 14.f);
         addKnobWithShadow(this, densityKnob);
 
         // Column 3: Mutation controls
-        auto* tempoKnob = createParamCentered<ShapetakerKnobAltSmall>(centerPx("tempo-knob", col3X, row1Y), module, Fatebinder::TEMPO_PARAM);
+        auto* tempoKnob = createParamCentered<ShapetakerDavies1900hSmallDot>(centerPx("tempo-knob", col3X, row1Y), module, Fatebinder::TEMPO_PARAM);
         resizeKnob(tempoKnob, 16.f);
         addKnobWithShadow(this, tempoKnob);
-        auto* mutationKnob = createParamCentered<ShapetakerKnobAltSmall>(centerPx("mutation-knob", col3X, row1Y + rowSpacing), module, Fatebinder::MUTATION_RATE_PARAM);
+        auto* mutationKnob = createParamCentered<ShapetakerDavies1900hSmallDot>(centerPx("mutation-knob", col3X, row1Y + rowSpacing), module, Fatebinder::MUTATION_RATE_PARAM);
         resizeKnob(mutationKnob, 14.f);
         addKnobWithShadow(this, mutationKnob);
 
@@ -1973,16 +1977,16 @@ struct FatebinderWidget : ModuleWidget {
         addParam(createParamCentered<ShapetakerVintageToggleSwitch>(centerPx("overlap-switch", col3X, row1Y + rowSpacing * 4), module, Fatebinder::OVERLAP_MODE_PARAM));
 
         // Column 4: Envelope controls
-        auto* attackKnob = createParamCentered<ShapetakerKnobAltSmall>(centerPx("attack-knob", col4X, row1Y), module, Fatebinder::ATTACK_PARAM);
+        auto* attackKnob = createParamCentered<ShapetakerDavies1900hSmallDot>(centerPx("attack-knob", col4X, row1Y), module, Fatebinder::ATTACK_PARAM);
         resizeKnob(attackKnob, 14.f);
         addKnobWithShadow(this, attackKnob);
-        auto* decayKnob = createParamCentered<ShapetakerKnobAltSmall>(centerPx("decay-knob", col4X, row1Y + rowSpacing), module, Fatebinder::DECAY_PARAM);
+        auto* decayKnob = createParamCentered<ShapetakerDavies1900hSmallDot>(centerPx("decay-knob", col4X, row1Y + rowSpacing), module, Fatebinder::DECAY_PARAM);
         resizeKnob(decayKnob, 14.f);
         addKnobWithShadow(this, decayKnob);
-        auto* curveKnob = createParamCentered<ShapetakerKnobAltSmall>(centerPx("curve-knob", col4X, row1Y + rowSpacing * 2), module, Fatebinder::CURVE_PARAM);
+        auto* curveKnob = createParamCentered<ShapetakerDavies1900hSmallDot>(centerPx("curve-knob", col4X, row1Y + rowSpacing * 2), module, Fatebinder::CURVE_PARAM);
         resizeKnob(curveKnob, 14.f);
         addKnobWithShadow(this, curveKnob);
-        auto* shapeKnob = createParamCentered<ShapetakerKnobAltSmall>(centerPx("shape-knob", col4X, row1Y + rowSpacing * 3), module, Fatebinder::SHAPE_PARAM);
+        auto* shapeKnob = createParamCentered<ShapetakerDavies1900hSmallDot>(centerPx("shape-knob", col4X, row1Y + rowSpacing * 3), module, Fatebinder::SHAPE_PARAM);
         resizeKnob(shapeKnob, 14.f);
         addKnobWithShadow(this, shapeKnob);
 
@@ -1991,7 +1995,7 @@ struct FatebinderWidget : ModuleWidget {
         // ====================================================================
         const float inputY = 107.0f;
         const float ioSpacing = 11.5f;
-        const float ioStartX = 13.0f;
+        const float ioStartX = 18.08f;
 
         addInput(createInputCentered<ShapetakerBNCPort>(centerPx("clock-input", ioStartX, inputY), module, Fatebinder::CLOCK_INPUT));
         addInput(createInputCentered<ShapetakerBNCPort>(centerPx("reset-input", ioStartX + ioSpacing, inputY), module, Fatebinder::RESET_INPUT));

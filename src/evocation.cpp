@@ -23,6 +23,17 @@ struct ADSRStageButtonQuantity : ParamQuantity {
 // Custom ParamQuantity for ENV_SPEED_PARAM knob
 struct ADSRSpeedParamQuantity : ParamQuantity {
     std::string getLabel() override; // Implemented later
+    float getValue() override;
+    void setValue(float value) override;
+    float getDisplayValue() override;
+    void setDisplayValue(float displayValue) override;
+
+    static constexpr float LOW_RANGE_PORTION = 0.4f;
+    static constexpr float LOW_SPEED_MAX = 1.0f;
+
+    bool useGestureMapping() const;
+    float mapControlToSpeed(float control) const;
+    float mapSpeedToControl(float speed) const;
 };
 
 // Custom Touch Strip Widget - Declaration only
@@ -196,23 +207,23 @@ struct Evocation : Module {
     bool isRecording = false;
     bool bufferHasData = false;
     bool debugTouchLogging = false;
-    float liquidShapeAmount = 0.3f;   // 0..1 shaping/soft-slew blend
-    float jitterAmount = 0.0f;        // 0..1 phase jitter depth
     bool adsrPhaseQuantize = true;
+
+    // OLED screen color theme (0=Synthwave, 1=Amber, 2=Phosphor, 3=Ice)
+    int oledTheme = 0;
 
     // Polyphony configuration
     static const int MAX_POLY_CHANNELS = 8;
 
-    // Parameter smoothers to keep CV-driven speed/phase motion liquid
+    // Parameter smoothers to keep CV-driven speed/phase motion smooth
     shapetaker::FastSmoother speedSmoothers[NUM_ENVELOPES];
     shapetaker::FastSmoother phaseSmoothers[NUM_ENVELOPES];
 
     // Lightweight decimation to cut per-sample recalcs
     int paramDecim = 0;
-    static constexpr int PARAM_DECIM_RATE = 8; // recompute speed/phase/jitter every 8 samples
+    static constexpr int PARAM_DECIM_RATE = 8; // recompute speed/phase every 8 samples
     float cachedSpeed[NUM_ENVELOPES] = {1.f, 2.f, 4.f, 8.f};
     float cachedPhaseOffset[NUM_ENVELOPES] = {0.f, 0.f, 0.f, 0.f};
-    float cachedJitter[NUM_ENVELOPES] = {0.f, 0.f, 0.f, 0.f};
 
     // Individual loop states for each envelope player
     bool loopStates[4] = {false, false, false, false};
@@ -1579,13 +1590,10 @@ struct Evocation : Module {
             }
             speed = clamp(speed, 0.05f, 32.0f); // Reasonable speed limits with wider range
 
-            // Decimate speed/phase/jitter calculations to cut per-sample cost
+            // Decimate speed/phase calculations to cut per-sample cost
             if (paramDecim == 0) {
                 cachedSpeed[outputIndex] = speedSmoothers[outputIndex].process(speed, sampleTime, 0.008f);
                 cachedPhaseOffset[outputIndex] = phaseSmoothers[outputIndex].getValue(); // current smoothed phase
-                cachedJitter[outputIndex] = (jitterAmount > 0.f)
-                    ? ((rack::random::uniform() - 0.5f) * 2.f * 0.02f * jitterAmount)
-                    : 0.f;
             }
             speed = cachedSpeed[outputIndex];
 
@@ -1654,23 +1662,10 @@ struct Evocation : Module {
                 if (samplePhase < 0.f) samplePhase += 1.f;
             }
 
-            if (jitterAmount > 0.f) {
-                samplePhase += cachedJitter[outputIndex]; // decimated jitter
-                samplePhase -= std::floor(samplePhase);
-                if (samplePhase < 0.f) samplePhase += 1.f;
-            }
-
             float envelopeValue = interpolateEnvelope(samplePhase);
 
             if (invertStates[outputIndex]) {
                 envelopeValue = 1.0f - envelopeValue;
-            }
-
-            // Apply gentle liquid shaping
-            if (liquidShapeAmount > 0.f) {
-                float centered = (envelopeValue * 2.f) - 1.f;
-                float shaped = std::tanh(centered * (1.f + liquidShapeAmount * 6.f));
-                envelopeValue = 0.5f * (shaped + 1.f);
             }
 
             float targetVoltage = envelopeValue * 10.0f;
@@ -1679,8 +1674,6 @@ struct Evocation : Module {
             if (mode == EnvelopeMode::GESTURE) {
                 float speedFactor = std::max(speed, 0.1f);
                 float smoothingTau = 0.0002f / std::max(speedFactor, 1.0f); // shorter tau for higher speeds
-                // Add extra glide based on liquid shaping
-                smoothingTau *= (1.f + liquidShapeAmount * 2.f);
                 smoothingTau = clamp(smoothingTau, 1e-5f, 0.0012f);
                 float alpha = smoothingTau <= 0.f ? 1.f : sampleTime / (smoothingTau + sampleTime);
                 alpha = clamp(alpha, 0.f, 1.f);
@@ -2219,9 +2212,8 @@ struct Evocation : Module {
             json_object_set_new(rootJ, "gestureEnvelopeBackup", gestureBackupJ);
         }
 
-        json_object_set_new(rootJ, "liquidShapeAmount", json_real(liquidShapeAmount));
-        json_object_set_new(rootJ, "jitterAmount", json_real(jitterAmount));
         json_object_set_new(rootJ, "adsrPhaseQuantize", json_boolean(adsrPhaseQuantize));
+        json_object_set_new(rootJ, "oledTheme", json_integer(oledTheme));
 
         return rootJ;
     }
@@ -2351,17 +2343,13 @@ struct Evocation : Module {
             debugTouchLogging = json_boolean_value(debugTouchJ);
         }
 
-        json_t* shapeJ = json_object_get(rootJ, "liquidShapeAmount");
-        if (shapeJ) {
-            liquidShapeAmount = clamp((float)json_real_value(shapeJ), 0.f, 1.f);
-        }
-        json_t* jitterJ = json_object_get(rootJ, "jitterAmount");
-        if (jitterJ) {
-            jitterAmount = clamp((float)json_real_value(jitterJ), 0.f, 1.f);
-        }
         json_t* quantizeJ = json_object_get(rootJ, "adsrPhaseQuantize");
         if (quantizeJ) {
             adsrPhaseQuantize = json_boolean_value(quantizeJ);
+        }
+        json_t* oledThemeJ = json_object_get(rootJ, "oledTheme");
+        if (oledThemeJ) {
+            oledTheme = clamp((int)json_integer_value(oledThemeJ), 0, 3);
         }
 
         json_t* durationJ = json_object_get(rootJ, "recordedDuration");
@@ -2444,6 +2432,87 @@ std::string ADSRSpeedParamQuantity::getLabel() {
     } else {
         return "Selected Envelope Speed";
     }
+}
+
+bool ADSRSpeedParamQuantity::useGestureMapping() const {
+    Evocation* evocation = dynamic_cast<Evocation*>(module);
+    if (!evocation) {
+        return false;
+    }
+    return evocation->mode == Evocation::EnvelopeMode::GESTURE;
+}
+
+float ADSRSpeedParamQuantity::mapControlToSpeed(float control) const {
+    float minV = minValue;
+    float maxV = maxValue;
+    float range = maxV - minV;
+    if (range <= 0.f) {
+        return clamp(control, minV, maxV);
+    }
+
+    float lowSpeedSpan = std::min(LOW_SPEED_MAX, range);
+    float lowControlSpan = clamp(range * LOW_RANGE_PORTION, 0.05f, range - 0.05f);
+
+    float c = clamp(control, minV, maxV);
+    if (c <= minV + lowControlSpan) {
+        float t = (c - minV) / lowControlSpan;
+        return minV + t * lowSpeedSpan;
+    }
+
+    float highControlSpan = range - lowControlSpan;
+    float highSpeedSpan = range - lowSpeedSpan;
+    float t = (c - (minV + lowControlSpan)) / highControlSpan;
+    return minV + lowSpeedSpan + t * highSpeedSpan;
+}
+
+float ADSRSpeedParamQuantity::mapSpeedToControl(float speed) const {
+    float minV = minValue;
+    float maxV = maxValue;
+    float range = maxV - minV;
+    if (range <= 0.f) {
+        return clamp(speed, minV, maxV);
+    }
+
+    float lowSpeedSpan = std::min(LOW_SPEED_MAX, range);
+    float lowControlSpan = clamp(range * LOW_RANGE_PORTION, 0.05f, range - 0.05f);
+
+    float s = clamp(speed, minV, maxV);
+    if (s <= minV + lowSpeedSpan) {
+        float t = (s - minV) / lowSpeedSpan;
+        return minV + t * lowControlSpan;
+    }
+
+    float highControlSpan = range - lowControlSpan;
+    float highSpeedSpan = range - lowSpeedSpan;
+    float t = (s - (minV + lowSpeedSpan)) / highSpeedSpan;
+    return minV + lowControlSpan + t * highControlSpan;
+}
+
+float ADSRSpeedParamQuantity::getValue() {
+    float raw = engine::ParamQuantity::getValue();
+    if (!useGestureMapping()) {
+        return raw;
+    }
+    return mapSpeedToControl(raw);
+}
+
+void ADSRSpeedParamQuantity::setValue(float value) {
+    if (!useGestureMapping()) {
+        engine::ParamQuantity::setValue(value);
+        return;
+    }
+    float mapped = mapControlToSpeed(value);
+    engine::ParamQuantity::setValue(mapped);
+}
+
+float ADSRSpeedParamQuantity::getDisplayValue() {
+    // Always show the actual speed value, not the stretched control value.
+    return engine::ParamQuantity::getValue();
+}
+
+void ADSRSpeedParamQuantity::setDisplayValue(float displayValue) {
+    // Treat display values as actual speed values.
+    engine::ParamQuantity::setValue(displayValue);
 }
 
 // TouchStripWidget Method Implementations (after Evocation is fully defined)
@@ -3202,6 +3271,130 @@ struct OutputProgressIndicator : Widget {
 };
 
 // Main Widget
+
+// OLED screen color theme palette
+struct OledThemePalette {
+    NVGcolor waveform;      // Envelope waveform stroke
+    NVGcolor primaryText;   // Info text (speed, phase, invert, loop)
+    NVGcolor valueText;     // Parameter value display
+    NVGcolor accentText;    // Duration and envelope label
+    NVGcolor dimText;       // Parameter name
+    NVGcolor flashText;     // Selection flash and recording text
+    NVGcolor gridCenter;    // 5V reference line
+    NVGcolor gridBounds;    // 0V/10V reference lines
+    NVGcolor progressBg;    // Progress bar background
+    NVGcolor progressFill;  // Progress bar fill
+    NVGcolor envPoints;     // Envelope sample dots
+    NVGcolor emptyText;     // Placeholder text
+    NVGcolor voiceColors[8]; // Per-voice playback scanlines
+};
+
+static const OledThemePalette OLED_THEMES[] = {
+    // 0: Synthwave (default) - Cyan/Magenta/Purple
+    {
+        nvgRGBA(0, 255, 220, 255),       // waveform
+        nvgRGBA(0, 255, 220, 200),       // primaryText
+        nvgRGBA(180, 255, 240, 255),     // valueText
+        nvgRGBA(255, 100, 220, 235),     // accentText
+        nvgRGBA(140, 220, 208, 200),     // dimText
+        nvgRGBA(120, 220, 208, 240),     // flashText
+        nvgRGBA(180, 64, 255, 35),       // gridCenter
+        nvgRGBA(255, 0, 180, 70),        // gridBounds
+        nvgRGBA(60, 120, 110, 100),      // progressBg
+        nvgRGBA(0, 255, 220, 255),       // progressFill
+        nvgRGBA(180, 255, 255, 255),     // envPoints
+        nvgRGBA(100, 160, 150, 180),     // emptyText
+        {                                // voiceColors
+            nvgRGBA(255, 190, 255, 255),
+            nvgRGBA(240, 170, 250, 240),
+            nvgRGBA(225, 150, 245, 225),
+            nvgRGBA(210, 130, 235, 210),
+            nvgRGBA(195, 110, 225, 195),
+            nvgRGBA(180, 95, 215, 180),
+            nvgRGBA(165, 80, 205, 165),
+            nvgRGBA(150, 70, 195, 150)
+        }
+    },
+    // 1: Amber - Classic warm CRT
+    {
+        nvgRGBA(255, 176, 0, 255),       // waveform
+        nvgRGBA(255, 176, 0, 200),       // primaryText
+        nvgRGBA(255, 220, 140, 255),     // valueText
+        nvgRGBA(255, 140, 40, 235),      // accentText
+        nvgRGBA(180, 140, 60, 200),      // dimText
+        nvgRGBA(200, 160, 40, 240),      // flashText
+        nvgRGBA(160, 100, 0, 35),        // gridCenter
+        nvgRGBA(200, 120, 0, 70),        // gridBounds
+        nvgRGBA(80, 60, 20, 100),        // progressBg
+        nvgRGBA(255, 176, 0, 255),       // progressFill
+        nvgRGBA(255, 230, 160, 255),     // envPoints
+        nvgRGBA(130, 100, 50, 180),      // emptyText
+        {                                // voiceColors
+            nvgRGBA(255, 220, 130, 255),
+            nvgRGBA(255, 200, 110, 240),
+            nvgRGBA(245, 180, 90, 225),
+            nvgRGBA(235, 165, 75, 210),
+            nvgRGBA(225, 150, 60, 195),
+            nvgRGBA(215, 135, 50, 180),
+            nvgRGBA(200, 120, 40, 165),
+            nvgRGBA(185, 110, 30, 150)
+        }
+    },
+    // 2: Phosphor - Green terminal CRT
+    {
+        nvgRGBA(0, 255, 68, 255),        // waveform
+        nvgRGBA(0, 255, 68, 200),        // primaryText
+        nvgRGBA(160, 255, 180, 255),     // valueText
+        nvgRGBA(80, 255, 120, 235),      // accentText
+        nvgRGBA(100, 200, 120, 200),     // dimText
+        nvgRGBA(80, 220, 100, 240),      // flashText
+        nvgRGBA(0, 160, 40, 35),         // gridCenter
+        nvgRGBA(0, 200, 60, 70),         // gridBounds
+        nvgRGBA(30, 80, 40, 100),        // progressBg
+        nvgRGBA(0, 255, 68, 255),        // progressFill
+        nvgRGBA(180, 255, 200, 255),     // envPoints
+        nvgRGBA(60, 130, 80, 180),       // emptyText
+        {                                // voiceColors
+            nvgRGBA(180, 255, 200, 255),
+            nvgRGBA(160, 245, 185, 240),
+            nvgRGBA(140, 235, 170, 225),
+            nvgRGBA(120, 225, 155, 210),
+            nvgRGBA(100, 215, 140, 195),
+            nvgRGBA(85, 205, 125, 180),
+            nvgRGBA(70, 195, 110, 165),
+            nvgRGBA(55, 185, 100, 150)
+        }
+    },
+    // 3: Ice - Cool blue
+    {
+        nvgRGBA(100, 200, 255, 255),     // waveform
+        nvgRGBA(100, 200, 255, 200),     // primaryText
+        nvgRGBA(200, 230, 255, 255),     // valueText
+        nvgRGBA(160, 210, 255, 235),     // accentText
+        nvgRGBA(120, 170, 210, 200),     // dimText
+        nvgRGBA(140, 200, 240, 240),     // flashText
+        nvgRGBA(64, 120, 200, 35),       // gridCenter
+        nvgRGBA(80, 150, 255, 70),       // gridBounds
+        nvgRGBA(40, 70, 110, 100),       // progressBg
+        nvgRGBA(100, 200, 255, 255),     // progressFill
+        nvgRGBA(210, 240, 255, 255),     // envPoints
+        nvgRGBA(80, 120, 160, 180),      // emptyText
+        {                                // voiceColors
+            nvgRGBA(210, 235, 255, 255),
+            nvgRGBA(190, 220, 255, 240),
+            nvgRGBA(170, 205, 250, 225),
+            nvgRGBA(150, 190, 245, 210),
+            nvgRGBA(130, 175, 240, 195),
+            nvgRGBA(115, 160, 230, 180),
+            nvgRGBA(100, 145, 220, 165),
+            nvgRGBA(85, 130, 210, 150)
+        }
+    }
+};
+
+static const int NUM_OLED_THEMES = 4;
+static const char* const OLED_THEME_NAMES[] = {"Synthwave", "Amber", "Phosphor", "Ice"};
+
 // OLED Display Widget
 struct EvocationOLEDDisplay : Widget {
     Evocation* module = nullptr;
@@ -3244,6 +3437,10 @@ struct EvocationOLEDDisplay : Widget {
             return;
         }
 
+        // Resolve current color theme
+        int themeIdx = clamp(module->oledTheme, 0, NUM_OLED_THEMES - 1);
+        const OledThemePalette& t = OLED_THEMES[themeIdx];
+
         // Define safe display area (inside bezel)
         const float padding = 6.0f;
         const float safeWidth = box.size.x - (padding * 2.0f);
@@ -3272,7 +3469,7 @@ struct EvocationOLEDDisplay : Widget {
                 }
 
                 nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-                nvgFillColor(args.vg, nvgRGBA(120, 220, 208, 240));
+                nvgFillColor(args.vg, t.flashText);
                 nvgText(args.vg, box.size.x * 0.5f, box.size.y * 0.5f, flashText.c_str(), nullptr);
             }
             nvgRestore(args.vg);
@@ -3298,7 +3495,7 @@ struct EvocationOLEDDisplay : Widget {
             }
 
             nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-            nvgFillColor(args.vg, nvgRGBA(120, 220, 208, 240));
+            nvgFillColor(args.vg, t.flashText);
             nvgText(args.vg, box.size.x * 0.5f, box.size.y * 0.35f, recordText.c_str(), nullptr);
 
             // Progress bar
@@ -3311,14 +3508,14 @@ struct EvocationOLEDDisplay : Widget {
             // Background bar (dim)
             nvgBeginPath(args.vg);
             nvgRoundedRect(args.vg, barX, barY, barWidth, barHeight, 2.0f);
-            nvgFillColor(args.vg, nvgRGBA(60, 120, 110, 100));
+            nvgFillColor(args.vg, t.progressBg);
             nvgFill(args.vg);
 
-            // Progress fill (bright cyan)
+            // Progress fill
             if (progress > 0.001f) {
                 nvgBeginPath(args.vg);
                 nvgRoundedRect(args.vg, barX, barY, barWidth * progress, barHeight, 2.0f);
-                nvgFillColor(args.vg, nvgRGBA(0, 255, 220, 255));
+                nvgFillColor(args.vg, t.progressFill);
                 nvgFill(args.vg);
             }
 
@@ -3344,7 +3541,7 @@ struct EvocationOLEDDisplay : Widget {
             }
 
             nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_TOP);
-            nvgFillColor(args.vg, nvgRGBA(140, 220, 208, 200));
+            nvgFillColor(args.vg, t.dimText);
             nvgText(args.vg, box.size.x * 0.5f, padding + 8.0f, module->lastTouched.name.c_str(), nullptr);
 
             // Parameter value (larger)
@@ -3362,7 +3559,7 @@ struct EvocationOLEDDisplay : Widget {
                 std::string line2 = "TRIMMED";
 
                 nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-                nvgFillColor(args.vg, nvgRGBA(180, 255, 240, 255));
+                nvgFillColor(args.vg, t.valueText);
 
                 float lineHeight = 18.0f;
                 float centerY = box.size.y * 0.6f;
@@ -3382,7 +3579,7 @@ struct EvocationOLEDDisplay : Widget {
                 }
 
                 nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-                nvgFillColor(args.vg, nvgRGBA(180, 255, 240, 255));
+                nvgFillColor(args.vg, t.valueText);
                 nvgText(args.vg, box.size.x * 0.5f, box.size.y * 0.6f, valueStr.c_str(), nullptr);
             }
         } else if (font) {
@@ -3401,8 +3598,8 @@ struct EvocationOLEDDisplay : Widget {
                 const float graphX = sidePadding;
                 const float graphY = topPadding + verticalMargin;
 
-                // Draw grid lines with synthwave aesthetic
-                nvgStrokeColor(args.vg, nvgRGBA(180, 64, 255, 35));
+                // Draw grid lines
+                nvgStrokeColor(args.vg, t.gridCenter);
                 nvgStrokeWidth(args.vg, 0.5f);
                 // Horizontal center line (5V)
                 nvgBeginPath(args.vg);
@@ -3410,8 +3607,8 @@ struct EvocationOLEDDisplay : Widget {
                 nvgLineTo(args.vg, graphX + graphWidth, graphY + graphHeight * 0.5f);
                 nvgStroke(args.vg);
 
-                // Draw 10V line (top) and 0V line (bottom) in magenta
-                nvgStrokeColor(args.vg, nvgRGBA(255, 0, 180, 70));
+                // Draw 10V line (top) and 0V line (bottom)
+                nvgStrokeColor(args.vg, t.gridBounds);
                 nvgStrokeWidth(args.vg, 0.5f);
                 // 10V line at top
                 nvgBeginPath(args.vg);
@@ -3427,8 +3624,8 @@ struct EvocationOLEDDisplay : Widget {
                 // Check if envelope is inverted
                 bool inverted = module->invertStates[envIndex];
 
-                // Draw envelope waveform (thicker bright cyan)
-                nvgStrokeColor(args.vg, nvgRGBA(0, 255, 220, 255));
+                // Draw envelope waveform
+                nvgStrokeColor(args.vg, t.waveform);
                 nvgStrokeWidth(args.vg, 0.9f);
                 nvgLineCap(args.vg, NVG_ROUND);
                 nvgLineJoin(args.vg, NVG_ROUND);
@@ -3450,7 +3647,7 @@ struct EvocationOLEDDisplay : Widget {
                 nvgStroke(args.vg);
 
                 // Draw envelope points as tiny bright dots
-                nvgFillColor(args.vg, nvgRGBA(180, 255, 255, 255));
+                nvgFillColor(args.vg, t.envPoints);
                 for (const auto& point : module->envelope) {
                     float x = graphX + point.time * graphWidth;
                     float yValue = inverted ? point.y : (1.0f - point.y);
@@ -3462,17 +3659,6 @@ struct EvocationOLEDDisplay : Widget {
                 }
 
                 // Draw per-voice playback scanlines (up to 8 shades)
-                static const NVGcolor voiceColors[8] = {
-                    nvgRGBA(255, 190, 255, 255),
-                    nvgRGBA(240, 170, 250, 240),
-                    nvgRGBA(225, 150, 245, 225),
-                    nvgRGBA(210, 130, 235, 210),
-                    nvgRGBA(195, 110, 225, 195),
-                    nvgRGBA(180, 95, 215, 180),
-                    nvgRGBA(165, 80, 205, 165),
-                    nvgRGBA(150, 70, 195, 150)
-                };
-
                 std::vector<int> activeVoices;
                 const int maxVoiceVisuals = std::min(8, Evocation::MAX_POLY_CHANNELS);
                 for (int voice = 0; voice < maxVoiceVisuals; ++voice) {
@@ -3486,7 +3672,7 @@ struct EvocationOLEDDisplay : Widget {
                     float phase = clamp(module->getPlaybackPhase(envIndex, voice), 0.f, 1.f);
                     float playheadX = graphX + phase * graphWidth;
 
-                    NVGcolor color = voiceColors[std::min(idx, (size_t)7)];
+                    NVGcolor color = t.voiceColors[std::min(idx, (size_t)7)];
                     nvgBeginPath(args.vg);
                     nvgMoveTo(args.vg, playheadX, graphY);
                     nvgLineTo(args.vg, playheadX, graphY + graphHeight);
@@ -3499,7 +3685,7 @@ struct EvocationOLEDDisplay : Widget {
                 nvgFontFaceId(args.vg, font->handle);
                 nvgFontSize(args.vg, 7.0f);
                 nvgTextAlign(args.vg, NVG_ALIGN_LEFT | NVG_ALIGN_TOP);
-                nvgFillColor(args.vg, nvgRGBA(0, 255, 220, 200));
+                nvgFillColor(args.vg, t.primaryText);
 
                 if (module->mode == Evocation::EnvelopeMode::ADSR) {
                     // ADSR mode: show individual stage duration/level
@@ -3526,16 +3712,16 @@ struct EvocationOLEDDisplay : Widget {
                     nvgText(args.vg, sidePadding, 3.0f, speedText.c_str(), nullptr);
                 }
 
-                // Draw total time at top center (bright magenta)
+                // Draw total time at top center
                 nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_TOP);
-                nvgFillColor(args.vg, nvgRGBA(255, 100, 220, 220));
+                nvgFillColor(args.vg, t.accentText);
                 float duration = module->getEnvelopeDuration();
                 std::string timeText = string::f("%.2fs", duration);
                 nvgText(args.vg, box.size.x * 0.5f, 3.0f, timeText.c_str(), nullptr);
 
-                // Draw phase/contour in top right corner (cyan)
+                // Draw phase/contour in top right corner
                 nvgTextAlign(args.vg, NVG_ALIGN_RIGHT | NVG_ALIGN_TOP);
-                nvgFillColor(args.vg, nvgRGBA(0, 255, 220, 200));
+                nvgFillColor(args.vg, t.primaryText);
 
                 if (module->mode == Evocation::EnvelopeMode::ADSR) {
                     // ADSR mode: show contour type
@@ -3562,10 +3748,10 @@ struct EvocationOLEDDisplay : Widget {
                     nvgText(args.vg, box.size.x - sidePadding, 3.0f, phaseText.c_str(), nullptr);
                 }
 
-                // Draw envelope label at bottom center (magenta glow)
+                // Draw envelope label at bottom center
                 nvgFontSize(args.vg, 10.0f);
                 nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_BOTTOM);
-                nvgFillColor(args.vg, nvgRGBA(255, 100, 220, 240));
+                nvgFillColor(args.vg, t.accentText);
                 std::string text;
                 if (module->mode == Evocation::EnvelopeMode::ADSR) {
                     const char* stages[] = {"ATTACK", "DECAY", "SUSTAIN", "RELEASE"};
@@ -3575,18 +3761,18 @@ struct EvocationOLEDDisplay : Widget {
                 }
                 nvgText(args.vg, box.size.x * 0.5f, box.size.y - bottomPadding, text.c_str(), nullptr);
 
-                // Draw invert status at bottom left (cyan)
+                // Draw invert status at bottom left
                 nvgFontSize(args.vg, 7.0f);
                 nvgTextAlign(args.vg, NVG_ALIGN_LEFT | NVG_ALIGN_BOTTOM);
-                nvgFillColor(args.vg, nvgRGBA(0, 255, 220, 200));
+                nvgFillColor(args.vg, t.primaryText);
                 std::string invertText = inverted ? "INV" : "";
                 if (!invertText.empty()) {
                     nvgText(args.vg, sidePadding, box.size.y - bottomPadding, invertText.c_str(), nullptr);
                 }
 
-                // Draw loop status at bottom right (cyan)
+                // Draw loop status at bottom right
                 nvgTextAlign(args.vg, NVG_ALIGN_RIGHT | NVG_ALIGN_BOTTOM);
-                nvgFillColor(args.vg, nvgRGBA(0, 255, 220, 200));
+                nvgFillColor(args.vg, t.primaryText);
                 bool looping = module->loopStates[envIndex];
                 std::string loopText = looping ? "LOOP" : "";
                 if (!loopText.empty()) {
@@ -3598,7 +3784,7 @@ struct EvocationOLEDDisplay : Widget {
                 nvgFontFaceId(args.vg, font->handle);
                 nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
                 nvgFontSize(args.vg, 10.0f);
-                nvgFillColor(args.vg, nvgRGBA(100, 160, 150, 180));
+                nvgFillColor(args.vg, t.emptyText);
                 std::string emptyText;
                 if (module->mode == Evocation::EnvelopeMode::ADSR) {
                     emptyText = "[ADSR MODE]";
@@ -3617,11 +3803,15 @@ struct EvocationWidget : ModuleWidget {
     TouchStripWidget* touchStrip = nullptr;
     EvocationOLEDDisplay* oledDisplay = nullptr;
 
-    // Draw panel background texture to match Transmutation
+    // Draw leather texture background
     void draw(const DrawArgs& args) override {
-        std::shared_ptr<Image> bg = APP->window->loadImage(asset::plugin(pluginInstance, "res/panels/vcv-panel-background.png"));
+        std::shared_ptr<Image> bg = APP->window->loadImage(asset::plugin(pluginInstance, "res/panels/black_leather_seamless.jpg"));
         if (bg) {
-            NVGpaint paint = nvgImagePattern(args.vg, 0.f, 0.f, box.size.x, box.size.y, 0.f, bg->handle, 1.0f);
+            // Scale < 1.0 = finer grain appearance
+            float scale = 0.4f;
+            float textureHeight = box.size.y * scale;
+            float textureWidth = textureHeight * (1.f);
+            NVGpaint paint = nvgImagePattern(args.vg, 0.f, 0.f, textureWidth, textureHeight, 0.f, bg->handle, 1.0f);
             nvgBeginPath(args.vg);
             nvgRect(args.vg, 0.f, 0.f, box.size.x, box.size.y);
             nvgFillPaint(args.vg, paint);
@@ -3685,8 +3875,8 @@ struct EvocationWidget : ModuleWidget {
         addInput(createInputCentered<ShapetakerBNCPort>(centerPx("phase4-cv-in", 92.5f, 119.5f), module, Evocation::PHASE_4_INPUT));
 
         // Envelope controls
-        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltMedium>(centerPx("env-speed", 49.159584f, 47.892654f), module, Evocation::ENV_SPEED_PARAM));
-        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltSmall>(centerPx("env-phase-offset", 78.077148f, 47.892654f), module, Evocation::ENV_PHASE_PARAM));
+        addParam(createParamCentered<ShapetakerDavies1900hLargeDot>(centerPx("env-speed", 49.159584f, 47.892654f), module, Evocation::ENV_SPEED_PARAM));
+        addParam(createParamCentered<ShapetakerDavies1900hLargeDot>(centerPx("env-phase-offset", 78.077148f, 47.892654f), module, Evocation::ENV_PHASE_PARAM));
 
         // Loop and invert capacitive touch switches with outer LED rings
         Vec loopCenter = centerPx("loop-sw", 78.077148f, 66.94957f);
@@ -3803,6 +3993,17 @@ struct EvocationWidget : ModuleWidget {
         }));
 
         menu->addChild(new MenuSeparator);
+        menu->addChild(createSubmenuItem("Screen Theme", OLED_THEME_NAMES[clamp(evocation->oledTheme, 0, NUM_OLED_THEMES - 1)], [=](Menu* childMenu) {
+            for (int i = 0; i < NUM_OLED_THEMES; i++) {
+                childMenu->addChild(createCheckMenuItem(OLED_THEME_NAMES[i], "", [=] {
+                    return evocation->oledTheme == i;
+                }, [=] {
+                    evocation->oledTheme = i;
+                }));
+            }
+        }));
+
+        menu->addChild(new MenuSeparator);
         menu->addChild(createCheckMenuItem("Debug Touch Logging", "", [=] {
             return evocation->debugTouchLogging;
         }, [=] {
@@ -3811,17 +4012,6 @@ struct EvocationWidget : ModuleWidget {
         }));
 
         menu->addChild(new MenuSeparator);
-        menu->addChild(createMenuLabel("Fluid Options"));
-        menu->addChild(shapetaker::ui::createPercentageSlider(
-            evocation,
-            [](Evocation* m, float v) { m->liquidShapeAmount = clamp(v, 0.f, 1.f); },
-            [](Evocation* m) { return m->liquidShapeAmount; },
-            "Liquid Shaping"));
-        menu->addChild(shapetaker::ui::createPercentageSlider(
-            evocation,
-            [](Evocation* m, float v) { m->jitterAmount = clamp(v, 0.f, 1.f); },
-            [](Evocation* m) { return m->jitterAmount; },
-            "Phase Jitter"));
         menu->addChild(createCheckMenuItem("Quantize ADSR Phase CV", "",
             [=] { return evocation->adsrPhaseQuantize; },
             [=] { evocation->adsrPhaseQuantize = !evocation->adsrPhaseQuantize; }));

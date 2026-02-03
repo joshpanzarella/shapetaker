@@ -816,6 +816,24 @@ struct Chimera : Module {
 };
 
 struct ChimeraWidget : ModuleWidget {
+    // Draw leather texture background
+    void draw(const DrawArgs& args) override {
+        std::shared_ptr<Image> bg = APP->window->loadImage(asset::plugin(pluginInstance, "res/panels/black_leather_seamless.jpg"));
+        if (bg) {
+            // Scale < 1.0 = finer grain appearance
+            float scale = 0.4f;
+            float textureHeight = box.size.y * scale;
+            float textureWidth = textureHeight * (1.f);
+            float xOffset = 8.f;  // Unique offset for Chimera (near left edge)
+            NVGpaint paint = nvgImagePattern(args.vg, -xOffset, 0.f, textureWidth, box.size.y, 0.f, bg->handle, 1.0f);
+            nvgBeginPath(args.vg);
+            nvgRect(args.vg, 0.f, 0.f, box.size.x, box.size.y);
+            nvgFillPaint(args.vg, paint);
+            nvgFill(args.vg);
+        }
+        ModuleWidget::draw(args);
+    }
+
     ChimeraWidget(Chimera* module) {
         setModule(module);
         setPanel(createPanel(asset::plugin(pluginInstance, "res/panels/Chimera.svg")));

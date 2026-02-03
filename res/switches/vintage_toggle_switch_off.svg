@@ -120,11 +120,11 @@
       <!-- Simpler darker silver; gradients moved to explicit shadow shapes -->
       <stop
          offset="0%"
-         stop-color="#d4d4d4"
+         stop-color="#d9bf79"
          id="stop10" />
       <stop
          offset="100%"
-         stop-color="#606060"
+         stop-color="#6d5024"
          id="stop11" />
     </linearGradient>
     <!-- Tip (chrome look) -->
@@ -136,23 +136,23 @@
        y2="1">
       <stop
          offset="0%"
-         stop-color="#fafafa"
+         stop-color="#e8d08a"
          id="stop12" />
       <stop
          offset="20%"
-         stop-color="#d7d7d7"
+         stop-color="#c5a657"
          id="stop13" />
       <stop
          offset="50%"
-         stop-color="#7a7a7a"
+         stop-color="#9a712d"
          id="stop14" />
       <stop
          offset="80%"
-         stop-color="#dcdcdc"
+         stop-color="#b48c3b"
          id="stop15" />
       <stop
          offset="100%"
-         stop-color="#ffffff"
+         stop-color="#6a4c20"
          id="stop16" />
     </linearGradient>
     <linearGradient
@@ -286,21 +286,21 @@
          style="fill:url(#linearGradient21)" />
       <!-- Central highlight for symmetric appearance -->
       <rect
-         x="-0.3"
+         x="-0.25"
          y="-10.2"
-         width="0.6"
+         width="0.5"
          height="6.4"
-         fill="#ffffff"
-         opacity="0.18"
+         fill="#f3e2b6"
+         opacity="0.12"
          id="rect19" />
       <!-- Side shadow (more defined, directional) -->
       <rect
-         x="1.2"
+         x="1.3"
          y="-10.2"
-         width="0.80000001"
+         width="0.6"
          height="5.7037697"
-         fill="#000000"
-         opacity="0.26"
+         fill="#2a2010"
+         opacity="0.18"
          id="stemShadow"
          style="stroke-width:0.944041" />
       <!-- Tip (silver, smaller and circular) -->
@@ -319,8 +319,8 @@
          cy="-13"
          rx="1.2"
          ry="0.7"
-         fill="#ffffff"
-         opacity="0.2"
+         fill="#f3e2b6"
+         opacity="0.16"
          id="ellipse20" />
       <!-- Tip underbelly shadow -->
       <ellipse
@@ -328,8 +328,8 @@
          cy="-11"
          rx="1.5"
          ry="0.8"
-         fill="#000000"
-         opacity="0.26"
+         fill="#2a2010"
+         opacity="0.2"
          id="ellipse21" />
     </g>
   </g>

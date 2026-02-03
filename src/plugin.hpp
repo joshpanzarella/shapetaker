@@ -78,6 +78,52 @@ struct ShapetakerKnobBase : app::SvgKnob {
 };
 
 /**
+ * Jet black screw - procedurally drawn for a sleek modern look.
+ */
+struct ScrewJetBlack : widget::Widget {
+    ScrewJetBlack() {
+        box.size = Vec(15, 15);
+    }
+
+    void draw(const DrawArgs& args) override {
+        NVGcontext* vg = args.vg;
+        float cx = box.size.x / 2.f;
+        float cy = box.size.y / 2.f;
+        float r = std::min(cx, cy) * 0.85f;
+
+        // Outer ring - jet black
+        nvgBeginPath(vg);
+        nvgCircle(vg, cx, cy, r);
+        nvgFillColor(vg, nvgRGB(8, 8, 8));
+        nvgFill(vg);
+
+        // Inner recess - slightly lighter for depth
+        nvgBeginPath(vg);
+        nvgCircle(vg, cx, cy, r * 0.7f);
+        nvgFillColor(vg, nvgRGB(18, 18, 18));
+        nvgFill(vg);
+
+        // Cross slot - horizontal
+        nvgBeginPath(vg);
+        nvgRect(vg, cx - r * 0.5f, cy - r * 0.08f, r * 1.0f, r * 0.16f);
+        nvgFillColor(vg, nvgRGB(2, 2, 2));
+        nvgFill(vg);
+
+        // Cross slot - vertical
+        nvgBeginPath(vg);
+        nvgRect(vg, cx - r * 0.08f, cy - r * 0.5f, r * 0.16f, r * 1.0f);
+        nvgFillColor(vg, nvgRGB(2, 2, 2));
+        nvgFill(vg);
+
+        // Subtle highlight for dimension
+        nvgBeginPath(vg);
+        nvgCircle(vg, cx - r * 0.25f, cy - r * 0.25f, r * 0.15f);
+        nvgFillColor(vg, nvgRGBA(255, 255, 255, 12));
+        nvgFill(vg);
+    }
+};
+
+/**
  * Knob shadow widget - draws a realistic drop shadow beneath knobs.
  * Used by all Shapetaker modules for consistent visual depth.
  */
@@ -129,10 +175,12 @@ inline void addKnobWithShadow(ModuleWidget* widget, app::ParamWidget* knob) {
     if (!knob || !widget) return;
 
     float diameter = std::max(knob->box.size.x, knob->box.size.y);
-    float padding = std::max(7.f, std::min(diameter * 0.32f, 18.f));
-    float alpha = std::max(0.32f, std::min(0.60f, 0.25f + diameter * 0.006f));
+    // Subtle shadow: reduced padding and alpha to avoid bleeding into nearby text
+    float padding = std::max(6.f, std::min(diameter * 0.25f, 14.f));
+    float alpha = std::max(0.22f, std::min(0.38f, 0.18f + diameter * 0.004f));
 
     auto* shadow = new KnobShadowWidget(knob->box.size, padding, alpha);
+    shadow->offset = padding * 0.45f;  // Subtle vertical offset
     shadow->box.pos = knob->box.pos.minus(Vec(padding, padding));
     widget->addChild(shadow);
     widget->addParam(knob);
@@ -480,22 +528,58 @@ struct ShapetakerKnobCharredMedium : app::SvgKnob {
 
 struct ShapetakerKnobVintageSmall : app::SvgKnob {
     widget::SvgWidget* bg;
-    Vec nativeSize = Vec(100.f, 100.f);
+    Vec nativeSize = Vec(54.f, 54.f);
 
     ShapetakerKnobVintageSmall() {
-        minAngle = -0.75 * M_PI;
-        maxAngle = 0.75 * M_PI;
+        minAngle = -0.83 * M_PI;
+        maxAngle = 0.83 * M_PI;
 
-        setSvg(Svg::load(asset::plugin(pluginInstance, "res/knobs/indicators/shapetaker_knob_ROTATE_vintage_S.svg")));
+        setSvg(Svg::load(asset::plugin(pluginInstance, "res/knobs/indicators/vintage_knob_rotate.svg")));
 
         bg = new widget::SvgWidget;
-        bg->setSvg(Svg::load(asset::plugin(pluginInstance, "res/knobs/backgrounds/shapetaker_knob_BASE_vintage_S.svg")));
+        bg->setSvg(Svg::load(asset::plugin(pluginInstance, "res/knobs/indicators/vintage_knob_background.svg")));
         nativeSize = bg->box.size;
         if (fb && tw) fb->addChildBelow(bg, tw);
-        box.size = mm2px(Vec(20.f, 20.f));  // Much bigger! (was 16mm)
 
-        applyCircularShadow(this, 0.90f, 0.10f);
+        // Small: 12mm
+        box.size = mm2px(Vec(12.f, 12.f));
     }
+
+    void draw(const DrawArgs& args) override {
+        nvgSave(args.vg);
+        float svgW = std::max(1.f, nativeSize.x);
+        float svgH = std::max(1.f, nativeSize.y);
+        float sx = box.size.x / svgW;
+        float sy = box.size.y / svgH;
+        float s = std::min(sx, sy);
+        float tx = (box.size.x - svgW * s) * 0.5f;
+        float ty = (box.size.y - svgH * s) * 0.5f;
+        nvgTranslate(args.vg, tx, ty);
+        nvgScale(args.vg, s, s);
+        app::SvgKnob::draw(args);
+        nvgRestore(args.vg);
+    }
+};
+
+struct ShapetakerKnobVintageSmallMedium : app::SvgKnob {
+    widget::SvgWidget* bg;
+    Vec nativeSize = Vec(54.f, 54.f);
+
+    ShapetakerKnobVintageSmallMedium() {
+        minAngle = -0.83 * M_PI;
+        maxAngle = 0.83 * M_PI;
+
+        setSvg(Svg::load(asset::plugin(pluginInstance, "res/knobs/indicators/vintage_knob_rotate.svg")));
+
+        bg = new widget::SvgWidget;
+        bg->setSvg(Svg::load(asset::plugin(pluginInstance, "res/knobs/indicators/vintage_knob_background.svg")));
+        nativeSize = bg->box.size;
+        if (fb && tw) fb->addChildBelow(bg, tw);
+
+        // Small-Medium: 15mm (between 12mm small and 18mm medium)
+        box.size = mm2px(Vec(15.f, 15.f));
+    }
+
     void draw(const DrawArgs& args) override {
         nvgSave(args.vg);
         float svgW = std::max(1.f, nativeSize.x);
@@ -514,21 +598,128 @@ struct ShapetakerKnobVintageSmall : app::SvgKnob {
 
 struct ShapetakerKnobVintageMedium : app::SvgKnob {
     widget::SvgWidget* bg;
-    Vec nativeSize = Vec(100.f, 100.f);
+    Vec nativeSize = Vec(54.f, 54.f);
 
     ShapetakerKnobVintageMedium() {
+        minAngle = -0.83 * M_PI;
+        maxAngle = 0.83 * M_PI;
+
+        // Load the rotating indicator
+        setSvg(Svg::load(asset::plugin(pluginInstance, "res/knobs/indicators/vintage_knob_rotate.svg")));
+
+        // Load and add the static background
+        bg = new widget::SvgWidget;
+        bg->setSvg(Svg::load(asset::plugin(pluginInstance, "res/knobs/indicators/vintage_knob_background.svg")));
+        nativeSize = bg->box.size;
+        if (fb && tw) fb->addChildBelow(bg, tw);
+
+        // Medium: 19.8mm (18mm + 10%)
+        box.size = mm2px(Vec(19.8f, 19.8f));
+    }
+
+    void draw(const DrawArgs& args) override {
+        nvgSave(args.vg);
+        float svgW = std::max(1.f, nativeSize.x);
+        float svgH = std::max(1.f, nativeSize.y);
+        float sx = box.size.x / svgW;
+        float sy = box.size.y / svgH;
+        float s = std::min(sx, sy);
+        float tx = (box.size.x - svgW * s) * 0.5f;
+        float ty = (box.size.y - svgH * s) * 0.5f;
+        nvgTranslate(args.vg, tx, ty);
+        nvgScale(args.vg, s, s);
+        app::SvgKnob::draw(args);
+        nvgRestore(args.vg);
+    }
+};
+
+struct ShapetakerKnobVintageLarge : app::SvgKnob {
+    widget::SvgWidget* bg;
+    Vec nativeSize = Vec(54.f, 54.f);
+
+    ShapetakerKnobVintageLarge() {
+        minAngle = -0.83 * M_PI;
+        maxAngle = 0.83 * M_PI;
+
+        setSvg(Svg::load(asset::plugin(pluginInstance, "res/knobs/indicators/vintage_knob_rotate.svg")));
+
+        bg = new widget::SvgWidget;
+        bg->setSvg(Svg::load(asset::plugin(pluginInstance, "res/knobs/indicators/vintage_knob_background.svg")));
+        nativeSize = bg->box.size;
+        if (fb && tw) fb->addChildBelow(bg, tw);
+
+        // Large: 22mm
+        box.size = mm2px(Vec(22.f, 22.f));
+    }
+
+    void draw(const DrawArgs& args) override {
+        nvgSave(args.vg);
+        float svgW = std::max(1.f, nativeSize.x);
+        float svgH = std::max(1.f, nativeSize.y);
+        float sx = box.size.x / svgW;
+        float sy = box.size.y / svgH;
+        float s = std::min(sx, sy);
+        float tx = (box.size.x - svgW * s) * 0.5f;
+        float ty = (box.size.y - svgH * s) * 0.5f;
+        nvgTranslate(args.vg, tx, ty);
+        nvgScale(args.vg, s, s);
+        app::SvgKnob::draw(args);
+        nvgRestore(args.vg);
+    }
+};
+
+struct ShapetakerKnobVintageXLarge : app::SvgKnob {
+    widget::SvgWidget* bg;
+    Vec nativeSize = Vec(54.f, 54.f);
+
+    ShapetakerKnobVintageXLarge() {
+        minAngle = -0.83 * M_PI;
+        maxAngle = 0.83 * M_PI;
+
+        setSvg(Svg::load(asset::plugin(pluginInstance, "res/knobs/indicators/vintage_knob_rotate.svg")));
+
+        bg = new widget::SvgWidget;
+        bg->setSvg(Svg::load(asset::plugin(pluginInstance, "res/knobs/indicators/vintage_knob_background.svg")));
+        nativeSize = bg->box.size;
+        if (fb && tw) fb->addChildBelow(bg, tw);
+
+        // XLarge: 27mm (matches Davies XLarge at 1.5x)
+        box.size = mm2px(Vec(27.f, 27.f));
+    }
+
+    void draw(const DrawArgs& args) override {
+        nvgSave(args.vg);
+        float svgW = std::max(1.f, nativeSize.x);
+        float svgH = std::max(1.f, nativeSize.y);
+        float sx = box.size.x / svgW;
+        float sy = box.size.y / svgH;
+        float s = std::min(sx, sy);
+        float tx = (box.size.x - svgW * s) * 0.5f;
+        float ty = (box.size.y - svgH * s) * 0.5f;
+        nvgTranslate(args.vg, tx, ty);
+        nvgScale(args.vg, s, s);
+        app::SvgKnob::draw(args);
+        nvgRestore(args.vg);
+    }
+};
+
+struct ShapetakerKnobVintageAttenuverter : app::SvgKnob {
+    widget::SvgWidget* bg;
+    Vec nativeSize = Vec(54.f, 54.f);
+
+    ShapetakerKnobVintageAttenuverter() {
         minAngle = -0.75 * M_PI;
         maxAngle = 0.75 * M_PI;
 
-        setSvg(Svg::load(asset::plugin(pluginInstance, "res/knobs/indicators/shapetaker_knob_ROTATE_vintage_M.svg")));
+        setSvg(Svg::load(asset::plugin(pluginInstance, "res/knobs/indicators/vintage_knob_rotate.svg")));
 
         bg = new widget::SvgWidget;
-        bg->setSvg(Svg::load(asset::plugin(pluginInstance, "res/knobs/backgrounds/shapetaker_knob_BASE_vintage_M.svg")));
+        bg->setSvg(Svg::load(asset::plugin(pluginInstance, "res/knobs/indicators/vintage_knob_background.svg")));
         nativeSize = bg->box.size;
         if (fb && tw) fb->addChildBelow(bg, tw);
-        box.size = mm2px(Vec(22.f, 22.f));  // Much bigger! (was 18mm)
 
-        applyCircularShadow(this, 0.90f, 0.10f);
+        // Attenuverter: 10mm
+        box.size = mm2px(Vec(10.f, 10.f));
     }
 
     void draw(const DrawArgs& args) override {
@@ -635,6 +826,96 @@ struct ShapetakerKnobDarkLarge : app::SvgKnob {
         nvgTranslate(args.vg, c.x, c.y);
         nvgScale(args.vg, scale, scale);
         nvgTranslate(args.vg, -c.x, -c.y);
+        app::SvgKnob::draw(args);
+        nvgRestore(args.vg);
+    }
+};
+
+// ============================================================================
+// DAVIES 1900H (dot indicator variants)
+// ============================================================================
+
+struct ShapetakerDavies1900hSmallDot : app::SvgKnob {
+    widget::SvgWidget* bg;
+    Vec nativeSize = Vec(54.f, 54.f);
+
+    ShapetakerDavies1900hSmallDot() {
+        minAngle = -0.83 * M_PI;
+        maxAngle = 0.83 * M_PI;
+
+        bg = new widget::SvgWidget;
+        if (fb && tw) fb->addChildBelow(bg, tw);
+
+        // Use the large Davies assets and scale down to the small size.
+        setSvg(Svg::load(asset::plugin(pluginInstance, "res/knobs/indicators/st_davies_1900h_large_indicator.svg")));
+        bg->setSvg(Svg::load(asset::plugin(pluginInstance, "res/knobs/backgrounds/st_davies_1900h_large_bg.svg")));
+        nativeSize = bg->box.size;
+        // Match the previous small knob footprint, then scale up 10%.
+        box.size = Vec(39.6f, 39.6f);
+    }
+
+    void draw(const DrawArgs& args) override {
+        nvgSave(args.vg);
+        float svgW = std::max(1.f, nativeSize.x);
+        float svgH = std::max(1.f, nativeSize.y);
+        float sx = box.size.x / svgW;
+        float sy = box.size.y / svgH;
+        float s = std::min(sx, sy);
+        float tx = (box.size.x - svgW * s) * 0.5f;
+        float ty = (box.size.y - svgH * s) * 0.5f;
+        nvgTranslate(args.vg, tx, ty);
+        nvgScale(args.vg, s, s);
+        app::SvgKnob::draw(args);
+        nvgRestore(args.vg);
+    }
+};
+
+struct ShapetakerDavies1900hLargeDot : app::SvgKnob {
+    widget::SvgWidget* bg;
+
+    ShapetakerDavies1900hLargeDot() {
+        minAngle = -0.83 * M_PI;
+        maxAngle = 0.83 * M_PI;
+
+        bg = new widget::SvgWidget;
+        if (fb && tw) fb->addChildBelow(bg, tw);
+
+        setSvg(Svg::load(asset::plugin(pluginInstance, "res/knobs/indicators/st_davies_1900h_large_indicator.svg")));
+        bg->setSvg(Svg::load(asset::plugin(pluginInstance, "res/knobs/backgrounds/st_davies_1900h_large_bg.svg")));
+    }
+};
+
+// Davies 1900h extra-large (scaled up from large) with dot indicator
+struct ShapetakerDavies1900hXLargeDot : app::SvgKnob {
+    widget::SvgWidget* bg;
+    Vec nativeSize = Vec(54.f, 54.f);
+
+    ShapetakerDavies1900hXLargeDot() {
+        minAngle = -0.83 * M_PI;
+        maxAngle = 0.83 * M_PI;
+
+        bg = new widget::SvgWidget;
+        if (fb && tw) fb->addChildBelow(bg, tw);
+
+        setSvg(Svg::load(asset::plugin(pluginInstance, "res/knobs/indicators/st_davies_1900h_large_indicator.svg")));
+        bg->setSvg(Svg::load(asset::plugin(pluginInstance, "res/knobs/backgrounds/st_davies_1900h_large_bg.svg")));
+        nativeSize = bg->box.size;
+
+        // Scale up 50% from the large size for the VCA control.
+        box.size = nativeSize.mult(1.5f);
+    }
+
+    void draw(const DrawArgs& args) override {
+        nvgSave(args.vg);
+        float svgW = std::max(1.f, nativeSize.x);
+        float svgH = std::max(1.f, nativeSize.y);
+        float sx = box.size.x / svgW;
+        float sy = box.size.y / svgH;
+        float s = std::min(sx, sy);
+        float tx = (box.size.x - svgW * s) * 0.5f;
+        float ty = (box.size.y - svgH * s) * 0.5f;
+        nvgTranslate(args.vg, tx, ty);
+        nvgScale(args.vg, s, s);
         app::SvgKnob::draw(args);
         nvgRestore(args.vg);
     }
@@ -804,6 +1085,177 @@ struct ShapetakerKnobAltSmall : ShapetakerKnobBase {
     }
 };
 
+// Hallicrafters-inspired vintage knob - rugged bakelite with metallic collar
+// Inspired by Hallicrafters SX-28, Collins radio equipment, classic military receivers
+// 54x54px - same size as Davies1900h large for drop-in replacement
+struct ShapetakerKnobHallicraftersMedium : app::SvgKnob {
+    widget::SvgWidget* bg;
+
+    ShapetakerKnobHallicraftersMedium() {
+        minAngle = -0.83 * M_PI;  // Match Davies1900h rotation range
+        maxAngle = 0.83 * M_PI;
+
+        bg = new widget::SvgWidget;
+        if (fb && tw) fb->addChildBelow(bg, tw);
+
+        setSvg(Svg::load(asset::plugin(pluginInstance, "res/knobs/indicators/st_hallicrafters_medium_indicator.svg")));
+        bg->setSvg(Svg::load(asset::plugin(pluginInstance, "res/knobs/backgrounds/st_hallicrafters_medium_bg.svg")));
+    }
+};
+
+// Vintage British-style scalloped knob (medium) - rotating full knob
+struct ShapetakerKnobNeveMedium : app::SvgKnob {
+    ShapetakerKnobNeveMedium() {
+        minAngle = -0.83 * M_PI;
+        maxAngle = 0.83 * M_PI;
+        setSvg(Svg::load(asset::plugin(pluginInstance, "res/knobs/indicators/st_neve_medium_rotating.svg")));
+    }
+};
+
+// Gear-style knob (medium) - PNG gear teeth + SVG body
+struct ShapetakerKnobGearMedium : app::Knob {
+    int imageHandle = -1;
+    float minAngle = -0.83f * M_PI;
+    float maxAngle = 0.83f * M_PI;
+    std::string imagePath;
+    bool imageLoaded = false;
+
+    ShapetakerKnobGearMedium() {
+        box.size = Vec(65, 65);
+        imagePath = asset::plugin(pluginInstance, "res/knobs/indicators/064.png");
+    }
+
+    void draw(const DrawArgs& args) override {
+        // Load image on first draw (needs valid NanoVG context)
+        if (!imageLoaded) {
+            imageHandle = nvgCreateImage(args.vg, imagePath.c_str(), 0);
+            imageLoaded = true;
+        }
+
+        // Get rotation angle from parameter
+        float angle = 0.f;
+        if (getParamQuantity()) {
+            float value = getParamQuantity()->getValue();
+            float minVal = getParamQuantity()->getMinValue();
+            float maxVal = getParamQuantity()->getMaxValue();
+            float normalized = (value - minVal) / (maxVal - minVal);
+            angle = math::rescale(normalized, 0.f, 1.f, minAngle, maxAngle);
+        }
+
+        float cx = box.size.x * 0.5f;
+        float cy = box.size.y * 0.5f;
+
+        // ============================================
+        // ROTATING PART: Gear teeth + SVG body + pointer
+        // ============================================
+        nvgSave(args.vg);
+        nvgTranslate(args.vg, cx, cy);
+        nvgRotate(args.vg, angle);
+        nvgTranslate(args.vg, -cx, -cy);
+
+        // 1. Draw the PNG gear teeth (outer ring) - only if loaded
+        if (imageHandle > 0) {
+            NVGpaint imgPaint = nvgImagePattern(args.vg, 0, 0, box.size.x, box.size.y, 0, imageHandle, 1.0f);
+            nvgBeginPath(args.vg);
+            nvgRect(args.vg, 0, 0, box.size.x, box.size.y);
+            nvgFillPaint(args.vg, imgPaint);
+            nvgFill(args.vg);
+        }
+
+        // 2. SVG knob body - covers PNG center, leaving gear teeth visible
+        // Much smaller radius to reveal more of the gear teeth
+        float bodyRadius = box.size.x * 0.20f;
+
+        // Base dark circle
+        nvgBeginPath(args.vg);
+        nvgCircle(args.vg, cx, cy, bodyRadius);
+        nvgFillColor(args.vg, nvgRGB(30, 30, 30));
+        nvgFill(args.vg);
+
+        // Main body gradient (darker at bottom for depth)
+        NVGpaint bodyGrad = nvgLinearGradient(args.vg,
+            cx, cy - bodyRadius,
+            cx, cy + bodyRadius,
+            nvgRGB(55, 55, 55), nvgRGB(20, 20, 20));
+        nvgBeginPath(args.vg);
+        nvgCircle(args.vg, cx, cy, bodyRadius - 1);
+        nvgFillPaint(args.vg, bodyGrad);
+        nvgFill(args.vg);
+
+        // Edge highlight (top arc)
+        nvgBeginPath(args.vg);
+        nvgArc(args.vg, cx, cy, bodyRadius - 1, -M_PI * 0.8f, -M_PI * 0.2f, NVG_CW);
+        nvgStrokeColor(args.vg, nvgRGBA(100, 100, 100, 80));
+        nvgStrokeWidth(args.vg, 1.5f);
+        nvgStroke(args.vg);
+
+        // Edge shadow (bottom arc)
+        nvgBeginPath(args.vg);
+        nvgArc(args.vg, cx, cy, bodyRadius - 1, M_PI * 0.2f, M_PI * 0.8f, NVG_CW);
+        nvgStrokeColor(args.vg, nvgRGBA(0, 0, 0, 100));
+        nvgStrokeWidth(args.vg, 1.5f);
+        nvgStroke(args.vg);
+
+        // 3. Center cap
+        float capRadius = box.size.x * 0.14f;
+        NVGpaint capGrad = nvgLinearGradient(args.vg,
+            cx, cy - capRadius,
+            cx, cy + capRadius,
+            nvgRGB(60, 60, 60), nvgRGB(25, 25, 25));
+        nvgBeginPath(args.vg);
+        nvgCircle(args.vg, cx, cy, capRadius);
+        nvgFillPaint(args.vg, capGrad);
+        nvgFill(args.vg);
+
+        // Cap edge
+        nvgBeginPath(args.vg);
+        nvgCircle(args.vg, cx, cy, capRadius);
+        nvgStrokeColor(args.vg, nvgRGBA(90, 90, 90, 100));
+        nvgStrokeWidth(args.vg, 0.5f);
+        nvgStroke(args.vg);
+
+        // 4. Arrow pointer indicator
+        float pointerDist = box.size.x * 0.26f;
+        float pointerTip = box.size.x * 0.40f;
+        float pointerWidth = box.size.x * 0.05f;
+
+        nvgBeginPath(args.vg);
+        nvgMoveTo(args.vg, cx, cy - pointerTip);
+        nvgLineTo(args.vg, cx - pointerWidth, cy - pointerDist);
+        nvgLineTo(args.vg, cx + pointerWidth, cy - pointerDist);
+        nvgClosePath(args.vg);
+
+        NVGpaint pointerGrad = nvgLinearGradient(args.vg,
+            cx, cy - pointerTip,
+            cx, cy - pointerDist,
+            nvgRGB(255, 255, 255), nvgRGB(180, 180, 180));
+        nvgFillPaint(args.vg, pointerGrad);
+        nvgFill(args.vg);
+
+        nvgRestore(args.vg);
+
+        // ============================================
+        // STATIC PART: Light source gradient (top to bottom)
+        // Counter-rotate to cancel out the knob rotation
+        // ============================================
+        nvgSave(args.vg);
+        nvgTranslate(args.vg, cx, cy);
+        nvgRotate(args.vg, -angle);  // Counter-rotate
+        nvgTranslate(args.vg, -cx, -cy);
+
+        NVGpaint lightGrad = nvgLinearGradient(args.vg,
+            cx, 0,
+            cx, box.size.y,
+            nvgRGBA(255, 255, 255, 25), nvgRGBA(0, 0, 0, 30));
+        nvgBeginPath(args.vg);
+        nvgCircle(args.vg, cx, cy, box.size.x * 0.48f);
+        nvgFillPaint(args.vg, lightGrad);
+        nvgFill(args.vg);
+
+        nvgRestore(args.vg);
+    }
+};
+
 struct ShapetakerKnobDarkChicken : app::SvgKnob {
     widget::SvgWidget* bg;
     Vec nativeSize = Vec(100.f, 100.f);
@@ -885,6 +1337,69 @@ struct ShapetakerVintageRussianToggle : app::SvgSwitch {
         nvgScale(args.vg, s, s);
         SvgSwitch::draw(args);
         nvgRestore(args.vg);
+    }
+};
+
+// Art Deco paddle toggle switch - 1940s Hallicrafters SX-28 inspired
+struct ShapetakerPaddleToggle : app::SvgSwitch {
+    ShapetakerPaddleToggle() {
+        addFrame(Svg::load(asset::plugin(pluginInstance, "res/switches/paddle_toggle_off.svg")));
+        addFrame(Svg::load(asset::plugin(pluginInstance, "res/switches/paddle_toggle_on.svg")));
+        shadow->visible = false;
+        // 7mm x 10mm paddle toggle
+        box.size = mm2px(Vec(7.0f, 10.0f));
+    }
+
+    void draw(const DrawArgs& args) override {
+        nvgSave(args.vg);
+        // Scale SVG frames (20 x 28 viewBox) to fit our current box
+        const float svgWidth = 20.0f;
+        const float svgHeight = 28.0f;
+        float sx = box.size.x / svgWidth;
+        float sy = box.size.y / svgHeight;
+        float s = std::min(sx, sy);
+        float tx = (box.size.x - svgWidth * s) * 0.5f;
+        float ty = (box.size.y - svgHeight * s) * 0.5f;
+        nvgTranslate(args.vg, tx, ty);
+        nvgScale(args.vg, s, s);
+        SvgSwitch::draw(args);
+        nvgRestore(args.vg);
+    }
+};
+
+// Classic bakelite bat-handle toggle - 1940s Hallicrafters style
+struct ShapetakerBakeliteToggle : app::SvgSwitch {
+    ShapetakerBakeliteToggle() {
+        addFrame(Svg::load(asset::plugin(pluginInstance, "res/switches/bakelite_toggle_off.svg")));
+        addFrame(Svg::load(asset::plugin(pluginInstance, "res/switches/bakelite_toggle_on.svg")));
+        shadow->visible = false;
+        // 6.6mm x 9.9mm bakelite toggle (10% larger)
+        box.size = mm2px(Vec(6.6f, 9.9f));
+    }
+
+    void draw(const DrawArgs& args) override {
+        nvgSave(args.vg);
+        // Scale SVG frames (18 x 27 viewBox) to fit our current box
+        const float svgWidth = 18.0f;
+        const float svgHeight = 27.0f;
+        float sx = box.size.x / svgWidth;
+        float sy = box.size.y / svgHeight;
+        float s = std::min(sx, sy);
+        float tx = (box.size.x - svgWidth * s) * 0.5f;
+        float ty = (box.size.y - svgHeight * s) * 0.5f;
+        nvgTranslate(args.vg, tx, ty);
+        nvgScale(args.vg, s, s);
+        SvgSwitch::draw(args);
+        nvgRestore(args.vg);
+    }
+};
+
+// Dark slide toggle - Befaco size (9.5x10.7mm) with black body and grey lever
+struct ShapetakerDarkToggle : app::SvgSwitch {
+    ShapetakerDarkToggle() {
+        addFrame(Svg::load(asset::plugin(pluginInstance, "res/switches/dark_toggle_off.svg")));
+        addFrame(Svg::load(asset::plugin(pluginInstance, "res/switches/dark_toggle_on.svg")));
+        shadow->opacity = 0.0;
     }
 };
 
@@ -995,21 +1510,21 @@ struct ShapetakerVintageToggleSwitch : app::Switch {
         nvgFillColor(vg, nvgRGBA(0, 0, 0, 50));
         nvgFill(vg);
 
-        // Lever stem - realistic aluminum/steel finish
+        // Lever stem - brass finish (slightly darker for contrast)
         nvgBeginPath(vg);
         nvgRoundedRect(vg, -stemWidth * 0.5f, -stemLength, stemWidth, stemLength, stemWidth * 0.4f);
         NVGpaint leverPaint = nvgLinearGradient(vg, -stemWidth * 0.5f, -stemLength, stemWidth * 0.5f, -stemLength,
-            nvgRGBA(185, 185, 182, 255),
-            nvgRGBA(145, 145, 142, 255));
+            nvgRGBA(217, 191, 121, 255),
+            nvgRGBA(125, 95, 40, 255));
         nvgFillPaint(vg, leverPaint);
         nvgFill(vg);
 
         // Lever edge highlights
-        nvgStrokeColor(vg, nvgRGBA(210, 210, 208, 180));
+        nvgStrokeColor(vg, nvgRGBA(235, 215, 155, 180));
         nvgStrokeWidth(vg, 0.4f);
         nvgStroke(vg);
 
-        // Lever tip - black plastic/rubber material
+        // Lever tip - brass cap
         float tipR = stemWidth * 0.92f;
         // Tip shadow
         nvgBeginPath(vg);
@@ -1017,26 +1532,26 @@ struct ShapetakerVintageToggleSwitch : app::Switch {
         nvgFillColor(vg, nvgRGBA(0, 0, 0, 60));
         nvgFill(vg);
 
-        // Tip body - black with subtle gradient
+        // Tip body - darkened brass gradient
         nvgBeginPath(vg);
         nvgCircle(vg, 0.f, -stemLength, tipR);
         NVGpaint tipPaint = nvgRadialGradient(vg,
             -tipR * 0.35f, -stemLength - tipR * 0.35f,
             tipR * 0.15f, tipR * 1.15f,
-            nvgRGBA(45, 45, 45, 255),
-            nvgRGBA(18, 18, 18, 255));
+            nvgRGBA(189, 152, 70, 255),
+            nvgRGBA(96, 71, 29, 255));
         nvgFillPaint(vg, tipPaint);
         nvgFill(vg);
 
-        // Tip rim - dark edge
-        nvgStrokeColor(vg, nvgRGBA(8, 8, 8, 220));
+        // Tip rim - darker brass edge
+        nvgStrokeColor(vg, nvgRGBA(72, 52, 22, 220));
         nvgStrokeWidth(vg, 0.4f);
         nvgStroke(vg);
 
-        // Tip highlight - subtle shine on black plastic
+        // Tip highlight - subtle metallic shine
         nvgBeginPath(vg);
         nvgCircle(vg, -tipR * 0.3f, -stemLength - tipR * 0.3f, tipR * 0.35f);
-        nvgFillColor(vg, nvgRGBA(255, 255, 255, 35));
+        nvgFillColor(vg, nvgRGBA(255, 235, 180, 50));
         nvgFill(vg);
 
         // Pivot collar - brushed metal appearance
@@ -1074,6 +1589,156 @@ struct ShapetakerVintageToggleSwitch : app::Switch {
     }
 };
 
+struct ShapetakerVintageTripleSwitch : app::Switch {
+    ShapetakerVintageTripleSwitch() {
+        momentary = false;
+        // Match the footprint of the brass 2-way toggle
+        box.size = mm2px(Vec(12.f, 12.f));
+    }
+
+    void draw(const DrawArgs& args) override {
+        NVGcontext* vg = args.vg;
+        float w = box.size.x;
+        float h = box.size.y;
+
+        nvgSave(vg);
+
+        // Drop shadow
+        nvgBeginPath(vg);
+        float shadowRadius = h * 0.32f;
+        nvgRoundedRect(vg, w * 0.08f, h * 0.06f, w * 0.84f, h * 0.88f, shadowRadius);
+        NVGpaint shadowPaint = nvgBoxGradient(vg, w * 0.5f, h * 0.5f, w * 0.7f, h * 0.8f, shadowRadius, w * 0.3f,
+            nvgRGBA(0, 0, 0, 80), nvgRGBA(0, 0, 0, 0));
+        nvgFillPaint(vg, shadowPaint);
+        nvgFill(vg);
+
+        // Base plate
+        float radius = h * 0.28f;
+        float inset = w * 0.08f;
+        float insetY = h * 0.05f;
+        nvgBeginPath(vg);
+        nvgRoundedRect(vg, inset, insetY, w - inset * 2.f, h - insetY * 2.f, radius);
+        NVGpaint basePaint = nvgLinearGradient(vg, inset, insetY, inset, h - insetY,
+            nvgRGBA(52, 54, 58, 255),
+            nvgRGBA(32, 33, 36, 255));
+        nvgFillPaint(vg, basePaint);
+        nvgFill(vg);
+
+        nvgStrokeColor(vg, nvgRGBA(0, 0, 0, 200));
+        nvgStrokeWidth(vg, 0.8f);
+        nvgStroke(vg);
+
+        // Inner bevel
+        nvgBeginPath(vg);
+        nvgRoundedRect(vg, inset + 0.6f, insetY + 0.5f, (w - inset * 2.f) - 1.2f, (h - insetY * 2.f) - 1.0f, radius * 0.85f);
+        nvgStrokeColor(vg, nvgRGBA(75, 77, 82, 180));
+        nvgStrokeWidth(vg, 0.5f);
+        nvgStroke(vg);
+
+        // Top sheen
+        nvgBeginPath(vg);
+        nvgRoundedRect(vg, inset + 0.8f, insetY + 0.7f, (w - inset * 2.f) - 1.6f, (h - insetY * 2.f) * 0.45f, radius * 0.7f);
+        NVGpaint sheen = nvgLinearGradient(vg, inset, insetY, inset, insetY + (h - insetY * 2.f) * 0.4f,
+            nvgRGBA(255, 255, 255, 25),
+            nvgRGBA(255, 255, 255, 0));
+        nvgFillPaint(vg, sheen);
+        nvgFill(vg);
+
+        // Screws
+        auto drawScrew = [&](float x, float y) {
+            float sr = w * 0.11f;
+            nvgBeginPath(vg);
+            nvgCircle(vg, x + 0.15f, y + 0.15f, sr * 0.95f);
+            nvgFillColor(vg, nvgRGBA(0, 0, 0, 60));
+            nvgFill(vg);
+
+            nvgBeginPath(vg);
+            nvgCircle(vg, x, y, sr);
+            NVGpaint screwPaint = nvgRadialGradient(vg, x - sr * 0.3f, y - sr * 0.3f,
+                sr * 0.1f, sr * 1.1f,
+                nvgRGBA(195, 192, 185, 255),
+                nvgRGBA(85, 85, 85, 255));
+            nvgFillPaint(vg, screwPaint);
+            nvgFill(vg);
+            nvgStrokeColor(vg, nvgRGBA(0, 0, 0, 180));
+            nvgStrokeWidth(vg, 0.35f);
+            nvgStroke(vg);
+
+            nvgBeginPath(vg);
+            nvgRect(vg, x - sr * 0.65f, y - sr * 0.12f, sr * 1.3f, sr * 0.24f);
+            nvgFillColor(vg, nvgRGBA(30, 30, 30, 200));
+            nvgFill(vg);
+        };
+        drawScrew(inset + (w - inset * 2.f) * 0.32f, insetY + (h - insetY * 2.f) * 0.28f);
+        drawScrew(inset + (w - inset * 2.f) * 0.68f, insetY + (h - insetY * 2.f) * 0.72f);
+
+        // Angle across three states (-30°, 0°, +30°)
+        float state = 0.f;
+        if (auto* pq = getParamQuantity()) {
+            state = rack::math::clamp(pq->getValue(), 0.f, 2.f);
+        }
+        float theta = 24.f * (M_PI / 180.f);
+        float t = rack::math::rescale(state, 0.f, 2.f, -1.f, 1.f);
+        float angle = t * theta;
+
+        float pivotX = w * 0.5f;
+        float pivotY = insetY + (h - insetY * 2.f) * 0.60f;
+        nvgTranslate(vg, pivotX, pivotY);
+        nvgRotate(vg, angle);
+
+        // Lever shadow
+        nvgBeginPath(vg);
+        float stemWidth = w * 0.22f;
+        float stemLength = (h - insetY * 2.f) * 0.78f;
+        nvgRoundedRect(vg, -stemWidth * 0.5f + 0.3f, -stemLength + 0.3f, stemWidth, stemLength, stemWidth * 0.4f);
+        nvgFillColor(vg, nvgRGBA(0, 0, 0, 50));
+        nvgFill(vg);
+
+        // Lever stem - brass finish
+        nvgBeginPath(vg);
+        nvgRoundedRect(vg, -stemWidth * 0.5f, -stemLength, stemWidth, stemLength, stemWidth * 0.4f);
+        NVGpaint leverPaint = nvgLinearGradient(vg, -stemWidth * 0.5f, -stemLength, stemWidth * 0.5f, -stemLength,
+            nvgRGBA(217, 191, 121, 255),
+            nvgRGBA(125, 95, 40, 255));
+        nvgFillPaint(vg, leverPaint);
+        nvgFill(vg);
+
+        nvgStrokeColor(vg, nvgRGBA(235, 215, 155, 180));
+        nvgStrokeWidth(vg, 0.4f);
+        nvgStroke(vg);
+
+        // Lever tip - brass cap
+        float tipR = stemWidth * 0.92f;
+        nvgBeginPath(vg);
+        nvgCircle(vg, 0.2f, -stemLength + 0.2f, tipR);
+        nvgFillColor(vg, nvgRGBA(0, 0, 0, 60));
+        nvgFill(vg);
+
+        nvgBeginPath(vg);
+        nvgCircle(vg, 0.f, -stemLength, tipR);
+        NVGpaint tipPaint = nvgRadialGradient(vg,
+            -tipR * 0.35f, -stemLength - tipR * 0.35f,
+            tipR * 0.15f, tipR * 1.15f,
+            nvgRGBA(189, 152, 70, 255),
+            nvgRGBA(96, 71, 29, 255));
+        nvgFillPaint(vg, tipPaint);
+        nvgFill(vg);
+
+        nvgStrokeColor(vg, nvgRGBA(72, 52, 22, 220));
+        nvgStrokeWidth(vg, 0.4f);
+        nvgStroke(vg);
+
+        nvgBeginPath(vg);
+        nvgCircle(vg, -tipR * 0.3f, -stemLength - tipR * 0.3f, tipR * 0.35f);
+        nvgFillColor(vg, nvgRGBA(255, 235, 180, 50));
+        nvgFill(vg);
+
+        nvgRestore(vg);
+
+        app::Switch::draw(args);
+    }
+};
+
 // Note: LED glow for shuttle switches lives in the SVGs themselves (panel LEDs).
 
 struct ShapetakerBNCPort : app::SvgPort {
@@ -1097,21 +1762,26 @@ struct ShapetakerBNCPort : app::SvgPort {
 };
 
 struct ShapetakerAttenuverterOscilloscope : app::SvgKnob {
+    widget::SvgWidget* bg;
     Vec nativeSize = Vec(100.f, 100.f);
     ShapetakerAttenuverterOscilloscope() {
         minAngle = -0.75 * M_PI;
         maxAngle = 0.75 * M_PI;
-        
-        // The entire hexagonal knob (body + tick marks + indicator) rotates as one piece
-        setSvg(Svg::load(asset::plugin(pluginInstance, "res/knobs/indicators/st_knob_oscilloscope_indicator_attenuverter_small.svg")));
-        // Measure intrinsic size via probe
-        widget::SvgWidget probe;
-        probe.setSvg(Svg::load(asset::plugin(pluginInstance, "res/knobs/indicators/st_knob_oscilloscope_indicator_attenuverter_small.svg")));
-        nativeSize = probe.box.size;
-        // Force nativeSize to be square to prevent distortion when rotating
-        float maxDim = std::max(nativeSize.x, nativeSize.y);
-        nativeSize = Vec(maxDim, maxDim);
-        // Target: Attenuverter = 10 mm (closer to compact 4ms-style attenuverters)
+
+        // Rotating indicator only
+        setSvg(Svg::load(asset::plugin(pluginInstance, "res/knobs/indicators/st_attenuverter_small_indicator.svg")));
+
+        // Stationary background (hexagonal knob body)
+        bg = new widget::SvgWidget;
+        bg->setSvg(Svg::load(asset::plugin(pluginInstance, "res/knobs/backgrounds/st_attenuverter_small_bg.svg")));
+        nativeSize = bg->box.size;
+
+        // Add background below the rotating transform widget
+        if (fb && tw) {
+            fb->addChildBelow(bg, tw);
+        }
+
+        // Target: Attenuverter = 10 mm
         box.size = mm2px(Vec(10.f, 10.f));
         applyHexShadow(this, 0.94f, 0.08f, 0.20f, 0.65f);
     }
@@ -1571,6 +2241,376 @@ struct ShapetakerVintageSelector : app::ParamWidget {
     }
 };
 
+// Horizontal 6-way selector for Chiaroscuro distortion types
+struct ShapetakerHorizontalDistortionSelector : app::ParamWidget {
+    float accumulatedDelta = 0.f;
+
+    ShapetakerHorizontalDistortionSelector() {
+        box.size = mm2px(Vec(23.0f, 6.0f));
+    }
+
+    int stepCount() {
+        if (auto* pq = getParamQuantity()) {
+            float range = pq->maxValue - pq->minValue;
+            return std::max(2, (int)std::round(range) + 1);
+        }
+        return 6;
+    }
+
+    void geometry(float& left, float& right, float& trackY, float& trackH, float& knobR) const {
+        knobR = box.size.y * 0.45f;
+        float margin = box.size.x * 0.02f;
+        left = knobR + margin;
+        right = box.size.x - knobR - margin;
+        trackH = box.size.y * 0.36f;
+        trackY = (box.size.y - trackH) * 0.5f;
+    }
+
+    void setValueFromPos(float x) {
+        auto* pq = getParamQuantity();
+        if (!pq) {
+            return;
+        }
+        float left = 0.f;
+        float right = 0.f;
+        float trackY = 0.f;
+        float trackH = 0.f;
+        float knobR = 0.f;
+        geometry(left, right, trackY, trackH, knobR);
+        float t = 0.f;
+        if (right > left) {
+            t = clamp((x - left) / (right - left), 0.f, 1.f);
+        }
+        int steps = stepCount();
+        float value = pq->minValue + std::round(t * (steps - 1));
+        pq->setValue(clamp(value, pq->minValue, pq->maxValue));
+    }
+
+    void onDragStart(const event::DragStart& e) override {
+        accumulatedDelta = 0.f;
+        ParamWidget::onDragStart(e);
+    }
+
+    void onDragMove(const event::DragMove& e) override {
+        auto* pq = getParamQuantity();
+        if (!pq) {
+            return;
+        }
+        accumulatedDelta += e.mouseDelta.x;
+        float stepThreshold = 32.f;
+        if (std::fabs(accumulatedDelta) >= stepThreshold) {
+            float dir = (accumulatedDelta > 0.f) ? 1.f : -1.f;
+            float value = pq->getValue() + dir;
+            pq->setValue(clamp(value, pq->minValue, pq->maxValue));
+            accumulatedDelta = 0.f;
+        }
+    }
+
+    void onButton(const event::Button& e) override {
+        if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_LEFT) {
+            setValueFromPos(e.pos.x);
+            e.consume(this);
+        }
+        ParamWidget::onButton(e);
+    }
+
+    void draw(const DrawArgs& args) override {
+        auto* pq = getParamQuantity();
+        float left = 0.f;
+        float right = 0.f;
+        float trackY = 0.f;
+        float trackH = 0.f;
+        float knobR = 0.f;
+        geometry(left, right, trackY, trackH, knobR);
+
+        NVGcontext* vg = args.vg;
+        float w = box.size.x;
+        float h = box.size.y;
+        float cy = h * 0.5f;
+
+        nvgSave(vg);
+
+        // === HOUSING: recessed anodized aluminum mounting plate ===
+
+        // Outer lip shadow (housing sits recessed into the panel)
+        nvgBeginPath(vg);
+        nvgRoundedRect(vg, -1.0f, -0.5f, w + 2.0f, h + 2.0f, 4.0f);
+        nvgFillColor(vg, nvgRGBA(0, 0, 0, 50));
+        nvgFill(vg);
+
+        // Panel lip highlight above housing (light catches top edge of recess)
+        nvgBeginPath(vg);
+        nvgMoveTo(vg, 1.0f, -0.5f);
+        nvgLineTo(vg, w - 1.0f, -0.5f);
+        nvgStrokeColor(vg, nvgRGBA(95, 98, 105, 60));
+        nvgStrokeWidth(vg, 0.6f);
+        nvgStroke(vg);
+
+        // Drop shadow beneath housing body (depth from panel surface)
+        nvgBeginPath(vg);
+        nvgRoundedRect(vg, 0.5f, 2.0f, w - 1.f, h, 3.0f);
+        nvgFillColor(vg, nvgRGBA(0, 0, 0, 85));
+        nvgFill(vg);
+
+        // Main housing body
+        nvgBeginPath(vg);
+        nvgRoundedRect(vg, 0.f, 0.f, w, h, 3.0f);
+        NVGpaint housing = nvgLinearGradient(vg, 0, 0, 0, h,
+            nvgRGBA(82, 84, 90, 255),
+            nvgRGBA(38, 40, 44, 255));
+        nvgFillPaint(vg, housing);
+        nvgFill(vg);
+
+        // Brushed metal texture (horizontal grain)
+        for (int i = 0; i < 16; i++) {
+            float ly = 1.5f + (h - 3.0f) * ((float)i / 15.0f);
+            nvgBeginPath(vg);
+            nvgMoveTo(vg, 2.5f, ly);
+            nvgLineTo(vg, w - 2.5f, ly);
+            int alpha = (i % 3 == 0) ? 22 : ((i % 3 == 1) ? 12 : 8);
+            nvgStrokeColor(vg, nvgRGBA(115, 118, 124, alpha));
+            nvgStrokeWidth(vg, 0.3f);
+            nvgStroke(vg);
+        }
+
+        // Top chamfer highlight
+        nvgBeginPath(vg);
+        nvgMoveTo(vg, 3.0f, 0.8f);
+        nvgLineTo(vg, w - 3.0f, 0.8f);
+        nvgStrokeColor(vg, nvgRGBA(140, 145, 150, 80));
+        nvgStrokeWidth(vg, 0.7f);
+        nvgStroke(vg);
+
+        // Bottom shadow edge (housing bottom is darker)
+        nvgBeginPath(vg);
+        nvgMoveTo(vg, 3.0f, h - 0.5f);
+        nvgLineTo(vg, w - 3.0f, h - 0.5f);
+        nvgStrokeColor(vg, nvgRGBA(0, 0, 0, 70));
+        nvgStrokeWidth(vg, 0.7f);
+        nvgStroke(vg);
+
+        // Housing edge bevel (dark outline)
+        nvgBeginPath(vg);
+        nvgRoundedRect(vg, 0.f, 0.f, w, h, 3.0f);
+        nvgStrokeColor(vg, nvgRGBA(12, 12, 15, 220));
+        nvgStrokeWidth(vg, 1.0f);
+        nvgStroke(vg);
+
+        // Inner highlight (inset border for recessed plate look)
+        nvgBeginPath(vg);
+        nvgRoundedRect(vg, 1.0f, 1.0f, w - 2.0f, h - 2.0f, 2.5f);
+        nvgStrokeColor(vg, nvgRGBA(100, 103, 110, 35));
+        nvgStrokeWidth(vg, 0.5f);
+        nvgStroke(vg);
+
+        // === MACHINED CHANNEL GROOVE (deep recess) ===
+        float channelH = h * 0.32f;
+        float channelY = cy - channelH * 0.5f;
+        float channelLeft = left - knobR * 0.35f;
+        float channelRight = right + knobR * 0.35f;
+        float channelW = channelRight - channelLeft;
+        float channelR = channelH * 0.45f;
+
+        // Outer shadow halo (soft shadow around the groove for depth)
+        nvgBeginPath(vg);
+        nvgRoundedRect(vg, channelLeft - 1.5f, channelY - 1.5f,
+            channelW + 3.f, channelH + 3.f, channelR + 1.0f);
+        nvgFillColor(vg, nvgRGBA(0, 0, 0, 50));
+        nvgFill(vg);
+
+        // Inner shadow (sharp dark edge at top of groove = deep cut)
+        nvgBeginPath(vg);
+        nvgRoundedRect(vg, channelLeft - 0.5f, channelY - 1.0f,
+            channelW + 1.f, channelH + 1.5f, channelR);
+        nvgFillColor(vg, nvgRGBA(0, 0, 0, 150));
+        nvgFill(vg);
+
+        // Channel body (dark machined slot)
+        nvgBeginPath(vg);
+        nvgRoundedRect(vg, channelLeft, channelY, channelW, channelH, channelR);
+        NVGpaint channelPaint = nvgLinearGradient(vg, 0, channelY, 0, channelY + channelH,
+            nvgRGBA(5, 5, 8, 255),
+            nvgRGBA(18, 19, 24, 255));
+        nvgFillPaint(vg, channelPaint);
+        nvgFill(vg);
+
+        // Channel floor specular (faint reflection on the groove floor)
+        nvgBeginPath(vg);
+        nvgRoundedRect(vg, channelLeft + 2.0f, channelY + channelH * 0.55f,
+            channelW - 4.0f, channelH * 0.35f, channelR * 0.5f);
+        nvgFillColor(vg, nvgRGBA(55, 58, 65, 20));
+        nvgFill(vg);
+
+        // Channel top inner edge (dark bevel inside groove)
+        nvgBeginPath(vg);
+        nvgMoveTo(vg, channelLeft + channelR, channelY + 0.5f);
+        nvgLineTo(vg, channelRight - channelR, channelY + 0.5f);
+        nvgStrokeColor(vg, nvgRGBA(0, 0, 0, 100));
+        nvgStrokeWidth(vg, 0.5f);
+        nvgStroke(vg);
+
+        // Channel bottom lip highlight (light catches the lower edge)
+        nvgBeginPath(vg);
+        nvgMoveTo(vg, channelLeft + channelR, channelY + channelH);
+        nvgLineTo(vg, channelRight - channelR, channelY + channelH);
+        nvgStrokeColor(vg, nvgRGBA(90, 92, 100, 55));
+        nvgStrokeWidth(vg, 0.5f);
+        nvgStroke(vg);
+
+        // === HORIZONTAL GUIDE RAIL (silver throttle bar) ===
+        {
+            float railH = channelH * 0.38f;
+            float railY = cy - railH * 0.5f;
+            float railInset = channelR * 0.6f;
+            float railLeft = channelLeft + railInset;
+            float railW = channelW - railInset * 2.0f;
+            float railR = railH * 0.35f;
+
+            // Rail shadow (sits slightly recessed)
+            nvgBeginPath(vg);
+            nvgRoundedRect(vg, railLeft, railY + 0.6f, railW, railH, railR);
+            nvgFillColor(vg, nvgRGBA(0, 0, 0, 90));
+            nvgFill(vg);
+
+            // Rail body — brushed silver cylinder
+            nvgBeginPath(vg);
+            nvgRoundedRect(vg, railLeft, railY, railW, railH, railR);
+            NVGpaint railPaint = nvgLinearGradient(vg, 0, railY, 0, railY + railH,
+                nvgRGBA(170, 175, 185, 180),
+                nvgRGBA(85, 88, 98, 180));
+            nvgFillPaint(vg, railPaint);
+            nvgFill(vg);
+
+            // Top specular highlight (cylindrical reflection)
+            nvgBeginPath(vg);
+            nvgRoundedRect(vg, railLeft + 1.5f, railY + 0.4f,
+                railW - 3.0f, railH * 0.30f, railR * 0.5f);
+            nvgFillColor(vg, nvgRGBA(220, 225, 235, 55));
+            nvgFill(vg);
+
+            // Bottom edge shadow
+            nvgBeginPath(vg);
+            nvgMoveTo(vg, railLeft + railR, railY + railH - 0.3f);
+            nvgLineTo(vg, railLeft + railW - railR, railY + railH - 0.3f);
+            nvgStrokeColor(vg, nvgRGBA(30, 32, 38, 90));
+            nvgStrokeWidth(vg, 0.4f);
+            nvgStroke(vg);
+
+            // Subtle top edge line
+            nvgBeginPath(vg);
+            nvgMoveTo(vg, railLeft + railR, railY + 0.3f);
+            nvgLineTo(vg, railLeft + railW - railR, railY + 0.3f);
+            nvgStrokeColor(vg, nvgRGBA(200, 205, 215, 40));
+            nvgStrokeWidth(vg, 0.3f);
+            nvgStroke(vg);
+        }
+
+        // Parameter values for handle positioning
+        int steps = stepCount();
+        float value = pq ? pq->getValue() : 0.f;
+        float minV = pq ? pq->minValue : 0.f;
+        float maxV = pq ? pq->maxValue : (float)(steps - 1);
+
+        // === SLIDER HANDLE (3D extruded knurled tab) ===
+        float t = (maxV > minV) ? (value - minV) / (maxV - minV) : 0.f;
+        float handleCX = math::rescale(t, 0.f, 1.f, left, right);
+
+        float handleW = h * 0.62f;
+        float handleH = h * 0.92f;
+        float handleX = handleCX - handleW * 0.5f;
+        float handleY = cy - handleH * 0.5f;
+        float handleR = 2.0f;
+
+        // Soft drop shadow (handle floats above housing)
+        nvgBeginPath(vg);
+        nvgRoundedRect(vg, handleX - 0.5f, handleY + 2.5f, handleW + 1.0f, handleH, handleR + 0.5f);
+        nvgFillColor(vg, nvgRGBA(0, 0, 0, 60));
+        nvgFill(vg);
+        nvgBeginPath(vg);
+        nvgRoundedRect(vg, handleX + 0.5f, handleY + 1.8f, handleW, handleH, handleR);
+        nvgFillColor(vg, nvgRGBA(0, 0, 0, 100));
+        nvgFill(vg);
+
+        // Handle base layer (darker underside showing handle thickness)
+        nvgBeginPath(vg);
+        nvgRoundedRect(vg, handleX - 0.3f, handleY + 0.8f, handleW + 0.6f, handleH, handleR + 0.3f);
+        nvgFillColor(vg, nvgRGBA(60, 58, 52, 255));
+        nvgFill(vg);
+
+        // Handle body - brushed stainless steel top face
+        nvgBeginPath(vg);
+        nvgRoundedRect(vg, handleX, handleY, handleW, handleH - 1.0f, handleR);
+        NVGpaint handlePaint = nvgLinearGradient(vg, handleX, handleY, handleX, handleY + handleH,
+            nvgRGBA(205, 202, 194, 255),
+            nvgRGBA(125, 122, 115, 255));
+        nvgFillPaint(vg, handlePaint);
+        nvgFill(vg);
+
+        // Left edge highlight (directional light from upper-left)
+        nvgBeginPath(vg);
+        nvgMoveTo(vg, handleX + 0.5f, handleY + handleR);
+        nvgLineTo(vg, handleX + 0.5f, handleY + handleH - handleR - 1.0f);
+        nvgStrokeColor(vg, nvgRGBA(225, 222, 215, 70));
+        nvgStrokeWidth(vg, 0.6f);
+        nvgStroke(vg);
+
+        // Right edge shadow (opposite side from light)
+        nvgBeginPath(vg);
+        nvgMoveTo(vg, handleX + handleW - 0.5f, handleY + handleR);
+        nvgLineTo(vg, handleX + handleW - 0.5f, handleY + handleH - handleR - 1.0f);
+        nvgStrokeColor(vg, nvgRGBA(30, 28, 24, 80));
+        nvgStrokeWidth(vg, 0.6f);
+        nvgStroke(vg);
+
+        // Top face specular highlight (bright spot on raised surface)
+        nvgBeginPath(vg);
+        nvgRoundedRect(vg, handleX + 1.5f, handleY + 0.8f,
+            handleW - 3.0f, handleH * 0.18f, handleR * 0.5f);
+        nvgFillColor(vg, nvgRGBA(240, 238, 232, 65));
+        nvgFill(vg);
+
+        // Secondary specular (wider, dimmer reflection below)
+        nvgBeginPath(vg);
+        nvgRoundedRect(vg, handleX + 2.0f, handleY + handleH * 0.22f,
+            handleW - 4.0f, handleH * 0.12f, 1.0f);
+        nvgFillColor(vg, nvgRGBA(220, 218, 212, 25));
+        nvgFill(vg);
+
+        // Handle edge outline (crisp machined edge)
+        nvgBeginPath(vg);
+        nvgRoundedRect(vg, handleX, handleY, handleW, handleH - 1.0f, handleR);
+        nvgStrokeColor(vg, nvgRGBA(42, 40, 36, 210));
+        nvgStrokeWidth(vg, 0.9f);
+        nvgStroke(vg);
+
+        // Knurling/grip lines (machined horizontal grooves)
+        int gripLines = 5;
+        float gripZoneTop = cy - (handleH - 1.0f) * 0.28f;
+        float gripZoneH = (handleH - 1.0f) * 0.56f;
+        float gripSpacing = gripZoneH / (float)(gripLines - 1);
+        float gripInset = 2.5f;
+        for (int g = 0; g < gripLines; g++) {
+            float gy = gripZoneTop + g * gripSpacing;
+            // Dark groove (cut into metal)
+            nvgBeginPath(vg);
+            nvgMoveTo(vg, handleX + gripInset, gy);
+            nvgLineTo(vg, handleX + handleW - gripInset, gy);
+            nvgStrokeColor(vg, nvgRGBA(40, 38, 32, 155));
+            nvgStrokeWidth(vg, 0.6f);
+            nvgStroke(vg);
+            // Light ridge below (sharp edge catches light)
+            nvgBeginPath(vg);
+            nvgMoveTo(vg, handleX + gripInset, gy + 0.6f);
+            nvgLineTo(vg, handleX + handleW - gripInset, gy + 0.6f);
+            nvgStrokeColor(vg, nvgRGBA(215, 212, 205, 50));
+            nvgStrokeWidth(vg, 0.35f);
+            nvgStroke(vg);
+        }
+
+        nvgRestore(vg);
+    }
+};
+
 // VUMeterWidget moved to shapetakerWidgets.hpp (namespace shapetaker)
 
 // Legacy JewelLED variants removed in favor of shapetakerWidgets.hpp LEDs
@@ -1967,17 +3007,14 @@ struct IOscilloscopeSource {
     virtual const Vec* getOscilloscopeBuffer() const = 0;
     virtual int getOscilloscopeBufferIndex() const = 0;
     virtual int getOscilloscopeBufferSize() const = 0;
+    // 0 = green, 1 = blue, 2 = yellow, 3 = amber
+    virtual int getOscilloscopeTheme() const { return 0; }
 };
 
 struct VintageOscilloscopeWidget : widget::Widget {
     IOscilloscopeSource* source;
-    
+
     VintageOscilloscopeWidget(IOscilloscopeSource* source) : source(source) {}
-    
-    void step() override {
-        Widget::step();
-        // Buffering is now handled by the source module in the audio thread.
-    }
     
     void drawLayer(const DrawArgs& args, int layer) override {
         // Layer 0: panel seating shadow (subtle drop beneath the circular screen)
@@ -1997,19 +3034,79 @@ struct VintageOscilloscopeWidget : widget::Widget {
         }
         if (layer == 1) {
             NVGcontext* vg = args.vg;
+
+            struct OscilloscopeTheme {
+                NVGcolor glowInner;
+                NVGcolor glowOuter;
+                NVGcolor phosphorInner;
+                NVGcolor phosphorOuter;
+                float traceDimR;
+                float traceDimG;
+                float traceDimB;
+                float traceBrightR;
+                float traceBrightG;
+                float traceBrightB;
+                const char* screenSvg;
+            };
+
+            auto getTheme = [](int theme) -> OscilloscopeTheme {
+                switch (theme) {
+                    case 1: // Blue
+                        return {
+                            nvgRGBA(40, 90, 160, 55), nvgRGBA(10, 20, 60, 0),
+                            nvgRGBA(60, 120, 200, 10), nvgRGBA(10, 25, 60, 0),
+                            0.12f, 0.35f, 0.70f, 0.22f, 0.55f, 0.85f,
+                            "res/meters/vintage_oscope_screen_blue.svg"
+                        };
+                    case 2: // Yellow
+                        return {
+                            nvgRGBA(140, 120, 40, 55), nvgRGBA(50, 40, 10, 0),
+                            nvgRGBA(200, 170, 60, 10), nvgRGBA(60, 45, 10, 0),
+                            0.55f, 0.48f, 0.12f, 0.85f, 0.75f, 0.22f,
+                            "res/meters/vintage_oscope_screen_yellow.svg"
+                        };
+                    case 3: // Amber
+                        return {
+                            nvgRGBA(160, 90, 30, 55), nvgRGBA(60, 25, 5, 0),
+                            nvgRGBA(220, 120, 50, 10), nvgRGBA(70, 30, 8, 0),
+                            0.55f, 0.28f, 0.10f, 0.85f, 0.48f, 0.15f,
+                            "res/meters/vintage_oscope_screen_amber.svg"
+                        };
+                    default: // Green
+                        return {
+                            nvgRGBA(0, 150, 130, 55), nvgRGBA(0, 40, 40, 0),
+                            nvgRGBA(0, 180, 120, 8), nvgRGBA(0, 60, 40, 0),
+                            0.15f, 0.80f, 0.25f, 0.30f, 0.85f, 0.40f,
+                            "res/meters/vintage_oscope_screen.svg"
+                        };
+                }
+            };
+
+            int themeIndex = 0;
+            if (source) {
+                themeIndex = clamp(source->getOscilloscopeTheme(), 0, 3);
+            }
+            const OscilloscopeTheme theme = getTheme(themeIndex);
             
             // --- CRT Glow Effect ---
             // Draw a soft glow behind the screen to simulate CRT phosphorescence
             nvgBeginPath(vg);
             nvgCircle(vg, box.size.x / 2.f, box.size.y / 2.f, box.size.x / 2.f);
             // A radial gradient from a soft teal to transparent dark green creates the glow
-            NVGpaint glowPaint = nvgRadialGradient(vg, box.size.x / 2.f, box.size.y / 2.f, box.size.x * 0.1f, box.size.x * 0.5f, nvgRGBA(0, 150, 130, 90), nvgRGBA(0, 40, 40, 0));
+            NVGpaint glowPaint = nvgRadialGradient(
+                vg,
+                box.size.x / 2.f,
+                box.size.y / 2.f,
+                box.size.x * 0.1f,
+                box.size.x * 0.5f,
+                theme.glowInner,
+                theme.glowOuter);
             nvgFillPaint(vg, glowPaint);
             nvgFill(vg);
             // --- End Glow Effect ---
 
             // Draw background SVG
-            std::shared_ptr<Svg> bg_svg = Svg::load(asset::plugin(pluginInstance, "res/meters/vintage_oscope_screen.svg"));
+            std::shared_ptr<Svg> bg_svg = Svg::load(asset::plugin(pluginInstance, theme.screenSvg));
             if (bg_svg) {
                 nvgSave(vg);
                 float scaleX = box.size.x / 200.f;
@@ -2022,24 +3119,24 @@ struct VintageOscilloscopeWidget : widget::Widget {
             // --- Enhanced Spherical CRT Effect ---
             // Create a pronounced spherical bulging effect with multiple layers
             
-            // Layer 1: Main spherical highlight (larger and more prominent)
+            // Layer 1: Main spherical highlight (subdued for vintage look)
             nvgBeginPath(vg);
             nvgCircle(vg, box.size.x / 2.f, box.size.y / 2.f, box.size.x * 0.85f);
             NVGpaint mainHighlight = nvgRadialGradient(vg,
                 box.size.x * 0.35f, box.size.y * 0.35f, // Offset highlight to top-left
                 box.size.x * 0.05f, box.size.x * 0.6f,
-                nvgRGBA(255, 255, 255, 35), // More visible white highlight
+                nvgRGBA(255, 255, 255, 18), // Subtle white highlight for vintage look
                 nvgRGBA(255, 255, 255, 0));  // Fades to nothing
             nvgFillPaint(vg, mainHighlight);
             nvgFill(vg);
-            
-            // Layer 2: Bright center hotspot for glass dome effect
+
+            // Layer 2: Subtle center hotspot for glass dome effect
             nvgBeginPath(vg);
             nvgCircle(vg, box.size.x * 0.38f, box.size.y * 0.38f, box.size.x * 0.15f);
             NVGpaint centerHighlight = nvgRadialGradient(vg,
                 box.size.x * 0.38f, box.size.y * 0.38f,
                 0, box.size.x * 0.15f,
-                nvgRGBA(255, 255, 255, 60), // Bright center
+                nvgRGBA(255, 255, 255, 30), // Muted center for aged glass
                 nvgRGBA(255, 255, 255, 0));
             nvgFillPaint(vg, centerHighlight);
             nvgFill(vg);
@@ -2058,11 +3155,14 @@ struct VintageOscilloscopeWidget : widget::Widget {
             // Layer 4: Subtle green phosphor glow enhancement
             nvgBeginPath(vg);
             nvgCircle(vg, box.size.x / 2.f, box.size.y / 2.f, box.size.x * 0.45f);
-            NVGpaint phosphorGlow = nvgRadialGradient(vg,
-                box.size.x / 2.f, box.size.y / 2.f,
-                box.size.x * 0.1f, box.size.x * 0.45f,
-                nvgRGBA(0, 180, 120, 15), // Green glow center
-                nvgRGBA(0, 60, 40, 0));   // Fades to dark green
+            NVGpaint phosphorGlow = nvgRadialGradient(
+                vg,
+                box.size.x / 2.f,
+                box.size.y / 2.f,
+                box.size.x * 0.1f,
+                box.size.x * 0.45f,
+                theme.phosphorInner,
+                theme.phosphorOuter);
             nvgFillPaint(vg, phosphorGlow);
             nvgFill(vg);
 
@@ -2079,6 +3179,8 @@ struct VintageOscilloscopeWidget : widget::Widget {
             float screenBottom = box.size.y - margin;
             float screenWidth = screenRight - screenLeft;
             float screenHeight = screenBottom - screenTop;
+            Vec screenCenter = Vec((screenLeft + screenRight) * 0.5f, (screenTop + screenBottom) * 0.5f);
+            float screenRadius = std::min(screenWidth, screenHeight) * 0.5f;
 
             // Maximum voltage before hard clipping (prevents signal from reaching bezel)
             const float MAX_DISPLAY_VOLTAGE = 6.0f;
@@ -2093,9 +3195,27 @@ struct VintageOscilloscopeWidget : widget::Widget {
                 float x_norm = clampedX / MAX_DISPLAY_VOLTAGE;
                 float y_norm = clampedY / MAX_DISPLAY_VOLTAGE;
 
-                // Map normalized coordinates to screen space with margin
-                float screenX = screenLeft + (x_norm + 1.f) * 0.5f * screenWidth;
-                float screenY = screenTop + (1.f - (y_norm + 1.f) * 0.5f) * screenHeight;
+                // Map normalized coordinates to a circular screen area
+                float normX = x_norm;
+                float normY = y_norm;
+                float r = std::sqrt(normX * normX + normY * normY);
+                if (r > 1.f) {
+                    normX /= r;
+                    normY /= r;
+                    r = 1.f;
+                }
+
+                // Slight barrel distortion to imply a spherical CRT surface
+                const float warp = 0.12f;
+                float rWarped = std::min(1.f, r * (1.f + warp * r * r));
+                if (r > 0.f) {
+                    float scale = rWarped / r;
+                    normX *= scale;
+                    normY *= scale;
+                }
+
+                float screenX = screenCenter.x + normX * screenRadius;
+                float screenY = screenCenter.y - normY * screenRadius;
 
                 // Add "dust" artifact for a less clean, more analog look
                 float fuzz_amount = 0.4f; // pixels of random noise
@@ -2109,80 +3229,68 @@ struct VintageOscilloscopeWidget : widget::Widget {
             const Vec* buffer = source->getOscilloscopeBuffer();
             const int bufferSize = source->getOscilloscopeBufferSize();
             const int currentIndex = source->getOscilloscopeBufferIndex();
-            const int numChunks = 24; // More chunks for a smoother fade
-            const int chunkSize = bufferSize / numChunks;
 
-            // Set line style for smooth corners, which prevents the "starburst" artifact
+            // Set line style for smooth corners
             nvgLineJoin(vg, NVG_ROUND);
             nvgLineCap(vg, NVG_ROUND);
 
-            // Threshold for detecting discontinuities (prevents swastika-like patterns in PWM)
-            const float DISCONTINUITY_THRESHOLD = 3.5f; // volts
+            // --- X-Y Lissajous Display ---
+            const int numChunks = 24;
+            const int chunkSize = bufferSize / numChunks;
+            const float DISCONTINUITY_THRESHOLD = 5.0f;
 
             for (int c = 0; c < numChunks; c++) {
-                // Calculate age and alpha for this chunk (0.0=newest, 1.0=oldest)
                 float age = (float)c / (numChunks - 1);
-                // A balanced power curve for a noticeable but smooth decay effect
                 float alpha = powf(1.0f - age, 1.8f);
                 alpha = clamp(alpha, 0.f, 1.f);
 
-                // Don't draw chunks that are fully faded
-                if (alpha < 0.01f) continue;
+                    if (alpha < 0.01f) continue;
 
-                nvgBeginPath(vg);
-                bool firstPointInChunk = true;
-                Vec lastVoltage = Vec(0, 0);
+                    nvgBeginPath(vg);
+                    bool firstPointInChunk = true;
+                    Vec lastVoltage = Vec(0, 0);
 
-                // Iterate through points in this chunk, from newest to oldest
-                for (int i = 0; i < chunkSize; i++) {
-                    int point_offset = c * chunkSize + i;
-                    if (point_offset >= bufferSize - 1) continue;
+                    for (int i = 0; i < chunkSize; i++) {
+                        int point_offset = c * chunkSize + i;
+                        if (point_offset >= bufferSize - 1) continue;
 
-                    int buffer_idx = (currentIndex - 1 - point_offset + bufferSize) % bufferSize;
+                        int buffer_idx = (currentIndex - 1 - point_offset + bufferSize) % bufferSize;
 
-                    // Avoid the wrap-around point which causes a glitchy line
-                    if (buffer_idx == currentIndex) {
-                        firstPointInChunk = true; // This will cause a moveTo on the next valid point
-                        continue;
-                    }
-
-                    Vec currentVoltage = buffer[buffer_idx];
-                    Vec p = voltageToScreen(currentVoltage);
-
-                    // Detect large voltage jumps (PWM edges, glitches, etc.)
-                    // Break the line to avoid connecting discontinuous points
-                    if (!firstPointInChunk) {
-                        float deltaX = std::abs(currentVoltage.x - lastVoltage.x);
-                        float deltaY = std::abs(currentVoltage.y - lastVoltage.y);
-
-                        // If either channel has a large jump, start a new line segment
-                        if (deltaX > DISCONTINUITY_THRESHOLD || deltaY > DISCONTINUITY_THRESHOLD) {
+                        if (buffer_idx == currentIndex) {
                             firstPointInChunk = true;
+                            continue;
                         }
+
+                        Vec currentVoltage = buffer[buffer_idx];
+                        Vec p = voltageToScreen(currentVoltage);
+
+                        if (!firstPointInChunk) {
+                            float deltaX = std::abs(currentVoltage.x - lastVoltage.x);
+                            float deltaY = std::abs(currentVoltage.y - lastVoltage.y);
+                            if (deltaX > DISCONTINUITY_THRESHOLD || deltaY > DISCONTINUITY_THRESHOLD) {
+                                firstPointInChunk = true;
+                            }
+                        }
+
+                        if (firstPointInChunk) {
+                            nvgMoveTo(vg, p.x, p.y);
+                            firstPointInChunk = false;
+                        } else {
+                            nvgLineTo(vg, p.x, p.y);
+                        }
+
+                        lastVoltage = currentVoltage;
                     }
 
-                    if (firstPointInChunk) {
-                        nvgMoveTo(vg, p.x, p.y);
-                        firstPointInChunk = false;
-                    } else {
-                        nvgLineTo(vg, p.x, p.y);
-                    }
+                    nvgStrokeColor(vg, nvgRGBAf(theme.traceDimR, theme.traceDimG, theme.traceDimB, alpha * 0.30f));
+                    nvgStrokeWidth(vg, 1.2f + alpha * 1.2f);
+                    nvgStroke(vg);
 
-                    lastVoltage = currentVoltage;
+                    nvgStrokeColor(vg, nvgRGBAf(theme.traceBrightR, theme.traceBrightG, theme.traceBrightB, alpha * 0.65f));
+                    nvgStrokeWidth(vg, 0.6f + alpha * 0.3f);
+                    nvgStroke(vg);
                 }
 
-                // Stroke the entire chunk path with the calculated alpha
-                // Glow effect
-                nvgStrokeColor(vg, nvgRGBAf(0.2f, 1.f, 0.3f, alpha * 0.30f));
-                nvgStrokeWidth(vg, 1.2f + alpha * 1.2f); // Thicker base, less variation
-                nvgStroke(vg);
-
-                // Main line
-                nvgStrokeColor(vg, nvgRGBAf(0.4f, 1.f, 0.5f, alpha * 0.65f));
-                nvgStrokeWidth(vg, 0.6f + alpha * 0.3f); // Thicker base, less variation
-                nvgStroke(vg);
-            }
-            
             nvgRestore(vg);
         }
         Widget::drawLayer(args, layer);
@@ -2195,7 +3303,7 @@ struct CapacitiveTouchSwitch : app::SvgSwitch {
         momentary = false;
         latch = true;
         // No frames needed - visual state shown by LED
-        box.size = Vec(27.2, 27.2);
+        box.size = Vec(27.2f, 27.2f);
         if (shadow) shadow->visible = false;
     }
 

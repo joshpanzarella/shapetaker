@@ -116,14 +116,14 @@
        y1="0"
        x2="0"
        y2="1">
-      <!-- Simpler darker silver; stronger shadows handled by explicit shapes -->
+      <!-- Brass stem tone -->
       <stop
          offset="0%"
-         stop-color="#d4d4d4"
+         stop-color="#d9bf79"
          id="stop10" />
       <stop
          offset="100%"
-         stop-color="#606060"
+         stop-color="#6d5024"
          id="stop11" />
     </linearGradient>
     <!-- Auxiliary gradients to align metal shading on lever parts -->

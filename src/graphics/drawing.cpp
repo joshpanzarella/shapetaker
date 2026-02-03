@@ -282,6 +282,59 @@ void drawVignettePatinaScratches(const widget::Widget::DrawArgs& args,
     nvgRestore(args.vg);
 }
 
+void drawMicroScratches(const widget::Widget::DrawArgs& args,
+                        float x, float y, float w, float h,
+                        int scratchCount, unsigned int seed,
+                        float intensity) {
+    if (scratchCount <= 0) return;
+    float strength = clamp(intensity, 0.0f, 2.0f);
+    if (strength <= 0.0f) return;
+
+    auto rnd = [&]() {
+        seed ^= seed << 13;
+        seed ^= seed >> 17;
+        seed ^= seed << 5;
+        return (seed & 0xFFFF) / 65535.f;
+    };
+
+    auto drawScratch = [&](float x1, float y1, float x2, float y2, float width, float alpha) {
+        float dx = x2 - x1;
+        float dy = y2 - y1;
+        float len = std::sqrt(dx * dx + dy * dy);
+        if (len < 1.0f) return;
+        float ox = -dy / len;
+        float oy = dx / len;
+        float offset = 0.35f;
+
+        nvgStrokeColor(args.vg, nvgRGBA(0, 0, 0, static_cast<int>(alpha * 0.35f)));
+        nvgStrokeWidth(args.vg, width);
+        nvgBeginPath(args.vg);
+        nvgMoveTo(args.vg, x1 + ox * offset, y1 + oy * offset);
+        nvgLineTo(args.vg, x2 + ox * offset, y2 + oy * offset);
+        nvgStroke(args.vg);
+
+        nvgStrokeColor(args.vg, nvgRGBA(255, 255, 255, static_cast<int>(alpha)));
+        nvgStrokeWidth(args.vg, width * 0.7f);
+        nvgBeginPath(args.vg);
+        nvgMoveTo(args.vg, x1 - ox * offset, y1 - oy * offset);
+        nvgLineTo(args.vg, x2 - ox * offset, y2 - oy * offset);
+        nvgStroke(args.vg);
+    };
+
+    float minDim = std::min(w, h);
+    for (int i = 0; i < scratchCount; ++i) {
+        float length = (0.05f + rnd() * 0.09f) * minDim;
+        float angle = rnd() * 3.14159f;
+        float cx = x + rnd() * w;
+        float cy = y + rnd() * h;
+        float dx = std::cos(angle) * length * 0.5f;
+        float dy = std::sin(angle) * length * 0.5f;
+        float width = (0.35f + rnd() * 0.5f) * (0.7f + 0.3f * strength);
+        float alpha = (6.0f + rnd() * 4.0f) * strength;
+        drawScratch(cx - dx, cy - dy, cx + dx, cy + dy, width, alpha);
+    }
+}
+
 void drawVintageText(const widget::Widget::DrawArgs& args, Vec pos, 
                     const std::string& text, NVGcolor color, float fontSize,
                     bool addGlow, float glowRadius) {

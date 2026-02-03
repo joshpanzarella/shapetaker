@@ -1,7 +1,0 @@
-<svg width="24mm" height="24mm" viewBox="0 0 63 63" xmlns="http://www.w3.org/2000/svg">
-  <g transform="translate(31.5 31.5) scale(1.069006) translate(-31.5 -31.5)">
-      <!-- Vintage cream wedge indicator (rotates with knob) -->
-      <!-- Push tip closer to outer edge for clearer read -->
-      <path d="M 31.5 8.6 L 35.3 19.6 Q 31.5 21.4 27.7 19.6 Z" fill="#e8e0c8" stroke="none"/>
-  </g>
-</svg>

@@ -4,17 +4,6 @@ Vintage-inspired slider controls designed to match the Shapetaker plugin aesthet
 
 ## Files
 
-### Vertical Sliders
-- **`vintage_slider_handle.svg`** - Vertical slider handle (24x40px)
-  - Chrome/silver body with brass center stripe
-  - Knurled texture for grip
-  - Hardware-realistic metallic gradients
-
-- **`vintage_slider_track.svg`** - Vertical slider track (14x120px)
-  - Recessed metal channel
-  - Dark inner shadows for depth
-  - Vintage wear marks and scratches
-
 ### Horizontal Sliders
 - **`vintage_slider_handle_horizontal.svg`** - Horizontal slider handle (40x24px)
   - Same design as vertical, rotated orientation
@@ -49,28 +38,6 @@ addParam(createParam<VintageSlider>(
 ));
 ```
 
-### Custom Slider Widget
-```cpp
-struct VintageSlider : SvgSlider {
-    VintageSlider() {
-        setBackgroundSvg(
-            APP->window->loadSvg(
-                asset::plugin(pluginInstance,
-                "res/sliders/vintage_slider_track.svg")
-            )
-        );
-        setHandleSvg(
-            APP->window->loadSvg(
-                asset::plugin(pluginInstance,
-                "res/sliders/vintage_slider_handle.svg")
-            )
-        );
-        maxHandlePos = mm2px(Vec(0, -40)); // Vertical range
-        minHandlePos = mm2px(Vec(0, 40));
-    }
-};
-```
-
 ### Horizontal Slider
 ```cpp
 struct VintageSliderHorizontal : SvgSlider {
@@ -96,14 +63,11 @@ struct VintageSliderHorizontal : SvgSlider {
 ## Sizing Guidelines
 
 ### Standard Sizes
-- **Vertical Track**: 14px wide x 120px tall (adjustable height)
-- **Vertical Handle**: 24px wide x 40px tall
 - **Horizontal Track**: 120px wide x 14px tall (adjustable width)
 - **Horizontal Handle**: 40px wide x 24px tall
 
 ### Scaling
 The track SVGs can be scaled vertically/horizontally to fit your panel:
-- Vertical: Adjust height in SVG viewBox (keep width at 14)
 - Horizontal: Adjust width in SVG viewBox (keep height at 14)
 
 ## Color Palette

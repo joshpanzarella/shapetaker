@@ -37,6 +37,12 @@ void drawVignettePatinaScratches(const widget::Widget::DrawArgs& args,
                                 int patinaLayers = 3, float scratchAlpha = 0.3f,
                                 int scratchVariations = 4, unsigned int seed = 12345u);
 
+// Draw subtle micro-scratches with highlight/shadow for depth.
+void drawMicroScratches(const widget::Widget::DrawArgs& args,
+                        float x, float y, float w, float h,
+                        int scratchCount = 7, unsigned int seed = 12345u,
+                        float intensity = 1.0f);
+
 // Helper function for drawing vintage text effects
 void drawVintageText(const widget::Widget::DrawArgs& args, Vec pos, 
                     const std::string& text, NVGcolor color, float fontSize,

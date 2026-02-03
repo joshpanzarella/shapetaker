@@ -72,7 +72,15 @@
       "Bash(CCACHE_LOGFILE=/tmp/ccache.log make:*)",
       "Bash(/opt/homebrew/opt/ccache/libexec/c++:*)",
       "Bash(nm:*)",
-      "Bash(git status:*)"
+      "Bash(git status:*)",
+      "Bash(ls:*)",
+      "Bash(mdfind:*)",
+      "Bash(sips:*)",
+      "Bash(base64:*)",
+      "Bash(convert:*)",
+      "Bash(pip3 install:*)",
+      "Bash(pip3:*)",
+      "Bash(/opt/homebrew/bin/python3.13:*)"
     ],
     "deny": [],
     "ask": []

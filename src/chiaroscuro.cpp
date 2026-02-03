@@ -1230,11 +1230,15 @@ struct ChiaroscuroWidget : ModuleWidget {
         menu->addChild(construct<SidechainModeItem>(&MenuItem::text, "Direct Control", &SidechainModeItem::module, module, &SidechainModeItem::mode, 2));
     }
 
-    // Draw panel background texture to match other modules
+    // Draw leather texture background
     void draw(const DrawArgs& args) override {
-        std::shared_ptr<Image> bg = APP->window->loadImage(asset::plugin(pluginInstance, "res/panels/vcv-panel-background.png"));
+        std::shared_ptr<Image> bg = APP->window->loadImage(asset::plugin(pluginInstance, "res/panels/black_leather_seamless.jpg"));
         if (bg) {
-            NVGpaint paint = nvgImagePattern(args.vg, 0.f, 0.f, box.size.x, box.size.y, 0.f, bg->handle, 1.0f);
+            // Scale < 1.0 = finer grain appearance
+            float scale = 0.4f;
+            float textureHeight = box.size.y * scale;
+            float textureWidth = textureHeight * (1.f);
+            NVGpaint paint = nvgImagePattern(args.vg, 0.f, 0.f, textureWidth, textureHeight, 0.f, bg->handle, 1.0f);
             nvgBeginPath(args.vg);
             nvgRect(args.vg, 0.f, 0.f, box.size.x, box.size.y);
             nvgFillPaint(args.vg, paint);
@@ -1264,20 +1268,20 @@ struct ChiaroscuroWidget : ModuleWidget {
         addOutput(createOutputCentered<ShapetakerBNCPort>(centerPx("audio-out-l", 36.523819f, 114.8209f), module, Chiaroscuro::AUDIO_L_OUTPUT));
         addOutput(createOutputCentered<ShapetakerBNCPort>(centerPx("audio-out-r", 50.997887f, 114.8209f), module, Chiaroscuro::AUDIO_R_OUTPUT));
         
-        // Main VCA knob
-        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltMedium>(centerPx("vca-knob", 18.328495f, 50.193539f), module, Chiaroscuro::VCA_PARAM));
+        // Main VCA knob — Vintage XLarge (27mm)
+        addParam(createParamCentered<ShapetakerKnobVintageXLarge>(centerPx("vca-knob", 18.328495f, 50.193539f), module, Chiaroscuro::VCA_PARAM));
         
         // VCA CV input
         addInput(createInputCentered<ShapetakerBNCPort>(centerPx("vca-cv", 7.5756836f, 98.635521f), module, Chiaroscuro::VCA_CV_INPUT));
         
         // Linear/Exponential response switch
         Vec responseCenter = centerPx("lin-exp-switch", 34.048016f, 33.862297f);
-        auto* responseSwitch = createParamCentered<ShapetakerVintageRussianToggle>(responseCenter, module, Chiaroscuro::RESPONSE_PARAM);
+        auto* responseSwitch = createParamCentered<ShapetakerDarkToggle>(responseCenter, module, Chiaroscuro::RESPONSE_PARAM);
         addParam(responseSwitch);
         
         // Link switch
         Vec linkCenter = centerPx("lin-lr-switch", 34.048016f, 20.758846f);
-        auto* linkSwitch = createParamCentered<ShapetakerVintageRussianToggle>(linkCenter, module, Chiaroscuro::LINK_PARAM);
+        auto* linkSwitch = createParamCentered<ShapetakerDarkToggle>(linkCenter, module, Chiaroscuro::LINK_PARAM);
         addParam(linkSwitch);
         
         // Sidechain input
@@ -1286,20 +1290,20 @@ struct ChiaroscuroWidget : ModuleWidget {
         // Distortion type CV input
         addInput(createInputCentered<ShapetakerBNCPort>(centerPx("dist-type-cv", 36.523819f, 82.450134f), module, Chiaroscuro::TYPE_CV_INPUT));
         
-        // Distortion knob
-        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltSmall>(centerPx("dist-knob", 50.997887f, 66.264755f), module, Chiaroscuro::DIST_PARAM));
+        // Distortion knob — Vintage SmallMedium (15mm)
+        addParam(createParamCentered<ShapetakerKnobVintageSmallMedium>(centerPx("dist-knob", 50.997887f, 66.264755f), module, Chiaroscuro::DIST_PARAM));
 
         // Distortion CV input
         addInput(createInputCentered<ShapetakerBNCPort>(centerPx("dist-cv", 7.5756836f, 82.450134f), module, Chiaroscuro::DIST_CV_INPUT));
-        
-        // Drive knob
-        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltSmall>(centerPx("drive-knob", 50.997887f, 82.717743f), module, Chiaroscuro::DRIVE_PARAM));
+
+        // Drive knob — Vintage SmallMedium (15mm)
+        addParam(createParamCentered<ShapetakerKnobVintageSmallMedium>(centerPx("drive-knob", 50.997887f, 82.717743f), module, Chiaroscuro::DRIVE_PARAM));
 
         // Drive CV input
         addInput(createInputCentered<ShapetakerBNCPort>(centerPx("drive-cv", 22.049751f, 82.450134f), module, Chiaroscuro::DRIVE_CV_INPUT));
-        
-        // Mix knob
-        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltSmall>(centerPx("mix-knob", 50.997887f, 99.170738f), module, Chiaroscuro::MIX_PARAM));
+
+        // Mix knob — Vintage SmallMedium (15mm)
+        addParam(createParamCentered<ShapetakerKnobVintageSmallMedium>(centerPx("mix-knob", 50.997887f, 99.170738f), module, Chiaroscuro::MIX_PARAM));
 
         // ATTENUVERTERS (knobs)
         // Distortion attenuverter
@@ -1314,20 +1318,9 @@ struct ChiaroscuroWidget : ModuleWidget {
         // Mix CV input
         addInput(createInputCentered<ShapetakerBNCPort>(centerPx("mix-cv", 36.523819f, 99.170738f), module, Chiaroscuro::MIX_CV_INPUT));
 
-        // 8-bit pixel ring around distortion selector (add first so it draws behind)
-        PixelRingWidget* pixelRing = new PixelRingWidget();
+        // Distortion type selector
         Vec selectorCenter = centerPx("dist-type-select", 42.631508f, 50.193539f);
-        pixelRing->box.pos = selectorCenter.minus(pixelRing->box.size.div(2));
-        pixelRing->module = module;
-        pixelRing->chiaroscuroModule = module;  // Store typed pointer to avoid dynamic_cast
-        pixelRing->distParamId = Chiaroscuro::DIST_PARAM;
-        pixelRing->driveParamId = Chiaroscuro::DRIVE_PARAM;
-        pixelRing->mixParamId = Chiaroscuro::MIX_PARAM;
-        pixelRing->typeParamId = Chiaroscuro::TYPE_PARAM;
-        addChild(pixelRing);
-
-        // Distortion type selector (add after ring so it draws on top)
-        addParam(createParamCentered<ShapetakerVintageSelector>(selectorCenter, module, Chiaroscuro::TYPE_PARAM));
+        addParam(createParamCentered<ShapetakerHorizontalDistortionSelector>(selectorCenter, module, Chiaroscuro::TYPE_PARAM));
 
         // Vintage dot matrix display with sun/moon eclipse
 #if 0

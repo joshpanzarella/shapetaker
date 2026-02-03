@@ -33,7 +33,6 @@ dep/
 # Local clones / scratch
 impromptu/
 tmp_voxglitch/
-
 # Windows
 ehthumbs.db
 Thumbs.db

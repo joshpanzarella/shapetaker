@@ -878,11 +878,15 @@ public:
 };
 
 struct TessellationWidget : ModuleWidget {
-    // Draw panel background texture to match the other modules
+    // Draw leather texture background
     void draw(const DrawArgs& args) override {
-        std::shared_ptr<Image> bg = APP->window->loadImage(asset::plugin(pluginInstance, "res/panels/vcv-panel-background.png"));
+        std::shared_ptr<Image> bg = APP->window->loadImage(asset::plugin(pluginInstance, "res/panels/black_leather_seamless.jpg"));
         if (bg) {
-            NVGpaint paint = nvgImagePattern(args.vg, 0.f, 0.f, box.size.x, box.size.y, 0.f, bg->handle, 1.0f);
+            // Scale < 1.0 = finer grain appearance
+            float scale = 0.4f;
+            float textureHeight = box.size.y * scale;
+            float textureWidth = textureHeight * (1.f);
+            NVGpaint paint = nvgImagePattern(args.vg, 0.f, 0.f, textureWidth, textureHeight, 0.f, bg->handle, 1.0f);
             nvgBeginPath(args.vg);
             nvgRect(args.vg, 0.f, 0.f, box.size.x, box.size.y);
             nvgFillPaint(args.vg, paint);
@@ -934,7 +938,7 @@ struct TessellationWidget : ModuleWidget {
 
         // === ROW 1: TIME1 (20mm medium) + TAP button ===
         // Safe: 10mm (knob radius) to 40mm (10+20+10)
-        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltMedium>(centerPx("tess-time1", 20.f, row1), module, Tessellation::TIME1_PARAM));
+        addKnobWithShadow(this, createParamCentered<ShapetakerDavies1900hLargeDot>(centerPx("tess-time1", 20.f, row1), module, Tessellation::TIME1_PARAM));
 
         // Tap tempo button with integrated LED
         auto* tapBtn = createParamCentered<ShapetakerVintageMomentaryLight>(centerPx("tess-tap", 38.f, row1), module, Tessellation::TAP_PARAM);
@@ -946,31 +950,31 @@ struct TessellationWidget : ModuleWidget {
         // Available: 8mm to 124mm (116mm width)
         // 4 knobs need 4*8mm = 32mm for radii, 84mm for spacing
         // Spacing: 84/3 = 28mm between centers
-        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltSmall>(centerPx("tess-subdiv-2", 16.f, row2), module, Tessellation::SUBDIV2_PARAM));
-        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltMedium>(centerPx("tess-time-2", 44.f, row2), module, Tessellation::TIME2_PARAM));
-        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltSmall>(centerPx("tess-subdiv3", 72.f, row2), module, Tessellation::SUBDIV3_PARAM));
-        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltMedium>(centerPx("tess-time3", 100.f, row2), module, Tessellation::TIME3_PARAM));
+        addKnobWithShadow(this, createParamCentered<ShapetakerDavies1900hSmallDot>(centerPx("tess-subdiv-2", 16.f, row2), module, Tessellation::SUBDIV2_PARAM));
+        addKnobWithShadow(this, createParamCentered<ShapetakerDavies1900hLargeDot>(centerPx("tess-time-2", 44.f, row2), module, Tessellation::TIME2_PARAM));
+        addKnobWithShadow(this, createParamCentered<ShapetakerDavies1900hSmallDot>(centerPx("tess-subdiv3", 72.f, row2), module, Tessellation::SUBDIV3_PARAM));
+        addKnobWithShadow(this, createParamCentered<ShapetakerDavies1900hLargeDot>(centerPx("tess-time3", 100.f, row2), module, Tessellation::TIME3_PARAM));
 
         // === ROW 3: 6 small knobs (3 pairs) ===
         // Layout: MIX1 REPT1 | MIX2 REPT2 | MIX3 REPT3
         // Each pair needs 18mm spacing (16mm + 2mm), 54mm total for 3 pairs
         // Plus 2 gaps of ~20mm = 94mm total, fits in 116mm
-        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltSmall>(centerPx("tess-mix1", 14.f, row3), module, Tessellation::MIX1_PARAM));
-        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltSmall>(centerPx("tess-repeats1", 32.f, row3), module, Tessellation::REPEATS1_PARAM));
+        addKnobWithShadow(this, createParamCentered<ShapetakerDavies1900hSmallDot>(centerPx("tess-mix1", 14.f, row3), module, Tessellation::MIX1_PARAM));
+        addKnobWithShadow(this, createParamCentered<ShapetakerDavies1900hSmallDot>(centerPx("tess-repeats1", 32.f, row3), module, Tessellation::REPEATS1_PARAM));
         addMixLights(23.f, Tessellation::MIX1_LIGHT, row3, 0);
 
-        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltSmall>(centerPx("tess-mix2", 52.f, row3), module, Tessellation::MIX2_PARAM));
-        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltSmall>(centerPx("tess-repeats2", 70.f, row3), module, Tessellation::REPEATS2_PARAM));
+        addKnobWithShadow(this, createParamCentered<ShapetakerDavies1900hSmallDot>(centerPx("tess-mix2", 52.f, row3), module, Tessellation::MIX2_PARAM));
+        addKnobWithShadow(this, createParamCentered<ShapetakerDavies1900hSmallDot>(centerPx("tess-repeats2", 70.f, row3), module, Tessellation::REPEATS2_PARAM));
         addMixLights(61.f, Tessellation::MIX2_LIGHT, row3, 1);
 
-        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltSmall>(centerPx("tess-mix3", 90.f, row3), module, Tessellation::MIX3_PARAM));
-        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltSmall>(centerPx("tess-repeats3", 108.f, row3), module, Tessellation::REPEATS3_PARAM));
+        addKnobWithShadow(this, createParamCentered<ShapetakerDavies1900hSmallDot>(centerPx("tess-mix3", 90.f, row3), module, Tessellation::MIX3_PARAM));
+        addKnobWithShadow(this, createParamCentered<ShapetakerDavies1900hSmallDot>(centerPx("tess-repeats3", 108.f, row3), module, Tessellation::REPEATS3_PARAM));
         addMixLights(99.f, Tessellation::MIX3_LIGHT, row3, 2);
 
         // === ROW 4: 3 TONE knobs aligned with pair centers ===
-        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltSmall>(centerPx("tess-tone1", 23.f, row4), module, Tessellation::TONE1_PARAM));
-        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltSmall>(centerPx("tess-tone2", 61.f, row4), module, Tessellation::TONE2_PARAM));
-        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltSmall>(centerPx("tess-tone3", 99.f, row4), module, Tessellation::TONE3_PARAM));
+        addKnobWithShadow(this, createParamCentered<ShapetakerDavies1900hSmallDot>(centerPx("tess-tone1", 23.f, row4), module, Tessellation::TONE1_PARAM));
+        addKnobWithShadow(this, createParamCentered<ShapetakerDavies1900hSmallDot>(centerPx("tess-tone2", 61.f, row4), module, Tessellation::TONE2_PARAM));
+        addKnobWithShadow(this, createParamCentered<ShapetakerDavies1900hSmallDot>(centerPx("tess-tone3", 99.f, row4), module, Tessellation::TONE3_PARAM));
 
         // === ROW 5: 3 VOICE switches ===
         addParam(createParamCentered<rack::componentlibrary::CKSSThree>(centerPx("tess-voice1", 23.f, row5), module, Tessellation::VOICE1_PARAM));
@@ -978,9 +982,9 @@ struct TessellationWidget : ModuleWidget {
         addParam(createParamCentered<rack::componentlibrary::CKSSThree>(centerPx("tess-voice3", 99.f, row5), module, Tessellation::VOICE3_PARAM));
 
         // === ROW 6: 3 global knobs (MOD_DEPTH, MOD_RATE, XFEED) ===
-        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltSmall>(centerPx("tess-mod-depth", 28.f, row6), module, Tessellation::MOD_DEPTH_PARAM));
-        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltSmall>(centerPx("tess-mod-rate", 66.f, row6), module, Tessellation::MOD_RATE_PARAM));
-        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltSmall>(centerPx("tess-xfeed", 104.f, row6), module, Tessellation::XFEED_PARAM));
+        addKnobWithShadow(this, createParamCentered<ShapetakerDavies1900hSmallDot>(centerPx("tess-mod-depth", 28.f, row6), module, Tessellation::MOD_DEPTH_PARAM));
+        addKnobWithShadow(this, createParamCentered<ShapetakerDavies1900hSmallDot>(centerPx("tess-mod-rate", 66.f, row6), module, Tessellation::MOD_RATE_PARAM));
+        addKnobWithShadow(this, createParamCentered<ShapetakerDavies1900hSmallDot>(centerPx("tess-xfeed", 104.f, row6), module, Tessellation::XFEED_PARAM));
 
         // === ROW 7: Ping-pong selector + audio inputs + clock ===
         addParam(createParamCentered<rack::componentlibrary::CKSSThree>(centerPx("tess-pingpong", 23.f, row7), module, Tessellation::PINGPONG_PARAM));

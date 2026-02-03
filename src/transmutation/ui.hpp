@@ -8,6 +8,8 @@ using namespace rack;
 
 // Full-module subtle vignette and patina for cohesive vintage look
 struct PanelPatinaOverlay : TransparentWidget {
+    unsigned int baseSeed = 0u;
+    PanelPatinaOverlay();
     void draw(const DrawArgs& args) override;
 };
 

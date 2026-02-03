@@ -1,6 +1,105 @@
 // ChaosVisualizer implementation
 // This file is included in involution.cpp after the Involution struct is fully defined
 
+// Chaos visualizer screen color theme palette
+struct ChaosParticleRange {
+    float rBase, rT, rAura;
+    float gBase, gT, gAura;
+    float bBase, bT, bAura;
+};
+
+struct ChaosThemePalette {
+    NVGcolor bgInner;          // Screen background radial gradient inner
+    NVGcolor bgOuter;          // Screen background radial gradient outer
+    NVGcolor hotspotInner;     // Center hotspot glow (with alpha)
+    NVGcolor gridColor;        // Grid line color
+    NVGcolor outerGlowInner;   // CRT outer glow inner
+    NVGcolor outerGlowOuter;   // CRT outer glow outer
+    NVGcolor innerGlowInner;   // CRT inner glow inner
+    NVGcolor innerGlowOuter;   // CRT inner glow outer
+    ChaosParticleRange hueRanges[3]; // Particle color per hue sector
+    NVGcolor ledBaseColors[3]; // Jewel LED base colors (aura, orbit, tide)
+    NVGcolor ledGlowColor;     // Rate glow halo/core color
+};
+
+static const ChaosThemePalette CHAOS_THEMES[] = {
+    // 0: Cyan (default) - Blue/Cyan/Magenta spectrum
+    {
+        nvgRGB(18, 22, 28),                  // bgInner
+        nvgRGB(8, 10, 12),                   // bgOuter
+        nvgRGBA(25, 30, 40, 120),            // hotspotInner
+        nvgRGBA(0, 100, 255, 20),            // gridColor
+        nvgRGBA(0, 110, 140, 60),            // outerGlowInner
+        nvgRGBA(0, 30, 40, 0),              // outerGlowOuter
+        nvgRGBA(0, 150, 200, 120),           // innerGlowInner
+        nvgRGBA(0, 45, 60, 0),              // innerGlowOuter
+        {   // hueRanges
+            {0, 0, 0,     100, 155, 40,   255, 0, 0},     // Range 0: blue→cyan
+            {0, 100, 40,  255, -100, 0,   255, 0, 0},     // Range 1: cyan→pink
+            {150, -150, 30, 40, 0, 0,     255, 0, 0}      // Range 2: purple→blue
+        },
+        {nvgRGB(186, 92, 220), nvgRGB(148, 124, 255), nvgRGB(255, 118, 214)}, // ledBaseColors
+        nvgRGB(255, 0, 255)    // ledGlowColor
+    },
+    // 1: Amber - Warm CRT orange/gold spectrum
+    {
+        nvgRGB(28, 20, 14),                  // bgInner
+        nvgRGB(12, 9, 6),                    // bgOuter
+        nvgRGBA(40, 30, 18, 120),            // hotspotInner
+        nvgRGBA(200, 120, 0, 20),            // gridColor
+        nvgRGBA(140, 80, 0, 60),             // outerGlowInner
+        nvgRGBA(40, 20, 0, 0),              // outerGlowOuter
+        nvgRGBA(200, 120, 0, 120),           // innerGlowInner
+        nvgRGBA(60, 35, 0, 0),              // innerGlowOuter
+        {   // hueRanges
+            {255, 0, 0,    80, 120, 40,    0, 20, 0},     // Range 0: red→amber
+            {255, 0, 0,   200, -100, 0,   20, -20, 0},    // Range 1: gold→orange
+            {255, -105, 30, 40, 0, 0,      0, 0, 0}       // Range 2: orange→red
+        },
+        {nvgRGB(220, 100, 40), nvgRGB(200, 170, 50), nvgRGB(255, 140, 60)}, // ledBaseColors
+        nvgRGB(255, 160, 0)    // ledGlowColor
+    },
+    // 2: Phosphor - Green terminal CRT spectrum
+    {
+        nvgRGB(16, 24, 16),                  // bgInner
+        nvgRGB(8, 11, 8),                    // bgOuter
+        nvgRGBA(22, 35, 22, 120),            // hotspotInner
+        nvgRGBA(0, 200, 60, 20),             // gridColor
+        nvgRGBA(0, 140, 40, 60),             // outerGlowInner
+        nvgRGBA(0, 40, 10, 0),              // outerGlowOuter
+        nvgRGBA(0, 200, 60, 120),            // innerGlowInner
+        nvgRGBA(0, 60, 18, 0),              // innerGlowOuter
+        {   // hueRanges
+            {0, 0, 0,     255, 0, 0,       80, 80, 40},   // Range 0: green w/ blue
+            {0, 80, 30,   255, 0, 0,      160, -80, 0},   // Range 1: green→teal
+            {80, -80, 30, 200, -60, 0,     40, 0, 0}      // Range 2: teal→green
+        },
+        {nvgRGB(80, 220, 60), nvgRGB(40, 200, 120), nvgRGB(60, 180, 160)}, // ledBaseColors
+        nvgRGB(0, 255, 80)     // ledGlowColor
+    },
+    // 3: Ice - Cool blue-white spectrum
+    {
+        nvgRGB(18, 22, 30),                  // bgInner
+        nvgRGB(8, 10, 14),                   // bgOuter
+        nvgRGBA(30, 35, 45, 120),            // hotspotInner
+        nvgRGBA(80, 160, 255, 20),           // gridColor
+        nvgRGBA(60, 120, 180, 60),           // outerGlowInner
+        nvgRGBA(15, 30, 50, 0),             // outerGlowOuter
+        nvgRGBA(100, 170, 240, 120),         // innerGlowInner
+        nvgRGBA(30, 50, 70, 0),             // innerGlowOuter
+        {   // hueRanges
+            {100, 80, 20,  150, 60, 20,   255, 0, 0},     // Range 0: steel→ice
+            {180, -40, 20, 210, -60, 0,   255, 0, 0},     // Range 1: ice→periwinkle
+            {140, -60, 20, 150, -60, 0,   255, 0, 0}      // Range 2: blue→steel
+        },
+        {nvgRGB(100, 140, 240), nvgRGB(140, 180, 230), nvgRGB(170, 160, 255)}, // ledBaseColors
+        nvgRGB(100, 200, 255)  // ledGlowColor
+    }
+};
+
+static const int NUM_CHAOS_THEMES = 4;
+static const char* const CHAOS_THEME_NAMES[] = {"Cyan", "Amber", "Phosphor", "Ice"};
+
 inline void ChaosVisualizer::step() {
     Widget::step();
     float deltaTime = 1.0f / APP->window->getMonitorRefreshRate();
@@ -34,6 +133,10 @@ inline void ChaosVisualizer::step() {
 inline void ChaosVisualizer::drawLayer(const DrawArgs& args, int layer) {
     if (layer != 1) return;
 
+    // Resolve current color theme
+    int themeIdx = module ? clamp(module->chaosTheme, 0, NUM_CHAOS_THEMES - 1) : 0;
+    const ChaosThemePalette& t = CHAOS_THEMES[themeIdx];
+
     NVGcontext* vg = args.vg;
     float width = box.size.x;
     float height = box.size.y;
@@ -52,7 +155,7 @@ inline void ChaosVisualizer::drawLayer(const DrawArgs& args, int layer) {
     nvgFill(vg);
 
     // Inner diamond shadow
-    float innerSize = diamondSize * 0.9f;
+    float innerSize = diamondSize * 0.97f;
     nvgBeginPath(vg);
     nvgMoveTo(vg, centerX, centerY - innerSize/2);
     nvgLineTo(vg, centerX + innerSize/2, centerY);
@@ -72,7 +175,7 @@ inline void ChaosVisualizer::drawLayer(const DrawArgs& args, int layer) {
     nvgClosePath(vg);
 
     NVGpaint backlitPaint = nvgRadialGradient(vg, centerX, centerY, 0, screenSize * 0.6f,
-                                             nvgRGB(18, 22, 28), nvgRGB(8, 10, 12));
+                                             t.bgInner, t.bgOuter);
     nvgFillPaint(vg, backlitPaint);
     nvgFill(vg);
 
@@ -83,13 +186,15 @@ inline void ChaosVisualizer::drawLayer(const DrawArgs& args, int layer) {
     nvgLineTo(vg, centerX, centerY + screenSize/4);
     nvgLineTo(vg, centerX - screenSize/4, centerY);
     nvgClosePath(vg);
+    NVGcolor hotspotOuter = t.hotspotInner;
+    hotspotOuter.a = 0.0f;
     NVGpaint centerGlow = nvgRadialGradient(vg, centerX, centerY, 0, screenSize * 0.25f,
-                                           nvgRGBA(25, 30, 40, 120), nvgRGBA(25, 30, 40, 0));
+                                           t.hotspotInner, hotspotOuter);
     nvgFillPaint(vg, centerGlow);
     nvgFill(vg);
 
     // Draw diamond grid lines
-    nvgStrokeColor(vg, nvgRGBA(0, 100, 255, 20));
+    nvgStrokeColor(vg, t.gridColor);
     nvgStrokeWidth(vg, 0.5f);
 
     float halfSize = screenSize / 2.0f;
@@ -151,7 +256,7 @@ inline void ChaosVisualizer::drawLayer(const DrawArgs& args, int layer) {
     nvgLineTo(vg, centerX - screenSize/2 * 1.2f, centerY);
     nvgClosePath(vg);
     NVGpaint outerGlow = nvgRadialGradient(vg, centerX, centerY, screenSize * 0.35f, screenSize * 0.55f,
-                                          nvgRGBA(0, 110, 140, 60), nvgRGBA(0, 30, 40, 0));
+                                          t.outerGlowInner, t.outerGlowOuter);
     nvgFillPaint(vg, outerGlow);
     nvgFill(vg);
 
@@ -162,7 +267,7 @@ inline void ChaosVisualizer::drawLayer(const DrawArgs& args, int layer) {
     nvgLineTo(vg, centerX - screenSize/2 * 1.05f, centerY);
     nvgClosePath(vg);
     NVGpaint innerGlow = nvgRadialGradient(vg, centerX, centerY, screenSize * 0.25f, screenSize * 0.38f,
-                                          nvgRGBA(0, 150, 200, 120), nvgRGBA(0, 45, 60, 0));
+                                          t.innerGlowInner, t.innerGlowOuter);
     nvgFillPaint(vg, innerGlow);
     nvgFill(vg);
 
@@ -282,20 +387,29 @@ inline void ChaosVisualizer::drawSquareChaos(NVGcontext* vg, float cx, float cy,
         }
         brightness = clamp(brightness, 0.75f, 2.3f);
 
+        // Resolve particle color from theme hue ranges
+        int themeIdx = module ? clamp(module->chaosTheme, 0, NUM_CHAOS_THEMES - 1) : 0;
+        const ChaosParticleRange* ranges = CHAOS_THEMES[themeIdx].hueRanges;
+
         NVGcolor color;
+        int rangeIdx;
+        float t;
         if (hue < 120.0f) {
-            float t = hue / 120.0f;
-            color = nvgRGBA((int)(0 * brightness), (int)((100 + t * 155 + auraAmount * 40) * brightness),
-                           (int)(255 * brightness), (int)(brightness * 255));
+            rangeIdx = 0;
+            t = hue / 120.0f;
         } else if (hue < 240.0f) {
-            float t = (hue - 120.0f) / 120.0f;
-            color = nvgRGBA((int)((t * 100 + auraAmount * 40) * brightness), (int)((255 - t * 100) * brightness),
-                           (int)(255 * brightness), (int)(brightness * 255));
+            rangeIdx = 1;
+            t = (hue - 120.0f) / 120.0f;
         } else {
-            float t = (hue - 240.0f) / 120.0f;
-            color = nvgRGBA((int)((150 - t * 150 + auraAmount * 30) * brightness), (int)(40 * brightness),
-                           (int)(255 * brightness), (int)(brightness * 255));
+            rangeIdx = 2;
+            t = (hue - 240.0f) / 120.0f;
         }
+        const ChaosParticleRange& r = ranges[rangeIdx];
+        color = nvgRGBA(
+            (int)((r.rBase + t * r.rT + auraAmount * r.rAura) * brightness),
+            (int)((r.gBase + t * r.gT + auraAmount * r.gAura) * brightness),
+            (int)((r.bBase + t * r.bT + auraAmount * r.bAura) * brightness),
+            (int)(brightness * 255));
 
         nvgBeginPath(vg);
         nvgCircle(vg, x, y, dotRadius);
