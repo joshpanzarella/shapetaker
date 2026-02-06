@@ -23,43 +23,7 @@ struct ChaosThemePalette {
 };
 
 static const ChaosThemePalette CHAOS_THEMES[] = {
-    // 0: Cyan (default) - Blue/Cyan/Magenta spectrum
-    {
-        nvgRGB(18, 22, 28),                  // bgInner
-        nvgRGB(8, 10, 12),                   // bgOuter
-        nvgRGBA(25, 30, 40, 120),            // hotspotInner
-        nvgRGBA(0, 100, 255, 20),            // gridColor
-        nvgRGBA(0, 110, 140, 60),            // outerGlowInner
-        nvgRGBA(0, 30, 40, 0),              // outerGlowOuter
-        nvgRGBA(0, 150, 200, 120),           // innerGlowInner
-        nvgRGBA(0, 45, 60, 0),              // innerGlowOuter
-        {   // hueRanges
-            {0, 0, 0,     100, 155, 40,   255, 0, 0},     // Range 0: blue→cyan
-            {0, 100, 40,  255, -100, 0,   255, 0, 0},     // Range 1: cyan→pink
-            {150, -150, 30, 40, 0, 0,     255, 0, 0}      // Range 2: purple→blue
-        },
-        {nvgRGB(186, 92, 220), nvgRGB(148, 124, 255), nvgRGB(255, 118, 214)}, // ledBaseColors
-        nvgRGB(255, 0, 255)    // ledGlowColor
-    },
-    // 1: Amber - Warm CRT orange/gold spectrum
-    {
-        nvgRGB(28, 20, 14),                  // bgInner
-        nvgRGB(12, 9, 6),                    // bgOuter
-        nvgRGBA(40, 30, 18, 120),            // hotspotInner
-        nvgRGBA(200, 120, 0, 20),            // gridColor
-        nvgRGBA(140, 80, 0, 60),             // outerGlowInner
-        nvgRGBA(40, 20, 0, 0),              // outerGlowOuter
-        nvgRGBA(200, 120, 0, 120),           // innerGlowInner
-        nvgRGBA(60, 35, 0, 0),              // innerGlowOuter
-        {   // hueRanges
-            {255, 0, 0,    80, 120, 40,    0, 20, 0},     // Range 0: red→amber
-            {255, 0, 0,   200, -100, 0,   20, -20, 0},    // Range 1: gold→orange
-            {255, -105, 30, 40, 0, 0,      0, 0, 0}       // Range 2: orange→red
-        },
-        {nvgRGB(220, 100, 40), nvgRGB(200, 170, 50), nvgRGB(255, 140, 60)}, // ledBaseColors
-        nvgRGB(255, 160, 0)    // ledGlowColor
-    },
-    // 2: Phosphor - Green terminal CRT spectrum
+    // 0: Phosphor - Green terminal CRT spectrum (default)
     {
         nvgRGB(16, 24, 16),                  // bgInner
         nvgRGB(8, 11, 8),                    // bgOuter
@@ -77,28 +41,64 @@ static const ChaosThemePalette CHAOS_THEMES[] = {
         {nvgRGB(80, 220, 60), nvgRGB(40, 200, 120), nvgRGB(60, 180, 160)}, // ledBaseColors
         nvgRGB(0, 255, 80)     // ledGlowColor
     },
-    // 3: Ice - Cool blue-white spectrum
+    // 1: Ice - Cool cyan spectrum (more cyan, less blue for better visibility)
     {
         nvgRGB(18, 22, 30),                  // bgInner
         nvgRGB(8, 10, 14),                   // bgOuter
         nvgRGBA(30, 35, 45, 120),            // hotspotInner
-        nvgRGBA(80, 160, 255, 20),           // gridColor
-        nvgRGBA(60, 120, 180, 60),           // outerGlowInner
-        nvgRGBA(15, 30, 50, 0),             // outerGlowOuter
-        nvgRGBA(100, 170, 240, 120),         // innerGlowInner
-        nvgRGBA(30, 50, 70, 0),             // innerGlowOuter
+        nvgRGBA(0, 200, 255, 20),            // gridColor (more cyan)
+        nvgRGBA(0, 140, 200, 60),            // outerGlowInner (more cyan)
+        nvgRGBA(0, 35, 50, 0),              // outerGlowOuter (more cyan)
+        nvgRGBA(0, 200, 240, 120),           // innerGlowInner (bright cyan)
+        nvgRGBA(0, 50, 70, 0),              // innerGlowOuter (cyan tint)
         {   // hueRanges
-            {100, 80, 20,  150, 60, 20,   255, 0, 0},     // Range 0: steel→ice
-            {180, -40, 20, 210, -60, 0,   255, 0, 0},     // Range 1: ice→periwinkle
-            {140, -60, 20, 150, -60, 0,   255, 0, 0}      // Range 2: blue→steel
+            {0, 120, 20,  200, 60, 20,   255, 0, 0},     // Range 0: cyan→aqua
+            {100, -40, 20, 230, -60, 0,   255, 0, 0},     // Range 1: aqua→ice
+            {0, 80, 20, 200, -60, 0,   255, 0, 0}      // Range 2: ice→cyan
         },
-        {nvgRGB(100, 140, 240), nvgRGB(140, 180, 230), nvgRGB(170, 160, 255)}, // ledBaseColors
-        nvgRGB(100, 200, 255)  // ledGlowColor
+        {nvgRGB(0, 200, 255), nvgRGB(100, 220, 255), nvgRGB(170, 210, 255)}, // ledBaseColors
+        nvgRGB(0, 230, 255)  // ledGlowColor (bright cyan)
+    },
+    // 2: Solar - Warm yellow/gold spectrum
+    {
+        nvgRGB(28, 26, 14),                  // bgInner (yellow-tinted)
+        nvgRGB(12, 11, 6),                   // bgOuter
+        nvgRGBA(40, 38, 18, 120),            // hotspotInner
+        nvgRGBA(220, 200, 60, 20),           // gridColor (bright yellow)
+        nvgRGBA(180, 160, 40, 60),           // outerGlowInner (yellow glow)
+        nvgRGBA(50, 45, 10, 0),             // outerGlowOuter
+        nvgRGBA(220, 200, 80, 120),          // innerGlowInner (bright yellow)
+        nvgRGBA(70, 60, 20, 0),             // innerGlowOuter
+        {   // hueRanges
+            {255, 0, 0,   220, 100, 40,    80, 80, 0},    // Range 0: gold→yellow
+            {255, -50, 30, 255, 0, 0,     120, -60, 0},   // Range 1: yellow→amber
+            {220, -80, 30, 180, 0, 0,      60, 0, 0}      // Range 2: amber→gold
+        },
+        {nvgRGB(255, 230, 80), nvgRGB(255, 210, 100), nvgRGB(255, 200, 120)}, // ledBaseColors
+        nvgRGB(255, 230, 80)   // ledGlowColor
+    },
+    // 3: Amber - Warm CRT orange/amber spectrum
+    {
+        nvgRGB(28, 20, 14),                  // bgInner
+        nvgRGB(12, 9, 6),                    // bgOuter
+        nvgRGBA(40, 30, 18, 120),            // hotspotInner
+        nvgRGBA(200, 120, 0, 20),            // gridColor
+        nvgRGBA(140, 80, 0, 60),             // outerGlowInner
+        nvgRGBA(40, 20, 0, 0),              // outerGlowOuter
+        nvgRGBA(200, 120, 0, 120),           // innerGlowInner
+        nvgRGBA(60, 35, 0, 0),              // innerGlowOuter
+        {   // hueRanges
+            {255, 0, 0,    80, 120, 40,    0, 20, 0},     // Range 0: red→amber
+            {255, 0, 0,   200, -100, 0,   20, -20, 0},    // Range 1: gold→orange
+            {255, -105, 30, 40, 0, 0,      0, 0, 0}       // Range 2: orange→red
+        },
+        {nvgRGB(220, 100, 40), nvgRGB(200, 170, 50), nvgRGB(255, 140, 60)}, // ledBaseColors
+        nvgRGB(255, 160, 0)    // ledGlowColor
     }
 };
 
 static const int NUM_CHAOS_THEMES = 4;
-static const char* const CHAOS_THEME_NAMES[] = {"Cyan", "Amber", "Phosphor", "Ice"};
+static const char* const CHAOS_THEME_NAMES[] = {"Phosphor", "Ice", "Solar", "Amber"};
 
 inline void ChaosVisualizer::step() {
     Widget::step();

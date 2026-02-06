@@ -568,7 +568,7 @@ struct Chiaroscuro : Module {
         displaySmoothFast = coeffForHz(15.0f);
         displaySmoothSlow = coeffForHz(2.0f);
         controlSmoothCoeff = coeffForHz(60.0f);  // ~60 Hz for CV smoothing
-        typeSmoothCoeff = coeffForHz(80.0f);     // slightly quicker to catch CV moves
+        typeSmoothCoeff = coeffForHz(50.0f);     // ~50 Hz to limit upper response to ~200 Hz
         levelSmoothCoeff = displaySmoothFast;    // 15 Hz
         makeupSmoothCoeff = coeffForHz(6.0f);
     }
@@ -1232,32 +1232,36 @@ struct ChiaroscuroWidget : ModuleWidget {
 
     // Draw leather texture background
     void draw(const DrawArgs& args) override {
-        std::shared_ptr<Image> bg = APP->window->loadImage(asset::plugin(pluginInstance, "res/panels/black_leather_seamless.jpg"));
+        std::shared_ptr<Image> bg = APP->window->loadImage(asset::plugin(pluginInstance, "res/panels/panel_background.png"));
         if (bg) {
-            // Scale < 1.0 = finer grain appearance
-            float scale = 0.4f;
-            float textureHeight = box.size.y * scale;
-            float textureWidth = textureHeight * (1.f);
-            NVGpaint paint = nvgImagePattern(args.vg, 0.f, 0.f, textureWidth, textureHeight, 0.f, bg->handle, 1.0f);
+            // Draw image stretched to fill entire panel, no tiling
+            nvgSave(args.vg);
             nvgBeginPath(args.vg);
             nvgRect(args.vg, 0.f, 0.f, box.size.x, box.size.y);
+            NVGpaint paint = nvgImagePattern(args.vg, 0.f, 0.f, box.size.x, box.size.y, 0.f, bg->handle, 1.0f);
             nvgFillPaint(args.vg, paint);
             nvgFill(args.vg);
+            nvgRestore(args.vg);
         }
         ModuleWidget::draw(args);
+
+        // Draw black border on top to cover default gray panel border
+        nvgBeginPath(args.vg);
+        nvgRect(args.vg, 0.f, 0.f, box.size.x, box.size.y);
+        nvgStrokeColor(args.vg, nvgRGB(0, 0, 0));
+        nvgStrokeWidth(args.vg, 1.0f);
+        nvgStroke(args.vg);
     }
 
     ChiaroscuroWidget(Chiaroscuro* module) {
         setModule(module);
         setPanel(APP->window->loadSvg(asset::plugin(pluginInstance, "res/panels/Chiaroscuro.svg")));
 
-        addChild(createWidget<ScrewBlack>(Vec(RACK_GRID_WIDTH, 0)));
-        addChild(createWidget<ScrewBlack>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, 0)));
-        addChild(createWidget<ScrewBlack>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
-        addChild(createWidget<ScrewBlack>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
+        using LayoutHelper = shapetaker::ui::LayoutHelper;
+
+        LayoutHelper::ScrewPositions::addStandardScrews<ScrewJetBlack>(this, box.size.x);
 
         // Create positioning helper from SVG panel
-        using LayoutHelper = shapetaker::ui::LayoutHelper;
         auto centerPx = LayoutHelper::createCenterPxHelper(
             asset::plugin(pluginInstance, "res/panels/Chiaroscuro.svg")
         );

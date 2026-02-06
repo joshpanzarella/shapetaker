@@ -209,7 +209,8 @@ struct Evocation : Module {
     bool debugTouchLogging = false;
     bool adsrPhaseQuantize = true;
 
-    // OLED screen color theme (0=Synthwave, 1=Amber, 2=Phosphor, 3=Ice)
+    // OLED screen color theme - uses centralized DisplayTheme system
+    // 0=Phosphor (Green), 1=Ice (Cyan), 2=Solar (Yellow), 3=Amber (Orange)
     int oledTheme = 0;
 
     // Polyphony configuration
@@ -3290,57 +3291,7 @@ struct OledThemePalette {
 };
 
 static const OledThemePalette OLED_THEMES[] = {
-    // 0: Synthwave (default) - Cyan/Magenta/Purple
-    {
-        nvgRGBA(0, 255, 220, 255),       // waveform
-        nvgRGBA(0, 255, 220, 200),       // primaryText
-        nvgRGBA(180, 255, 240, 255),     // valueText
-        nvgRGBA(255, 100, 220, 235),     // accentText
-        nvgRGBA(140, 220, 208, 200),     // dimText
-        nvgRGBA(120, 220, 208, 240),     // flashText
-        nvgRGBA(180, 64, 255, 35),       // gridCenter
-        nvgRGBA(255, 0, 180, 70),        // gridBounds
-        nvgRGBA(60, 120, 110, 100),      // progressBg
-        nvgRGBA(0, 255, 220, 255),       // progressFill
-        nvgRGBA(180, 255, 255, 255),     // envPoints
-        nvgRGBA(100, 160, 150, 180),     // emptyText
-        {                                // voiceColors
-            nvgRGBA(255, 190, 255, 255),
-            nvgRGBA(240, 170, 250, 240),
-            nvgRGBA(225, 150, 245, 225),
-            nvgRGBA(210, 130, 235, 210),
-            nvgRGBA(195, 110, 225, 195),
-            nvgRGBA(180, 95, 215, 180),
-            nvgRGBA(165, 80, 205, 165),
-            nvgRGBA(150, 70, 195, 150)
-        }
-    },
-    // 1: Amber - Classic warm CRT
-    {
-        nvgRGBA(255, 176, 0, 255),       // waveform
-        nvgRGBA(255, 176, 0, 200),       // primaryText
-        nvgRGBA(255, 220, 140, 255),     // valueText
-        nvgRGBA(255, 140, 40, 235),      // accentText
-        nvgRGBA(180, 140, 60, 200),      // dimText
-        nvgRGBA(200, 160, 40, 240),      // flashText
-        nvgRGBA(160, 100, 0, 35),        // gridCenter
-        nvgRGBA(200, 120, 0, 70),        // gridBounds
-        nvgRGBA(80, 60, 20, 100),        // progressBg
-        nvgRGBA(255, 176, 0, 255),       // progressFill
-        nvgRGBA(255, 230, 160, 255),     // envPoints
-        nvgRGBA(130, 100, 50, 180),      // emptyText
-        {                                // voiceColors
-            nvgRGBA(255, 220, 130, 255),
-            nvgRGBA(255, 200, 110, 240),
-            nvgRGBA(245, 180, 90, 225),
-            nvgRGBA(235, 165, 75, 210),
-            nvgRGBA(225, 150, 60, 195),
-            nvgRGBA(215, 135, 50, 180),
-            nvgRGBA(200, 120, 40, 165),
-            nvgRGBA(185, 110, 30, 150)
-        }
-    },
-    // 2: Phosphor - Green terminal CRT
+    // 0: Phosphor - Green terminal CRT (default)
     {
         nvgRGBA(0, 255, 68, 255),        // waveform
         nvgRGBA(0, 255, 68, 200),        // primaryText
@@ -3365,35 +3316,85 @@ static const OledThemePalette OLED_THEMES[] = {
             nvgRGBA(55, 185, 100, 150)
         }
     },
-    // 3: Ice - Cool blue
+    // 1: Ice - Cool cyan (more cyan, less blue for better visibility)
     {
-        nvgRGBA(100, 200, 255, 255),     // waveform
-        nvgRGBA(100, 200, 255, 200),     // primaryText
-        nvgRGBA(200, 230, 255, 255),     // valueText
-        nvgRGBA(160, 210, 255, 235),     // accentText
-        nvgRGBA(120, 170, 210, 200),     // dimText
-        nvgRGBA(140, 200, 240, 240),     // flashText
-        nvgRGBA(64, 120, 200, 35),       // gridCenter
-        nvgRGBA(80, 150, 255, 70),       // gridBounds
-        nvgRGBA(40, 70, 110, 100),       // progressBg
-        nvgRGBA(100, 200, 255, 255),     // progressFill
-        nvgRGBA(210, 240, 255, 255),     // envPoints
-        nvgRGBA(80, 120, 160, 180),      // emptyText
+        nvgRGBA(0, 230, 255, 255),       // waveform (bright cyan)
+        nvgRGBA(0, 230, 255, 200),       // primaryText
+        nvgRGBA(180, 245, 255, 255),     // valueText
+        nvgRGBA(100, 220, 255, 235),     // accentText (more cyan)
+        nvgRGBA(100, 190, 220, 200),     // dimText
+        nvgRGBA(120, 220, 245, 240),     // flashText
+        nvgRGBA(0, 150, 200, 35),        // gridCenter (cyan)
+        nvgRGBA(0, 180, 255, 70),        // gridBounds (cyan)
+        nvgRGBA(30, 80, 110, 100),       // progressBg
+        nvgRGBA(0, 230, 255, 255),       // progressFill (bright cyan)
+        nvgRGBA(200, 245, 255, 255),     // envPoints
+        nvgRGBA(70, 130, 160, 180),      // emptyText
         {                                // voiceColors
-            nvgRGBA(210, 235, 255, 255),
-            nvgRGBA(190, 220, 255, 240),
-            nvgRGBA(170, 205, 250, 225),
-            nvgRGBA(150, 190, 245, 210),
-            nvgRGBA(130, 175, 240, 195),
-            nvgRGBA(115, 160, 230, 180),
-            nvgRGBA(100, 145, 220, 165),
-            nvgRGBA(85, 130, 210, 150)
+            nvgRGBA(200, 245, 255, 255),
+            nvgRGBA(180, 230, 255, 240),
+            nvgRGBA(160, 215, 250, 225),
+            nvgRGBA(140, 200, 245, 210),
+            nvgRGBA(120, 185, 240, 195),
+            nvgRGBA(100, 170, 230, 180),
+            nvgRGBA(80, 155, 220, 165),
+            nvgRGBA(60, 140, 210, 150)
+        }
+    },
+    // 2: Solar - Warm yellow/gold
+    {
+        nvgRGBA(255, 237, 68, 255),      // waveform (bright yellow)
+        nvgRGBA(255, 237, 68, 200),      // primaryText
+        nvgRGBA(255, 250, 180, 255),     // valueText
+        nvgRGBA(255, 220, 80, 235),      // accentText
+        nvgRGBA(200, 185, 100, 200),     // dimText
+        nvgRGBA(220, 200, 80, 240),      // flashText
+        nvgRGBA(180, 160, 0, 35),        // gridCenter
+        nvgRGBA(220, 200, 60, 70),       // gridBounds
+        nvgRGBA(80, 75, 30, 100),        // progressBg
+        nvgRGBA(255, 237, 68, 255),      // progressFill
+        nvgRGBA(255, 250, 200, 255),     // envPoints
+        nvgRGBA(130, 120, 60, 180),      // emptyText
+        {                                // voiceColors
+            nvgRGBA(255, 250, 180, 255),
+            nvgRGBA(255, 240, 160, 240),
+            nvgRGBA(245, 230, 140, 225),
+            nvgRGBA(235, 220, 120, 210),
+            nvgRGBA(225, 210, 100, 195),
+            nvgRGBA(215, 200, 85, 180),
+            nvgRGBA(200, 185, 70, 165),
+            nvgRGBA(185, 170, 55, 150)
+        }
+    },
+    // 3: Amber - Classic warm CRT orange/amber
+    {
+        nvgRGBA(255, 176, 0, 255),       // waveform
+        nvgRGBA(255, 176, 0, 200),       // primaryText
+        nvgRGBA(255, 220, 140, 255),     // valueText
+        nvgRGBA(255, 140, 40, 235),      // accentText
+        nvgRGBA(180, 140, 60, 200),      // dimText
+        nvgRGBA(200, 160, 40, 240),      // flashText
+        nvgRGBA(160, 100, 0, 35),        // gridCenter
+        nvgRGBA(200, 120, 0, 70),        // gridBounds
+        nvgRGBA(80, 60, 20, 100),        // progressBg
+        nvgRGBA(255, 176, 0, 255),       // progressFill
+        nvgRGBA(255, 230, 160, 255),     // envPoints
+        nvgRGBA(130, 100, 50, 180),      // emptyText
+        {                                // voiceColors
+            nvgRGBA(255, 220, 130, 255),
+            nvgRGBA(255, 200, 110, 240),
+            nvgRGBA(245, 180, 90, 225),
+            nvgRGBA(235, 165, 75, 210),
+            nvgRGBA(225, 150, 60, 195),
+            nvgRGBA(215, 135, 50, 180),
+            nvgRGBA(200, 120, 40, 165),
+            nvgRGBA(185, 110, 30, 150)
         }
     }
 };
 
 static const int NUM_OLED_THEMES = 4;
-static const char* const OLED_THEME_NAMES[] = {"Synthwave", "Amber", "Phosphor", "Ice"};
+static const char* const OLED_THEME_NAMES[] = {"Phosphor", "Ice", "Solar", "Amber"};
 
 // OLED Display Widget
 struct EvocationOLEDDisplay : Widget {

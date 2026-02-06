@@ -1771,12 +1771,12 @@ struct ShapetakerAttenuverterOscilloscope : app::SvgKnob {
         // Rotating indicator only
         setSvg(Svg::load(asset::plugin(pluginInstance, "res/knobs/indicators/st_attenuverter_small_indicator.svg")));
 
-        // Stationary background (hexagonal knob body)
+        // Stationary background (gradient stays fixed while the indicator rotates)
         bg = new widget::SvgWidget;
         bg->setSvg(Svg::load(asset::plugin(pluginInstance, "res/knobs/backgrounds/st_attenuverter_small_bg.svg")));
         nativeSize = bg->box.size;
 
-        // Add background below the rotating transform widget
+        // Add background below the rotating transform widget (stationary)
         if (fb && tw) {
             fb->addChildBelow(bg, tw);
         }
@@ -3035,78 +3035,44 @@ struct VintageOscilloscopeWidget : widget::Widget {
         if (layer == 1) {
             NVGcontext* vg = args.vg;
 
-            struct OscilloscopeTheme {
-                NVGcolor glowInner;
-                NVGcolor glowOuter;
-                NVGcolor phosphorInner;
-                NVGcolor phosphorOuter;
-                float traceDimR;
-                float traceDimG;
-                float traceDimB;
-                float traceBrightR;
-                float traceBrightG;
-                float traceBrightB;
-                const char* screenSvg;
-            };
-
-            auto getTheme = [](int theme) -> OscilloscopeTheme {
-                switch (theme) {
-                    case 1: // Blue
-                        return {
-                            nvgRGBA(40, 90, 160, 55), nvgRGBA(10, 20, 60, 0),
-                            nvgRGBA(60, 120, 200, 10), nvgRGBA(10, 25, 60, 0),
-                            0.12f, 0.35f, 0.70f, 0.22f, 0.55f, 0.85f,
-                            "res/meters/vintage_oscope_screen_blue.svg"
-                        };
-                    case 2: // Yellow
-                        return {
-                            nvgRGBA(140, 120, 40, 55), nvgRGBA(50, 40, 10, 0),
-                            nvgRGBA(200, 170, 60, 10), nvgRGBA(60, 45, 10, 0),
-                            0.55f, 0.48f, 0.12f, 0.85f, 0.75f, 0.22f,
-                            "res/meters/vintage_oscope_screen_yellow.svg"
-                        };
-                    case 3: // Amber
-                        return {
-                            nvgRGBA(160, 90, 30, 55), nvgRGBA(60, 25, 5, 0),
-                            nvgRGBA(220, 120, 50, 10), nvgRGBA(70, 30, 8, 0),
-                            0.55f, 0.28f, 0.10f, 0.85f, 0.48f, 0.15f,
-                            "res/meters/vintage_oscope_screen_amber.svg"
-                        };
-                    default: // Green
-                        return {
-                            nvgRGBA(0, 150, 130, 55), nvgRGBA(0, 40, 40, 0),
-                            nvgRGBA(0, 180, 120, 8), nvgRGBA(0, 60, 40, 0),
-                            0.15f, 0.80f, 0.25f, 0.30f, 0.85f, 0.40f,
-                            "res/meters/vintage_oscope_screen.svg"
-                        };
-                }
-            };
-
+            // Use centralized DisplayTheme system for consistent colors
+            using DisplayTheme = shapetaker::ui::ThemeManager::DisplayTheme;
             int themeIndex = 0;
             if (source) {
-                themeIndex = clamp(source->getOscilloscopeTheme(), 0, 3);
+                themeIndex = clamp(source->getOscilloscopeTheme(), 0, DisplayTheme::THEME_COUNT - 1);
             }
-            const OscilloscopeTheme theme = getTheme(themeIndex);
+            DisplayTheme::Theme theme = static_cast<DisplayTheme::Theme>(themeIndex);
+
+            // Get theme colors from centralized system
+            NVGcolor glowInner = DisplayTheme::getGlowInnerColor(theme);
+            NVGcolor glowOuter = DisplayTheme::getGlowOuterColor(theme);
+            NVGcolor phosphorInner = DisplayTheme::getPhosphorInnerColor(theme);
+            NVGcolor phosphorOuter = DisplayTheme::getPhosphorOuterColor(theme);
+            float traceDimR, traceDimG, traceDimB;
+            float traceBrightR, traceBrightG, traceBrightB;
+            DisplayTheme::getTraceDimRGB(theme, traceDimR, traceDimG, traceDimB);
+            DisplayTheme::getTraceBrightRGB(theme, traceBrightR, traceBrightG, traceBrightB);
+            const char* screenSvg = DisplayTheme::getOscilloscopeScreenSVG(theme);
             
             // --- CRT Glow Effect ---
             // Draw a soft glow behind the screen to simulate CRT phosphorescence
             nvgBeginPath(vg);
             nvgCircle(vg, box.size.x / 2.f, box.size.y / 2.f, box.size.x / 2.f);
-            // A radial gradient from a soft teal to transparent dark green creates the glow
+            // A radial gradient from themed glow color to transparent
             NVGpaint glowPaint = nvgRadialGradient(
                 vg,
                 box.size.x / 2.f,
                 box.size.y / 2.f,
                 box.size.x * 0.1f,
                 box.size.x * 0.5f,
-                theme.glowInner,
-                theme.glowOuter);
+                glowInner,
+                glowOuter);
             nvgFillPaint(vg, glowPaint);
             nvgFill(vg);
             // --- End Glow Effect ---
 
             // Draw background SVG
-            std::shared_ptr<Svg> bg_svg = Svg::load(asset::plugin(pluginInstance, theme.screenSvg));
+            std::shared_ptr<Svg> bg_svg = Svg::load(asset::plugin(pluginInstance, screenSvg));
             if (bg_svg) {
                 nvgSave(vg);
                 float scaleX = box.size.x / 200.f;
@@ -3152,7 +3118,7 @@ struct VintageOscilloscopeWidget : widget::Widget {
             nvgFillPaint(vg, edgeDarken);
             nvgFill(vg);
             
-            // Layer 4: Subtle green phosphor glow enhancement
+            // Layer 4: Themed phosphor glow enhancement
             nvgBeginPath(vg);
             nvgCircle(vg, box.size.x / 2.f, box.size.y / 2.f, box.size.x * 0.45f);
             NVGpaint phosphorGlow = nvgRadialGradient(
@@ -3161,8 +3127,8 @@ struct VintageOscilloscopeWidget : widget::Widget {
                 box.size.y / 2.f,
                 box.size.x * 0.1f,
                 box.size.x * 0.45f,
-                theme.phosphorInner,
-                theme.phosphorOuter);
+                phosphorInner,
+                phosphorOuter);
             nvgFillPaint(vg, phosphorGlow);
             nvgFill(vg);
 
@@ -3282,11 +3248,11 @@ struct VintageOscilloscopeWidget : widget::Widget {
                         lastVoltage = currentVoltage;
                     }
 
-                    nvgStrokeColor(vg, nvgRGBAf(theme.traceDimR, theme.traceDimG, theme.traceDimB, alpha * 0.30f));
+                    nvgStrokeColor(vg, nvgRGBAf(traceDimR, traceDimG, traceDimB, alpha * 0.30f));
                     nvgStrokeWidth(vg, 1.2f + alpha * 1.2f);
                     nvgStroke(vg);
 
-                    nvgStrokeColor(vg, nvgRGBAf(theme.traceBrightR, theme.traceBrightG, theme.traceBrightB, alpha * 0.65f));
+                    nvgStrokeColor(vg, nvgRGBAf(traceBrightR, traceBrightG, traceBrightB, alpha * 0.65f));
                     nvgStrokeWidth(vg, 0.6f + alpha * 0.3f);
                     nvgStroke(vg);
                 }

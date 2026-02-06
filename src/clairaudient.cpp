@@ -1,17 +1,19 @@
 #include "plugin.hpp"
 #include "transmutation/ui.hpp" // for PanelPatinaOverlay (shared vintage overlay)
 #include "ui/menu_helpers.hpp"
-#include <cmath>
-#include <atomic>
-#include <functional>
 #include <algorithm>
+#include <array>
+#include <atomic>
+#include <cmath>
+#include <cstdint>
+#include <cstring>
 
 struct ClairaudientModule : Module, IOscilloscopeSource {
 
     // DSP Constants
     static constexpr float MIDDLE_C_HZ = 261.626f;
     static constexpr float CV_FINE_SCALE = 1.f / 50.f;
-    static constexpr float CV_SHAPE_SCALE = 1.f / 10.f;
+    static constexpr float CV_SHAPE_SCALE = 1.f / 5.f;
     static constexpr float CV_XFADE_SCALE = 1.f / 10.f;
     static constexpr float OUTPUT_GAIN = 5.f;
     static constexpr float NOISE_V_PEAK = 0.45f;
@@ -64,14 +66,6 @@ struct ClairaudientModule : Module, IOscilloscopeSource {
         WAVEFORM_PWM = 1
     };
 
-    enum OscilloscopeTheme {
-        OSCOPE_GREEN = 0,
-        OSCOPE_BLUE = 1,
-        OSCOPE_YELLOW = 2,
-        OSCOPE_AMBER = 3,
-        OSCOPE_THEME_COUNT
-    };
-
     // Polyphonic oscillator state (up to 8 voices for Clairaudient)
     static constexpr int MAX_POLY_VOICES = 8;
     shapetaker::dsp::VoiceArray<float, MAX_POLY_VOICES> phase1A;  // Independent phase for osc 1A per voice
@@ -91,11 +85,12 @@ struct ClairaudientModule : Module, IOscilloscopeSource {
 
     // User-adjustable oscillator noise amount (0..1), exposed via context menu slider.
     // Defaults to 0.0 (off). Controls both subtle phase jitter and added noise floor.
-    float oscNoiseAmount = 0.0f;
+    std::atomic<float> oscNoiseAmount = {0.0f};
     
     // --- Oscilloscope Buffering ---
-    static const int OSCILLOSCOPE_BUFFER_SIZE = 1024;
-    Vec oscilloscopeBuffer[OSCILLOSCOPE_BUFFER_SIZE] = {};
+    static constexpr int OSCILLOSCOPE_BUFFER_SIZE = 1024;
+    std::array<std::atomic<uint64_t>, OSCILLOSCOPE_BUFFER_SIZE> oscilloscopeBufferPacked = {};
+    mutable Vec oscilloscopeBuffer[OSCILLOSCOPE_BUFFER_SIZE] = {};
     std::atomic<int> oscilloscopeBufferIndex = {0};
     int oscilloscopeFrameCounter = 0;
 
@@ -110,18 +105,21 @@ struct ClairaudientModule : Module, IOscilloscopeSource {
     shapetaker::PolyphonicProcessor polyProcessor;
 
     // Quantization mode settings
-    bool quantizeOscV = true;  // V oscillator quantized to octaves by default
-    bool quantizeOscZ = true;  // Z oscillator quantized to semitones by default
-    int crossfadeMode = CROSSFADE_EQUAL_POWER;
-    int waveformMode = WAVEFORM_SIGMOID_SAW;
-    int oversampleFactor = 2;
-    bool highCutEnabled = false;
-    float driftAmount = 0.0f;
-    int oscilloscopeTheme = OSCOPE_GREEN;
+    std::atomic<bool> quantizeOscV = {true};  // V oscillator quantized to octaves by default
+    std::atomic<bool> quantizeOscZ = {true};  // Z oscillator quantized to semitones by default
+    std::atomic<int> crossfadeMode = {CROSSFADE_EQUAL_POWER};
+    std::atomic<int> waveformMode = {WAVEFORM_SIGMOID_SAW};
+    std::atomic<int> oversampleFactor = {2};
+    std::atomic<bool> highCutEnabled = {false};
+    std::atomic<float> driftAmount = {0.0f};
+    std::atomic<int> oscilloscopeTheme = {shapetaker::ui::ThemeManager::DisplayTheme::PHOSPHOR};
+    std::atomic<bool> pendingFilterReset = {false};
 
     // Parameter decimation for performance (update every N samples instead of every sample)
     static constexpr int kParamDecimation = 32;  // ~0.7ms at 44.1kHz - imperceptible latency
     int paramDecimationCounter = 0;
+    static constexpr int kDriftDecimation = 64;  // Drift is extremely slow; update less often
+    int driftDecimationCounter = 0;
 
     // Cached parameter values (updated every kParamDecimation samples)
     float cachedBasePitch1 = 0.f;
@@ -131,6 +129,11 @@ struct ClairaudientModule : Module, IOscilloscopeSource {
     float cachedShape1 = 0.5f;
     float cachedShape2 = 0.5f;
     float cachedXfade = 0.5f;
+    float cachedFine1Atten = 0.f;
+    float cachedFine2Atten = 0.f;
+    float cachedShape1Atten = 0.f;
+    float cachedShape2Atten = 0.f;
+    float cachedXfadeAtten = 0.f;
     bool cachedSync1 = false;
     bool cachedSync2 = false;
 
@@ -142,15 +145,33 @@ struct ClairaudientModule : Module, IOscilloscopeSource {
     bool cachedShape2CVConnected = false;
     bool cachedXfadeCVConnected = false;
 
+    // Cached noise shaping
+    float cachedOscNoiseAmount = -1.f;
+    float cachedShapedNoise = 0.f;
+
+    mutable int oscilloscopeReadIndex = 0;
+
+    // Cached filter coefficients to avoid recompute every sample
+    float cachedAntiAliasAlpha = 0.f;
+    float cachedHighCutAlpha = 0.f;
+    float cachedSampleRate = 0.f;
+    int cachedOversample = 0;
+    bool cachedHighCutEnabled = false;
+
+    // Per-voice PRNG state for fast drift/noise updates
+    shapetaker::dsp::VoiceArray<uint32_t, MAX_POLY_VOICES> rngState;
+
     // Update parameter snapping based on quantization modes
     void updateParameterSnapping() {
         // V Oscillator snapping
-        getParamQuantity(FREQ1_PARAM)->snapEnabled = quantizeOscV;
-        getParamQuantity(FREQ1_PARAM)->smoothEnabled = !quantizeOscV;
+        bool quantizeV = quantizeOscV.load(std::memory_order_relaxed);
+        getParamQuantity(FREQ1_PARAM)->snapEnabled = quantizeV;
+        getParamQuantity(FREQ1_PARAM)->smoothEnabled = !quantizeV;
 
         // Z Oscillator snapping
-        getParamQuantity(FREQ2_PARAM)->snapEnabled = quantizeOscZ;
-        getParamQuantity(FREQ2_PARAM)->smoothEnabled = !quantizeOscZ;
+        bool quantizeZ = quantizeOscZ.load(std::memory_order_relaxed);
+        getParamQuantity(FREQ2_PARAM)->snapEnabled = quantizeZ;
+        getParamQuantity(FREQ2_PARAM)->smoothEnabled = !quantizeZ;
     }
 
     void resetFilters() {
@@ -162,10 +183,69 @@ struct ClairaudientModule : Module, IOscilloscopeSource {
         highCutFilterRight.reset();
     }
 
+    void updateFilterCoefficients(float sampleRate, int oversample, bool highCut) {
+        cachedSampleRate = sampleRate;
+        cachedOversample = oversample;
+        cachedHighCutEnabled = highCut;
+
+        if (oversample > 1) {
+            float oversampleRate = sampleRate * oversample;
+            float antiAliasCutoffHz = sampleRate * ANTI_ALIAS_CUTOFF;
+            cachedAntiAliasAlpha = shapetaker::dsp::OnePoleLowpass::computeAlpha(antiAliasCutoffHz, oversampleRate);
+        } else {
+            cachedAntiAliasAlpha = 0.f;
+        }
+
+        cachedHighCutAlpha = (highCut ? shapetaker::dsp::OnePoleLowpass::computeAlpha(HIGH_CUT_HZ, sampleRate) : 0.f);
+    }
+
+    static uint64_t packVec(float x, float y) {
+        uint32_t xi = 0;
+        uint32_t yi = 0;
+        std::memcpy(&xi, &x, sizeof(float));
+        std::memcpy(&yi, &y, sizeof(float));
+        return (static_cast<uint64_t>(yi) << 32) | xi;
+    }
+
+    static Vec unpackVec(uint64_t packed) {
+        uint32_t xi = static_cast<uint32_t>(packed & 0xFFFFFFFFu);
+        uint32_t yi = static_cast<uint32_t>(packed >> 32);
+        float x = 0.f;
+        float y = 0.f;
+        std::memcpy(&x, &xi, sizeof(float));
+        std::memcpy(&y, &yi, sizeof(float));
+        return Vec(x, y);
+    }
+
+    static inline void wrapPhase(float& phase) {
+        if (phase >= 1.f) {
+            phase -= 1.f;
+            if (phase >= 1.f) {
+                phase -= std::floor(phase);
+            }
+        }
+
+    }
+
+    static inline uint32_t xorshift32(uint32_t& state) {
+        state ^= state << 13;
+        state ^= state >> 17;
+        state ^= state << 5;
+        return state;
+    }
+
+    static inline float fastUniform(uint32_t& state) {
+        return xorshift32(state) * (1.0f / 4294967296.0f);
+    }
+
+    static inline float fastUniformSigned(uint32_t& state) {
+        return fastUniform(state) * 2.f - 1.f;
+    }
+
     ClairaudientModule() {
         config(PARAMS_LEN, INPUTS_LEN, OUTPUTS_LEN, LIGHTS_LEN);
         using ParameterHelper = shapetaker::ParameterHelper;
-        
+
         // Frequency controls
         // V oscillator snaps to whole octaves (5 total values: -2, -1, 0, +1, +2)
         configParam(FREQ1_PARAM, -2.f, 2.f, 0.f, "v osc octave", " oct");
@@ -218,65 +298,86 @@ struct ClairaudientModule : Module, IOscilloscopeSource {
         ParameterHelper::configAudioOutput(this, LEFT_OUTPUT, "L");
         ParameterHelper::configAudioOutput(this, RIGHT_OUTPUT, "R");
 
+        // Seed per-voice RNG state (avoid zero)
+        for (int i = 0; i < MAX_POLY_VOICES; ++i) {
+            uint32_t seed = rack::random::u32();
+            rngState[i] = (seed == 0u) ? 0x6d2b79f5u : seed;
+        }
+
         shapetaker::ui::LabelFormatter::normalizeModuleControls(this);
     }
 
     json_t* dataToJson() override {
         json_t* rootJ = json_object();
-        json_object_set_new(rootJ, "quantizeOscV", json_boolean(quantizeOscV));
-        json_object_set_new(rootJ, "quantizeOscZ", json_boolean(quantizeOscZ));
-        json_object_set_new(rootJ, "oscNoiseAmount", json_real(oscNoiseAmount));
-        json_object_set_new(rootJ, "crossfadeMode", json_integer(crossfadeMode));
-        json_object_set_new(rootJ, "waveformMode", json_integer(waveformMode));
-        json_object_set_new(rootJ, "oversampleFactor", json_integer(oversampleFactor));
-        json_object_set_new(rootJ, "highCutEnabled", json_boolean(highCutEnabled));
-        json_object_set_new(rootJ, "driftAmount", json_real(driftAmount));
-        json_object_set_new(rootJ, "oscopeTheme", json_integer(oscilloscopeTheme));
+        json_object_set_new(rootJ, "quantizeOscV", json_boolean(quantizeOscV.load(std::memory_order_relaxed)));
+        json_object_set_new(rootJ, "quantizeOscZ", json_boolean(quantizeOscZ.load(std::memory_order_relaxed)));
+        json_object_set_new(rootJ, "oscNoiseAmount", json_real(oscNoiseAmount.load(std::memory_order_relaxed)));
+        json_object_set_new(rootJ, "crossfadeMode", json_integer(crossfadeMode.load(std::memory_order_relaxed)));
+        json_object_set_new(rootJ, "waveformMode", json_integer(waveformMode.load(std::memory_order_relaxed)));
+        json_object_set_new(rootJ, "oversampleFactor", json_integer(oversampleFactor.load(std::memory_order_relaxed)));
+        json_object_set_new(rootJ, "highCutEnabled", json_boolean(highCutEnabled.load(std::memory_order_relaxed)));
+        json_object_set_new(rootJ, "driftAmount", json_real(driftAmount.load(std::memory_order_relaxed)));
+        json_object_set_new(rootJ, "oscopeTheme", json_integer(oscilloscopeTheme.load(std::memory_order_relaxed)));
         return rootJ;
     }
 
     void dataFromJson(json_t* rootJ) override {
+        const int prevOversample = oversampleFactor.load(std::memory_order_relaxed);
+        const bool prevHighCut = highCutEnabled.load(std::memory_order_relaxed);
+
         json_t* quantizeVJ = json_object_get(rootJ, "quantizeOscV");
         if (quantizeVJ)
-            quantizeOscV = json_boolean_value(quantizeVJ);
+            quantizeOscV.store(json_boolean_value(quantizeVJ), std::memory_order_relaxed);
 
         json_t* quantizeZJ = json_object_get(rootJ, "quantizeOscZ");
         if (quantizeZJ)
-            quantizeOscZ = json_boolean_value(quantizeZJ);
+            quantizeOscZ.store(json_boolean_value(quantizeZJ), std::memory_order_relaxed);
 
         json_t* noiseJ = json_object_get(rootJ, "oscNoiseAmount");
         if (noiseJ)
-            oscNoiseAmount = clamp((float)json_number_value(noiseJ), 0.f, 1.f);
+            oscNoiseAmount.store(clamp((float)json_number_value(noiseJ), 0.f, 1.f), std::memory_order_relaxed);
 
         json_t* xfadeModeJ = json_object_get(rootJ, "crossfadeMode");
         if (xfadeModeJ)
-            crossfadeMode = clamp((int)json_integer_value(xfadeModeJ), CROSSFADE_EQUAL_POWER, CROSSFADE_STEREO_SWAP);
+            crossfadeMode.store(clamp((int)json_integer_value(xfadeModeJ), CROSSFADE_EQUAL_POWER, CROSSFADE_STEREO_SWAP), std::memory_order_relaxed);
 
         json_t* waveformModeJ = json_object_get(rootJ, "waveformMode");
         if (waveformModeJ)
-            waveformMode = clamp((int)json_integer_value(waveformModeJ), WAVEFORM_SIGMOID_SAW, WAVEFORM_PWM);
+            waveformMode.store(clamp((int)json_integer_value(waveformModeJ), WAVEFORM_SIGMOID_SAW, WAVEFORM_PWM), std::memory_order_relaxed);
 
         json_t* oversampleJ = json_object_get(rootJ, "oversampleFactor");
-        if (oversampleJ)
-            oversampleFactor = clamp((int)json_integer_value(oversampleJ), 1, 8);
+        if (oversampleJ) {
+            int newOversample = clamp((int)json_integer_value(oversampleJ), 1, 8);
+            oversampleFactor.store(newOversample, std::memory_order_relaxed);
+            if (newOversample != prevOversample)
+                pendingFilterReset.store(true, std::memory_order_relaxed);
+        }
 
         json_t* highCutJ = json_object_get(rootJ, "highCutEnabled");
-        if (highCutJ)
-            highCutEnabled = json_boolean_value(highCutJ);
+        if (highCutJ) {
+            bool newHighCut = json_boolean_value(highCutJ);
+            highCutEnabled.store(newHighCut, std::memory_order_relaxed);
+            if (newHighCut != prevHighCut)
+                pendingFilterReset.store(true, std::memory_order_relaxed);
+        }
 
         json_t* driftJ = json_object_get(rootJ, "driftAmount");
         if (driftJ)
-            driftAmount = clamp((float)json_number_value(driftJ), 0.f, 1.f);
+            driftAmount.store(clamp((float)json_number_value(driftJ), 0.f, 1.f), std::memory_order_relaxed);
 
         json_t* oscopeThemeJ = json_object_get(rootJ, "oscopeTheme");
         if (oscopeThemeJ)
-            oscilloscopeTheme = clamp((int)json_integer_value(oscopeThemeJ), 0, OSCOPE_THEME_COUNT - 1);
+            oscilloscopeTheme.store(clamp((int)json_integer_value(oscopeThemeJ), 0, shapetaker::ui::ThemeManager::DisplayTheme::THEME_COUNT - 1), std::memory_order_relaxed);
 
         // Update parameter snapping after loading settings
         updateParameterSnapping();
     }
 
     void process(const ProcessArgs& args) override {
+        if (pendingFilterReset.exchange(false, std::memory_order_acq_rel)) {
+            resetFilters();
+        }
+
         // Determine number of polyphonic voices (max 8 for Clairaudient)
         int channels = std::min(
             polyProcessor.updateChannels(
@@ -285,27 +386,39 @@ struct ClairaudientModule : Module, IOscilloscopeSource {
             MAX_POLY_VOICES);
 
         // Apply the configured oversampling factor (1×, 2×, 4×, or 8×, default 2×)
-        int oversample = std::max(1, oversampleFactor);
+        const int oversample = std::max(1, oversampleFactor.load(std::memory_order_relaxed));
+        const bool highCutEnabledLocal = highCutEnabled.load(std::memory_order_relaxed);
+        const int crossfadeModeLocal = crossfadeMode.load(std::memory_order_relaxed);
+        const int waveformModeLocal = waveformMode.load(std::memory_order_relaxed);
+        const float driftAmountLocal = driftAmount.load(std::memory_order_relaxed);
         float oversampleRate = args.sampleRate * oversample;
 
         // Pre-calculate constants that are the same for all voices and oversample iterations
-        float shapedNoise = std::pow(clamp(oscNoiseAmount, 0.f, 1.f), 0.65f);
-        float antiAliasCutoffHz = args.sampleRate * ANTI_ALIAS_CUTOFF;
+        const float oscNoise = oscNoiseAmount.load(std::memory_order_relaxed);
+        if (oscNoise != cachedOscNoiseAmount) {
+            cachedOscNoiseAmount = oscNoise;
+            cachedShapedNoise = std::pow(clamp(oscNoise, 0.f, 1.f), 0.65f);
+        }
+        float shapedNoise = cachedShapedNoise;
         float invOversampleRate = 1.f / oversampleRate; // Pre-compute reciprocal for faster multiplication
         bool doAntiAlias = oversample > 1;
-        float antiAliasAlpha = doAntiAlias ? shapetaker::dsp::OnePoleLowpass::computeAlpha(antiAliasCutoffHz, oversampleRate) : 0.f;
-        float highCutAlpha = (highCutEnabled ? shapetaker::dsp::OnePoleLowpass::computeAlpha(HIGH_CUT_HZ, args.sampleRate) : 0.f);
+
+        if (args.sampleRate != cachedSampleRate || oversample != cachedOversample || highCutEnabledLocal != cachedHighCutEnabled) {
+            updateFilterCoefficients(args.sampleRate, oversample, highCutEnabledLocal);
+        }
+        float antiAliasAlpha = cachedAntiAliasAlpha;
+        float highCutAlpha = cachedHighCutAlpha;
 
         // Parameter decimation: only read parameters every N samples for performance
         // ~0.7ms latency at 44.1kHz is imperceptible but saves ~15-20% CPU
         if (paramDecimationCounter == 0) {
             // Cache base parameter values (before CV modulation)
             cachedBasePitch1 = params[FREQ1_PARAM].getValue();
-            if (quantizeOscV)
+            if (quantizeOscV.load(std::memory_order_relaxed))
                 cachedBasePitch1 = shapetaker::dsp::PitchHelper::quantizeToOctave(cachedBasePitch1);
 
             cachedBaseSemitoneZ = params[FREQ2_PARAM].getValue();
-            if (quantizeOscZ)
+            if (quantizeOscZ.load(std::memory_order_relaxed))
                 cachedBaseSemitoneZ = shapetaker::dsp::PitchHelper::quantizeToSemitone(cachedBaseSemitoneZ, 24.f);
 
             cachedFineTune1 = params[FINE1_PARAM].getValue();
@@ -313,6 +426,11 @@ struct ClairaudientModule : Module, IOscilloscopeSource {
             cachedShape1 = params[SHAPE1_PARAM].getValue();
             cachedShape2 = params[SHAPE2_PARAM].getValue();
             cachedXfade = params[XFADE_PARAM].getValue();
+            cachedFine1Atten = params[FINE1_ATTEN_PARAM].getValue();
+            cachedFine2Atten = params[FINE2_ATTEN_PARAM].getValue();
+            cachedShape1Atten = params[SHAPE1_ATTEN_PARAM].getValue();
+            cachedShape2Atten = params[SHAPE2_ATTEN_PARAM].getValue();
+            cachedXfadeAtten = params[XFADE_ATTEN_PARAM].getValue();
             cachedSync1 = params[SYNC1_PARAM].getValue() > 0.5f;
             cachedSync2 = params[SYNC2_PARAM].getValue() > 0.5f;
 
@@ -325,6 +443,18 @@ struct ClairaudientModule : Module, IOscilloscopeSource {
             cachedXfadeCVConnected = inputs[XFADE_CV_INPUT].isConnected();
         }
         paramDecimationCounter = (paramDecimationCounter + 1) % kParamDecimation;
+
+        // Drift updates can be decimated without audible impact (extremely slow movement).
+        bool updateDrift = (driftDecimationCounter == 0);
+        float driftSampleTime = updateDrift ? args.sampleTime * kDriftDecimation : args.sampleTime;
+        driftDecimationCounter = (driftDecimationCounter + 1) % kDriftDecimation;
+
+        // Pre-calculate crossfade coefficients for the common (no CV) case
+        float xfadeClampedGlobal = clamp(cachedXfade, 0.f, 1.f);
+        float xfadeAngleGlobal = xfadeClampedGlobal * (float)M_PI_2;
+        float xfadeCosGlobal = std::cos(xfadeAngleGlobal);
+        float xfadeSinGlobal = std::sin(xfadeAngleGlobal);
+        float widthBlendGlobal = std::sin(xfadeClampedGlobal * (float)M_PI);
 
         // Process each voice
         for (int ch = 0; ch < channels; ch++) {
@@ -346,18 +476,15 @@ struct ClairaudientModule : Module, IOscilloscopeSource {
 
             float fineTune1 = cachedFineTune1;
             if (cachedFine1CVConnected) {
-                float cvAmount = params[FINE1_ATTEN_PARAM].getValue();
+                float cvAmount = cachedFine1Atten;
                 fineTune1 = clamp(fineTune1 + inputs[FINE1_CV_INPUT].getPolyVoltage(ch) * cvAmount * CV_FINE_SCALE, -0.2f, 0.2f);
             }
 
-            // Fine 2 normalizes to Fine 1 if not connected
+            // Fine 2 CV is independent (no normalization)
             float fineTune2 = cachedFineTune2;
             if (cachedFine2CVConnected) {
-                float cvAmount = params[FINE2_ATTEN_PARAM].getValue();
+                float cvAmount = cachedFine2Atten;
                 fineTune2 = clamp(fineTune2 + inputs[FINE2_CV_INPUT].getPolyVoltage(ch) * cvAmount * CV_FINE_SCALE, -0.2f, 0.2f);
-            } else {
-                // Normalize to Fine 1: use Fine 1's knob value and CV if present
-                fineTune2 = fineTune1;
             }
 
             // Convert semitone offsets to octaves
@@ -367,30 +494,27 @@ struct ClairaudientModule : Module, IOscilloscopeSource {
             // Get shape parameters with attenuverters (use cached base values)
             float shape1 = cachedShape1;
             if (cachedShape1CVConnected) {
-                float cvAmount = params[SHAPE1_ATTEN_PARAM].getValue();
+                float cvAmount = cachedShape1Atten;
                 shape1 = clamp(shape1 + inputs[SHAPE1_CV_INPUT].getPolyVoltage(ch) * cvAmount * CV_SHAPE_SCALE, 0.f, 1.f);
             }
 
-            // Shape 2 normalizes to Shape 1 if not connected
+            // Shape 2 CV is independent (no normalization)
             float shape2 = cachedShape2;
             if (cachedShape2CVConnected) {
-                float cvAmount = params[SHAPE2_ATTEN_PARAM].getValue();
+                float cvAmount = cachedShape2Atten;
                 shape2 = clamp(shape2 + inputs[SHAPE2_CV_INPUT].getPolyVoltage(ch) * cvAmount * CV_SHAPE_SCALE, 0.f, 1.f);
-            } else {
-                // Normalize to Shape 1: use Shape 1's knob value and CV if present
-                shape2 = shape1;
             }
 
             // Get crossfade parameter with attenuverter (use cached base value)
             float xfade = cachedXfade;
             if (cachedXfadeCVConnected) {
-                float cvAmount = params[XFADE_ATTEN_PARAM].getValue();
+                float cvAmount = cachedXfadeAtten;
                 xfade = clamp(xfade + inputs[XFADE_CV_INPUT].getPolyVoltage(ch) * cvAmount * CV_XFADE_SCALE, 0.f, 1.f);
             }
-            float xfadeClamped = clamp(xfade, 0.f, 1.f);
+            float xfadeClamped = cachedXfadeCVConnected ? clamp(xfade, 0.f, 1.f) : xfadeClampedGlobal;
 
             // Add organic frequency drift (very subtle) for this voice - once per process() call
-            updateOrganicDrift(ch, args.sampleTime, driftAmount);
+            updateOrganicDrift(ch, driftSampleTime, driftAmountLocal, updateDrift);
 
             // Pre-calculate frequencies outside oversample loop (major optimization)
             // Use exp2f() instead of std::pow(2.f, x) for ~2-3x faster computation
@@ -411,83 +535,134 @@ struct ClairaudientModule : Module, IOscilloscopeSource {
 
             // Pre-calculate crossfade coefficients outside loop to avoid repeated sin/cos
             float xfadeAngle = xfadeClamped * (float)M_PI_2;
-            float xfadeCos = std::cos(xfadeAngle);
-            float xfadeSin = std::sin(xfadeAngle);
-            bool stereoSwap = (crossfadeMode == CROSSFADE_STEREO_SWAP);
+            float xfadeCos = cachedXfadeCVConnected ? std::cos(xfadeAngle) : xfadeCosGlobal;
+            float xfadeSin = cachedXfadeCVConnected ? std::sin(xfadeAngle) : xfadeSinGlobal;
+            bool stereoSwap = (crossfadeModeLocal == CROSSFADE_STEREO_SWAP);
             // Width accent for swap: crossfeed with opposite polarity peaks at mid fade
-            float widthBlend = std::sin(xfadeClamped * (float)M_PI);
+            float widthBlend = cachedXfadeCVConnected ? std::sin(xfadeClamped * (float)M_PI) : widthBlendGlobal;
             float widthGain = 0.35f * widthBlend;
 
-            for (int os = 0; os < oversample; os++) {
+            const float noiseScale = 0.00005f * shapedNoise;
+            if (waveformModeLocal == WAVEFORM_PWM) {
+                for (int os = 0; os < oversample; os++) {
 
-                // Add subtle phase noise for organic character (scaled by shaped user amount)
-                const float noiseScale = 0.00005f * shapedNoise;
-                phase1A[ch] += deltaPhase1A + noise1A[ch] * noiseScale;
-                phase1B[ch] += deltaPhase1B + noise1B[ch] * noiseScale;
-                phase2A[ch] += deltaPhase2A + noise2A[ch] * noiseScale;
-                phase2B[ch] += deltaPhase2B + noise2B[ch] * noiseScale;
+                    // Add subtle phase noise for organic character (scaled by shaped user amount)
+                    phase1A[ch] += deltaPhase1A + noise1A[ch] * noiseScale;
+                    phase1B[ch] += deltaPhase1B + noise1B[ch] * noiseScale;
+                    phase2A[ch] += deltaPhase2A + noise2A[ch] * noiseScale;
+                    phase2B[ch] += deltaPhase2B + noise2B[ch] * noiseScale;
 
-                if (phase1A[ch] >= 1.f) phase1A[ch] -= 1.f;
-                if (phase1B[ch] >= 1.f) phase1B[ch] -= 1.f;
-                if (phase2A[ch] >= 1.f) phase2A[ch] -= 1.f;
-                if (phase2B[ch] >= 1.f) phase2B[ch] -= 1.f;
+                    wrapPhase(phase1A[ch]);
+                    wrapPhase(phase1B[ch]);
+                    wrapPhase(phase2A[ch]);
+                    wrapPhase(phase2B[ch]);
 
-                // Apply sync - reset B oscillator to match A when synced
-                if (sync1 && phase1A[ch] < deltaPhase1A) {
-                    phase1B[ch] = phase1A[ch];
-                }
-                if (sync2 && phase2A[ch] < deltaPhase2A) {
-                    phase2B[ch] = phase2A[ch];
-                }
+                    // Apply sync - reset B oscillator to match A when synced
+                    if (sync1 && phase1A[ch] < deltaPhase1A) {
+                        phase1B[ch] = phase1A[ch];
+                    }
+                    if (sync2 && phase2A[ch] < deltaPhase2A) {
+                        phase2B[ch] = phase2A[ch];
+                    }
 
-                // Generate oscillator outputs based on waveform mode
-                float osc1A, osc1B, osc2A, osc2B;
-
-                if (waveformMode == WAVEFORM_PWM) {
                     // PWM mode - shape parameter controls pulse width
-                    osc1A = shapetaker::dsp::OscillatorHelper::pwmWithPolyBLEP(phase1A[ch], shape1, freq1A, oversampleRate);
-                    osc1B = shapetaker::dsp::OscillatorHelper::pwmWithPolyBLEP(phase1B[ch], shape1, freq1B, oversampleRate);
-                    osc2A = shapetaker::dsp::OscillatorHelper::pwmWithPolyBLEP(phase2A[ch], shape2, freq2A, oversampleRate);
-                    osc2B = shapetaker::dsp::OscillatorHelper::pwmWithPolyBLEP(phase2B[ch], shape2, freq2B, oversampleRate);
-                } else {
+                    float osc1A = shapetaker::dsp::OscillatorHelper::pwmWithPolyBLEP(phase1A[ch], shape1, freq1A, oversampleRate);
+                    float osc1B = shapetaker::dsp::OscillatorHelper::pwmWithPolyBLEP(phase1B[ch], shape1, freq1B, oversampleRate);
+                    float osc2A = shapetaker::dsp::OscillatorHelper::pwmWithPolyBLEP(phase2A[ch], shape2, freq2A, oversampleRate);
+                    float osc2B = shapetaker::dsp::OscillatorHelper::pwmWithPolyBLEP(phase2B[ch], shape2, freq2B, oversampleRate);
+
+                    float leftOutput;
+                    float rightOutput;
+
+                    // Use pre-calculated trig values to avoid sin/cos in hot loop
+                    if (!stereoSwap) {
+                        leftOutput = osc1A * xfadeCos + osc2A * xfadeSin;
+                        rightOutput = osc1B * xfadeCos + osc2B * xfadeSin;
+                    } else {
+                        float baseLeft = osc1A * xfadeCos + osc2B * xfadeSin;
+                        float baseRight = osc1B * xfadeCos + osc2A * xfadeSin;
+                        // Out-of-phase crossfeed widens and makes swap distinct from equal-power
+                        float leftCross = -(osc1B * (1.f - xfadeClamped) + osc2A * xfadeClamped);
+                        float rightCross = -(osc1A * (1.f - xfadeClamped) + osc2B * xfadeClamped);
+                        leftOutput = baseLeft + widthGain * leftCross;
+                        rightOutput = baseRight + widthGain * rightCross;
+                    }
+
+                    // Apply anti-aliasing filter to each channel separately for true stereo
+                    float filteredLeft = doAntiAlias
+                        ? antiAliasFilterLeftStage2[ch].processWithAlpha(
+                            antiAliasFilterLeft[ch].processWithAlpha(leftOutput, antiAliasAlpha),
+                            antiAliasAlpha)
+                        : leftOutput;
+                    float filteredRight = doAntiAlias
+                        ? antiAliasFilterRightStage2[ch].processWithAlpha(
+                            antiAliasFilterRight[ch].processWithAlpha(rightOutput, antiAliasAlpha),
+                            antiAliasAlpha)
+                        : rightOutput;
+
+                    finalLeft += filteredLeft;
+                    finalRight += filteredRight;
+                }
+            } else {
+                for (int os = 0; os < oversample; os++) {
+
+                    // Add subtle phase noise for organic character (scaled by shaped user amount)
+                    phase1A[ch] += deltaPhase1A + noise1A[ch] * noiseScale;
+                    phase1B[ch] += deltaPhase1B + noise1B[ch] * noiseScale;
+                    phase2A[ch] += deltaPhase2A + noise2A[ch] * noiseScale;
+                    phase2B[ch] += deltaPhase2B + noise2B[ch] * noiseScale;
+
+                    wrapPhase(phase1A[ch]);
+                    wrapPhase(phase1B[ch]);
+                    wrapPhase(phase2A[ch]);
+                    wrapPhase(phase2B[ch]);
+
+                    // Apply sync - reset B oscillator to match A when synced
+                    if (sync1 && phase1A[ch] < deltaPhase1A) {
+                        phase1B[ch] = phase1A[ch];
+                    }
+                    if (sync2 && phase2A[ch] < deltaPhase2A) {
+                        phase2B[ch] = phase2A[ch];
+                    }
+
                     // Sigmoid saw mode (default)
-                    osc1A = shapetaker::dsp::OscillatorHelper::organicSigmoidSaw(phase1A[ch], shape1, freq1A, oversampleRate);
-                    osc1B = shapetaker::dsp::OscillatorHelper::organicSigmoidSaw(phase1B[ch], shape1, freq1B, oversampleRate);
-                    osc2A = shapetaker::dsp::OscillatorHelper::organicSigmoidSaw(phase2A[ch], shape2, freq2A, oversampleRate);
-                    osc2B = shapetaker::dsp::OscillatorHelper::organicSigmoidSaw(phase2B[ch], shape2, freq2B, oversampleRate);
+                    float osc1A = shapetaker::dsp::OscillatorHelper::organicSigmoidSaw(phase1A[ch], shape1, freq1A, oversampleRate);
+                    float osc1B = shapetaker::dsp::OscillatorHelper::organicSigmoidSaw(phase1B[ch], shape1, freq1B, oversampleRate);
+                    float osc2A = shapetaker::dsp::OscillatorHelper::organicSigmoidSaw(phase2A[ch], shape2, freq2A, oversampleRate);
+                    float osc2B = shapetaker::dsp::OscillatorHelper::organicSigmoidSaw(phase2B[ch], shape2, freq2B, oversampleRate);
+
+                    float leftOutput;
+                    float rightOutput;
+
+                    // Use pre-calculated trig values to avoid sin/cos in hot loop
+                    if (!stereoSwap) {
+                        leftOutput = osc1A * xfadeCos + osc2A * xfadeSin;
+                        rightOutput = osc1B * xfadeCos + osc2B * xfadeSin;
+                    } else {
+                        float baseLeft = osc1A * xfadeCos + osc2B * xfadeSin;
+                        float baseRight = osc1B * xfadeCos + osc2A * xfadeSin;
+                        // Out-of-phase crossfeed widens and makes swap distinct from equal-power
+                        float leftCross = -(osc1B * (1.f - xfadeClamped) + osc2A * xfadeClamped);
+                        float rightCross = -(osc1A * (1.f - xfadeClamped) + osc2B * xfadeClamped);
+                        leftOutput = baseLeft + widthGain * leftCross;
+                        rightOutput = baseRight + widthGain * rightCross;
+                    }
+
+                    // Apply anti-aliasing filter to each channel separately for true stereo
+                    float filteredLeft = doAntiAlias
+                        ? antiAliasFilterLeftStage2[ch].processWithAlpha(
+                            antiAliasFilterLeft[ch].processWithAlpha(leftOutput, antiAliasAlpha),
+                            antiAliasAlpha)
+                        : leftOutput;
+                    float filteredRight = doAntiAlias
+                        ? antiAliasFilterRightStage2[ch].processWithAlpha(
+                            antiAliasFilterRight[ch].processWithAlpha(rightOutput, antiAliasAlpha),
+                            antiAliasAlpha)
+                        : rightOutput;
+
+                    finalLeft += filteredLeft;
+                    finalRight += filteredRight;
                 }
-
-                float leftOutput;
-                float rightOutput;
-
-                // Use pre-calculated trig values to avoid sin/cos in hot loop
-                if (!stereoSwap) {
-                    leftOutput = osc1A * xfadeCos + osc2A * xfadeSin;
-                    rightOutput = osc1B * xfadeCos + osc2B * xfadeSin;
-                } else {
-                    float baseLeft = osc1A * xfadeCos + osc2B * xfadeSin;
-                    float baseRight = osc1B * xfadeCos + osc2A * xfadeSin;
-                    // Out-of-phase crossfeed widens and makes swap distinct from equal-power
-                    float leftCross = -(osc1B * (1.f - xfadeClamped) + osc2A * xfadeClamped);
-                    float rightCross = -(osc1A * (1.f - xfadeClamped) + osc2B * xfadeClamped);
-                    leftOutput = baseLeft + widthGain * leftCross;
-                    rightOutput = baseRight + widthGain * rightCross;
-                }
-
-                // Apply anti-aliasing filter to each channel separately for true stereo
-                float filteredLeft = doAntiAlias
-                    ? antiAliasFilterLeftStage2[ch].processWithAlpha(
-                        antiAliasFilterLeft[ch].processWithAlpha(leftOutput, antiAliasAlpha),
-                        antiAliasAlpha)
-                    : leftOutput;
-                float filteredRight = doAntiAlias
-                    ? antiAliasFilterRightStage2[ch].processWithAlpha(
-                        antiAliasFilterRight[ch].processWithAlpha(rightOutput, antiAliasAlpha),
-                        antiAliasAlpha)
-                    : rightOutput;
-
-                finalLeft += filteredLeft;
-                finalRight += filteredRight;
             }
             
             // Average the oversampled result for this voice
@@ -502,7 +677,7 @@ struct ClairaudientModule : Module, IOscilloscopeSource {
                 outR += nR;
             }
 
-            if (highCutEnabled && highCutAlpha > 0.f) {
+            if (highCutEnabledLocal && highCutAlpha > 0.f) {
                 outL = highCutFilterLeft[ch].processWithAlpha(outL, highCutAlpha);
                 outR = highCutFilterRight[ch].processWithAlpha(outR, highCutAlpha);
             }
@@ -529,52 +704,65 @@ struct ClairaudientModule : Module, IOscilloscopeSource {
                 if (oscilloscopeFrameCounter >= downsampleFactor) {
                     oscilloscopeFrameCounter = 0;
                     
-                    int currentIndex = oscilloscopeBufferIndex.load();
+                    int currentIndex = oscilloscopeBufferIndex.load(std::memory_order_relaxed);
                     // Store the current output voltages in the circular buffer
-                    oscilloscopeBuffer[currentIndex] = Vec(outL, outR);
-                    oscilloscopeBufferIndex.store((currentIndex + 1) % OSCILLOSCOPE_BUFFER_SIZE);
+                    oscilloscopeBufferPacked[currentIndex].store(packVec(outL, outR), std::memory_order_relaxed);
+                    oscilloscopeBufferIndex.store((currentIndex + 1) % OSCILLOSCOPE_BUFFER_SIZE, std::memory_order_release);
                 }
             }
         }
+
     }
 
     // --- IOscilloscopeSource Implementation ---
-    const Vec* getOscilloscopeBuffer() const override { return oscilloscopeBuffer; }
-    int getOscilloscopeBufferIndex() const override { return oscilloscopeBufferIndex.load(); }
+    const Vec* getOscilloscopeBuffer() const override {
+        int snapshot = oscilloscopeBufferIndex.load(std::memory_order_acquire);
+        oscilloscopeReadIndex = snapshot;
+        for (int i = 0; i < OSCILLOSCOPE_BUFFER_SIZE; ++i) {
+            uint64_t packed = oscilloscopeBufferPacked[i].load(std::memory_order_relaxed);
+            oscilloscopeBuffer[i] = unpackVec(packed);
+        }
+        return oscilloscopeBuffer;
+    }
+    int getOscilloscopeBufferIndex() const override { return oscilloscopeReadIndex; }
     int getOscilloscopeBufferSize() const override { return OSCILLOSCOPE_BUFFER_SIZE; }
-    int getOscilloscopeTheme() const override { return oscilloscopeTheme; }
+    int getOscilloscopeTheme() const override { return oscilloscopeTheme.load(std::memory_order_relaxed); }
 
 private:
     // Update organic drift and noise for more natural sound (per voice)
-    void updateOrganicDrift(int voice, float sampleTime, float amount) {
+    void updateOrganicDrift(int voice, float sampleTime, float amount, bool updateDrift) {
         amount = clamp(amount, 0.f, 1.f);
         if (amount <= 0.f) {
             drift1A[voice] = drift1B[voice] = drift2A[voice] = drift2B[voice] = 0.f;
             noise1A[voice] = noise1B[voice] = noise2A[voice] = noise2B[voice] = 0.f;
             return;
         }
-        // Very slow random walk for frequency drift (like analog oscillator aging)
-        const float baseDriftSpeed = 0.00002f;
-        float driftSpeed = baseDriftSpeed * amount;
+        uint32_t& rng = rngState[voice];
 
-        drift1A[voice] += (rack::random::uniform() - 0.5f) * driftSpeed * sampleTime;
-        drift1B[voice] += (rack::random::uniform() - 0.5f) * driftSpeed * sampleTime;
-        drift2A[voice] += (rack::random::uniform() - 0.5f) * driftSpeed * sampleTime;
-        drift2B[voice] += (rack::random::uniform() - 0.5f) * driftSpeed * sampleTime;
+        if (updateDrift) {
+            // Very slow random walk for frequency drift (like analog oscillator aging)
+            const float baseDriftSpeed = 0.00002f;
+            float driftSpeed = baseDriftSpeed * amount;
 
-        // Limit drift to very small amounts (about ±1.2 cents at full amount)
-        const float driftLimit = 0.001f * amount;
-        drift1A[voice] = clamp(drift1A[voice], -driftLimit, driftLimit);
-        drift1B[voice] = clamp(drift1B[voice], -driftLimit, driftLimit);
-        drift2A[voice] = clamp(drift2A[voice], -driftLimit, driftLimit);
-        drift2B[voice] = clamp(drift2B[voice], -driftLimit, driftLimit);
+            drift1A[voice] += fastUniformSigned(rng) * driftSpeed * sampleTime;
+            drift1B[voice] += fastUniformSigned(rng) * driftSpeed * sampleTime;
+            drift2A[voice] += fastUniformSigned(rng) * driftSpeed * sampleTime;
+            drift2B[voice] += fastUniformSigned(rng) * driftSpeed * sampleTime;
 
-        // Generate subtle phase noise
+            // Limit drift to very small amounts (about ±1.2 cents at full amount)
+            const float driftLimit = 0.001f * amount;
+            drift1A[voice] = clamp(drift1A[voice], -driftLimit, driftLimit);
+            drift1B[voice] = clamp(drift1B[voice], -driftLimit, driftLimit);
+            drift2A[voice] = clamp(drift2A[voice], -driftLimit, driftLimit);
+            drift2B[voice] = clamp(drift2B[voice], -driftLimit, driftLimit);
+        }
+
+        // Generate subtle phase noise (keep per-sample updates to avoid dulling)
         float noiseScale = amount;
-        noise1A[voice] = (rack::random::uniform() - 0.5f) * 2.f * noiseScale;
-        noise1B[voice] = (rack::random::uniform() - 0.5f) * 2.f * noiseScale;
-        noise2A[voice] = (rack::random::uniform() - 0.5f) * 2.f * noiseScale;
-        noise2B[voice] = (rack::random::uniform() - 0.5f) * 2.f * noiseScale;
+        noise1A[voice] = fastUniformSigned(rng) * noiseScale;
+        noise1B[voice] = fastUniformSigned(rng) * noiseScale;
+        noise2A[voice] = fastUniformSigned(rng) * noiseScale;
+        noise2B[voice] = fastUniformSigned(rng) * noiseScale;
     }
 };
 
@@ -600,7 +788,7 @@ struct ClairaudientWidget : ModuleWidget {
         nvgBeginPath(args.vg);
         nvgRect(args.vg, 0.f, 0.f, box.size.x, box.size.y);
         nvgStrokeColor(args.vg, nvgRGB(0, 0, 0));
-        nvgStrokeWidth(args.vg, 2.0f);
+        nvgStrokeWidth(args.vg, 1.0f);
         nvgStroke(args.vg);
     }
 
@@ -697,12 +885,13 @@ struct ClairaudientWidget : ModuleWidget {
         struct VQuantizeItem : MenuItem {
             ClairaudientModule* module;
             void onAction(const event::Action& e) override {
-                module->quantizeOscV = !module->quantizeOscV;
+                bool newValue = !module->quantizeOscV.load(std::memory_order_relaxed);
+                module->quantizeOscV.store(newValue, std::memory_order_relaxed);
                 module->updateParameterSnapping();
             }
         };
         VQuantizeItem* vQuantizeItem = createMenuItem<VQuantizeItem>("V Oscillator Quantized");
-        vQuantizeItem->rightText = module->quantizeOscV ? "✓" : "";
+        vQuantizeItem->rightText = module->quantizeOscV.load(std::memory_order_relaxed) ? "✓" : "";
         vQuantizeItem->module = module;
         menu->addChild(vQuantizeItem);
 
@@ -710,26 +899,31 @@ struct ClairaudientWidget : ModuleWidget {
         struct ZQuantizeItem : MenuItem {
             ClairaudientModule* module;
             void onAction(const event::Action& e) override {
-                module->quantizeOscZ = !module->quantizeOscZ;
+                bool newValue = !module->quantizeOscZ.load(std::memory_order_relaxed);
+                module->quantizeOscZ.store(newValue, std::memory_order_relaxed);
                 module->updateParameterSnapping();
             }
         };
         ZQuantizeItem* zQuantizeItem = createMenuItem<ZQuantizeItem>("Z Oscillator Quantized");
-        zQuantizeItem->rightText = module->quantizeOscZ ? "✓" : "";
+        zQuantizeItem->rightText = module->quantizeOscZ.load(std::memory_order_relaxed) ? "✓" : "";
         zQuantizeItem->module = module;
         menu->addChild(zQuantizeItem);
 
-        menu->addChild(createSubmenuItem("Oscilloscope Background", "", [=](Menu* subMenu) {
-            auto addThemeItem = [&](const std::string& label, int theme) {
-                subMenu->addChild(createCheckMenuItem(label, "", [=] { return module->oscilloscopeTheme == theme; }, [=] {
-                    module->oscilloscopeTheme = theme;
-                }));
+        // Oscilloscope theme submenu - using centralized DisplayTheme system
+        menu->addChild(createSubmenuItem("Oscilloscope Theme", "", [=](Menu* subMenu) {
+            auto addThemeItem = [&](int theme, const char* name) {
+                subMenu->addChild(createCheckMenuItem(
+                    name,
+                    "",
+                    [=] { return module->oscilloscopeTheme.load(std::memory_order_relaxed) == theme; },
+                    [=] { module->oscilloscopeTheme.store(theme, std::memory_order_relaxed); }
+                ));
             };
 
-            addThemeItem("Green", ClairaudientModule::OSCOPE_GREEN);
-            addThemeItem("Blue", ClairaudientModule::OSCOPE_BLUE);
-            addThemeItem("Yellow", ClairaudientModule::OSCOPE_YELLOW);
-            addThemeItem("Amber", ClairaudientModule::OSCOPE_AMBER);
+            addThemeItem(shapetaker::ui::ThemeManager::DisplayTheme::PHOSPHOR, "Phosphor");
+            addThemeItem(shapetaker::ui::ThemeManager::DisplayTheme::ICE, "Ice");
+            addThemeItem(shapetaker::ui::ThemeManager::DisplayTheme::SOLAR, "Solar");
+            addThemeItem(shapetaker::ui::ThemeManager::DisplayTheme::AMBER, "Amber");
         }));
 
         // Oscillator noise amount slider (0..100%)
@@ -737,8 +931,8 @@ struct ClairaudientWidget : ModuleWidget {
         menu->addChild(createMenuLabel("Oscillator Noise"));
         menu->addChild(shapetaker::ui::createPercentageSlider(
             module,
-            [](ClairaudientModule* m, float v) { m->oscNoiseAmount = v; },
-            [](ClairaudientModule* m) { return m->oscNoiseAmount; },
+            [](ClairaudientModule* m, float v) { m->oscNoiseAmount.store(v, std::memory_order_relaxed); },
+            [](ClairaudientModule* m) { return m->oscNoiseAmount.load(std::memory_order_relaxed); },
             "Noise"
         ));
 
@@ -746,24 +940,25 @@ struct ClairaudientWidget : ModuleWidget {
         menu->addChild(createMenuLabel("Organic Drift"));
         menu->addChild(shapetaker::ui::createPercentageSlider(
             module,
-            [](ClairaudientModule* m, float v) { m->driftAmount = v; },
-            [](ClairaudientModule* m) { return m->driftAmount; },
+            [](ClairaudientModule* m, float v) { m->driftAmount.store(v, std::memory_order_relaxed); },
+            [](ClairaudientModule* m) { return m->driftAmount.load(std::memory_order_relaxed); },
             "Drift"
         ));
 
         menu->addChild(new MenuSeparator);
         menu->addChild(createMenuLabel("Tone Options"));
 
-        menu->addChild(createCheckMenuItem("High Cut Enabled", "", [=] { return module->highCutEnabled; }, [=] {
-            module->highCutEnabled = !module->highCutEnabled;
-            module->resetFilters();
+        menu->addChild(createCheckMenuItem("High Cut Enabled", "", [=] { return module->highCutEnabled.load(std::memory_order_relaxed); }, [=] {
+            bool newValue = !module->highCutEnabled.load(std::memory_order_relaxed);
+            module->highCutEnabled.store(newValue, std::memory_order_relaxed);
+            module->pendingFilterReset.store(true, std::memory_order_relaxed);
         }));
 
         menu->addChild(createSubmenuItem("Oversampling", "", [=](Menu* subMenu) {
             auto addOversampleItem = [&](const std::string& label, int factor) {
-                subMenu->addChild(createCheckMenuItem(label, "", [=] { return module->oversampleFactor == factor; }, [=] {
-                    module->oversampleFactor = factor;
-                    module->resetFilters();
+                subMenu->addChild(createCheckMenuItem(label, "", [=] { return module->oversampleFactor.load(std::memory_order_relaxed) == factor; }, [=] {
+                    module->oversampleFactor.store(factor, std::memory_order_relaxed);
+                    module->pendingFilterReset.store(true, std::memory_order_relaxed);
                 }));
             };
 
@@ -777,8 +972,8 @@ struct ClairaudientWidget : ModuleWidget {
         menu->addChild(createMenuLabel("Waveform Mode"));
 
         auto addWaveformModeItem = [&](const std::string& label, int mode) {
-            menu->addChild(createCheckMenuItem(label, "", [=] { return module->waveformMode == mode; }, [=] {
-                module->waveformMode = mode;
+            menu->addChild(createCheckMenuItem(label, "", [=] { return module->waveformMode.load(std::memory_order_relaxed) == mode; }, [=] {
+                module->waveformMode.store(mode, std::memory_order_relaxed);
             }));
         };
 
@@ -789,8 +984,8 @@ struct ClairaudientWidget : ModuleWidget {
         menu->addChild(createMenuLabel("Crossfade Curve"));
 
         auto addCrossfadeModeItem = [&](const std::string& label, int mode) {
-            menu->addChild(createCheckMenuItem(label, "", [=] { return module->crossfadeMode == mode; }, [=] {
-                module->crossfadeMode = mode;
+            menu->addChild(createCheckMenuItem(label, "", [=] { return module->crossfadeMode.load(std::memory_order_relaxed) == mode; }, [=] {
+                module->crossfadeMode.store(mode, std::memory_order_relaxed);
             }));
         };
 

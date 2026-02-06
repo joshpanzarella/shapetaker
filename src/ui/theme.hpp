@@ -248,11 +248,204 @@ public:
             nvgRestore(vg);
         }
     };
-    
+
+    // ============================================================================
+    // DISPLAY THEMES (CRT/OLED/OSCILLOSCOPE)
+    // ============================================================================
+
+    /**
+     * Standardized display color themes for CRT, OLED, and oscilloscope displays
+     * across all Shapetaker modules. Provides consistent visual identity.
+     */
+    class DisplayTheme {
+    public:
+        /**
+         * Display theme enumeration - consistent across all modules
+         */
+        enum Theme {
+            PHOSPHOR = 0,  // Classic green phosphor CRT
+            ICE = 1,       // Cool cyan/blue (easier to see than pure blue)
+            SOLAR = 2,     // Warm yellow/gold
+            AMBER = 3,     // Classic amber CRT
+            THEME_COUNT = 4
+        };
+
+        /**
+         * Theme names for menu display
+         */
+        static const char* getThemeName(Theme theme) {
+            static const char* names[THEME_COUNT] = {
+                "Phosphor",  // Green CRT terminal
+                "Ice",       // Cyan (not blue - easier to see)
+                "Solar",     // Yellow/Gold
+                "Amber"      // Warm orange
+            };
+            return names[clamp((int)theme, 0, THEME_COUNT - 1)];
+        }
+
+        /**
+         * Primary theme color (for traces, waveforms, text)
+         */
+        static NVGcolor getPrimaryColor(Theme theme, float alpha = 1.0f) {
+            switch (theme) {
+                case PHOSPHOR: return nvgRGBAf(0.0f, 1.0f, 0.27f, alpha);     // Vibrant green
+                case ICE:      return nvgRGBAf(0.0f, 0.90f, 1.0f, alpha);     // Bright cyan (easier to see)
+                case SOLAR:    return nvgRGBAf(1.0f, 0.93f, 0.27f, alpha);    // Bright yellow
+                case AMBER:    return nvgRGBAf(1.0f, 0.69f, 0.0f, alpha);     // Classic amber
+                default:       return nvgRGBAf(0.0f, 1.0f, 0.27f, alpha);
+            }
+        }
+
+        /**
+         * Background glow color (inner radial gradient)
+         */
+        static NVGcolor getGlowInnerColor(Theme theme) {
+            switch (theme) {
+                case PHOSPHOR: return nvgRGBA(0, 150, 130, 55);    // Teal glow
+                case ICE:      return nvgRGBA(0, 160, 200, 55);    // Cyan glow (more green, less blue)
+                case SOLAR:    return nvgRGBA(180, 160, 40, 55);   // Warm yellow glow
+                case AMBER:    return nvgRGBA(160, 90, 30, 55);    // Amber glow
+                default:       return nvgRGBA(0, 150, 130, 55);
+            }
+        }
+
+        /**
+         * Background glow color (outer radial gradient)
+         */
+        static NVGcolor getGlowOuterColor(Theme theme) {
+            switch (theme) {
+                case PHOSPHOR: return nvgRGBA(0, 40, 40, 0);      // Dark teal fade
+                case ICE:      return nvgRGBA(0, 45, 55, 0);      // Dark cyan fade
+                case SOLAR:    return nvgRGBA(50, 45, 10, 0);     // Dark yellow fade
+                case AMBER:    return nvgRGBA(60, 25, 5, 0);      // Dark amber fade
+                default:       return nvgRGBA(0, 40, 40, 0);
+            }
+        }
+
+        /**
+         * Phosphor persistence glow (inner)
+         */
+        static NVGcolor getPhosphorInnerColor(Theme theme) {
+            switch (theme) {
+                case PHOSPHOR: return nvgRGBA(0, 180, 120, 8);    // Green phosphor
+                case ICE:      return nvgRGBA(0, 200, 240, 10);   // Bright cyan phosphor
+                case SOLAR:    return nvgRGBA(220, 200, 80, 10);  // Yellow phosphor
+                case AMBER:    return nvgRGBA(220, 120, 50, 10);  // Amber phosphor
+                default:       return nvgRGBA(0, 180, 120, 8);
+            }
+        }
+
+        /**
+         * Phosphor persistence glow (outer)
+         */
+        static NVGcolor getPhosphorOuterColor(Theme theme) {
+            switch (theme) {
+                case PHOSPHOR: return nvgRGBA(0, 60, 40, 0);      // Dark green fade
+                case ICE:      return nvgRGBA(30, 60, 80, 0);     // Dark cyan fade
+                case SOLAR:    return nvgRGBA(70, 60, 20, 0);     // Dark yellow fade
+                case AMBER:    return nvgRGBA(70, 30, 8, 0);      // Dark amber fade
+                default:       return nvgRGBA(0, 60, 40, 0);
+            }
+        }
+
+        /**
+         * Trace color for oscilloscope/waveform (dim state)
+         */
+        static void getTraceDimRGB(Theme theme, float& r, float& g, float& b) {
+            switch (theme) {
+                case PHOSPHOR: r = 0.15f; g = 0.80f; b = 0.25f; break;  // Dim green
+                case ICE:      r = 0.00f; g = 0.65f; b = 0.75f; break;  // Dim cyan (more visible)
+                case SOLAR:    r = 0.75f; g = 0.70f; b = 0.15f; break;  // Dim yellow
+                case AMBER:    r = 0.55f; g = 0.28f; b = 0.10f; break;  // Dim amber
+                default:       r = 0.15f; g = 0.80f; b = 0.25f; break;
+            }
+        }
+
+        /**
+         * Trace color for oscilloscope/waveform (bright state)
+         */
+        static void getTraceBrightRGB(Theme theme, float& r, float& g, float& b) {
+            switch (theme) {
+                case PHOSPHOR: r = 0.30f; g = 0.85f; b = 0.40f; break;  // Bright green
+                case ICE:      r = 0.00f; g = 0.90f; b = 1.00f; break;  // Bright cyan (vibrant)
+                case SOLAR:    r = 1.00f; g = 0.93f; b = 0.27f; break;  // Bright yellow
+                case AMBER:    r = 0.85f; g = 0.48f; b = 0.15f; break;  // Bright amber
+                default:       r = 0.30f; g = 0.85f; b = 0.40f; break;
+            }
+        }
+
+        /**
+         * Get SVG asset path for themed oscilloscope screen
+         */
+        static const char* getOscilloscopeScreenSVG(Theme theme) {
+            static const char* paths[THEME_COUNT] = {
+                "res/meters/vintage_oscope_screen.svg",       // Phosphor (green - default)
+                "res/meters/vintage_oscope_screen_blue.svg",  // Ice (cyan/blue)
+                "res/meters/vintage_oscope_screen_yellow.svg",// Solar (yellow)
+                "res/meters/vintage_oscope_screen_amber.svg"  // Amber (orange)
+            };
+            return paths[clamp((int)theme, 0, THEME_COUNT - 1)];
+        }
+
+        /**
+         * Grid color for CRT displays
+         */
+        static NVGcolor getGridColor(Theme theme, int alpha = 20) {
+            switch (theme) {
+                case PHOSPHOR: return nvgRGBA(0, 200, 60, alpha);     // Green grid
+                case ICE:      return nvgRGBA(80, 180, 255, alpha);   // Cyan grid
+                case SOLAR:    return nvgRGBA(220, 200, 60, alpha);   // Yellow grid
+                case AMBER:    return nvgRGBA(200, 120, 0, alpha);    // Amber grid
+                default:       return nvgRGBA(0, 200, 60, alpha);
+            }
+        }
+
+        /**
+         * Background colors for CRT screens (inner/outer gradient)
+         */
+        static void getBackgroundColors(Theme theme, NVGcolor& inner, NVGcolor& outer) {
+            switch (theme) {
+                case PHOSPHOR:
+                    inner = nvgRGB(16, 24, 16);  // Green-tinted dark
+                    outer = nvgRGB(8, 11, 8);
+                    break;
+                case ICE:
+                    inner = nvgRGB(18, 22, 30);  // Blue-tinted dark
+                    outer = nvgRGB(8, 10, 14);
+                    break;
+                case SOLAR:
+                    inner = nvgRGB(28, 26, 14);  // Yellow-tinted dark
+                    outer = nvgRGB(12, 11, 6);
+                    break;
+                case AMBER:
+                    inner = nvgRGB(28, 20, 14);  // Amber-tinted dark
+                    outer = nvgRGB(12, 9, 6);
+                    break;
+                default:
+                    inner = nvgRGB(16, 24, 16);
+                    outer = nvgRGB(8, 11, 8);
+                    break;
+            }
+        }
+
+        /**
+         * LED/jewel light color for themed modules
+         */
+        static NVGcolor getLEDColor(Theme theme) {
+            switch (theme) {
+                case PHOSPHOR: return nvgRGB(0, 255, 80);      // Bright green
+                case ICE:      return nvgRGB(100, 200, 255);   // Bright cyan
+                case SOLAR:    return nvgRGB(255, 230, 80);    // Bright yellow
+                case AMBER:    return nvgRGB(255, 160, 0);     // Bright amber
+                default:       return nvgRGB(0, 255, 80);
+            }
+        }
+    };
+
     // ============================================================================
     // WIDGET STYLING
     // ============================================================================
-    
+
     /**
      * Standard widget appearance settings
      */

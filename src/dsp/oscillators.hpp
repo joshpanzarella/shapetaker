@@ -13,6 +13,38 @@ namespace dsp {
 
 class OscillatorHelper {
 public:
+    static float softenShapeEdges(float shape) {
+        constexpr float knee = 0.02f; // 2% knee for gentle edge smoothing
+        // Allow a small overshoot so CV hitting the rails doesn't hard-clip.
+        if (shape < 0.f) {
+            float t = (shape + knee) / knee;
+            if (t <= 0.f) {
+                return 0.f;
+            }
+            float eased = (-t * t * t + 2.f * t * t) * knee;
+            return eased;
+        }
+        if (shape > 1.f) {
+            float t = (1.f + knee - shape) / knee;
+            if (t <= 0.f) {
+                return 1.f;
+            }
+            float eased = (-t * t * t + 2.f * t * t) * knee;
+            return 1.f - eased;
+        }
+        if (shape < knee) {
+            float t = shape / knee;
+            float eased = (-t * t * t + 2.f * t * t) * knee;
+            return eased;
+        }
+        if (shape > 1.f - knee) {
+            float t = (1.f - shape) / knee;
+            float eased = (-t * t * t + 2.f * t * t) * knee;
+            return 1.f - eased;
+        }
+        return shape;
+    }
+
     // Generate basic waveforms
     static float sine(float phase) {
         return std::sin(2.f * M_PI * phase);
@@ -64,17 +96,15 @@ public:
 
     // Sigmoid-morphed saw with subtle organic coloration
     static float organicSigmoidSaw(float phase, float shape, float freq, float sampleRate) {
-        shape = rack::math::clamp(shape, 0.f, 1.f);
+        shape = softenShapeEdges(shape);
         // Emphasize the midpoint so modulation sweeps feel more dramatic
-        float emphasizedShape = 1.f - std::pow(1.f - shape, 1.5f);
+        float emphasizedShape = 1.f - std::pow(1.f - shape, 1.6f);
 
-        // Linear sawtooth baseline
+        // Linear sawtooth baseline (softened to match historical output level)
         float linearSaw = 2.f * phase - 1.f;
-        if (shape < 0.001f) {
-            return std::tanh(linearSaw * 1.02f) * 0.98f;
-        }
+        float baseSaw = std::tanh(linearSaw * 1.02f) * 0.98f;
 
-        float range = 3.f + emphasizedShape * 9.f;
+        float range = 3.f + emphasizedShape * 10.f;
         float sigmoidInput = (phase - 0.5f) * range * 2.f;
 
         // Subtle harmonic bias tied to phase
@@ -95,7 +125,12 @@ public:
             result += air;
         }
 
-        return std::tanh(result * 1.05f) * 0.95f;
+        float shaped = std::tanh(result * 1.05f) * 0.95f;
+
+        // Smoothly fade in the shaping near zero to avoid a discontinuity when modulation hits the floor.
+        float lowShape = rack::math::clamp(shape * 500.f, 0.f, 1.f); // ~0..0.002
+        lowShape = lowShape * lowShape * (3.f - 2.f * lowShape); // smoothstep
+        return rack::math::crossfade(baseSaw, shaped, lowShape);
     }
 
     static float equalPowerMix(float a, float b, float t) {

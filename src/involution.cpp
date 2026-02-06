@@ -192,7 +192,8 @@ struct Involution : Module {
     float effectiveCutoffB = 1.0f;
     float chaosRateBlinkPhase = 0.f;
 
-    // Chaos visualizer screen color theme (0=Cyan, 1=Amber, 2=Phosphor, 3=Ice)
+    // Chaos visualizer screen color theme - uses centralized DisplayTheme system
+    // 0=Phosphor (Green), 1=Ice (Cyan), 2=Solar (Yellow), 3=Amber (Orange)
     int chaosTheme = 0;
 
     Involution() {
@@ -939,28 +940,34 @@ struct InvolutionWidget : ModuleWidget {
         setModule(module);
         setPanel(APP->window->loadSvg(asset::plugin(pluginInstance, "res/panels/Involution.svg")));
 
-        addChild(createWidget<ScrewBlack>(Vec(RACK_GRID_WIDTH, 0)));
-        addChild(createWidget<ScrewBlack>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, 0)));
-        addChild(createWidget<ScrewBlack>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
-        addChild(createWidget<ScrewBlack>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
+        using LayoutHelper = shapetaker::ui::LayoutHelper;
+
+        LayoutHelper::ScrewPositions::addStandardScrews<ScrewJetBlack>(this, box.size.x);
 
         // Create positioning helper from SVG panel
-        using LayoutHelper = shapetaker::ui::LayoutHelper;
         auto centerPx = LayoutHelper::createCenterPxHelper(
             asset::plugin(pluginInstance, "res/panels/Involution.svg")
         );
-        
-        // Main Filter Section - using SVG parser for automatic positioning
-        addParam(createParamCentered<ShapetakerDavies1900hXLargeDot>(
+
+        // Use global shadow helper from plugin.hpp
+        auto addKnobWithShadow = [this](app::ParamWidget* knob) {
+            ::addKnobWithShadow(this, knob);
+        };
+
+        // Main Filter Section - vintage knobs with shadows (hardware-realistic sizing)
+        // Cutoff knobs: Extra large vintage (22mm) for main frequency controls
+        addKnobWithShadow(createParamCentered<ShapetakerKnobVintageXLarge>(
             centerPx("cutoff_v", 24.026f, 24.174f),
             module, Involution::CUTOFF_A_PARAM));
-        addParam(createParamCentered<ShapetakerDavies1900hSmallDot>(
-            centerPx("resonance_v", 11.935f, 57.750f),
-            module, Involution::RESONANCE_A_PARAM));
-        addParam(createParamCentered<ShapetakerDavies1900hXLargeDot>(
+        addKnobWithShadow(createParamCentered<ShapetakerKnobVintageXLarge>(
             centerPx("cutoff_z", 66.305f, 24.174f),
             module, Involution::CUTOFF_B_PARAM));
-        addParam(createParamCentered<ShapetakerDavies1900hSmallDot>(
+
+        // Resonance knobs: Medium vintage (18mm) for secondary controls
+        addKnobWithShadow(createParamCentered<ShapetakerKnobVintageMedium>(
+            centerPx("resonance_v", 11.935f, 57.750f),
+            module, Involution::RESONANCE_A_PARAM));
+        addKnobWithShadow(createParamCentered<ShapetakerKnobVintageMedium>(
             centerPx("resonance_z", 78.397f, 57.750f),
             module, Involution::RESONANCE_B_PARAM));
         
@@ -972,27 +979,35 @@ struct InvolutionWidget : ModuleWidget {
             centerPx("link_resonance", 45.166f, 84.630f),
             module, Involution::LINK_RESONANCE_PARAM));
 
-        // Attenuverters for CV inputs
-        addParam(createParamCentered<ShapetakerAttenuverterOscilloscope>(
+        // Attenuverters for CV inputs - small vintage attenuverters with shadows (10mm)
+        addKnobWithShadow(createParamCentered<ShapetakerAttenuverterOscilloscope>(
             centerPx("cutoff_v_atten", 9.027f, 41.042f),
             module, Involution::CUTOFF_A_ATTEN_PARAM));
-        addParam(createParamCentered<ShapetakerAttenuverterOscilloscope>(
+        addKnobWithShadow(createParamCentered<ShapetakerAttenuverterOscilloscope>(
             centerPx("resonance_v_atten", 11.935f, 76.931f),
             module, Involution::RESONANCE_A_ATTEN_PARAM));
-        addParam(createParamCentered<ShapetakerAttenuverterOscilloscope>(
+        addKnobWithShadow(createParamCentered<ShapetakerAttenuverterOscilloscope>(
             centerPx("cutoff_z_atten", 81.305f, 41.042f),
             module, Involution::CUTOFF_B_ATTEN_PARAM));
-        addParam(createParamCentered<ShapetakerAttenuverterOscilloscope>(
+        addKnobWithShadow(createParamCentered<ShapetakerAttenuverterOscilloscope>(
             centerPx("resonance_z_atten", 78.397f, 76.931f),
             module, Involution::RESONANCE_B_ATTEN_PARAM));
 
-        // Character Controls - using SVG parser with fallbacks
+        // Character Controls - small-medium vintage knobs with shadows (15mm)
         // Highpass is now static at 12Hz - no control needed
         // Drive knob is fixed; reuse area for Aura/Orbit/Tide controls
-        addParam(createParamCentered<ShapetakerDavies1900hSmallDot>(centerPx("aura_knob", 15.910f, 94.088f), module, Involution::AURA_PARAM));
-        addParam(createParamCentered<ShapetakerDavies1900hSmallDot>(centerPx("orbit_knob", 45.166f, 94.088f), module, Involution::ORBIT_PARAM));
-        addParam(createParamCentered<ShapetakerDavies1900hSmallDot>(centerPx("tide_knob", 74.422f, 94.088f), module, Involution::TIDE_PARAM));
-        addParam(createParamCentered<ShapetakerAttenuverterOscilloscope>(centerPx("chaos_rate_knob", 60.922f, 108.088f), module, Involution::CHAOS_RATE_PARAM));
+        addKnobWithShadow(createParamCentered<ShapetakerKnobVintageSmallMedium>(
+            centerPx("aura_knob", 15.910f, 94.088f),
+            module, Involution::AURA_PARAM));
+        addKnobWithShadow(createParamCentered<ShapetakerKnobVintageSmallMedium>(
+            centerPx("orbit_knob", 45.166f, 94.088f),
+            module, Involution::ORBIT_PARAM));
+        addKnobWithShadow(createParamCentered<ShapetakerKnobVintageSmallMedium>(
+            centerPx("tide_knob", 74.422f, 94.088f),
+            module, Involution::TIDE_PARAM));
+        addKnobWithShadow(createParamCentered<ShapetakerAttenuverterOscilloscope>(
+            centerPx("chaos_rate_knob", 60.922f, 108.088f),
+            module, Involution::CHAOS_RATE_PARAM));
         
         // Chaos Visualizer - using SVG parser for automatic positioning
         ChaosVisualizer* chaosViz = new ChaosVisualizer(module);
@@ -1028,21 +1043,27 @@ struct InvolutionWidget : ModuleWidget {
         addOutput(createOutputCentered<ShapetakerBNCPort>(centerPx("audio_r_output", 81.706f, 119.347f), module, Involution::AUDIO_B_OUTPUT));
     }
 
-    // Draw leather texture background
+    // Draw panel background image (exported from Inkscape at exact panel size)
     void draw(const DrawArgs& args) override {
-        std::shared_ptr<Image> bg = APP->window->loadImage(asset::plugin(pluginInstance, "res/panels/black_leather_seamless.jpg"));
+        std::shared_ptr<Image> bg = APP->window->loadImage(asset::plugin(pluginInstance, "res/panels/panel_background.png"));
         if (bg) {
-            // Scale < 1.0 = finer grain appearance
-            float scale = 0.4f;
-            float textureHeight = box.size.y * scale;
-            float textureWidth = textureHeight * (1.f);
-            NVGpaint paint = nvgImagePattern(args.vg, 0.f, 0.f, textureWidth, textureHeight, 0.f, bg->handle, 1.0f);
+            // Draw image stretched to fill entire panel, no tiling
+            nvgSave(args.vg);
             nvgBeginPath(args.vg);
             nvgRect(args.vg, 0.f, 0.f, box.size.x, box.size.y);
+            NVGpaint paint = nvgImagePattern(args.vg, 0.f, 0.f, box.size.x, box.size.y, 0.f, bg->handle, 1.0f);
             nvgFillPaint(args.vg, paint);
             nvgFill(args.vg);
+            nvgRestore(args.vg);
         }
         ModuleWidget::draw(args);
+
+        // Draw black border on top to cover default gray panel border
+        nvgBeginPath(args.vg);
+        nvgRect(args.vg, 0.f, 0.f, box.size.x, box.size.y);
+        nvgStrokeColor(args.vg, nvgRGB(0, 0, 0));
+        nvgStrokeWidth(args.vg, 1.0f);
+        nvgStroke(args.vg);
     }
 
     void appendContextMenu(Menu* menu) override {
