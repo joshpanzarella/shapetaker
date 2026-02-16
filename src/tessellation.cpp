@@ -878,21 +878,48 @@ public:
 };
 
 struct TessellationWidget : ModuleWidget {
-    // Draw leather texture background
+    // Match Clairaudient background rendering
     void draw(const DrawArgs& args) override {
-        std::shared_ptr<Image> bg = APP->window->loadImage(asset::plugin(pluginInstance, "res/panels/black_leather_seamless.jpg"));
+        std::shared_ptr<Image> bg = APP->window->loadImage(asset::plugin(pluginInstance, "res/panels/panel_background.png"));
         if (bg) {
-            // Scale < 1.0 = finer grain appearance
-            float scale = 0.4f;
-            float textureHeight = box.size.y * scale;
-            float textureWidth = textureHeight * (1.f);
-            NVGpaint paint = nvgImagePattern(args.vg, 0.f, 0.f, textureWidth, textureHeight, 0.f, bg->handle, 1.0f);
+            // Keep the same leather grain density as Clairaudient by tiling at
+            // fixed height/aspect (no horizontal stretch on wider panels).
+            // A second low-alpha offset pass helps hide repeat seams.
+            constexpr float inset = 2.0f;
+            constexpr float textureAspect = 2880.f / 4553.f;  // panel_background.png
+            float tileH = box.size.y + inset * 2.f;
+            float tileW = tileH * textureAspect;
+            float x = -inset;
+            float y = -inset;
+            nvgSave(args.vg);
             nvgBeginPath(args.vg);
             nvgRect(args.vg, 0.f, 0.f, box.size.x, box.size.y);
-            nvgFillPaint(args.vg, paint);
+            NVGpaint paintA = nvgImagePattern(args.vg, x, y, tileW, tileH, 0.f, bg->handle, 1.0f);
+            nvgFillPaint(args.vg, paintA);
             nvgFill(args.vg);
+
+            nvgBeginPath(args.vg);
+            nvgRect(args.vg, 0.f, 0.f, box.size.x, box.size.y);
+            NVGpaint paintB = nvgImagePattern(args.vg, x + tileW * 0.5f, y, tileW, tileH, 0.f, bg->handle, 0.35f);
+            nvgFillPaint(args.vg, paintB);
+            nvgFill(args.vg);
+
+            nvgBeginPath(args.vg);
+            nvgRect(args.vg, 0.f, 0.f, box.size.x, box.size.y);
+            nvgFillColor(args.vg, nvgRGBA(0, 0, 0, 18));
+            nvgFill(args.vg);
+            nvgRestore(args.vg);
         }
         ModuleWidget::draw(args);
+
+        // Draw a black inner frame to fully mask any edge tinting
+        constexpr float frame = 1.0f;
+        nvgBeginPath(args.vg);
+        nvgRect(args.vg, 0.f, 0.f, box.size.x, box.size.y);
+        nvgRect(args.vg, frame, frame, box.size.x - 2.f * frame, box.size.y - 2.f * frame);
+        nvgPathWinding(args.vg, NVG_HOLE);
+        nvgFillColor(args.vg, nvgRGB(0, 0, 0));
+        nvgFill(args.vg);
     }
 
     TessellationWidget(Tessellation* module) {
@@ -901,14 +928,14 @@ struct TessellationWidget : ModuleWidget {
 
         using LayoutHelper = shapetaker::ui::LayoutHelper;
 
-        LayoutHelper::ScrewPositions::addStandardScrews<ScrewBlack>(this, box.size.x);
+        LayoutHelper::ScrewPositions::addStandardScrews<ScrewJetBlack>(this, box.size.x);
 
         auto svgPath = asset::plugin(pluginInstance, "res/panels/Tessellation.svg");
         LayoutHelper::PanelSVGParser parser(svgPath);
         auto centerPx = LayoutHelper::createCenterPxHelper(parser);
 
         // 26HP layout: 132.08mm wide × 128.5mm tall
-        // Control sizes: Medium knob = 20mm, Small knob = 16mm, Jack = 8mm
+        // Control sizes: Medium knob ~= 20mm, Small knob = 15mm, Jack = 8mm
         // Safe zone: 8mm margin on each edge (knob radius) = 116mm usable width
 
         // Custom RGB light colors matching the screen visualization
@@ -918,98 +945,111 @@ struct TessellationWidget : ModuleWidget {
         const std::array<const char*, 3> mixLightPositions = {
             "tess-mix1-light", "tess-mix2-light", "tess-mix3-light"
         };
-        auto addMixLights = [&](float knobCol, int mixLightId, float rowPos, int delayIndex) {
+        const std::array<Vec, 3> mixLightFallbackMm = {
+            Vec(59.925152f, 31.278572f),
+            Vec(59.925152f, 56.580421f),
+            Vec(59.925152f, 81.884483f)
+        };
+        auto addMixLights = [&](int mixLightId, int delayIndex) {
             if (!module) return;
             // Use RGB lights - all use the same type, color is set by brightness values
             addChild(createLightCentered<TessellationJewelLED>(
-                centerPx(mixLightPositions[delayIndex], knobCol - 8.f, rowPos - 3.f), module, mixLightId));
-            (void)delayIndex;  // Unused, color is set by RGB brightness values in process()
+                centerPx(mixLightPositions[delayIndex], mixLightFallbackMm[delayIndex].x, mixLightFallbackMm[delayIndex].y),
+                module, mixLightId));
         };
 
-        // Row positions (verified against 128.5mm panel height)
-        const float row1 = 18.f;   // TIME1 + TAP
-        const float row2 = 36.f;   // SUBDIV2, TIME2, SUBDIV3, TIME3
-        const float row3 = 54.f;   // MIX1, REPEATS1, MIX2, REPEATS2, MIX3, REPEATS3
-        const float row4 = 70.f;   // TONE1, TONE2, TONE3
-        const float row5 = 84.f;   // VOICE1, VOICE2, VOICE3
-        const float row6 = 96.f;   // MOD_DEPTH, MOD_RATE, XFEED
-        const float row7 = 108.f;  // Ping-pong + audio inputs
-        const float row8 = 120.f;  // All CV inputs and outputs
+        // Fallback coordinates mirror Tessellation.svg anchors exactly.
+        addKnobWithShadow(this, createParamCentered<ShapetakerKnobVintageMedium>(
+            centerPx("tess-time1", 15.710328f, 19.843622f), module, Tessellation::TIME1_PARAM));
 
-        // === ROW 1: TIME1 (20mm medium) + TAP button ===
-        // Safe: 10mm (knob radius) to 40mm (10+20+10)
-        addKnobWithShadow(this, createParamCentered<ShapetakerDavies1900hLargeDot>(centerPx("tess-time1", 20.f, row1), module, Tessellation::TIME1_PARAM));
-
-        // Tap tempo button with integrated LED
-        auto* tapBtn = createParamCentered<ShapetakerVintageMomentaryLight>(centerPx("tess-tap", 38.f, row1), module, Tessellation::TAP_PARAM);
+        auto* tapBtn = createParamCentered<ShapetakerVintageMomentaryLight>(
+            centerPx("tess-tap", 110.98453f, 19.031929f), module, Tessellation::TAP_PARAM);
         tapBtn->module = module;
         tapBtn->lightId = Tessellation::TEMPO_LIGHT;
         addParam(tapBtn);
 
-        // === ROW 2: 4 small knobs (16mm each) ===
-        // Available: 8mm to 124mm (116mm width)
-        // 4 knobs need 4*8mm = 32mm for radii, 84mm for spacing
-        // Spacing: 84/3 = 28mm between centers
-        addKnobWithShadow(this, createParamCentered<ShapetakerDavies1900hSmallDot>(centerPx("tess-subdiv-2", 16.f, row2), module, Tessellation::SUBDIV2_PARAM));
-        addKnobWithShadow(this, createParamCentered<ShapetakerDavies1900hLargeDot>(centerPx("tess-time-2", 44.f, row2), module, Tessellation::TIME2_PARAM));
-        addKnobWithShadow(this, createParamCentered<ShapetakerDavies1900hSmallDot>(centerPx("tess-subdiv3", 72.f, row2), module, Tessellation::SUBDIV3_PARAM));
-        addKnobWithShadow(this, createParamCentered<ShapetakerDavies1900hLargeDot>(centerPx("tess-time3", 100.f, row2), module, Tessellation::TIME3_PARAM));
+        addKnobWithShadow(this, createParamCentered<ShapetakerKnobVintageSmallMedium>(
+            centerPx("tess-subdiv-2", 117.38332f, 45.146576f), module, Tessellation::SUBDIV2_PARAM));
+        addKnobWithShadow(this, createParamCentered<ShapetakerKnobVintageMedium>(
+            centerPx("tess-time-2", 15.710328f, 45.146576f), module, Tessellation::TIME2_PARAM));
+        addKnobWithShadow(this, createParamCentered<ShapetakerKnobVintageSmallMedium>(
+            centerPx("tess-subdiv3", 117.38332f, 70.449532f), module, Tessellation::SUBDIV3_PARAM));
+        addKnobWithShadow(this, createParamCentered<ShapetakerKnobVintageMedium>(
+            centerPx("tess-time3", 15.710328f, 70.449532f), module, Tessellation::TIME3_PARAM));
 
-        // === ROW 3: 6 small knobs (3 pairs) ===
-        // Layout: MIX1 REPT1 | MIX2 REPT2 | MIX3 REPT3
-        // Each pair needs 18mm spacing (16mm + 2mm), 54mm total for 3 pairs
-        // Plus 2 gaps of ~20mm = 94mm total, fits in 116mm
-        addKnobWithShadow(this, createParamCentered<ShapetakerDavies1900hSmallDot>(centerPx("tess-mix1", 14.f, row3), module, Tessellation::MIX1_PARAM));
-        addKnobWithShadow(this, createParamCentered<ShapetakerDavies1900hSmallDot>(centerPx("tess-repeats1", 32.f, row3), module, Tessellation::REPEATS1_PARAM));
-        addMixLights(23.f, Tessellation::MIX1_LIGHT, row3, 0);
+        addKnobWithShadow(this, createParamCentered<ShapetakerKnobVintageSmallMedium>(
+            centerPx("tess-mix1", 48.675289f, 19.843622f), module, Tessellation::MIX1_PARAM));
+        addKnobWithShadow(this, createParamCentered<ShapetakerKnobVintageSmallMedium>(
+            centerPx("tess-repeats1", 71.577965f, 19.843622f), module, Tessellation::REPEATS1_PARAM));
+        addMixLights(Tessellation::MIX1_LIGHT, 0);
 
-        addKnobWithShadow(this, createParamCentered<ShapetakerDavies1900hSmallDot>(centerPx("tess-mix2", 52.f, row3), module, Tessellation::MIX2_PARAM));
-        addKnobWithShadow(this, createParamCentered<ShapetakerDavies1900hSmallDot>(centerPx("tess-repeats2", 70.f, row3), module, Tessellation::REPEATS2_PARAM));
-        addMixLights(61.f, Tessellation::MIX2_LIGHT, row3, 1);
+        addKnobWithShadow(this, createParamCentered<ShapetakerKnobVintageSmallMedium>(
+            centerPx("tess-mix2", 48.675289f, 45.146576f), module, Tessellation::MIX2_PARAM));
+        addKnobWithShadow(this, createParamCentered<ShapetakerKnobVintageSmallMedium>(
+            centerPx("tess-repeats2", 71.577965f, 45.146576f), module, Tessellation::REPEATS2_PARAM));
+        addMixLights(Tessellation::MIX2_LIGHT, 1);
 
-        addKnobWithShadow(this, createParamCentered<ShapetakerDavies1900hSmallDot>(centerPx("tess-mix3", 90.f, row3), module, Tessellation::MIX3_PARAM));
-        addKnobWithShadow(this, createParamCentered<ShapetakerDavies1900hSmallDot>(centerPx("tess-repeats3", 108.f, row3), module, Tessellation::REPEATS3_PARAM));
-        addMixLights(99.f, Tessellation::MIX3_LIGHT, row3, 2);
+        addKnobWithShadow(this, createParamCentered<ShapetakerKnobVintageSmallMedium>(
+            centerPx("tess-mix3", 48.675289f, 70.449532f), module, Tessellation::MIX3_PARAM));
+        addKnobWithShadow(this, createParamCentered<ShapetakerKnobVintageSmallMedium>(
+            centerPx("tess-repeats3", 71.577965f, 70.449532f), module, Tessellation::REPEATS3_PARAM));
+        addMixLights(Tessellation::MIX3_LIGHT, 2);
 
-        // === ROW 4: 3 TONE knobs aligned with pair centers ===
-        addKnobWithShadow(this, createParamCentered<ShapetakerDavies1900hSmallDot>(centerPx("tess-tone1", 23.f, row4), module, Tessellation::TONE1_PARAM));
-        addKnobWithShadow(this, createParamCentered<ShapetakerDavies1900hSmallDot>(centerPx("tess-tone2", 61.f, row4), module, Tessellation::TONE2_PARAM));
-        addKnobWithShadow(this, createParamCentered<ShapetakerDavies1900hSmallDot>(centerPx("tess-tone3", 99.f, row4), module, Tessellation::TONE3_PARAM));
+        addKnobWithShadow(this, createParamCentered<ShapetakerKnobVintageSmallMedium>(
+            centerPx("tess-tone1", 94.480644f, 19.843622f), module, Tessellation::TONE1_PARAM));
+        addKnobWithShadow(this, createParamCentered<ShapetakerKnobVintageSmallMedium>(
+            centerPx("tess-tone2", 94.480644f, 45.146576f), module, Tessellation::TONE2_PARAM));
+        addKnobWithShadow(this, createParamCentered<ShapetakerKnobVintageSmallMedium>(
+            centerPx("tess-tone3", 94.480644f, 70.449532f), module, Tessellation::TONE3_PARAM));
 
-        // === ROW 5: 3 VOICE switches ===
-        addParam(createParamCentered<rack::componentlibrary::CKSSThree>(centerPx("tess-voice1", 23.f, row5), module, Tessellation::VOICE1_PARAM));
-        addParam(createParamCentered<rack::componentlibrary::CKSSThree>(centerPx("tess-voice2", 61.f, row5), module, Tessellation::VOICE2_PARAM));
-        addParam(createParamCentered<rack::componentlibrary::CKSSThree>(centerPx("tess-voice3", 99.f, row5), module, Tessellation::VOICE3_PARAM));
+        addParam(createParamCentered<rack::componentlibrary::CKSSThree>(
+            centerPx("tess-voice1", 32.399029f, 19.843622f), module, Tessellation::VOICE1_PARAM));
+        addParam(createParamCentered<rack::componentlibrary::CKSSThree>(
+            centerPx("tess-voice2", 32.399029f, 45.146576f), module, Tessellation::VOICE2_PARAM));
+        addParam(createParamCentered<rack::componentlibrary::CKSSThree>(
+            centerPx("tess-voice3", 32.399029f, 70.449532f), module, Tessellation::VOICE3_PARAM));
 
-        // === ROW 6: 3 global knobs (MOD_DEPTH, MOD_RATE, XFEED) ===
-        addKnobWithShadow(this, createParamCentered<ShapetakerDavies1900hSmallDot>(centerPx("tess-mod-depth", 28.f, row6), module, Tessellation::MOD_DEPTH_PARAM));
-        addKnobWithShadow(this, createParamCentered<ShapetakerDavies1900hSmallDot>(centerPx("tess-mod-rate", 66.f, row6), module, Tessellation::MOD_RATE_PARAM));
-        addKnobWithShadow(this, createParamCentered<ShapetakerDavies1900hSmallDot>(centerPx("tess-xfeed", 104.f, row6), module, Tessellation::XFEED_PARAM));
+        addKnobWithShadow(this, createParamCentered<ShapetakerKnobVintageSmallMedium>(
+            centerPx("tess-mod-depth", 48.675289f, 95.752487f), module, Tessellation::MOD_DEPTH_PARAM));
+        addKnobWithShadow(this, createParamCentered<ShapetakerKnobVintageSmallMedium>(
+            centerPx("tess-mod-rate", 71.577965f, 95.752487f), module, Tessellation::MOD_RATE_PARAM));
+        addKnobWithShadow(this, createParamCentered<ShapetakerKnobVintageSmallMedium>(
+            centerPx("tess-xfeed", 15.710328f, 95.752487f), module, Tessellation::XFEED_PARAM));
 
-        // === ROW 7: Ping-pong selector + audio inputs + clock ===
-        addParam(createParamCentered<rack::componentlibrary::CKSSThree>(centerPx("tess-pingpong", 23.f, row7), module, Tessellation::PINGPONG_PARAM));
-        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("tess-ext-clk-in", 61.f, row7), module, Tessellation::CLOCK_INPUT));
-        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("tess-in-l", 92.f, row7), module, Tessellation::IN_L_INPUT));
-        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("tess-in-r", 110.f, row7), module, Tessellation::IN_R_INPUT));
+        addParam(createParamCentered<rack::componentlibrary::CKSSThree>(
+            centerPx("tess-pingpong", 32.399029f, 95.752487f), module, Tessellation::PINGPONG_PARAM));
+        addInput(createInputCentered<ShapetakerBNCPort>(
+            centerPx("tess-ext-clk-in", 122.61442f, 19.031929f), module, Tessellation::CLOCK_INPUT));
+        addInput(createInputCentered<ShapetakerBNCPort>(
+            centerPx("tess-in-l", 13.622764f, 115.07108f), module, Tessellation::IN_L_INPUT));
+        addInput(createInputCentered<ShapetakerBNCPort>(
+            centerPx("tess-in-r", 26.84543f, 115.07108f), module, Tessellation::IN_R_INPUT));
 
-        // === ROW 8: All CV inputs and outputs (10 jacks total) ===
-        // 10 jacks at 4mm radius = 8mm + (9*8mm spacing) = 80mm < 116mm ✓
-        const float jackSpacing = 9.f;
-        float jackX = 12.f;
-
-        // CV Inputs (5 jacks)
         const std::array<const char*, 5> cvIds = {
             "tess-time1-cv", "tess-time2-cv", "tess-time3-cv", "tess-repeats-cv", "tess-mod-cv"
         };
+        const std::array<Vec, 5> cvFallbackMm = {
+            Vec(40.068096f, 115.07108f),
+            Vec(53.29076f, 115.07108f),
+            Vec(66.51342f, 115.07108f),
+            Vec(92.958755f, 115.07108f),
+            Vec(79.736084f, 115.07108f)
+        };
         for (size_t i = 0; i < cvIds.size(); ++i) {
-            addInput(createInputCentered<ShapetakerBNCPort>(centerPx(cvIds[i], jackX, row8), module, Tessellation::TIME1_CV_INPUT + i));
-            jackX += jackSpacing;
+            addInput(createInputCentered<ShapetakerBNCPort>(
+                centerPx(cvIds[i], cvFallbackMm[i].x, cvFallbackMm[i].y),
+                module, Tessellation::TIME1_CV_INPUT + i));
         }
-        jackX += 4.f;  // Extra gap before outputs
 
-        // Outputs (5 jacks)
         const std::array<const char*, 5> outputIds = {
             "tess-out-l", "tess-out-r", "tess-delay1-out", "tess-delay2-out", "tess-delay3-out"
+        };
+        const std::array<Vec, 5> outputFallbackMm = {
+            Vec(106.18141f, 115.07108f),
+            Vec(119.40408f, 115.07108f),
+            Vec(92.958755f, 95.752487f),
+            Vec(106.18141f, 95.752487f),
+            Vec(119.40408f, 95.752487f)
         };
         const std::array<int, 5> outputParams = {
             Tessellation::OUT_L_OUTPUT,
@@ -1019,8 +1059,9 @@ struct TessellationWidget : ModuleWidget {
             Tessellation::DELAY3_OUTPUT
         };
         for (size_t i = 0; i < outputIds.size(); ++i) {
-            addOutput(createOutputCentered<ShapetakerBNCPort>(centerPx(outputIds[i], jackX, row8), module, outputParams[i]));
-            jackX += jackSpacing;
+            addOutput(createOutputCentered<ShapetakerBNCPort>(
+                centerPx(outputIds[i], outputFallbackMm[i].x, outputFallbackMm[i].y),
+                module, outputParams[i]));
         }
     }
 };

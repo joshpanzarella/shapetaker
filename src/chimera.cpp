@@ -816,29 +816,59 @@ struct Chimera : Module {
 };
 
 struct ChimeraWidget : ModuleWidget {
-    // Draw leather texture background
+    // Match the uniform Clairaudient/Tessellation/Transmutation/Torsion leather treatment
     void draw(const DrawArgs& args) override {
-        std::shared_ptr<Image> bg = APP->window->loadImage(asset::plugin(pluginInstance, "res/panels/black_leather_seamless.jpg"));
+        std::shared_ptr<Image> bg = APP->window->loadImage(asset::plugin(pluginInstance, "res/panels/panel_background.png"));
         if (bg) {
-            // Scale < 1.0 = finer grain appearance
-            float scale = 0.4f;
-            float textureHeight = box.size.y * scale;
-            float textureWidth = textureHeight * (1.f);
-            float xOffset = 8.f;  // Unique offset for Chimera (near left edge)
-            NVGpaint paint = nvgImagePattern(args.vg, -xOffset, 0.f, textureWidth, box.size.y, 0.f, bg->handle, 1.0f);
+            // Keep leather grain density consistent across panel widths via fixed-height tiling.
+            constexpr float inset = 2.0f;
+            constexpr float textureAspect = 2880.f / 4553.f;  // panel_background.png
+            float tileH = box.size.y + inset * 2.f;
+            float tileW = tileH * textureAspect;
+            float x = -inset;
+            float y = -inset;
+
+            nvgSave(args.vg);
+
+            // Base tile pass
             nvgBeginPath(args.vg);
             nvgRect(args.vg, 0.f, 0.f, box.size.x, box.size.y);
-            nvgFillPaint(args.vg, paint);
+            NVGpaint paintA = nvgImagePattern(args.vg, x, y, tileW, tileH, 0.f, bg->handle, 1.0f);
+            nvgFillPaint(args.vg, paintA);
             nvgFill(args.vg);
+
+            // Offset low-opacity pass to soften seam visibility
+            nvgBeginPath(args.vg);
+            nvgRect(args.vg, 0.f, 0.f, box.size.x, box.size.y);
+            NVGpaint paintB = nvgImagePattern(args.vg, x + tileW * 0.5f, y, tileW, tileH, 0.f, bg->handle, 0.35f);
+            nvgFillPaint(args.vg, paintB);
+            nvgFill(args.vg);
+
+            // Slight darkening to match existing module tone
+            nvgBeginPath(args.vg);
+            nvgRect(args.vg, 0.f, 0.f, box.size.x, box.size.y);
+            nvgFillColor(args.vg, nvgRGBA(0, 0, 0, 18));
+            nvgFill(args.vg);
+
+            nvgRestore(args.vg);
         }
         ModuleWidget::draw(args);
+
+        // Draw a black inner frame to fully mask any edge tinting
+        constexpr float frame = 1.0f;
+        nvgBeginPath(args.vg);
+        nvgRect(args.vg, 0.f, 0.f, box.size.x, box.size.y);
+        nvgRect(args.vg, frame, frame, box.size.x - 2.f * frame, box.size.y - 2.f * frame);
+        nvgPathWinding(args.vg, NVG_HOLE);
+        nvgFillColor(args.vg, nvgRGB(0, 0, 0));
+        nvgFill(args.vg);
     }
 
     ChimeraWidget(Chimera* module) {
         setModule(module);
         setPanel(createPanel(asset::plugin(pluginInstance, "res/panels/Chimera.svg")));
 
-        shapetaker::ui::LayoutHelper::ScrewPositions::addStandardScrews<ScrewBlack>(this, box.size.x);
+        shapetaker::ui::LayoutHelper::ScrewPositions::addStandardScrews<ScrewJetBlack>(this, box.size.x);
 
         shapetaker::ui::LayoutHelper::PanelSVGParser parser(
             asset::plugin(pluginInstance, "res/panels/Chimera.svg"));
@@ -856,17 +886,17 @@ struct ChimeraWidget : ModuleWidget {
         const std::array<float, Chimera::kNumChannels> channelFallbackX = {20.f, 48.f, 76.f, 104.f};
 
         for (int i = 0; i < Chimera::kNumChannels; ++i) {
-            addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltLarge>(
+            addKnobWithShadow(this, createParamCentered<ShapetakerKnobVintageLarge>(
                 centerPx(levelIds[i], channelFallbackX[i], 20.f), module, Chimera::CH_LEVEL_PARAM + i));
-            addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltSmall>(
+            addKnobWithShadow(this, createParamCentered<ShapetakerKnobVintageSmallMedium>(
                 centerPx(panIds[i], channelFallbackX[i], 44.f), module, Chimera::CH_PAN_PARAM + i));
-            addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltSmall>(
+            addKnobWithShadow(this, createParamCentered<ShapetakerKnobVintageSmallMedium>(
                 centerPx(morphIds[i], channelFallbackX[i], 68.f), module, Chimera::CH_MORPH_PARAM + i));
-            addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltSmall>(
+            addKnobWithShadow(this, createParamCentered<ShapetakerKnobVintageSmallMedium>(
                 centerPx(tiltIds[i], channelFallbackX[i], 92.f), module, Chimera::CH_TILT_PARAM + i));
             addParam(createParamCentered<rack::componentlibrary::CKSSThree>(
                 centerPx(busIds[i], channelFallbackX[i], 116.f), module, Chimera::CH_BUS_PARAM + i));
-            addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltSmall>(
+            addKnobWithShadow(this, createParamCentered<ShapetakerKnobVintageSmallMedium>(
                 centerPx(loopThresholdIds[i], channelFallbackX[i], 80.f), module, Chimera::CH_LOOP_THRESHOLD_PARAM + i));
             addParam(createParamCentered<rack::componentlibrary::CKSS>(
                 centerPx(loopArmIds[i], channelFallbackX[i], 102.f), module, Chimera::CH_LOOP_ARM_PARAM + i));
@@ -877,32 +907,32 @@ struct ChimeraWidget : ModuleWidget {
                 centerPx(inputRightIds[i], channelFallbackX[i] + 6.f, 110.f), module, Chimera::CH_INPUT_R + i));
         }
 
-        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltMedium>(
+        addKnobWithShadow(this, createParamCentered<ShapetakerKnobVintageMedium>(
             centerPx("slot_a_rate", 120.f, 22.f), module, Chimera::SLOT_A_RATE_PARAM));
-        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltMedium>(
+        addKnobWithShadow(this, createParamCentered<ShapetakerKnobVintageMedium>(
             centerPx("slot_a_depth", 120.f, 44.f), module, Chimera::SLOT_A_DEPTH_PARAM));
-        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltMedium>(
+        addKnobWithShadow(this, createParamCentered<ShapetakerKnobVintageMedium>(
             centerPx("slot_a_texture", 120.f, 66.f), module, Chimera::SLOT_A_TEXTURE_PARAM));
 
-        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltMedium>(
+        addKnobWithShadow(this, createParamCentered<ShapetakerKnobVintageMedium>(
             centerPx("slot_b_rate", 138.f, 22.f), module, Chimera::SLOT_B_RATE_PARAM));
-        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltMedium>(
+        addKnobWithShadow(this, createParamCentered<ShapetakerKnobVintageMedium>(
             centerPx("slot_b_depth", 138.f, 44.f), module, Chimera::SLOT_B_DEPTH_PARAM));
-        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltMedium>(
+        addKnobWithShadow(this, createParamCentered<ShapetakerKnobVintageMedium>(
             centerPx("slot_b_texture", 138.f, 66.f), module, Chimera::SLOT_B_TEXTURE_PARAM));
 
-        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltMedium>(
+        addKnobWithShadow(this, createParamCentered<ShapetakerKnobVintageMedium>(
             centerPx("morph_master_knob", 156.f, 90.f), module, Chimera::MORPH_MASTER_PARAM));
-        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltMedium>(
+        addKnobWithShadow(this, createParamCentered<ShapetakerKnobVintageMedium>(
             centerPx("glue_threshold_knob", 170.f, 90.f), module, Chimera::GLUE_THRESHOLD_PARAM));
 
-        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltSmall>(
+        addKnobWithShadow(this, createParamCentered<ShapetakerKnobVintageSmallMedium>(
             centerPx("glue_attack_knob", 156.f, 110.f), module, Chimera::GLUE_ATTACK_PARAM));
-        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltSmall>(
+        addKnobWithShadow(this, createParamCentered<ShapetakerKnobVintageSmallMedium>(
             centerPx("glue_release_knob", 170.f, 110.f), module, Chimera::GLUE_RELEASE_PARAM));
-        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltSmall>(
+        addKnobWithShadow(this, createParamCentered<ShapetakerKnobVintageSmallMedium>(
             centerPx("glue_mix_knob", 156.f, 126.f), module, Chimera::GLUE_MIX_PARAM));
-        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltSmall>(
+        addKnobWithShadow(this, createParamCentered<ShapetakerKnobVintageSmallMedium>(
             centerPx("glue_makeup_knob", 170.f, 126.f), module, Chimera::GLUE_MAKEUP_PARAM));
 
         addParam(createParamCentered<rack::componentlibrary::CKSSThree>(
@@ -916,7 +946,7 @@ struct ChimeraWidget : ModuleWidget {
         addParam(createParamCentered<rack::componentlibrary::CKSSThree>(
             centerPx("glue_sidechain_switch", 163.f, 78.f), module, Chimera::GLUE_SIDECHAIN_SRC_PARAM));
 
-        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltSmall>(
+        addKnobWithShadow(this, createParamCentered<ShapetakerKnobVintageSmallMedium>(
             centerPx("clock_bpm_knob", 178.f, 24.f), module, Chimera::CLOCK_BPM_PARAM));
         addParam(createParamCentered<rack::componentlibrary::CKSS>(
             centerPx("clock_run_switch", 178.f, 38.f), module, Chimera::CLOCK_RUN_PARAM));
@@ -928,7 +958,7 @@ struct ChimeraWidget : ModuleWidget {
             centerPx("clock_mix_switch", 178.f, 68.f), module, Chimera::CLOCK_MIX_PARAM));
         addParam(createParamCentered<rack::componentlibrary::CKSSThree>(
             centerPx("loop_bar_switch", 178.f, 80.f), module, Chimera::LOOP_BARS_PARAM));
-        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltSmall>(
+        addKnobWithShadow(this, createParamCentered<ShapetakerKnobVintageSmallMedium>(
             centerPx("clock_click_level_knob", 178.f, 92.f), module, Chimera::CLOCK_CLICK_LEVEL_PARAM));
 
         addInput(createInputCentered<ShapetakerBNCPort>(

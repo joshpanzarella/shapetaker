@@ -249,7 +249,6 @@ static std::vector<std::string> wrapTextLocal(const std::string& text, float max
 
 void HighResMatrixWidget::drawMatrix(const DrawArgs& args) {
     nvgSave(args.vg);
-    if (!view) { nvgRestore(args.vg); return; }
     // Base screen background (vintage TV look: deep black + neutral depth)
     {
         float radius = 8.0f;
@@ -387,6 +386,9 @@ void HighResMatrixWidget::drawMatrix(const DrawArgs& args) {
     }
 
     // Preview display moved later to render above grid
+
+    // If no module (e.g. module browser), show static screen background only
+    if (!view) { nvgRestore(args.vg); return; }
 
     // Grid (constrained to the inner screen inside the bezel)
     int cols = 8, rows = 8; int gs = view->getGridSteps();

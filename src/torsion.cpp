@@ -228,6 +228,7 @@ struct Torsion : Module {
         SUB_LEVEL_PARAM,
         SUB_WARP_PARAM,
         SUB_SYNC_PARAM,
+        CHORUS_PARAM,
         PARAMS_LEN
     };
     enum InputId {
@@ -400,6 +401,11 @@ struct Torsion : Module {
             quantity->snapEnabled = true;
             quantity->smoothEnabled = false;
         }
+        configSwitch(CHORUS_PARAM, 0.f, 1.f, 0.f, "chorus", {"off", "on"});
+        if (auto* quantity = paramQuantities[CHORUS_PARAM]) {
+            quantity->snapEnabled = true;
+            quantity->smoothEnabled = false;
+        }
 
         // Sub oscillator with extended range for powerful bass
         configParam(SUB_LEVEL_PARAM, 0.f, 2.0f, 0.0f, "sub osc level", "%", 0.f, 100.f);
@@ -481,6 +487,7 @@ struct Torsion : Module {
         dcwKeyTrackEnabled = false;
         dcwVelocityEnabled = false;
         chorusEnabled = false;
+        params[CHORUS_PARAM].setValue(0.f);
         vintageClockPhase = 0.f;
         resetChorusState();
         torsionSlew.reset();
@@ -495,6 +502,7 @@ struct Torsion : Module {
         json_object_set_new(rootJ, "vintageMode", json_boolean(vintageMode));
         json_object_set_new(rootJ, "dcwKeyTrackEnabled", json_boolean(dcwKeyTrackEnabled));
         json_object_set_new(rootJ, "dcwVelocityEnabled", json_boolean(dcwVelocityEnabled));
+        chorusEnabled = params[CHORUS_PARAM].getValue() > 0.5f;
         json_object_set_new(rootJ, "chorusEnabled", json_boolean(chorusEnabled));
         json_object_set_new(rootJ, "phaseResetEnabled", json_boolean(phaseResetEnabled));
         return rootJ;
@@ -543,11 +551,13 @@ struct Torsion : Module {
         json_t* chorusJ = json_object_get(rootJ, "chorusEnabled");
         if (chorusJ) {
             chorusEnabled = json_is_true(chorusJ);
+            params[CHORUS_PARAM].setValue(chorusEnabled ? 1.f : 0.f);
         }
         json_t* phaseResetJ = json_object_get(rootJ, "phaseResetEnabled");
         if (phaseResetJ) {
             phaseResetEnabled = json_is_true(phaseResetJ);
         }
+        chorusEnabled = params[CHORUS_PARAM].getValue() > 0.5f;
         resetChorusState();
     }
 
@@ -555,6 +565,12 @@ struct Torsion : Module {
         int channels = polyProcessor.updateChannels(
             {inputs[VOCT_INPUT], inputs[GATE_INPUT], inputs[TORSION_CV_INPUT], inputs[FEEDBACK_CV_INPUT], inputs[STAGE_TRIG_INPUT]},
             {outputs[MAIN_L_OUTPUT], outputs[MAIN_R_OUTPUT], outputs[EDGE_OUTPUT]});
+
+        bool chorusParamOn = params[CHORUS_PARAM].getValue() > 0.5f;
+        if (chorusEnabled != chorusParamOn) {
+            chorusEnabled = chorusParamOn;
+            resetChorusState();
+        }
 
         // Update cached exponential coefficients if sample rate changed
         static float lastSampleTime = 0.f;
@@ -1315,28 +1331,59 @@ struct VintageSliderLED : app::SvgSlider {
 // VintageFourWaySwitch removed - replaced with ShapetakerDavies1900hSmallDot for cleaner aesthetic
 
 struct TorsionWidget : ModuleWidget {
-    // Draw leather texture background
     void draw(const DrawArgs& args) override {
-        std::shared_ptr<Image> bg = APP->window->loadImage(asset::plugin(pluginInstance, "res/panels/black_leather_seamless.jpg"));
+        // Match the uniform Clairaudient/Tessellation/Transmutation leather treatment
+        std::shared_ptr<Image> bg = APP->window->loadImage(asset::plugin(pluginInstance, "res/panels/panel_background.png"));
         if (bg) {
-            // Scale < 1.0 = finer grain appearance
-            float scale = 0.4f;
-            float textureHeight = box.size.y * scale;
-            float textureWidth = textureHeight * (1.f);
-            NVGpaint paint = nvgImagePattern(args.vg, 0.f, 0.f, textureWidth, textureHeight, 0.f, bg->handle, 1.0f);
+            // Keep leather grain density consistent across panel widths via fixed-height tiling.
+            constexpr float inset = 2.0f;
+            constexpr float textureAspect = 2880.f / 4553.f;  // panel_background.png
+            float tileH = box.size.y + inset * 2.f;
+            float tileW = tileH * textureAspect;
+            float x = -inset;
+            float y = -inset;
+
+            nvgSave(args.vg);
+
+            // Base tile pass
             nvgBeginPath(args.vg);
             nvgRect(args.vg, 0.f, 0.f, box.size.x, box.size.y);
-            nvgFillPaint(args.vg, paint);
+            NVGpaint paintA = nvgImagePattern(args.vg, x, y, tileW, tileH, 0.f, bg->handle, 1.0f);
+            nvgFillPaint(args.vg, paintA);
             nvgFill(args.vg);
+
+            // Offset low-opacity pass to soften seam visibility
+            nvgBeginPath(args.vg);
+            nvgRect(args.vg, 0.f, 0.f, box.size.x, box.size.y);
+            NVGpaint paintB = nvgImagePattern(args.vg, x + tileW * 0.5f, y, tileW, tileH, 0.f, bg->handle, 0.35f);
+            nvgFillPaint(args.vg, paintB);
+            nvgFill(args.vg);
+
+            // Slight darkening to match existing module tone
+            nvgBeginPath(args.vg);
+            nvgRect(args.vg, 0.f, 0.f, box.size.x, box.size.y);
+            nvgFillColor(args.vg, nvgRGBA(0, 0, 0, 18));
+            nvgFill(args.vg);
+
+            nvgRestore(args.vg);
         }
         ModuleWidget::draw(args);
+
+        // Draw a black inner frame to fully mask any edge tinting
+        constexpr float frame = 1.0f;
+        nvgBeginPath(args.vg);
+        nvgRect(args.vg, 0.f, 0.f, box.size.x, box.size.y);
+        nvgRect(args.vg, frame, frame, box.size.x - 2.f * frame, box.size.y - 2.f * frame);
+        nvgPathWinding(args.vg, NVG_HOLE);
+        nvgFillColor(args.vg, nvgRGB(0, 0, 0));
+        nvgFill(args.vg);
     }
 
     TorsionWidget(Torsion* module) {
         setModule(module);
         setPanel(createPanel(asset::plugin(pluginInstance, "res/panels/Torsion.svg")));
 
-        shapetaker::ui::LayoutHelper::ScrewPositions::addStandardScrews<ScrewBlack>(this, box.size.x);
+        shapetaker::ui::LayoutHelper::ScrewPositions::addStandardScrews<ScrewJetBlack>(this, box.size.x);
 
         shapetaker::ui::LayoutHelper::PanelSVGParser parser(
             asset::plugin(pluginInstance, "res/panels/Torsion.svg"));
@@ -1346,46 +1393,50 @@ struct TorsionWidget : ModuleWidget {
         // Note: centerPx() reads from SVG first, fallback values provided for safety
 
         // Top row knobs
-        addKnobWithShadow(this, createParamCentered<ShapetakerDavies1900hSmallDot>(
-            centerPx("coarse_knob", 11.44458f, 17.659729f), module, Torsion::COARSE_PARAM));
-        addKnobWithShadow(this, createParamCentered<ShapetakerDavies1900hSmallDot>(
-            centerPx("torsion_knob", 31.128044f, 17.659729f), module, Torsion::TORSION_PARAM));
-        addKnobWithShadow(this, createParamCentered<ShapetakerDavies1900hSmallDot>(
-            centerPx("sub_level_knob", 50.811508f, 17.659729f), module, Torsion::SUB_LEVEL_PARAM));
-        addKnobWithShadow(this, createParamCentered<ShapetakerDavies1900hSmallDot>(
-            centerPx("warp_shape_knob", 70.494972f, 17.659729f), module, Torsion::WARP_SHAPE_PARAM));
+        addKnobWithShadow(this, createParamCentered<ShapetakerKnobVintageSmallMedium>(
+            centerPx("coarse_knob", 11.44458f, 18.983347f), module, Torsion::COARSE_PARAM));
+        addKnobWithShadow(this, createParamCentered<ShapetakerKnobVintageSmallMedium>(
+            centerPx("torsion_knob", 9.9738617f, 58.915623f), module, Torsion::TORSION_PARAM));
+        addKnobWithShadow(this, createParamCentered<ShapetakerKnobVintageSmallMedium>(
+            centerPx("sub_level_knob", 31.29785f, 18.983347f), module, Torsion::SUB_LEVEL_PARAM));
+        addKnobWithShadow(this, createParamCentered<ShapetakerKnobVintageSmallMedium>(
+            centerPx("warp_shape_knob", 27.021532f, 39.152843f), module, Torsion::WARP_SHAPE_PARAM));
 
         // Second row knobs
-        addKnobWithShadow(this, createParamCentered<ShapetakerDavies1900hSmallDot>(
-            centerPx("detune_knob", 11.44458f, 37.985481f), module, Torsion::DETUNE_PARAM));
-        addKnobWithShadow(this, createParamCentered<ShapetakerDavies1900hSmallDot>(
-            centerPx("symmetry_knob", 31.128044f, 37.985481f), module, Torsion::SYMMETRY_PARAM));
-        addKnobWithShadow(this, createParamCentered<ShapetakerDavies1900hSmallDot>(
-            centerPx("stage_rate_knob", 50.811508f, 37.985481f), module, Torsion::STAGE_RATE_PARAM));
+        addKnobWithShadow(this, createParamCentered<ShapetakerKnobVintageSmallMedium>(
+            centerPx("detune_knob", 71.004387f, 18.983347f), module, Torsion::DETUNE_PARAM));
+        addKnobWithShadow(this, createParamCentered<ShapetakerKnobVintageSmallMedium>(
+            centerPx("symmetry_knob", 49.012959f, 39.152843f), module, Torsion::SYMMETRY_PARAM));
+        addKnobWithShadow(this, createParamCentered<ShapetakerKnobVintageSmallMedium>(
+            centerPx("stage_rate_knob", 71.004387f, 39.421593f), module, Torsion::STAGE_RATE_PARAM));
+
+        // Chorus on/off
+        addParam(createParamCentered<ShapetakerDarkToggle>(
+            centerPx("chorus-switch", 9.925744f, 39.152843f), module, Torsion::CHORUS_PARAM));
 
         // Attenuverters / nearby CV helpers
         addParam(createParamCentered<ShapetakerAttenuverterOscilloscope>(
-            centerPx("torsion_atten", 11.407479f, 76.992867f), module, Torsion::TORSION_ATTEN_PARAM));
+            centerPx("torsion_atten", 9.9738617f, 76.715012f), module, Torsion::TORSION_ATTEN_PARAM));
         addParam(createParamCentered<ShapetakerAttenuverterOscilloscope>(
-            centerPx("feedback_atten", 70.494972f, 74.118011f), module, Torsion::FEEDBACK_ATTEN_PARAM));
+            centerPx("feedback_atten", 71.52639f, 76.681564f), module, Torsion::FEEDBACK_ATTEN_PARAM));
 
         // Middle section knobs
-        addKnobWithShadow(this, createParamCentered<ShapetakerDavies1900hSmallDot>(
-            centerPx("sub_dcw_depth_knob", 11.407479f, 58.311234f), module, Torsion::SUB_WARP_PARAM));
-        addKnobWithShadow(this, createParamCentered<ShapetakerDavies1900hSmallDot>(
-            centerPx("feedback_knob", 11.963207f, 80.037621f), module, Torsion::FEEDBACK_PARAM));
+        addKnobWithShadow(this, createParamCentered<ShapetakerKnobVintageSmallMedium>(
+            centerPx("sub_dcw_depth_knob", 51.151119f, 18.983347f), module, Torsion::SUB_WARP_PARAM));
+        addKnobWithShadow(this, createParamCentered<ShapetakerKnobVintageSmallMedium>(
+            centerPx("feedback_knob", 71.52639f, 58.848732f), module, Torsion::FEEDBACK_PARAM));
 
         // Toggle switches (bottom row)
         addParam(createParamCentered<ShapetakerDarkToggle>(
-            centerPx("saw_wave_switch", 11.953995f, 102.31097f), module, Torsion::SAW_WAVE_PARAM));
+            centerPx("saw_wave_switch", 9.9738617f, 101.65123f), module, Torsion::SAW_WAVE_PARAM));
         addParam(createParamCentered<ShapetakerDarkToggle>(
-            centerPx("tri_wave_switch", 26.716593f, 102.10995f), module, Torsion::TRIANGLE_WAVE_PARAM));
+            centerPx("tri_wave_switch", 25.361994f, 101.65123f), module, Torsion::TRIANGLE_WAVE_PARAM));
         addParam(createParamCentered<ShapetakerDarkToggle>(
-            centerPx("dirty_mode_switch", 41.479195f, 102.10995f), module, Torsion::DIRTY_MODE_PARAM));
+            centerPx("dirty_mode_switch", 56.13826f, 101.65123f), module, Torsion::DIRTY_MODE_PARAM));
         addParam(createParamCentered<ShapetakerDarkToggle>(
-            centerPx("square_wave_switch", 56.241791f, 102.10995f), module, Torsion::SQUARE_WAVE_PARAM));
+            centerPx("square_wave_switch", 40.750126f, 101.65123f), module, Torsion::SQUARE_WAVE_PARAM));
         addParam(createParamCentered<ShapetakerDarkToggle>(
-            centerPx("sub_sync_switch", 71.004387f, 102.10995f), module, Torsion::SUB_SYNC_PARAM));
+            centerPx("sub_sync_switch", 71.52639f, 101.65123f), module, Torsion::SUB_SYNC_PARAM));
 
         // Helper lambda to position sliders by their top-left corner from SVG rect coords
         auto parseTranslate = [](const std::string& transformAttr) -> Vec {
@@ -1470,9 +1521,9 @@ struct TorsionWidget : ModuleWidget {
             "stage_6_dot"
         };
         constexpr float stageSliderFallbackX[Torsion::kNumStages] = {
-            22.14f, 29.54f, 36.94f, 44.34f, 51.74f, 59.14f
+            21.081661f, 28.481663f, 35.881664f, 43.281666f, 50.681667f, 58.081669f
         };
-        constexpr float stageSliderFallbackY = 74.768f;
+        constexpr float stageSliderFallbackY = 64.25f;
         constexpr float sliderFallbackWidth = 2.1166666f;
         constexpr float sliderFallbackHeight = 15.875f;
         for (int i = 0; i < Torsion::kNumStages; ++i) {
@@ -1493,7 +1544,7 @@ struct TorsionWidget : ModuleWidget {
             "curve_5_slider",
             "curve_6_slider"
         };
-        constexpr float curveSliderFallbackY = 97.526f;
+        constexpr float curveSliderFallbackY = 89.587418f;
         const char* curveSliderDotIds[Torsion::kNumStages] = {
             "curve_1_dot",
             "curve_2_dot",
@@ -1524,9 +1575,9 @@ struct TorsionWidget : ModuleWidget {
             "stage_6_light"
         };
         constexpr float stageLightFallbackX[Torsion::kNumStages] = {
-            25.248032f, 32.648033f, 40.048035f, 47.448029f, 54.848045f, 62.248043f
+            22.755007f, 30.176956f, 37.598907f, 45.020859f, 52.44281f, 59.864761f
         };
-        constexpr float stageLightFallbackY = 71.004715f;
+        constexpr float stageLightFallbackY = 72.12986f;
 
         for (int i = 0; i < Torsion::kNumStages; ++i) {
             Vec lightPos = centerPx(stageLightIds[i], stageLightFallbackX[i], stageLightFallbackY);
@@ -1546,22 +1597,22 @@ struct TorsionWidget : ModuleWidget {
 
         // === I/O Section (Bottom) ===
         addInput(createInputCentered<ShapetakerBNCPort>(
-            centerPx("voct_cv", 11.953995f, 114.70013f), module, Torsion::VOCT_INPUT));
+            centerPx("voct_cv", 9.9738617f, 114.70013f), module, Torsion::VOCT_INPUT));
         addInput(createInputCentered<ShapetakerBNCPort>(
-            centerPx("gate_input", 23.764072f, 114.70013f), module, Torsion::GATE_INPUT));
+            centerPx("gate_input", 22.284367f, 114.70013f), module, Torsion::GATE_INPUT));
         addInput(createInputCentered<ShapetakerBNCPort>(
-            centerPx("torsion_cv", 11.407479f, 85.976151f), module, Torsion::TORSION_CV_INPUT));
+            centerPx("torsion_cv", 9.9738617f, 89.714966f), module, Torsion::TORSION_CV_INPUT));
         addInput(createInputCentered<ShapetakerBNCPort>(
-            centerPx("feedback_cv", 70.494972f, 85.976151f), module, Torsion::FEEDBACK_CV_INPUT));
+            centerPx("feedback_cv", 71.52639f, 89.714966f), module, Torsion::FEEDBACK_CV_INPUT));
         addInput(createInputCentered<ShapetakerBNCPort>(
-            centerPx("stage_trig_cv", 35.57415f, 114.70013f), module, Torsion::STAGE_TRIG_INPUT));
+            centerPx("stage_trig_cv", 34.594872f, 114.70013f), module, Torsion::STAGE_TRIG_INPUT));
 
         addOutput(createOutputCentered<ShapetakerBNCPort>(
-            centerPx("main_output", 47.384232f, 114.70013f), module, Torsion::MAIN_L_OUTPUT));
+            centerPx("main_output", 46.90538f, 114.70013f), module, Torsion::MAIN_L_OUTPUT));
         addOutput(createOutputCentered<ShapetakerBNCPort>(
             centerPx("main_output_r", 59.194309f, 114.70013f), module, Torsion::MAIN_R_OUTPUT));
         addOutput(createOutputCentered<ShapetakerBNCPort>(
-            centerPx("edge_output", 71.004387f, 114.70013f), module, Torsion::EDGE_OUTPUT));
+            centerPx("edge_output", 71.52639f, 114.70013f), module, Torsion::EDGE_OUTPUT));
     }
 
     void appendContextMenu(ui::Menu* menu) override {
@@ -1645,18 +1696,6 @@ struct TorsionWidget : ModuleWidget {
 
         menu->addChild(new ui::MenuSeparator());
 
-        struct ChorusItem : ui::MenuItem {
-            Torsion* module;
-            void onAction(const event::Action& e) override {
-                module->chorusEnabled = !module->chorusEnabled;
-                module->resetChorusState();
-            }
-            void step() override {
-                rightText = module->chorusEnabled ? "✔" : "";
-                ui::MenuItem::step();
-            }
-        };
-
         struct VintageModeItem : ui::MenuItem {
             Torsion* module;
             void onAction(const event::Action& e) override {
@@ -1667,11 +1706,6 @@ struct TorsionWidget : ModuleWidget {
                 ui::MenuItem::step();
             }
         };
-
-        auto* chorusItem = new ChorusItem;
-        chorusItem->module = module;
-        chorusItem->text = "Chorus (stereo)";
-        menu->addChild(chorusItem);
 
         menu->addChild(new ui::MenuSeparator());
 

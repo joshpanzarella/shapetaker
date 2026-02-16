@@ -2632,21 +2632,52 @@ struct Transmutation : Module,
 struct TransmutationWidget : ModuleWidget {
     HighResMatrixWidget* matrix;
 
-    // Draw leather texture background
+    // Match the uniform Clairaudient/Tessellation leather treatment
     void draw(const DrawArgs& args) override {
-        std::shared_ptr<Image> bg = APP->window->loadImage(asset::plugin(pluginInstance, "res/panels/black_leather_seamless.jpg"));
+        std::shared_ptr<Image> bg = APP->window->loadImage(asset::plugin(pluginInstance, "res/panels/panel_background.png"));
         if (bg) {
-            // Scale < 1.0 = finer grain appearance
-            float scale = 0.4f;
-            float textureHeight = box.size.y * scale;
-            float textureWidth = textureHeight * (1.f);
-            NVGpaint paint = nvgImagePattern(args.vg, 0.f, 0.f, textureWidth, textureHeight, 0.f, bg->handle, 1.0f);
+            // Keep leather grain density consistent across panel widths via fixed-height tiling.
+            constexpr float inset = 2.0f;
+            constexpr float textureAspect = 2880.f / 4553.f;  // panel_background.png
+            float tileH = box.size.y + inset * 2.f;
+            float tileW = tileH * textureAspect;
+            float x = -inset;
+            float y = -inset;
+
+            nvgSave(args.vg);
+
+            // Base tile pass
             nvgBeginPath(args.vg);
             nvgRect(args.vg, 0.f, 0.f, box.size.x, box.size.y);
-            nvgFillPaint(args.vg, paint);
+            NVGpaint paintA = nvgImagePattern(args.vg, x, y, tileW, tileH, 0.f, bg->handle, 1.0f);
+            nvgFillPaint(args.vg, paintA);
             nvgFill(args.vg);
+
+            // Offset low-opacity pass to soften seam visibility
+            nvgBeginPath(args.vg);
+            nvgRect(args.vg, 0.f, 0.f, box.size.x, box.size.y);
+            NVGpaint paintB = nvgImagePattern(args.vg, x + tileW * 0.5f, y, tileW, tileH, 0.f, bg->handle, 0.35f);
+            nvgFillPaint(args.vg, paintB);
+            nvgFill(args.vg);
+
+            // Slight darkening to match existing module tone
+            nvgBeginPath(args.vg);
+            nvgRect(args.vg, 0.f, 0.f, box.size.x, box.size.y);
+            nvgFillColor(args.vg, nvgRGBA(0, 0, 0, 18));
+            nvgFill(args.vg);
+
+            nvgRestore(args.vg);
         }
         ModuleWidget::draw(args);
+
+        // Draw a black inner frame to fully mask any edge tinting
+        constexpr float frame = 1.0f;
+        nvgBeginPath(args.vg);
+        nvgRect(args.vg, 0.f, 0.f, box.size.x, box.size.y);
+        nvgRect(args.vg, frame, frame, box.size.x - 2.f * frame, box.size.y - 2.f * frame);
+        nvgPathWinding(args.vg, NVG_HOLE);
+        nvgFillColor(args.vg, nvgRGB(0, 0, 0));
+        nvgFill(args.vg);
     }
 
     void appendContextMenu(Menu* menu) override {
@@ -2909,14 +2940,14 @@ struct TransmutationWidget : ModuleWidget {
     TransmutationWidget(Transmutation* module) {
         setModule(module);
 
-        // 32HP = 162.56mm width
+        // 38HP = 193.04mm width
         setPanel(createPanel(asset::plugin(pluginInstance, "res/panels/Transmutation.svg")));
 
         // Add screws
-        addChild(createWidget<ScrewBlack>(Vec(RACK_GRID_WIDTH, 0)));
-        addChild(createWidget<ScrewBlack>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, 0)));
-        addChild(createWidget<ScrewBlack>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
-        addChild(createWidget<ScrewBlack>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
+        addChild(createWidget<ScrewJetBlack>(Vec(RACK_GRID_WIDTH, 0)));
+        addChild(createWidget<ScrewJetBlack>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, 0)));
+        addChild(createWidget<ScrewJetBlack>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
+        addChild(createWidget<ScrewJetBlack>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
         // Background drawn in draw()
 
@@ -2942,7 +2973,7 @@ struct TransmutationWidget : ModuleWidget {
             static_cast<stx::transmutation::TransmutationController*>(module)
         );
         {
-            Rect screenRect = parser.rectMm("main_screen", 27.143473f, 34.0f, 77.0f, 77.0f);
+            Rect screenRect = parser.rectMm("main_screen", 32.233f, 34.0f, 91.4375f, 77.0f);
             matrix->box.pos = mm2px(screenRect.pos);
             matrix->box.size = mm2px(screenRect.size);
         }
@@ -2961,8 +2992,8 @@ struct TransmutationWidget : ModuleWidget {
 
         // Edit mode buttons (above matrix) - from SVG circles edit_a_btn/edit_b_btn (cx, cy)
         {
-            addMomentaryScaled(centerPx("edit_a_btn", 55.973103f, 16.805513f), Transmutation::EDIT_A_PARAM);
-            addMomentaryScaled(centerPx("edit_b_btn", 74.402115f, 16.678213f), Transmutation::EDIT_B_PARAM);
+            addMomentaryScaled(centerPx("edit_a_btn", 66.468f, 16.805513f), Transmutation::EDIT_A_PARAM);
+            addMomentaryScaled(centerPx("edit_b_btn", 88.353f, 16.678213f), Transmutation::EDIT_B_PARAM);
         }
 
         // Edit mode lights removed
@@ -2974,18 +3005,18 @@ struct TransmutationWidget : ModuleWidget {
             };
             // Sequence A
             // Hardware-realistic sizes: Medium knobs for length and BPM, attenuverter for multiplier
-            addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltMedium>(pos("seq_a_length", 15.950587f, 37.849998f), module, Transmutation::LENGTH_A_PARAM));
-            addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltMedium>(pos("main_bpm", 15.950588f, 18.322521f), module, Transmutation::INTERNAL_CLOCK_PARAM));
-            addParam(createParamCentered<ShapetakerAttenuverterOscilloscope>(pos("clk_mult_select", 34.340317f, 18.322521f), module, Transmutation::BPM_MULTIPLIER_PARAM));
-            addMomentaryScaled(pos("a_play_btn", 22.586929f, 67.512939f), Transmutation::START_A_PARAM);
-            addMomentaryScaled(pos("a_stop_btn", 22.784245f, 75.573959f), Transmutation::STOP_A_PARAM);
-            addMomentaryScaled(pos("a_reset_btn", 22.784245f, 83.509323f), Transmutation::RESET_A_PARAM);
+            addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltMedium>(pos("seq_a_length", 18.941f, 37.849998f), module, Transmutation::LENGTH_A_PARAM));
+            addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltMedium>(pos("main_bpm", 18.941f, 18.322521f), module, Transmutation::INTERNAL_CLOCK_PARAM));
+            addParam(createParamCentered<ShapetakerAttenuverterOscilloscope>(pos("clk_mult_select", 40.779f, 18.322521f), module, Transmutation::BPM_MULTIPLIER_PARAM));
+            addMomentaryScaled(pos("a_play_btn", 26.822f, 67.512939f), Transmutation::START_A_PARAM);
+            addMomentaryScaled(pos("a_stop_btn", 27.057f, 75.573959f), Transmutation::STOP_A_PARAM);
+            addMomentaryScaled(pos("a_reset_btn", 27.057f, 83.509323f), Transmutation::RESET_A_PARAM);
             // Sequence B
-            addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltMedium>(pos("seq_b_length", 115.02555f, 37.849998f), module, Transmutation::LENGTH_B_PARAM));
-            addMomentaryScaled(pos("b_play_btn", 108.43727f, 67.450111f), Transmutation::START_B_PARAM);
-            addMomentaryScaled(pos("b_stop_btn", 108.43727f, 75.511131f), Transmutation::STOP_B_PARAM);
-            addMomentaryScaled(pos("b_reset_btn", 108.43728f, 83.446495f), Transmutation::RESET_B_PARAM);
-            addParam(createParamCentered<ShapetakerVintageSelector>(pos("mode_switch", 110.08858f, 19.271444f), module, Transmutation::SEQ_B_MODE_PARAM));
+            addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltMedium>(pos("seq_b_length", 136.593f, 37.849998f), module, Transmutation::LENGTH_B_PARAM));
+            addMomentaryScaled(pos("b_play_btn", 128.769f, 67.450111f), Transmutation::START_B_PARAM);
+            addMomentaryScaled(pos("b_stop_btn", 128.769f, 75.511131f), Transmutation::STOP_B_PARAM);
+            addMomentaryScaled(pos("b_reset_btn", 128.769f, 83.446495f), Transmutation::RESET_B_PARAM);
+            addParam(createParamCentered<ShapetakerVintageSelector>(pos("mode_switch", 130.730f, 19.271444f), module, Transmutation::SEQ_B_MODE_PARAM));
         }
 
         // Status display widget removed per design cleanup
@@ -2996,29 +3027,29 @@ struct TransmutationWidget : ModuleWidget {
                 return centerPx(id, defx, defy);
             };
             // A side
-            addInput(createInputCentered<ShapetakerBNCPort>(cpos("a_clk_cv", 15.950586f, 95.834518f), module, Transmutation::CLOCK_A_INPUT));
-            addInput(createInputCentered<ShapetakerBNCPort>(cpos("a_reset_cv", 7.5470452f, 83.509323f), module, Transmutation::RESET_A_INPUT));
-            addInput(createInputCentered<ShapetakerBNCPort>(cpos("a_play_cv", 7.5470452f, 67.512939f), module, Transmutation::START_A_INPUT));
-            addInput(createInputCentered<ShapetakerBNCPort>(cpos("a_stop_cv", 7.5470452f, 75.511131f), module, Transmutation::STOP_A_INPUT));
+            addInput(createInputCentered<ShapetakerBNCPort>(cpos("a_clk_cv", 18.941f, 95.834518f), module, Transmutation::CLOCK_A_INPUT));
+            addInput(createInputCentered<ShapetakerBNCPort>(cpos("a_reset_cv", 8.962f, 83.509323f), module, Transmutation::RESET_A_INPUT));
+            addInput(createInputCentered<ShapetakerBNCPort>(cpos("a_play_cv", 8.962f, 67.512939f), module, Transmutation::START_A_INPUT));
+            addInput(createInputCentered<ShapetakerBNCPort>(cpos("a_stop_cv", 8.962f, 75.511131f), module, Transmutation::STOP_A_INPUT));
             // Length A CV near length knob (present in SVG as seq_a_length_cv)
-            addInput(createInputCentered<ShapetakerBNCPort>(cpos("seq_a_length_cv", 28.0f, 49.0f), module, Transmutation::LENGTH_A_CV_INPUT));
-            addOutput(createOutputCentered<ShapetakerBNCPort>(cpos("a_cv_out", 15.950586f, 105.7832f), module, Transmutation::CV_A_OUTPUT));
-            addOutput(createOutputCentered<ShapetakerBNCPort>(cpos("a_gate_out", 15.950586f, 115.73187f), module, Transmutation::GATE_A_OUTPUT));
+            addInput(createInputCentered<ShapetakerBNCPort>(cpos("seq_a_length_cv", 33.25f, 49.0f), module, Transmutation::LENGTH_A_CV_INPUT));
+            addOutput(createOutputCentered<ShapetakerBNCPort>(cpos("a_cv_out", 18.941f, 105.7832f), module, Transmutation::CV_A_OUTPUT));
+            addOutput(createOutputCentered<ShapetakerBNCPort>(cpos("a_gate_out", 18.941f, 115.73187f), module, Transmutation::GATE_A_OUTPUT));
             // B side
-            addInput(createInputCentered<ShapetakerBNCPort>(cpos("b_clk_cv", 115.02555f, 95.834518f), module, Transmutation::CLOCK_B_INPUT));
-            addInput(createInputCentered<ShapetakerBNCPort>(cpos("b_reset_cv", 123.6797f, 83.509323f), module, Transmutation::RESET_B_INPUT));
-            addInput(createInputCentered<ShapetakerBNCPort>(cpos("b_play_cv", 123.6797f, 67.512939f), module, Transmutation::START_B_INPUT));
-            addInput(createInputCentered<ShapetakerBNCPort>(cpos("b_stop_cv", 123.6797f, 75.511131f), module, Transmutation::STOP_B_INPUT));
+            addInput(createInputCentered<ShapetakerBNCPort>(cpos("b_clk_cv", 136.593f, 95.834518f), module, Transmutation::CLOCK_B_INPUT));
+            addInput(createInputCentered<ShapetakerBNCPort>(cpos("b_reset_cv", 146.870f, 83.509323f), module, Transmutation::RESET_B_INPUT));
+            addInput(createInputCentered<ShapetakerBNCPort>(cpos("b_play_cv", 146.870f, 67.512939f), module, Transmutation::START_B_INPUT));
+            addInput(createInputCentered<ShapetakerBNCPort>(cpos("b_stop_cv", 146.870f, 75.511131f), module, Transmutation::STOP_B_INPUT));
             // Length B CV near length knob (present in SVG as seq_b_length_cv)
-            addInput(createInputCentered<ShapetakerBNCPort>(cpos("seq_b_length_cv", 127.0f, 49.0f), module, Transmutation::LENGTH_B_CV_INPUT));
-            addOutput(createOutputCentered<ShapetakerBNCPort>(cpos("b_cv_out", 115.02555f, 105.7832f), module, Transmutation::CV_B_OUTPUT));
-            addOutput(createOutputCentered<ShapetakerBNCPort>(cpos("b_gate_out", 115.02555f, 115.73187f), module, Transmutation::GATE_B_OUTPUT));
+            addInput(createInputCentered<ShapetakerBNCPort>(cpos("seq_b_length_cv", 150.813f, 49.0f), module, Transmutation::LENGTH_B_CV_INPUT));
+            addOutput(createOutputCentered<ShapetakerBNCPort>(cpos("b_cv_out", 136.593f, 105.7832f), module, Transmutation::CV_B_OUTPUT));
+            addOutput(createOutputCentered<ShapetakerBNCPort>(cpos("b_gate_out", 136.593f, 115.73187f), module, Transmutation::GATE_B_OUTPUT));
         }
 
         // Alchemical Symbol Buttons from SVG rects alchem_1..alchem_12 (x,y are top-left)
         for (int i = 0; i < 12; i++) {
             std::string id = std::string("alchem_") + std::to_string(i + 1);
-            float defaultX = (i < 6 ? (36.0f + 10.65f * i) : (36.0f + 10.65f * (i - 6)));
+            float defaultX = (i < 6 ? (42.75f + 12.647f * i) : (42.75f + 12.647f * (i - 6)));
             float defaultY = (i < 6 ? 110.0f : 117.56f);
             Rect rect = parser.rectMm(id, defaultX, defaultY, 6.0f, 6.0f);
             float scale = 1.22f; // ~22% larger while keeping separation
@@ -3050,11 +3081,11 @@ struct TransmutationWidget : ModuleWidget {
             };
             std::string restId = pickId({"rest_btn", "rest_button"});
             std::string tieId  = pickId({"tie_btn", "tie_button"});
-            Vec restMM = centerMm(restId, 15.950587f, 53.27956f);
-            Vec tieMM  = centerMm(tieId, 115.02555f, 53.27956f);
+            Vec restMM = centerMm(restId, 18.941f, 53.27956f);
+            Vec tieMM  = centerMm(tieId, 136.593f, 53.27956f);
 
             // Match size of alchemical symbol buttons by reading a reference rect (alchem_1)
-            Rect refRect = parser.rectMm("alchem_1", 36.f, 110.f, 6.0f, 6.0f);
+            Rect refRect = parser.rectMm("alchem_1", 42.75f, 110.f, 6.0f, 6.0f);
             if (refRect.size.isZero()) {
                 Rect restRect = parser.rectMm(restId, restMM.x - 3.f, restMM.y - 3.f, 6.0f, 6.0f);
                 if (!restRect.size.isZero()) refRect = restRect;
@@ -3081,9 +3112,9 @@ struct TransmutationWidget : ModuleWidget {
         // Running lights from SVG ids seq_a_led/seq_b_led (cx, cy)
         {
             addChild(createLightCentered<shapetaker::transmutation::TealJewelLEDMedium>(
-                centerPx("seq_a_led", 29.029953f, 33.132351f), module, Transmutation::RUNNING_A_LIGHT));
+                centerPx("seq_a_led", 34.473f, 33.132351f), module, Transmutation::RUNNING_A_LIGHT));
             addChild(createLightCentered<shapetaker::transmutation::PurpleJewelLEDMedium>(
-                centerPx("seq_b_led", 102.28805f, 33.5513f), module, Transmutation::RUNNING_B_LIGHT));
+                centerPx("seq_b_led", 121.467f, 33.5513f), module, Transmutation::RUNNING_B_LIGHT));
         }
 
         // Panel-wide patina overlay for cohesive vintage appearance (added last so it sits on top subtly)

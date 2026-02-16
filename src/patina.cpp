@@ -63,6 +63,12 @@ struct PatinaLFOCore {
     // Slew limiter state
     float slewedOutput = 0.f;
 
+    // DC offset tracking — running sum over one cycle
+    float dcAccum = 0.f;
+    float dcOffset = 0.f;
+    int dcSampleCount = 0;
+    float prevPhase = 0.f;
+
     // Random waveform sample-and-hold state
     float randomSH = 0.f;
 
@@ -98,6 +104,10 @@ struct PatinaLFOCore {
         driftHold = 0.f;
         jitterAccum = 0.f;
         slewedOutput = 0.f;
+        dcAccum = 0.f;
+        dcOffset = 0.f;
+        dcSampleCount = 0;
+        prevPhase = 0.f;
         randomSH = 0.f;
     }
 
@@ -194,15 +204,15 @@ struct PatinaLFOCore {
             }
         };
 
-        // Morph between adjacent shapes
+        // Morph between adjacent shapes using equal-power crossfade
         if (shapeFrac < 0.01f || shapeFloor >= 4) {
-            // No morphing needed
             rawOutput = generateShape(rack::math::clamp(shapeFloor, 0, 4));
         } else {
-            // Crossfade between two shapes
             float shape1 = generateShape(shapeFloor);
             float shape2 = generateShape(rack::math::clamp(shapeFloor + 1, 0, 4));
-            rawOutput = rack::math::crossfade(shape1, shape2, shapeFrac);
+            // Equal-power crossfade: cos/sin curves maintain constant energy
+            float angle = shapeFrac * 0.5f * M_PI;
+            rawOutput = shape1 * std::cos(angle) + shape2 * std::sin(angle);
         }
 
         // ====================================================================
@@ -240,6 +250,21 @@ struct PatinaLFOCore {
         }
 
         output = slewedOutput;
+
+        // DC offset removal — compute running average over each cycle
+        // and subtract it. Updates once per cycle wrap to stay LFO-friendly.
+        dcAccum += output;
+        dcSampleCount++;
+        if (phase < prevPhase) {
+            // Phase wrapped — one full cycle completed
+            if (dcSampleCount > 0) {
+                dcOffset = dcAccum / dcSampleCount;
+            }
+            dcAccum = 0.f;
+            dcSampleCount = 0;
+        }
+        prevPhase = phase;
+        output -= dcOffset;
 
         // Apply amplitude modulation if in amplitude mode
         return output * 5.f * amplitudeModulation; // Scale to ±5V
@@ -840,32 +865,63 @@ struct Patina : Module {
 // ============================================================================
 
 struct PatinaWidget : ModuleWidget {
-    // Draw leather texture background
+    // Match the uniform Clairaudient/Tessellation/Transmutation/Torsion leather treatment
     void draw(const DrawArgs& args) override {
-        std::shared_ptr<Image> bg = APP->window->loadImage(asset::plugin(pluginInstance, "res/panels/black_leather_seamless.jpg"));
+        std::shared_ptr<Image> bg = APP->window->loadImage(asset::plugin(pluginInstance, "res/panels/panel_background.png"));
         if (bg) {
-            // Scale < 1.0 = finer grain appearance
-            float scale = 0.4f;
-            float textureHeight = box.size.y * scale;
-            float textureWidth = textureHeight * (1.f);
-            NVGpaint paint = nvgImagePattern(args.vg, 0.f, 0.f, textureWidth, textureHeight, 0.f, bg->handle, 1.0f);
+            // Keep leather grain density consistent across panel widths via fixed-height tiling.
+            constexpr float inset = 2.0f;
+            constexpr float textureAspect = 2880.f / 4553.f;  // panel_background.png
+            float tileH = box.size.y + inset * 2.f;
+            float tileW = tileH * textureAspect;
+            float x = -inset;
+            float y = -inset;
+
+            nvgSave(args.vg);
+
+            // Base tile pass
             nvgBeginPath(args.vg);
             nvgRect(args.vg, 0.f, 0.f, box.size.x, box.size.y);
-            nvgFillPaint(args.vg, paint);
+            NVGpaint paintA = nvgImagePattern(args.vg, x, y, tileW, tileH, 0.f, bg->handle, 1.0f);
+            nvgFillPaint(args.vg, paintA);
             nvgFill(args.vg);
+
+            // Offset low-opacity pass to soften seam visibility
+            nvgBeginPath(args.vg);
+            nvgRect(args.vg, 0.f, 0.f, box.size.x, box.size.y);
+            NVGpaint paintB = nvgImagePattern(args.vg, x + tileW * 0.5f, y, tileW, tileH, 0.f, bg->handle, 0.35f);
+            nvgFillPaint(args.vg, paintB);
+            nvgFill(args.vg);
+
+            // Slight darkening to match existing module tone
+            nvgBeginPath(args.vg);
+            nvgRect(args.vg, 0.f, 0.f, box.size.x, box.size.y);
+            nvgFillColor(args.vg, nvgRGBA(0, 0, 0, 18));
+            nvgFill(args.vg);
+
+            nvgRestore(args.vg);
         }
         ModuleWidget::draw(args);
+
+        // Draw a black inner frame to fully mask any edge tinting
+        constexpr float frame = 1.0f;
+        nvgBeginPath(args.vg);
+        nvgRect(args.vg, 0.f, 0.f, box.size.x, box.size.y);
+        nvgRect(args.vg, frame, frame, box.size.x - 2.f * frame, box.size.y - 2.f * frame);
+        nvgPathWinding(args.vg, NVG_HOLE);
+        nvgFillColor(args.vg, nvgRGB(0, 0, 0));
+        nvgFill(args.vg);
     }
 
     PatinaWidget(Patina* module) {
         setModule(module);
         setPanel(createPanel(asset::plugin(pluginInstance, "res/panels/Patina.svg")));
 
-        // Add screws (black, all four corners)
-        addChild(createWidget<ScrewBlack>(Vec(RACK_GRID_WIDTH, 0)));
-        addChild(createWidget<ScrewBlack>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, 0)));
-        addChild(createWidget<ScrewBlack>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
-        addChild(createWidget<ScrewBlack>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
+        // Add screws (jet black, all four corners)
+        addChild(createWidget<ScrewJetBlack>(Vec(RACK_GRID_WIDTH, 0)));
+        addChild(createWidget<ScrewJetBlack>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, 0)));
+        addChild(createWidget<ScrewJetBlack>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
+        addChild(createWidget<ScrewJetBlack>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
         using LayoutHelper = shapetaker::ui::LayoutHelper;
 
@@ -897,8 +953,8 @@ struct PatinaWidget : ModuleWidget {
         const float envRow2 = 41.f;  // Jacks (BNC, 4mm radius)
 
         // Two knobs: Master Rate, Envelope Depth
-        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltMedium>(centerPx("patina-master-rate", leftCol, envRow1), module, Patina::MASTER_RATE_PARAM));
-        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltMedium>(centerPx("patina-env-depth", rightCol, envRow1), module, Patina::ENV_DEPTH_PARAM));
+        addKnobWithShadow(this, createParamCentered<ShapetakerKnobVintageMedium>(centerPx("patina-master-rate", leftCol, envRow1), module, Patina::MASTER_RATE_PARAM));
+        addKnobWithShadow(this, createParamCentered<ShapetakerKnobVintageMedium>(centerPx("patina-env-depth", rightCol, envRow1), module, Patina::ENV_DEPTH_PARAM));
 
         // Jacks: Audio In, Envelope Out, Clock, Reset
         addInput(createInputCentered<ShapetakerBNCPort>(centerPx("patina-audio-input", leftCol, envRow2), module, Patina::AUDIO_INPUT));
@@ -922,23 +978,23 @@ struct PatinaWidget : ModuleWidget {
         const float lfoRow5 = 106.f;   // Output lights (2mm radius)
 
         // LFO 1 (Left - Teal)
-        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltMedium>(centerPx("patina-rate1", midLeftCol, lfoRow1), module, Patina::RATE_1_PARAM));
+        addKnobWithShadow(this, createParamCentered<ShapetakerKnobVintageMedium>(centerPx("patina-rate1", midLeftCol, lfoRow1), module, Patina::RATE_1_PARAM));
         addInput(createInputCentered<ShapetakerBNCPort>(centerPx("patina-rate1-cv", midLeftCol, lfoRow2), module, Patina::RATE_1_INPUT));
-        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltSmall>(centerPx("patina-shape1", midLeftCol, lfoRow3), module, Patina::SHAPE_1_PARAM));
+        addKnobWithShadow(this, createParamCentered<ShapetakerKnobVintageSmallMedium>(centerPx("patina-shape1", midLeftCol, lfoRow3), module, Patina::SHAPE_1_PARAM));
         addOutput(createOutputCentered<ShapetakerBNCPort>(centerPx("patina-output1", midLeftCol, lfoRow4), module, Patina::LFO_1_OUTPUT));
         if (module) addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(centerPx("patina-light1", midLeftCol, lfoRow5), module, Patina::LFO_1_LIGHT));
 
         // LFO 2 (Center - Purple)
-        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltMedium>(centerPx("patina-rate2", centerX, lfoRow1), module, Patina::RATE_2_PARAM));
+        addKnobWithShadow(this, createParamCentered<ShapetakerKnobVintageMedium>(centerPx("patina-rate2", centerX, lfoRow1), module, Patina::RATE_2_PARAM));
         addInput(createInputCentered<ShapetakerBNCPort>(centerPx("patina-rate2-cv", centerX, lfoRow2), module, Patina::RATE_2_INPUT));
-        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltSmall>(centerPx("patina-shape2", centerX, lfoRow3), module, Patina::SHAPE_2_PARAM));
+        addKnobWithShadow(this, createParamCentered<ShapetakerKnobVintageSmallMedium>(centerPx("patina-shape2", centerX, lfoRow3), module, Patina::SHAPE_2_PARAM));
         addOutput(createOutputCentered<ShapetakerBNCPort>(centerPx("patina-output2", centerX, lfoRow4), module, Patina::LFO_2_OUTPUT));
         if (module) addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(centerPx("patina-light2", centerX, lfoRow5), module, Patina::LFO_2_LIGHT));
 
         // LFO 3 (Right - Amber)
-        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltMedium>(centerPx("patina-rate3", midRightCol, lfoRow1), module, Patina::RATE_3_PARAM));
+        addKnobWithShadow(this, createParamCentered<ShapetakerKnobVintageMedium>(centerPx("patina-rate3", midRightCol, lfoRow1), module, Patina::RATE_3_PARAM));
         addInput(createInputCentered<ShapetakerBNCPort>(centerPx("patina-rate3-cv", midRightCol, lfoRow2), module, Patina::RATE_3_INPUT));
-        addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltSmall>(centerPx("patina-shape3", midRightCol, lfoRow3), module, Patina::SHAPE_3_PARAM));
+        addKnobWithShadow(this, createParamCentered<ShapetakerKnobVintageSmallMedium>(centerPx("patina-shape3", midRightCol, lfoRow3), module, Patina::SHAPE_3_PARAM));
         addOutput(createOutputCentered<ShapetakerBNCPort>(centerPx("patina-output3", midRightCol, lfoRow4), module, Patina::LFO_3_OUTPUT));
         if (module) addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(centerPx("patina-light3", midRightCol, lfoRow5), module, Patina::LFO_3_LIGHT));
 

@@ -142,6 +142,17 @@ struct Involution : Module {
         }
     };
 
+    // Sample-rate-aware DC blocker coefficient for ethereal delays
+    float etherealDcCoeff = 0.995f;
+
+    // Per-voice output DC blocker state
+    struct OutputDCBlock {
+        float lastInputA = 0.f, lastOutputA = 0.f;
+        float lastInputB = 0.f, lastOutputB = 0.f;
+        void reset() { lastInputA = lastOutputA = lastInputB = lastOutputB = 0.f; }
+    };
+    std::array<OutputDCBlock, shapetaker::PolyphonicProcessor::MAX_VOICES> outputDC{};
+
     std::array<EtherealVoiceState, shapetaker::PolyphonicProcessor::MAX_VOICES> etherealVoicesA{};
     std::array<EtherealVoiceState, shapetaker::PolyphonicProcessor::MAX_VOICES> etherealVoicesB{};
     float etherealPhase = 0.f;
@@ -196,13 +207,17 @@ struct Involution : Module {
     // 0=Phosphor (Green), 1=Ice (Cyan), 2=Solar (Yellow), 3=Amber (Orange)
     int chaosTheme = 0;
 
+    // Filter mode: 0=Lowpass, 1=Bandpass, 2=Morph (LP→BP)
+    int filterModeIndex = 0;
+
+
     Involution() {
         config(PARAMS_LEN, INPUTS_LEN, OUTPUTS_LEN, LIGHTS_LEN);
         
         configParam(CUTOFF_A_PARAM, 0.f, 1.f, 1.f, "Filter A Cutoff", " Hz", std::pow(2.f, 10.f), 20.f);
-        configParam(RESONANCE_A_PARAM, 0.707f, 1.5f, 0.707f, "Filter A Resonance");
+        configParam(RESONANCE_A_PARAM, 0.707f, 2.5f, 0.707f, "Filter A Resonance");
         configParam(CUTOFF_B_PARAM, 0.f, 1.f, 1.f, "Filter B Cutoff", " Hz", std::pow(2.f, 10.f), 20.f);
-        configParam(RESONANCE_B_PARAM, 0.707f, 1.5f, 0.707f, "Filter B Resonance");
+        configParam(RESONANCE_B_PARAM, 0.707f, 2.5f, 0.707f, "Filter B Resonance");
         
         // Drive / character controls
         configParam(CHAOS_AMOUNT_PARAM, 0.f, 1.f, 0.75f, "Drive", "%", 0.f, 100.f);
@@ -296,6 +311,7 @@ struct Involution : Module {
     json_t* dataToJson() override {
         json_t* rootJ = json_object();
         json_object_set_new(rootJ, "chaosTheme", json_integer(chaosTheme));
+        json_object_set_new(rootJ, "filterMode", json_integer(filterModeIndex));
         return rootJ;
     }
 
@@ -304,10 +320,19 @@ struct Involution : Module {
         if (chaosThemeJ) {
             chaosTheme = clamp((int)json_integer_value(chaosThemeJ), 0, 3);
         }
+        json_t* filterModeJ = json_object_get(rootJ, "filterMode");
+        if (filterModeJ) {
+            filterModeIndex = clamp((int)json_integer_value(filterModeJ), 0, 2);
+            applyFilterMode();
+        }
     }
 
     void onSampleRateChange() override {
         float sr = APP->engine->getSampleRate();
+
+        // Compute sample-rate-aware DC blocker coefficient (~10Hz cutoff)
+        const float dcCutoffHz = 10.f;
+        etherealDcCoeff = rack::math::clamp(1.f - (2.f * (float)M_PI * dcCutoffHz / sr), 0.9f, 0.9999f);
 
         // Update all liquid filters with new sample rate
         for (int v = 0; v < shapetaker::PolyphonicProcessor::MAX_VOICES; v++) {
@@ -319,6 +344,7 @@ struct Involution : Module {
             }
             etherealVoicesA[v].reset();
             etherealVoicesB[v].reset();
+            outputDC[v].reset();
         }
     }
 
@@ -335,6 +361,15 @@ struct Involution : Module {
         for (int v = 0; v < shapetaker::PolyphonicProcessor::MAX_VOICES; ++v) {
             etherealVoicesA[v].reset();
             etherealVoicesB[v].reset();
+        }
+    }
+
+    void applyFilterMode() {
+        LiquidFilter::FilterMode mode = static_cast<LiquidFilter::FilterMode>(
+            clamp(filterModeIndex, 0, 2));
+        for (int v = 0; v < shapetaker::PolyphonicProcessor::MAX_VOICES; v++) {
+            filtersA[v].setFilterMode(mode);
+            filtersB[v].setFilterMode(mode);
         }
     }
 
@@ -510,13 +545,13 @@ struct Involution : Module {
             float attenA = params[RESONANCE_A_ATTEN_PARAM].getValue();
             displayResonanceA += inputs[RESONANCE_A_CV_INPUT].getPolyVoltage(0) * attenA / 10.f;
         }
-        displayResonanceA = clamp(displayResonanceA, 0.707f, 1.5f);
+        displayResonanceA = clamp(displayResonanceA, 0.707f, 2.5f);
 
         if (inputs[RESONANCE_B_CV_INPUT].isConnected()) {
             float attenB = params[RESONANCE_B_ATTEN_PARAM].getValue();
             displayResonanceB += inputs[RESONANCE_B_CV_INPUT].getPolyVoltage(0) * attenB / 10.f;
         }
-        displayResonanceB = clamp(displayResonanceB, 0.707f, 1.5f);
+        displayResonanceB = clamp(displayResonanceB, 0.707f, 2.5f);
 
         effectiveResonanceA = displayResonanceA;
         effectiveResonanceB = displayResonanceB;
@@ -604,13 +639,13 @@ struct Involution : Module {
                         float attenA = params[RESONANCE_A_ATTEN_PARAM].getValue();
                         voiceResonanceA += inputs[RESONANCE_A_CV_INPUT].getPolyVoltage(c) * attenA / 10.f;
                     }
-                    voiceResonanceA = clamp(voiceResonanceA, 0.707f, 1.5f);
+                    voiceResonanceA = clamp(voiceResonanceA, 0.707f, 2.5f);
 
                     if (inputs[RESONANCE_B_CV_INPUT].isConnected()) {
                         float attenB = params[RESONANCE_B_ATTEN_PARAM].getValue();
                         voiceResonanceB += inputs[RESONANCE_B_CV_INPUT].getPolyVoltage(c) * attenB / 10.f;
                     }
-                    voiceResonanceB = clamp(voiceResonanceB, 0.707f, 1.5f);
+                    voiceResonanceB = clamp(voiceResonanceB, 0.707f, 2.5f);
 
                     // Convert cutoff from normalized (0-1) to Hz (20Hz - 20480Hz)
                     float cutoffAHz = 20.f * std::pow(2.f, voiceCutoffA * 10.f);
@@ -621,8 +656,8 @@ struct Involution : Module {
                     processedA = filtersA[c].process(audioA, cutoffAHz, voiceResonanceA, driveScaled);
                     processedB = filtersB[c].process(audioB, cutoffBHz, voiceResonanceB, driveScaled);
 
-                    float resonanceNormA = clamp((voiceResonanceA - 0.707f) / (1.5f - 0.707f), 0.f, 1.f);
-                    float resonanceNormB = clamp((voiceResonanceB - 0.707f) / (1.5f - 0.707f), 0.f, 1.f);
+                    float resonanceNormA = clamp((voiceResonanceA - 0.707f) / (2.5f - 0.707f), 0.f, 1.f);
+                    float resonanceNormB = clamp((voiceResonanceB - 0.707f) / (2.5f - 0.707f), 0.f, 1.f);
 
                     constexpr float baseDelaySeconds[ETHEREAL_STAGES] = {0.018f, 0.031f, 0.047f, 0.085f};
                     constexpr float stageWeights[ETHEREAL_STAGES] = {0.55f, 0.38f, 0.26f, 0.19f};
@@ -715,8 +750,7 @@ struct Involution : Module {
                             float stageInput = stageInputDry + shimmerLift * cloud * 0.25f;
                             float stageOutputRaw = state.delays[s].process(stageInput, smoothedDelay, feedback);
                             // DC block and soft saturation to prevent long-tail runaway
-                            constexpr float dcCoeff = 0.995f;
-                            state.dcBlock[s] = dcCoeff * state.dcBlock[s] + (1.f - dcCoeff) * stageOutputRaw;
+                            state.dcBlock[s] = etherealDcCoeff * state.dcBlock[s] + (1.f - etherealDcCoeff) * stageOutputRaw;
                             float stageOutput = stageOutputRaw - state.dcBlock[s];
                             stageOutput = std::tanh(stageOutput * 0.85f) * 1.05f;
                             cloud += stageOutput * stageWeights[s];
@@ -743,17 +777,18 @@ struct Involution : Module {
                 }
                 
                 
+                // Output DC blocking to remove offset from saturation and delay feedback
+                processedA = shapetaker::dsp::AudioProcessor::processDCBlock(
+                    processedA, outputDC[c].lastInputA, outputDC[c].lastOutputA);
+                processedB = shapetaker::dsp::AudioProcessor::processDCBlock(
+                    processedB, outputDC[c].lastInputB, outputDC[c].lastOutputB);
+
                 // Set output voltages for this voice
                 outputs[AUDIO_A_OUTPUT].setVoltage(processedA, c);
                 outputs[AUDIO_B_OUTPUT].setVoltage(processedB, c);
             }
 
         }
-        
-        // Update lights to show parameter values with Chiaroscuro-style color progression
-        // Both lights: Teal (0%) -> Bright blue-purple (50%) -> Dark purple (100%)
-        const float base_brightness = 0.25f;
-        const float max_brightness = base_brightness;
         
         // Chaos rate indicator: slower blink at low rates, capped brightness.
         // Nonlinear mapping: make low rates slower and keep fast rates readable.
@@ -763,18 +798,32 @@ struct Involution : Module {
         if (chaosRateBlinkPhase >= 1.f) {
             chaosRateBlinkPhase -= std::floor(chaosRateBlinkPhase);
         }
-        float pulse = 0.5f * (1.f + std::sinf(2.f * static_cast<float>(M_PI) * chaosRateBlinkPhase));
         float blinkScale = 1.f;
         float chaosRateBrightness = 0.f;
         lights[CHAOS_RATE_LIGHT].setBrightness(chaosRateBrightness);
 
-        // Mix aura/orbit/tide into the jewel RGB, then pulse with the rate.
+        // Mix aura/orbit/tide into the jewel RGB.
+        // Use Chiaroscuro distortion-style intensity response for brightness/glow behavior.
         float auraValue = clamp(auraLight, 0.f, 1.f);
         float orbitValue = clamp(orbitLight, 0.f, 1.f);
         float tideValue = clamp(tideLight, 0.f, 1.f);
-        float auraRed = auraValue * max_brightness * blinkScale;
-        float orbitGreen = orbitValue * max_brightness * blinkScale;
-        float tideBlue = tideValue * max_brightness * blinkScale;
+        float total = auraValue + orbitValue + tideValue;
+        constexpr float LED_OFF_EPS = 1e-3f;
+        float auraRed = 0.f;
+        float orbitGreen = 0.f;
+        float tideBlue = 0.f;
+        if (total > LED_OFF_EPS) {
+            float hueAura = auraValue / total;
+            float hueOrbit = orbitValue / total;
+            float hueTide = tideValue / total;
+            float product = auraValue * orbitValue * tideValue;
+            float peak = std::max(auraValue, std::max(orbitValue, tideValue));
+            float mixIntensity = clamp(product + peak * peak * 0.1f, 0.f, 1.f);
+            float ledBrightness = std::pow(mixIntensity, 0.55f) * 1.8f * blinkScale;
+            auraRed = clamp(hueAura * ledBrightness, 0.f, 1.f);
+            orbitGreen = clamp(hueOrbit * ledBrightness, 0.f, 1.f);
+            tideBlue = clamp(hueTide * ledBrightness, 0.f, 1.f);
+        }
         lights[CHAOS_LIGHT].setBrightness(auraRed);
         lights[CHAOS_LIGHT + 1].setBrightness(orbitGreen);
         lights[CHAOS_LIGHT + 2].setBrightness(tideBlue);
@@ -860,6 +909,94 @@ struct ChaosJewelLED : ModuleLightWidget {
             }
         }
         ModuleLightWidget::step();
+
+        // Match Chiaroscuro jewel behavior: derive drawable color directly from RGB light channels.
+        if (module) {
+            float r = module->lights[firstLightId + 0].getBrightness();
+            float g = module->lights[firstLightId + 1].getBrightness();
+            float b = module->lights[firstLightId + 2].getBrightness();
+            color = nvgRGBAf(r, g, b, fmaxf(fmaxf(r, g), b));
+        } else {
+            color = nvgRGBAf(0.f, 0.f, 0.f, 0.f);
+        }
+    }
+
+    void drawLight(const DrawArgs& args) override {
+        // Match Chiaroscuro gain jewel light profile for comparable perceived brightness.
+        float brightness = color.a;
+        brightness = std::max(brightness, color.r);
+        brightness = std::max(brightness, color.g);
+        brightness = std::max(brightness, color.b);
+        if (brightness <= 1e-3f) {
+            return;
+        }
+
+        const float minSize = std::min(box.size.x, box.size.y);
+        const float cx = box.size.x * 0.5f;
+        const float cy = box.size.y * 0.5f;
+        const float lensRadius = 0.42f * minSize;
+        float glow = clamp(brightness * 2.0f, 0.f, 1.f);
+
+        nvgSave(args.vg);
+        nvgScissor(args.vg, cx - lensRadius, cy - lensRadius, lensRadius * 2.f, lensRadius * 2.f);
+
+        NVGcolor washInner = color;
+        washInner.a = 0.85f * glow;
+        NVGcolor washOuter = color;
+        washOuter.a = 0.45f * glow;
+        NVGpaint wash = nvgRadialGradient(args.vg, cx, cy, 0.f, lensRadius, washInner, washOuter);
+        nvgBeginPath(args.vg);
+        nvgCircle(args.vg, cx, cy, lensRadius);
+        nvgFillPaint(args.vg, wash);
+        nvgFill(args.vg);
+
+        NVGcolor coreInner = nvgRGBAf(
+            std::min(color.r * 1.5f + 0.3f, 1.f),
+            std::min(color.g * 1.5f + 0.3f, 1.f),
+            std::min(color.b * 1.5f + 0.3f, 1.f),
+            0.9f * glow);
+        NVGcolor coreOuter = color;
+        coreOuter.a = 0.2f * glow;
+        NVGpaint core = nvgRadialGradient(args.vg, cx, cy, 0.f, lensRadius * 0.5f, coreInner, coreOuter);
+        nvgBeginPath(args.vg);
+        nvgCircle(args.vg, cx, cy, lensRadius * 0.5f);
+        nvgFillPaint(args.vg, core);
+        nvgFill(args.vg);
+
+        NVGcolor spec = nvgRGBAf(1.f, 1.f, 1.f, 0.35f * glow);
+        nvgBeginPath(args.vg);
+        nvgCircle(args.vg, cx - lensRadius * 0.15f, cy - lensRadius * 0.15f, lensRadius * 0.18f);
+        nvgFillColor(args.vg, spec);
+        nvgFill(args.vg);
+
+        nvgResetScissor(args.vg);
+        nvgRestore(args.vg);
+    }
+
+    void drawHalo(const DrawArgs& args) override {
+        float brightness = color.a;
+        brightness = std::max(brightness, color.r);
+        brightness = std::max(brightness, color.g);
+        brightness = std::max(brightness, color.b);
+        if (brightness <= 1e-3f) {
+            return;
+        }
+
+        float cx = box.size.x * 0.5f;
+        float cy = box.size.y * 0.5f;
+        float radius = std::min(box.size.x, box.size.y) * 0.5f;
+        float oradius = radius * 1.5f;
+
+        NVGcolor icol = color;
+        icol.a = 0.25f * brightness;
+        NVGcolor ocol = color;
+        ocol.a = 0.0f;
+
+        NVGpaint paint = nvgRadialGradient(args.vg, cx, cy, radius * 0.15f, oradius, icol, ocol);
+        nvgBeginPath(args.vg);
+        nvgRect(args.vg, cx - oradius, cy - oradius, oradius * 2.f, oradius * 2.f);
+        nvgFillPaint(args.vg, paint);
+        nvgFill(args.vg);
     }
 
     void draw(const DrawArgs& args) override {
@@ -875,8 +1012,14 @@ struct ChaosJewelLED : ModuleLightWidget {
             nvgFillColor(args.vg, nvgRGB(0x33, 0x33, 0x33));
             nvgFill(args.vg);
         }
+        // Draw SVG children first
+        widget::Widget::draw(args);
 
-        ModuleLightWidget::draw(args);
+        // Overlay the colored light using additive blending so it glows through the SVG facets
+        nvgGlobalCompositeOperation(args.vg, NVG_LIGHTER);
+        drawLight(args);
+        nvgGlobalCompositeOperation(args.vg, NVG_SOURCE_OVER);
+        drawHalo(args);
     }
 };
 
@@ -1047,23 +1190,30 @@ struct InvolutionWidget : ModuleWidget {
     void draw(const DrawArgs& args) override {
         std::shared_ptr<Image> bg = APP->window->loadImage(asset::plugin(pluginInstance, "res/panels/panel_background.png"));
         if (bg) {
-            // Draw image stretched to fill entire panel, no tiling
+            // Draw image slightly overscanned to avoid edge tinting inside the panel border
+            constexpr float inset = 2.0f;
+            float x = -inset;
+            float y = -inset;
+            float w = box.size.x + inset * 2.f;
+            float h = box.size.y + inset * 2.f;
             nvgSave(args.vg);
             nvgBeginPath(args.vg);
             nvgRect(args.vg, 0.f, 0.f, box.size.x, box.size.y);
-            NVGpaint paint = nvgImagePattern(args.vg, 0.f, 0.f, box.size.x, box.size.y, 0.f, bg->handle, 1.0f);
+            NVGpaint paint = nvgImagePattern(args.vg, x, y, w, h, 0.f, bg->handle, 1.0f);
             nvgFillPaint(args.vg, paint);
             nvgFill(args.vg);
             nvgRestore(args.vg);
         }
         ModuleWidget::draw(args);
 
-        // Draw black border on top to cover default gray panel border
+        // Draw a black inner frame to fully mask any edge tinting
+        constexpr float frame = 1.0f;
         nvgBeginPath(args.vg);
         nvgRect(args.vg, 0.f, 0.f, box.size.x, box.size.y);
-        nvgStrokeColor(args.vg, nvgRGB(0, 0, 0));
-        nvgStrokeWidth(args.vg, 1.0f);
-        nvgStroke(args.vg);
+        nvgRect(args.vg, frame, frame, box.size.x - 2.f * frame, box.size.y - 2.f * frame);
+        nvgPathWinding(args.vg, NVG_HOLE);
+        nvgFillColor(args.vg, nvgRGB(0, 0, 0));
+        nvgFill(args.vg);
     }
 
     void appendContextMenu(Menu* menu) override {
@@ -1082,6 +1232,20 @@ struct InvolutionWidget : ModuleWidget {
                 }));
             }
         }));
+
+        static const char* filterModeNames[] = {"Lowpass", "Bandpass", ("Morph (LP\xe2\x86\x92" "BP)")};
+        int currentMode = clamp(involution->filterModeIndex, 0, 2);
+        menu->addChild(createSubmenuItem("Filter Mode", filterModeNames[currentMode], [=](Menu* childMenu) {
+            for (int i = 0; i < 3; i++) {
+                childMenu->addChild(createCheckMenuItem(filterModeNames[i], "", [=] {
+                    return involution->filterModeIndex == i;
+                }, [=] {
+                    involution->filterModeIndex = i;
+                    involution->applyFilterMode();
+                }));
+            }
+        }));
+
     }
 };
 

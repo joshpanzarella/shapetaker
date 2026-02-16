@@ -148,6 +148,8 @@ struct Evocation : Module {
     enum LightId {
         RECORDING_LIGHT,
         TRIGGER_LIGHT,
+        TRIM_LEAD_LIGHT,
+        TRIM_TAIL_LIGHT,
         LOOP_1_LIGHT,
         LOOP_2_LIGHT,
         LOOP_3_LIGHT,
@@ -275,6 +277,8 @@ struct Evocation : Module {
     dsp::SchmittTrigger gateTrigger;
     dsp::SchmittTrigger trimLeadButtonTrigger;
     dsp::SchmittTrigger trimTailButtonTrigger;
+    dsp::PulseGenerator trimLeadLightPulse;
+    dsp::PulseGenerator trimTailLightPulse;
     dsp::SchmittTrigger envSelectTriggers[4];
     bool envelopeAdvanceButtonLatch = false;
     bool parameterAdvanceButtonLatch = false;
@@ -420,6 +424,12 @@ struct Evocation : Module {
         bool triggerButtonPressed = triggerTrigger.process(params[TRIGGER_PARAM].getValue());
         bool trimLeadPressed = trimLeadButtonTrigger.process(params[TRIM_LEAD_PARAM].getValue());
         bool trimTailPressed = trimTailButtonTrigger.process(params[TRIM_TAIL_PARAM].getValue());
+        if (trimLeadPressed) {
+            trimLeadLightPulse.trigger(0.25f);
+        }
+        if (trimTailPressed) {
+            trimTailLightPulse.trigger(0.25f);
+        }
         for (int i = 0; i < 4; ++i) {
             if (envSelectTriggers[i].process(params[ENV_SELECT_1_PARAM + i].getValue())) {
                 selectEnvelope(i);
@@ -695,6 +705,8 @@ struct Evocation : Module {
         // Update lights
         lights[RECORDING_LIGHT].setBrightness(isRecording ? 1.0f : 0.0f);
         lights[TRIGGER_LIGHT].setBrightness(isAnyPlaybackActive() ? 1.0f : 0.0f);
+        lights[TRIM_LEAD_LIGHT].setBrightness(trimLeadLightPulse.process(args.sampleTime) ? 1.0f : 0.0f);
+        lights[TRIM_TAIL_LIGHT].setBrightness(trimTailLightPulse.process(args.sampleTime) ? 1.0f : 0.0f);
 
         // Update loop and invert lights for currently selected envelope
         if (currentEnvelopeIndex >= 0 && currentEnvelopeIndex < NUM_ENVELOPES) {
@@ -739,11 +751,10 @@ struct Evocation : Module {
             // In Gesture mode: show envelope output intensity
             for (int i = 0; i < 4; i++) {
                 float maxVoltage = 0.0f;
-                int channels = outputs[ENV_1_OUTPUT + i].getChannels();
 
-                // Get the maximum voltage across all polyphonic channels
-                for (int c = 0; c < channels; c++) {
-                    float voltage = outputs[ENV_1_OUTPUT + i].getVoltage(c);
+                // Use internal playback state so LEDs track envelopes even if outputs aren't connected
+                for (int c = 0; c < MAX_POLY_CHANNELS; c++) {
+                    float voltage = playback[i].smoothedVoltage[c];
                     maxVoltage = std::max(maxVoltage, std::abs(voltage));
                 }
 
@@ -864,7 +875,7 @@ struct Evocation : Module {
         filtered.reserve(envelope.size());
         filtered.push_back(envelope[0]);
 
-        const float minYDelta = 0.005f; // 0.5% threshold
+        const float minYDelta = 0.002f; // 0.2% threshold for finer gesture detail
         for (size_t i = 1; i < envelope.size() - 1; i++) {
             float prevY = filtered.back().y;
             float currY = envelope[i].y;
@@ -1830,7 +1841,8 @@ struct Evocation : Module {
         if (totalTime < 0.001f) totalTime = 0.001f;
 
         // Attack phase
-        int attackPoints = std::max(2, (int)(adsrAttackTime * 20.0f)); // 20 points per second
+        constexpr float pointsPerSecond = 60.0f;
+        int attackPoints = std::max(2, (int)(adsrAttackTime * pointsPerSecond)); // points per second
         float attackContour = mapContourControl(adsrAttackContour);
         for (int i = 0; i < attackPoints; i++) {
             float t = (float)i / (attackPoints - 1);
@@ -1841,7 +1853,7 @@ struct Evocation : Module {
 
         // Decay phase
         float decayStart = adsrAttackTime / totalTime;
-        int decayPoints = std::max(2, (int)(adsrDecayTime * 20.0f));
+        int decayPoints = std::max(2, (int)(adsrDecayTime * pointsPerSecond));
         float decayContour = mapContourControl(adsrDecayContour);
         float clampedSustain = clamp(adsrSustainLevel, 0.0f, 1.0f);
         for (int i = 0; i < decayPoints; i++) {
@@ -1858,7 +1870,7 @@ struct Evocation : Module {
 
         // Release phase (from sustain level to 0)
         float releaseStart = sustainStart;
-        int releasePoints = std::max(2, (int)(adsrReleaseTime * 20.0f));
+        int releasePoints = std::max(2, (int)(adsrReleaseTime * pointsPerSecond));
         float releaseContour = mapContourControl(adsrReleaseContour);
         for (int i = 1; i < releasePoints; i++) {
             float t = (float)i / (releasePoints - 1);
@@ -3804,21 +3816,46 @@ struct EvocationWidget : ModuleWidget {
     TouchStripWidget* touchStrip = nullptr;
     EvocationOLEDDisplay* oledDisplay = nullptr;
 
-    // Draw leather texture background
     void draw(const DrawArgs& args) override {
-        std::shared_ptr<Image> bg = APP->window->loadImage(asset::plugin(pluginInstance, "res/panels/black_leather_seamless.jpg"));
+        // Use fixed-density leather mapping to avoid horizontal stretch on
+        // wider panels; blend an offset pass to soften repeat seams.
+        std::shared_ptr<Image> bg = APP->window->loadImage(asset::plugin(pluginInstance, "res/panels/evocation-panel.png"));
         if (bg) {
-            // Scale < 1.0 = finer grain appearance
-            float scale = 0.4f;
-            float textureHeight = box.size.y * scale;
-            float textureWidth = textureHeight * (1.f);
-            NVGpaint paint = nvgImagePattern(args.vg, 0.f, 0.f, textureWidth, textureHeight, 0.f, bg->handle, 1.0f);
+            constexpr float inset = 2.0f;
+            constexpr float textureAspect = 3601.f / 4553.f;  // evocation-panel.png
+            float tileH = box.size.y + inset * 2.f;
+            float tileW = tileH * textureAspect;
+            float x = -inset;
+            float y = -inset;
+            nvgSave(args.vg);
             nvgBeginPath(args.vg);
             nvgRect(args.vg, 0.f, 0.f, box.size.x, box.size.y);
-            nvgFillPaint(args.vg, paint);
+            NVGpaint paintA = nvgImagePattern(args.vg, x, y, tileW, tileH, 0.f, bg->handle, 1.0f);
+            nvgFillPaint(args.vg, paintA);
             nvgFill(args.vg);
+
+            nvgBeginPath(args.vg);
+            nvgRect(args.vg, 0.f, 0.f, box.size.x, box.size.y);
+            NVGpaint paintB = nvgImagePattern(args.vg, x + tileW * 0.5f, y, tileW, tileH, 0.f, bg->handle, 0.35f);
+            nvgFillPaint(args.vg, paintB);
+            nvgFill(args.vg);
+
+            nvgBeginPath(args.vg);
+            nvgRect(args.vg, 0.f, 0.f, box.size.x, box.size.y);
+            nvgFillColor(args.vg, nvgRGBA(0, 0, 0, 18));
+            nvgFill(args.vg);
+            nvgRestore(args.vg);
         }
         ModuleWidget::draw(args);
+
+        // Draw a black inner frame to fully mask any edge tinting
+        constexpr float frame = 1.0f;
+        nvgBeginPath(args.vg);
+        nvgRect(args.vg, 0.f, 0.f, box.size.x, box.size.y);
+        nvgRect(args.vg, frame, frame, box.size.x - 2.f * frame, box.size.y - 2.f * frame);
+        nvgPathWinding(args.vg, NVG_HOLE);
+        nvgFillColor(args.vg, nvgRGB(0, 0, 0));
+        nvgFill(args.vg);
     }
 
     EvocationWidget(Evocation* module) {
@@ -3832,14 +3869,11 @@ struct EvocationWidget : ModuleWidget {
         LayoutHelper::PanelSVGParser parser(asset::plugin(pluginInstance, "res/panels/Evocation.svg"));
         auto centerPx = LayoutHelper::createCenterPxHelper(parser);
 
-        addChild(createWidget<ScrewBlack>(Vec(RACK_GRID_WIDTH, 0)));
-        addChild(createWidget<ScrewBlack>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, 0)));
-        addChild(createWidget<ScrewBlack>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
-        addChild(createWidget<ScrewBlack>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
+        LayoutHelper::ScrewPositions::addStandardScrews<ScrewJetBlack>(this, box.size.x);
 
         // Touch strip (positioned by SVG rectangle)
         touchStrip = new TouchStripWidget(module);
-        Rect touchStripRect = parser.rectMm("touch-strip", 6.8731313f, 15.396681f, 30.561571f, 72.217186f);
+        Rect touchStripRect = parser.rectMm("touch-strip", 5.5705357f, 10.957067f, 29.843935f, 79.843941f);
         touchStrip->box.pos = mm(touchStripRect.pos.x, touchStripRect.pos.y);
         touchStrip->box.size = mm(touchStripRect.size.x, touchStripRect.size.y);
         addChild(touchStrip);
@@ -3850,37 +3884,43 @@ struct EvocationWidget : ModuleWidget {
         }
 
         // Feedback OLED display
-        Rect oledRect = parser.rectMm("feedback-oled", 6.8391566f, 98.025497f, 29.917749f, 22.122351f);
+        Rect oledRect = parser.rectMm("feedback-oled", 5.5336285f, 95.453125f, 29.917749f, 22.122351f);
         oledDisplay = new EvocationOLEDDisplay(module);
         oledDisplay->box.pos = mm(oledRect.pos.x, oledRect.pos.y);
         oledDisplay->box.size = mm(oledRect.size.x, oledRect.size.y);
         addChild(oledDisplay);
 
         // Trigger / utility buttons (positioned by SVG elements)
-        Vec triggerBtn = parser.centerPx("trigger-btn-0", 63.6f, 18.7f);
+        Vec triggerBtn = parser.centerPx("trigger-btn-0", 92.286018f, 51.31041f);
         addParam(createParamCentered<ShapetakerVintageMomentary>(triggerBtn, module, Evocation::TRIGGER_PARAM));
 
-        Vec trimBtn = parser.centerPx("trim-lead-btn", 92.5f, 18.7f);
-        addParam(createParamCentered<ShapetakerVintageMomentary>(trimBtn, module, Evocation::TRIM_LEAD_PARAM));
-        Vec trimTailBtn = parser.centerPx("trim-tail-btn", 92.5f, 29.8f);
-        addParam(createParamCentered<ShapetakerVintageMomentary>(trimTailBtn, module, Evocation::TRIM_TAIL_PARAM));
+        Vec trimBtn = parser.centerPx("trim-lead-btn", 92.286018f, 17.129034f);
+        auto* trimLead = createParamCentered<ShapetakerVintageMomentaryLight>(trimBtn, module, Evocation::TRIM_LEAD_PARAM);
+        trimLead->module = module;
+        trimLead->lightId = Evocation::TRIM_LEAD_LIGHT;
+        addParam(trimLead);
+        Vec trimTailBtn = parser.centerPx("trim-tail-btn", 92.286018f, 34.18116f);
+        auto* trimTail = createParamCentered<ShapetakerVintageMomentaryLight>(trimTailBtn, module, Evocation::TRIM_TAIL_PARAM);
+        trimTail->module = module;
+        trimTail->lightId = Evocation::TRIM_TAIL_LIGHT;
+        addParam(trimTail);
 
         // CV inputs
-        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("trigger-cv-in", 63.618366f, 29.776815f), module, Evocation::TRIGGER_INPUT));
-        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("gate-cv-in", 63.618366f, 40.893959f), module, Evocation::GATE_INPUT));
+        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("trigger-cv-in", 73.177048f, 51.31041f), module, Evocation::TRIGGER_INPUT));
+        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("gate-cv-in", 49.84454f, 51.31041f), module, Evocation::GATE_INPUT));
 
-        // Phase CV inputs (right column)
-        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("phase1-cv-in", 92.5f, 100.0f), module, Evocation::PHASE_1_INPUT));
-        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("phase2-cv-in", 92.5f, 106.5f), module, Evocation::PHASE_2_INPUT));
-        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("phase3-cv-in", 92.5f, 113.0f), module, Evocation::PHASE_3_INPUT));
-        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("phase4-cv-in", 92.5f, 119.5f), module, Evocation::PHASE_4_INPUT));
+        // Phase CV inputs
+        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("phase1-cv-in", 47.990997f, 76.619095f), module, Evocation::PHASE_1_INPUT));
+        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("phase2-cv-in", 62.756004f, 76.619095f), module, Evocation::PHASE_2_INPUT));
+        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("phase3-cv-in", 77.521011f, 76.619095f), module, Evocation::PHASE_3_INPUT));
+        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("phase4-cv-in", 92.286018f, 76.619095f), module, Evocation::PHASE_4_INPUT));
 
         // Envelope controls
-        addParam(createParamCentered<ShapetakerDavies1900hLargeDot>(centerPx("env-speed", 49.159584f, 47.892654f), module, Evocation::ENV_SPEED_PARAM));
-        addParam(createParamCentered<ShapetakerDavies1900hLargeDot>(centerPx("env-phase-offset", 78.077148f, 47.892654f), module, Evocation::ENV_PHASE_PARAM));
+        addParam(createParamCentered<ShapetakerKnobVintageMedium>(centerPx("env-speed", 49.078259f, 17.761068f), module, Evocation::ENV_SPEED_PARAM));
+        addParam(createParamCentered<ShapetakerKnobVintageMedium>(centerPx("env-phase-offset", 73.177048f, 17.921158f), module, Evocation::ENV_PHASE_PARAM));
 
         // Loop and invert capacitive touch switches with outer LED rings
-        Vec loopCenter = centerPx("loop-sw", 78.077148f, 66.94957f);
+        Vec loopCenter = centerPx("loop-sw", 73.177048f, 35.531757f);
         addParam(createParamCentered<CapacitiveTouchSwitch>(loopCenter, module, Evocation::LOOP_1_PARAM));
         auto* loopRing = new RingLight();
         loopRing->module = module;
@@ -3899,7 +3939,7 @@ struct EvocationWidget : ModuleWidget {
         loopRing->color = nvgRGBA(0, 255, 220, 255);
         addChild(loopRing);
 
-        Vec invertCenter = centerPx("invert-sw", 49.159584f, 68.657234f);
+        Vec invertCenter = centerPx("invert-sw", 49.078259f, 35.531757f);
         addParam(createParamCentered<CapacitiveTouchSwitch>(invertCenter, module, Evocation::INVERT_1_PARAM));
         auto* invertRing = new RingLight();
         invertRing->module = module;
@@ -3920,55 +3960,55 @@ struct EvocationWidget : ModuleWidget {
 
         // Envelope selection buttons with integrated LED feedback
         {
-            auto* btn1 = createParamCentered<ShapetakerVintageMomentaryLight>(centerPx("env1-select-btn", 46.216522f, 92.244675f), module, Evocation::ENV_SELECT_1_PARAM);
+            auto* btn1 = createParamCentered<ShapetakerVintageMomentaryLight>(centerPx("env1-select-btn", 47.990997f, 63.888115f), module, Evocation::ENV_SELECT_1_PARAM);
             btn1->module = module;
             btn1->lightId = Evocation::ENV_SELECT_1_LIGHT;
             addParam(btn1);
 
-            auto* btn2 = createParamCentered<ShapetakerVintageMomentaryLight>(centerPx("env2-select-btn", 58.543388f, 92.244675f), module, Evocation::ENV_SELECT_2_PARAM);
+            auto* btn2 = createParamCentered<ShapetakerVintageMomentaryLight>(centerPx("env2-select-btn", 62.756004f, 63.888115f), module, Evocation::ENV_SELECT_2_PARAM);
             btn2->module = module;
             btn2->lightId = Evocation::ENV_SELECT_2_LIGHT;
             addParam(btn2);
 
-            auto* btn3 = createParamCentered<ShapetakerVintageMomentaryLight>(centerPx("env3-select-btn", 70.870247f, 92.244675f), module, Evocation::ENV_SELECT_3_PARAM);
+            auto* btn3 = createParamCentered<ShapetakerVintageMomentaryLight>(centerPx("env3-select-btn", 77.521011f, 63.888115f), module, Evocation::ENV_SELECT_3_PARAM);
             btn3->module = module;
             btn3->lightId = Evocation::ENV_SELECT_3_LIGHT;
             addParam(btn3);
 
-            auto* btn4 = createParamCentered<ShapetakerVintageMomentaryLight>(centerPx("env4-select-btn", 83.197113f, 92.244675f), module, Evocation::ENV_SELECT_4_PARAM);
+            auto* btn4 = createParamCentered<ShapetakerVintageMomentaryLight>(centerPx("env4-select-btn", 92.286018f, 63.888115f), module, Evocation::ENV_SELECT_4_PARAM);
             btn4->module = module;
             btn4->lightId = Evocation::ENV_SELECT_4_LIGHT;
             addParam(btn4);
         }
 
         // EOC outputs per envelope
-        addOutput(createOutputCentered<ShapetakerBNCPort>(centerPx("env1-eoc", 46.216522f, 92.957283f), module, Evocation::ENV_1_EOC_OUTPUT));
-        addOutput(createOutputCentered<ShapetakerBNCPort>(centerPx("env2-eoc", 58.543388f, 92.957283f), module, Evocation::ENV_2_EOC_OUTPUT));
-        addOutput(createOutputCentered<ShapetakerBNCPort>(centerPx("env3-eoc", 70.870247f, 92.957291f), module, Evocation::ENV_3_EOC_OUTPUT));
-        addOutput(createOutputCentered<ShapetakerBNCPort>(centerPx("env4-eoc", 83.197113f, 92.957291f), module, Evocation::ENV_4_EOC_OUTPUT));
+        addOutput(createOutputCentered<ShapetakerBNCPort>(centerPx("env1-eoc", 47.990997f, 89.350075f), module, Evocation::ENV_1_EOC_OUTPUT));
+        addOutput(createOutputCentered<ShapetakerBNCPort>(centerPx("env2-eoc", 62.756004f, 89.350075f), module, Evocation::ENV_2_EOC_OUTPUT));
+        addOutput(createOutputCentered<ShapetakerBNCPort>(centerPx("env3-eoc", 77.521011f, 89.350075f), module, Evocation::ENV_3_EOC_OUTPUT));
+        addOutput(createOutputCentered<ShapetakerBNCPort>(centerPx("env4-eoc", 92.286018f, 89.350075f), module, Evocation::ENV_4_EOC_OUTPUT));
 
         // Envelope outputs (using SVG positioning)
         // Envelope 1
-        Vec env1OutCenter = centerPx("env1-out", 46.216522f, 104.81236f);
+        Vec env1OutCenter = centerPx("env1-out", 47.990997f, 114.81204f);
         addOutput(createOutputCentered<ShapetakerBNCPort>(env1OutCenter, module, Evocation::ENV_1_OUTPUT));
 
         // Envelope 2
-        Vec env2OutCenter = centerPx("env2-out", 58.543388f, 104.81236f);
+        Vec env2OutCenter = centerPx("env2-out", 62.756004f, 114.81204f);
         addOutput(createOutputCentered<ShapetakerBNCPort>(env2OutCenter, module, Evocation::ENV_2_OUTPUT));
 
         // Envelope 3
-        Vec env3OutCenter = centerPx("env3-out", 70.870247f, 104.81237f);
+        Vec env3OutCenter = centerPx("env3-out", 77.521011f, 114.81204f);
         addOutput(createOutputCentered<ShapetakerBNCPort>(env3OutCenter, module, Evocation::ENV_3_OUTPUT));
 
         // Envelope 4
-        Vec env4OutCenter = centerPx("env4-out", 83.197113f, 104.81237f);
+        Vec env4OutCenter = centerPx("env4-out", 92.286018f, 114.81204f);
         addOutput(createOutputCentered<ShapetakerBNCPort>(env4OutCenter, module, Evocation::ENV_4_OUTPUT));
 
         // Gate outputs per envelope (updated positions from SVG)
-        addOutput(createOutputCentered<ShapetakerBNCPort>(centerPx("env1-gate", 46.216522f, 117.38005f), module, Evocation::ENV_1_GATE_OUTPUT));
-        addOutput(createOutputCentered<ShapetakerBNCPort>(centerPx("env2-gate", 58.543388f, 117.38005f), module, Evocation::ENV_2_GATE_OUTPUT));
-        addOutput(createOutputCentered<ShapetakerBNCPort>(centerPx("env3-gate", 70.870247f, 117.38005f), module, Evocation::ENV_3_GATE_OUTPUT));
-        addOutput(createOutputCentered<ShapetakerBNCPort>(centerPx("env4-gate", 83.197113f, 117.38005f), module, Evocation::ENV_4_GATE_OUTPUT));
+        addOutput(createOutputCentered<ShapetakerBNCPort>(centerPx("env1-gate", 47.990997f, 102.08106f), module, Evocation::ENV_1_GATE_OUTPUT));
+        addOutput(createOutputCentered<ShapetakerBNCPort>(centerPx("env2-gate", 62.756004f, 102.08106f), module, Evocation::ENV_2_GATE_OUTPUT));
+        addOutput(createOutputCentered<ShapetakerBNCPort>(centerPx("env3-gate", 77.521011f, 102.08106f), module, Evocation::ENV_3_GATE_OUTPUT));
+        addOutput(createOutputCentered<ShapetakerBNCPort>(centerPx("env4-gate", 92.286018f, 102.08106f), module, Evocation::ENV_4_GATE_OUTPUT));
     }
 
     void appendContextMenu(Menu* menu) override {

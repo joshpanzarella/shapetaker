@@ -80,7 +80,9 @@
       "Bash(convert:*)",
       "Bash(pip3 install:*)",
       "Bash(pip3:*)",
-      "Bash(/opt/homebrew/bin/python3.13:*)"
+      "Bash(/opt/homebrew/bin/python3.13:*)",
+      "Bash(git -C /Users/joshpanzarella/vcv-dev/shapetaker status)",
+      "Bash(git -C /Users/joshpanzarella/vcv-dev/shapetaker diff --stat)"
     ],
     "deny": [],
     "ask": []

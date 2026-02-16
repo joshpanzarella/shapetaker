@@ -73,6 +73,10 @@ struct ClairaudientModule : Module, IOscilloscopeSource {
     shapetaker::dsp::VoiceArray<float, MAX_POLY_VOICES> phase2A;  // Independent phase for osc 2A per voice
     shapetaker::dsp::VoiceArray<float, MAX_POLY_VOICES> phase2B;  // Independent phase for osc 2B per voice
 
+    // Phase direction for Z oscillators (used by reverse sync: +1 forward, -1 reverse)
+    shapetaker::dsp::VoiceArray<float, MAX_POLY_VOICES> phaseDir2A;
+    shapetaker::dsp::VoiceArray<float, MAX_POLY_VOICES> phaseDir2B;
+
     // Organic variation state per voice
     shapetaker::dsp::VoiceArray<float, MAX_POLY_VOICES> drift1A;
     shapetaker::dsp::VoiceArray<float, MAX_POLY_VOICES> drift1B;
@@ -101,6 +105,12 @@ struct ClairaudientModule : Module, IOscilloscopeSource {
     shapetaker::dsp::VoiceArray<shapetaker::dsp::OnePoleLowpass, MAX_POLY_VOICES> antiAliasFilterRightStage2;
     shapetaker::dsp::VoiceArray<shapetaker::dsp::OnePoleLowpass, MAX_POLY_VOICES> highCutFilterLeft;
     shapetaker::dsp::VoiceArray<shapetaker::dsp::OnePoleLowpass, MAX_POLY_VOICES> highCutFilterRight;
+
+    // DC blocking filter state per voice (left and right channels)
+    shapetaker::dsp::VoiceArray<float, MAX_POLY_VOICES> dcLastInputL;
+    shapetaker::dsp::VoiceArray<float, MAX_POLY_VOICES> dcLastOutputL;
+    shapetaker::dsp::VoiceArray<float, MAX_POLY_VOICES> dcLastInputR;
+    shapetaker::dsp::VoiceArray<float, MAX_POLY_VOICES> dcLastOutputR;
 
     shapetaker::PolyphonicProcessor polyProcessor;
 
@@ -224,7 +234,17 @@ struct ClairaudientModule : Module, IOscilloscopeSource {
                 phase -= std::floor(phase);
             }
         }
+    }
 
+    // Bidirectional phase wrap for reverse sync (handles negative phase values)
+    static inline void wrapPhaseBidirectional(float& phase) {
+        if (phase >= 1.f) {
+            phase -= 1.f;
+            if (phase >= 1.f) phase -= std::floor(phase);
+        } else if (phase < 0.f) {
+            phase += 1.f;
+            if (phase < 0.f) phase -= std::floor(phase);
+        }
     }
 
     static inline uint32_t xorshift32(uint32_t& state) {
@@ -281,9 +301,9 @@ struct ClairaudientModule : Module, IOscilloscopeSource {
         // Crossfade CV attenuverter
         ParameterHelper::configAttenuverter(this, XFADE_ATTEN_PARAM, "crossfade cv");
         
-        // Sync switches (default off for independent beating)
-        configSwitch(SYNC1_PARAM, 0.f, 1.f, 0.f, "v sync", {"independent", "synced"});
-        configSwitch(SYNC2_PARAM, 0.f, 1.f, 0.f, "z sync", {"independent", "synced"});
+        // Sync switches: cross-sync (V resets Z) and reverse sync (V reverses Z direction)
+        configSwitch(SYNC1_PARAM, 0.f, 1.f, 0.f, "cross sync", {"off", "on"});
+        configSwitch(SYNC2_PARAM, 0.f, 1.f, 0.f, "reverse sync", {"off", "on"});
         
         // Inputs
         ParameterHelper::configCVInput(this, VOCT1_INPUT, "v osc v/oct");
@@ -297,6 +317,12 @@ struct ClairaudientModule : Module, IOscilloscopeSource {
         // Outputs
         ParameterHelper::configAudioOutput(this, LEFT_OUTPUT, "L");
         ParameterHelper::configAudioOutput(this, RIGHT_OUTPUT, "R");
+
+        // Initialize phase directions to forward
+        for (int i = 0; i < MAX_POLY_VOICES; ++i) {
+            phaseDir2A[i] = 1.f;
+            phaseDir2B[i] = 1.f;
+        }
 
         // Seed per-voice RNG state (avoid zero)
         for (int i = 0; i < MAX_POLY_VOICES; ++i) {
@@ -518,10 +544,13 @@ struct ClairaudientModule : Module, IOscilloscopeSource {
 
             // Pre-calculate frequencies outside oversample loop (major optimization)
             // Use exp2f() instead of std::pow(2.f, x) for ~2-3x faster computation
-            float freq1A = MIDDLE_C_HZ * exp2f(pitch1 + drift1A[ch]);
-            float freq1B = MIDDLE_C_HZ * exp2f(pitch1 + fineTune1 + drift1B[ch]);
-            float freq2A = MIDDLE_C_HZ * exp2f(pitch2 + drift2A[ch]);
-            float freq2B = MIDDLE_C_HZ * exp2f(pitch2 + fineTune2 + drift2B[ch]);
+            // Symmetric detune: A goes flat by half, B goes sharp by half — keeps center pitch stable
+            float halfFine1 = fineTune1 * 0.5f;
+            float halfFine2 = fineTune2 * 0.5f;
+            float freq1A = MIDDLE_C_HZ * exp2f(pitch1 - halfFine1 + drift1A[ch]);
+            float freq1B = MIDDLE_C_HZ * exp2f(pitch1 + halfFine1 + drift1B[ch]);
+            float freq2A = MIDDLE_C_HZ * exp2f(pitch2 - halfFine2 + drift2A[ch]);
+            float freq2B = MIDDLE_C_HZ * exp2f(pitch2 + halfFine2 + drift2B[ch]);
 
             // Use cached sync switch states (doesn't change during oversampling)
             bool sync1 = cachedSync1;
@@ -549,20 +578,35 @@ struct ClairaudientModule : Module, IOscilloscopeSource {
                     // Add subtle phase noise for organic character (scaled by shaped user amount)
                     phase1A[ch] += deltaPhase1A + noise1A[ch] * noiseScale;
                     phase1B[ch] += deltaPhase1B + noise1B[ch] * noiseScale;
-                    phase2A[ch] += deltaPhase2A + noise2A[ch] * noiseScale;
-                    phase2B[ch] += deltaPhase2B + noise2B[ch] * noiseScale;
+                    phase2A[ch] += deltaPhase2A * phaseDir2A[ch] + noise2A[ch] * noiseScale;
+                    phase2B[ch] += deltaPhase2B * phaseDir2B[ch] + noise2B[ch] * noiseScale;
 
                     wrapPhase(phase1A[ch]);
                     wrapPhase(phase1B[ch]);
-                    wrapPhase(phase2A[ch]);
-                    wrapPhase(phase2B[ch]);
+                    wrapPhaseBidirectional(phase2A[ch]);
+                    wrapPhaseBidirectional(phase2B[ch]);
 
-                    // Apply sync - reset B oscillator to match A when synced
-                    if (sync1 && phase1A[ch] < deltaPhase1A) {
-                        phase1B[ch] = phase1A[ch];
+                    // Detect V master (1A) cycle completion
+                    bool vCycleComplete = phase1A[ch] < deltaPhase1A;
+
+                    // Cross-sync: V master resets Z slave phases
+                    if (sync1 && vCycleComplete) {
+                        phase2A[ch] = phase1A[ch];
+                        phase2B[ch] = phase1A[ch];
+                        phaseDir2A[ch] = 1.f;
+                        phaseDir2B[ch] = 1.f;
                     }
-                    if (sync2 && phase2A[ch] < deltaPhase2A) {
-                        phase2B[ch] = phase2A[ch];
+
+                    // Reverse sync: V master reverses Z slave direction
+                    if (sync2 && !sync1 && vCycleComplete) {
+                        phaseDir2A[ch] = -phaseDir2A[ch];
+                        phaseDir2B[ch] = -phaseDir2B[ch];
+                    }
+
+                    // Reset direction when neither sync is active
+                    if (!sync1 && !sync2) {
+                        phaseDir2A[ch] = 1.f;
+                        phaseDir2B[ch] = 1.f;
                     }
 
                     // PWM mode - shape parameter controls pulse width
@@ -609,20 +653,35 @@ struct ClairaudientModule : Module, IOscilloscopeSource {
                     // Add subtle phase noise for organic character (scaled by shaped user amount)
                     phase1A[ch] += deltaPhase1A + noise1A[ch] * noiseScale;
                     phase1B[ch] += deltaPhase1B + noise1B[ch] * noiseScale;
-                    phase2A[ch] += deltaPhase2A + noise2A[ch] * noiseScale;
-                    phase2B[ch] += deltaPhase2B + noise2B[ch] * noiseScale;
+                    phase2A[ch] += deltaPhase2A * phaseDir2A[ch] + noise2A[ch] * noiseScale;
+                    phase2B[ch] += deltaPhase2B * phaseDir2B[ch] + noise2B[ch] * noiseScale;
 
                     wrapPhase(phase1A[ch]);
                     wrapPhase(phase1B[ch]);
-                    wrapPhase(phase2A[ch]);
-                    wrapPhase(phase2B[ch]);
+                    wrapPhaseBidirectional(phase2A[ch]);
+                    wrapPhaseBidirectional(phase2B[ch]);
 
-                    // Apply sync - reset B oscillator to match A when synced
-                    if (sync1 && phase1A[ch] < deltaPhase1A) {
-                        phase1B[ch] = phase1A[ch];
+                    // Detect V master (1A) cycle completion
+                    bool vCycleComplete = phase1A[ch] < deltaPhase1A;
+
+                    // Cross-sync: V master resets Z slave phases
+                    if (sync1 && vCycleComplete) {
+                        phase2A[ch] = phase1A[ch];
+                        phase2B[ch] = phase1A[ch];
+                        phaseDir2A[ch] = 1.f;
+                        phaseDir2B[ch] = 1.f;
                     }
-                    if (sync2 && phase2A[ch] < deltaPhase2A) {
-                        phase2B[ch] = phase2A[ch];
+
+                    // Reverse sync: V master reverses Z slave direction
+                    if (sync2 && !sync1 && vCycleComplete) {
+                        phaseDir2A[ch] = -phaseDir2A[ch];
+                        phaseDir2B[ch] = -phaseDir2B[ch];
+                    }
+
+                    // Reset direction when neither sync is active
+                    if (!sync1 && !sync2) {
+                        phaseDir2A[ch] = 1.f;
+                        phaseDir2B[ch] = 1.f;
                     }
 
                     // Sigmoid saw mode (default)
@@ -668,6 +727,10 @@ struct ClairaudientModule : Module, IOscilloscopeSource {
             // Average the oversampled result for this voice
             float outL = std::tanh(finalLeft / oversample) * OUTPUT_GAIN;
             float outR = std::tanh(finalRight / oversample) * OUTPUT_GAIN;
+
+            // DC blocking (~10 Hz high-pass) removes offset from asymmetric waveshaping
+            outL = shapetaker::dsp::AudioProcessor::processDCBlock(outL, dcLastInputL[ch], dcLastOutputL[ch]);
+            outR = shapetaker::dsp::AudioProcessor::processDCBlock(outR, dcLastInputR[ch], dcLastOutputR[ch]);
 
             // Add audible white noise floor scaled by user amount (post waveshaping, in volts)
             if (shapedNoise > 0.f) {
@@ -769,27 +832,52 @@ private:
 // KnobShadowWidget is now defined in plugin.hpp and shared across all modules
 
 struct ClairaudientWidget : ModuleWidget {
-    // Draw panel background image (exported from Inkscape at exact panel size)
+    // Match the uniform Clairaudient/Tessellation/Transmutation/Torsion leather treatment
     void draw(const DrawArgs& args) override {
         std::shared_ptr<Image> bg = APP->window->loadImage(asset::plugin(pluginInstance, "res/panels/panel_background.png"));
         if (bg) {
-            // Draw image stretched to fill entire panel, no tiling
+            // Keep leather grain density consistent across panel widths via fixed-height tiling.
+            constexpr float inset = 2.0f;
+            constexpr float textureAspect = 2880.f / 4553.f;  // panel_background.png
+            float tileH = box.size.y + inset * 2.f;
+            float tileW = tileH * textureAspect;
+            float x = -inset;
+            float y = -inset;
+
             nvgSave(args.vg);
+
+            // Base tile pass
             nvgBeginPath(args.vg);
             nvgRect(args.vg, 0.f, 0.f, box.size.x, box.size.y);
-            NVGpaint paint = nvgImagePattern(args.vg, 0.f, 0.f, box.size.x, box.size.y, 0.f, bg->handle, 1.0f);
-            nvgFillPaint(args.vg, paint);
+            NVGpaint paintA = nvgImagePattern(args.vg, x, y, tileW, tileH, 0.f, bg->handle, 1.0f);
+            nvgFillPaint(args.vg, paintA);
             nvgFill(args.vg);
+
+            // Offset low-opacity pass to soften seam visibility
+            nvgBeginPath(args.vg);
+            nvgRect(args.vg, 0.f, 0.f, box.size.x, box.size.y);
+            NVGpaint paintB = nvgImagePattern(args.vg, x + tileW * 0.5f, y, tileW, tileH, 0.f, bg->handle, 0.35f);
+            nvgFillPaint(args.vg, paintB);
+            nvgFill(args.vg);
+
+            // Slight darkening to match existing module tone
+            nvgBeginPath(args.vg);
+            nvgRect(args.vg, 0.f, 0.f, box.size.x, box.size.y);
+            nvgFillColor(args.vg, nvgRGBA(0, 0, 0, 18));
+            nvgFill(args.vg);
+
             nvgRestore(args.vg);
         }
         ModuleWidget::draw(args);
 
-        // Draw black border on top to cover default gray panel border
+        // Draw a black inner frame to fully mask any edge tinting
+        constexpr float frame = 1.0f;
         nvgBeginPath(args.vg);
         nvgRect(args.vg, 0.f, 0.f, box.size.x, box.size.y);
-        nvgStrokeColor(args.vg, nvgRGB(0, 0, 0));
-        nvgStrokeWidth(args.vg, 1.0f);
-        nvgStroke(args.vg);
+        nvgRect(args.vg, frame, frame, box.size.x - 2.f * frame, box.size.y - 2.f * frame);
+        nvgPathWinding(args.vg, NVG_HOLE);
+        nvgFillColor(args.vg, nvgRGB(0, 0, 0));
+        nvgFill(args.vg);
     }
 
     ClairaudientWidget(ClairaudientModule* module) {
@@ -845,8 +933,8 @@ struct ClairaudientWidget : ModuleWidget {
         addKnobWithShadow(createParamCentered<ShapetakerAttenuverterOscilloscope>(centerPx("sh_cv_v", 22.421556f, 93.003937f), module, ClairaudientModule::SHAPE1_ATTEN_PARAM));
         addKnobWithShadow(createParamCentered<ShapetakerAttenuverterOscilloscope>(centerPx("sh_cv_z", 58.858444f, 93.003937f), module, ClairaudientModule::SHAPE2_ATTEN_PARAM));
 
-        // Vintage oscilloscope display
-        if (module) {
+        // Vintage oscilloscope display (draw even in module browser previews)
+        {
             VintageOscilloscopeWidget* oscope = new VintageOscilloscopeWidget(module);
             Vec scrPx = centerPx("oscope_screen", 40.87077f, 29.04454f);
             constexpr float OSCOPE_SIZE_MM = 36.3f; // 10% larger

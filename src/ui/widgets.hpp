@@ -1,6 +1,8 @@
 #pragma once
 #include <rack.hpp>
 #include <nanovg.h>
+#include <cmath>
+#include <vector>
 #include "../graphics/lighting.hpp"
 
 // Forward declaration so bezels can load bundled assets without including plugin.hpp here
@@ -399,17 +401,15 @@ private:
     Module* module = nullptr;
     int lightId = -1;
     std::string svgPath;
-    
+
 public:
     VintageVUMeterWidget(Module* m, int lId, const std::string& svg)
         : module(m), lightId(lId), svgPath(svg) {
         box.size = Vec(50, 50); // Default size
     }
-    
+
     void draw(const DrawArgs& args) override {
-        if (!module) return;
-        
-        // Draw the vintage VU meter SVG at full opacity
+        // Draw the vintage VU meter SVG (always, including module browser)
         std::shared_ptr<window::Svg> svg = APP->window->loadSvg(svgPath);
         if (svg && svg->handle) {
             nvgSave(args.vg);
@@ -417,6 +417,11 @@ public:
             svgDraw(args.vg, svg->handle);
             nvgRestore(args.vg);
         }
+
+        if (!module) return;
+
+        // Warm backlight glow on top of the meter face
+        drawBacklightGlow(args);
 
         // Draw animated needle based on VU level
         if (lightId >= 0 && lightId < (int)module->lights.size()) {
@@ -426,39 +431,58 @@ public:
     }
 
 private:
+    void drawBacklightGlow(const DrawArgs& args) {
+        float w = box.size.x;
+        float h = box.size.y;
+        float cx = w * 0.5f;
+        float cy = h * 0.45f;  // Center on the meter face
+        float radius = std::max(w, h) * 0.38f;
+
+        // Warm circular backlight glow — gradient fades to transparent naturally
+        nvgBeginPath(args.vg);
+        nvgCircle(args.vg, cx, cy, radius);
+        NVGpaint glow = nvgRadialGradient(args.vg,
+            cx, cy, 0, radius,
+            nvgRGBA(255, 220, 140, 115),
+            nvgRGBA(255, 220, 140, 0));
+        nvgFillPaint(args.vg, glow);
+        nvgFill(args.vg);
+    }
+
     void drawVUNeedle(const DrawArgs& args, float normalized) {
         normalized = clamp(normalized, 0.f, 1.f);
 
         float angle;
+        constexpr float kAngleMin = 146.f;
+        constexpr float kAngleMid = 90.f;
+        constexpr float kAngleMax = 35.f;
+
         if (normalized <= 0.5f) {
             float t = rescale(normalized, 0.f, 0.5f, 0.f, 1.f);
-            angle = 160.f - t * (160.f - 90.f);
+            angle = kAngleMin - t * (kAngleMin - kAngleMid);
         } else {
             float t = rescale(normalized, 0.5f, 1.f, 0.f, 1.f);
-            angle = 90.f - t * (90.f - 35.f);
+            angle = kAngleMid - t * (kAngleMid - kAngleMax);
         }
 
         Vec center = box.size.mult(0.5f);
-        // Pivot point at the semi-circle at bottom of meter screen (not the calibration circle)
-        Vec pivotPoint = Vec(center.x, box.size.y * 0.65f); // 65% down - at bottom of meter screen
-        float needleLength = box.size.y * 0.35f; // Length to reach the meter scale
-        
+        Vec pivotPoint = Vec(center.x, box.size.y * 0.65f);
+        float needleLength = box.size.y * 0.35f;
+
         nvgSave(args.vg);
         nvgTranslate(args.vg, pivotPoint.x, pivotPoint.y);
-        nvgRotate(args.vg, angle * M_PI / 180.0f);
-        
-        // Draw thin black needle from pivot point up to meter scale
-        NVGcolor bodyColor = nvgRGBA(235, 120, 45, 240);
-        NVGcolor highlightColor = nvgRGBA(255, 200, 160, 220);
+        nvgRotate(args.vg, (90.f - angle) * M_PI / 180.0f);
+
+        NVGcolor bodyColor = nvgRGBA(12, 12, 12, 245);
+        NVGcolor highlightColor = nvgRGBA(45, 45, 45, 180);
 
         nvgBeginPath(args.vg);
-        nvgMoveTo(args.vg, 0, 0); // Start at pivot (bottom of meter screen)
-        nvgLineTo(args.vg, 0, -needleLength); // Go up to meter scale
+        nvgMoveTo(args.vg, 0, 0);
+        nvgLineTo(args.vg, 0, -needleLength);
         nvgStrokeWidth(args.vg, 2.0f);
         nvgStrokeColor(args.vg, bodyColor);
         nvgStroke(args.vg);
 
-        // Add a slim highlight down the centre for visibility
         nvgBeginPath(args.vg);
         nvgMoveTo(args.vg, 1.0f, -needleLength * 0.2f);
         nvgLineTo(args.vg, 1.0f, -needleLength);
@@ -466,7 +490,6 @@ private:
         nvgStrokeColor(args.vg, highlightColor);
         nvgStroke(args.vg);
 
-        // Draw a pivot cap so the needle doesn't disappear against the dial
         nvgBeginPath(args.vg);
         nvgCircle(args.vg, 0.f, 0.f, needleLength * 0.08f);
         nvgFillColor(args.vg, nvgRGBA(30, 30, 30, 255));
@@ -594,6 +617,18 @@ struct Trimpot : app::SvgKnob {
         maxAngle = 0.5 * M_PI;
         setSvg(APP->window->loadSvg(asset::system("res/ComponentLibrary/Trimpot.svg")));
         box.size = mm2px(Vec(6, 6));
+    }
+};
+
+struct VUCalibrationKnob : app::SvgKnob {
+    VUCalibrationKnob() {
+        minAngle = -0.5f * M_PI;
+        maxAngle = 0.5f * M_PI;
+        setSvg(APP->window->loadSvg(asset::plugin(pluginInstance, "res/knobs/vintage_vu_calibration.svg")));
+        // Match the inner circle's proportional size in the meter
+        // Inner circle diameter: 23.57 SVG units out of 259.09 meter width = 4.0mm
+        float sizeMm = 23.57f / 259.0896f * (46.0f * 259.0896f / 271.0356f);
+        box.size = mm2px(Vec(sizeMm, sizeMm));
     }
 };
 

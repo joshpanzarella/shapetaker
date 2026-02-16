@@ -542,7 +542,7 @@ struct ShapetakerKnobVintageSmall : app::SvgKnob {
         if (fb && tw) fb->addChildBelow(bg, tw);
 
         // Small: 12mm
-        box.size = mm2px(Vec(12.f, 12.f));
+        box.size = mm2px(Vec(15.f, 15.f));
     }
 
     void draw(const DrawArgs& args) override {
@@ -719,7 +719,7 @@ struct ShapetakerKnobVintageAttenuverter : app::SvgKnob {
         if (fb && tw) fb->addChildBelow(bg, tw);
 
         // Attenuverter: 10mm
-        box.size = mm2px(Vec(10.f, 10.f));
+        box.size = mm2px(Vec(12.f, 12.f));
     }
 
     void draw(const DrawArgs& args) override {
@@ -2611,6 +2611,447 @@ struct ShapetakerHorizontalDistortionSelector : app::ParamWidget {
     }
 };
 
+// Blade-style 6-way selector for Chiaroscuro distortion types
+struct ShapetakerBladeDistortionSelector : app::ParamWidget {
+    float accumulatedDelta = 0.f;
+    bool drawBase = true;
+    bool drawDetents = true;
+
+    ShapetakerBladeDistortionSelector() {
+        box.size = mm2px(Vec(21.0f, 6.8f));
+    }
+
+    int stepCount() {
+        if (auto* pq = getParamQuantity()) {
+            float range = pq->maxValue - pq->minValue;
+            return std::max(2, (int)std::round(range) + 1);
+        }
+        return 6;
+    }
+
+    void geometry(float& left, float& right, float& slotY, float& slotH) const {
+        float margin = box.size.x * 0.09f;
+        left = margin;
+        right = box.size.x - margin;
+        slotH = 3.0f;
+        // Keep slot at original panel position: the widget is centered at SVG's
+        // 43.2mm but box is now taller. Offset from the original 3.4mm layout.
+        float oldBoxH = mm2px(3.4f);
+        float oldSlotY = (oldBoxH - slotH) * 0.62f;
+        slotY = oldSlotY + (box.size.y - oldBoxH) * 0.5f;
+    }
+
+    float detentAngleForIndex(int index, int steps) const {
+        if (steps == 6) {
+            // Orthographic top-down map: center detents intentionally look identical.
+            static const float angles[6] = {-22.0f, -12.0f, 0.0f, 0.0f, 12.0f, 22.0f};
+            index = std::max(0, std::min(index, 5));
+            return angles[index];
+        }
+        if (steps <= 1) {
+            return 0.0f;
+        }
+        float t = (float) index / (float) (steps - 1);
+        return math::rescale(t, 0.0f, 1.0f, -20.0f, 20.0f);
+    }
+
+    void setValueFromPos(float x) {
+        auto* pq = getParamQuantity();
+        if (!pq) {
+            return;
+        }
+        float left = 0.f;
+        float right = 0.f;
+        float slotY = 0.f;
+        float slotH = 0.f;
+        geometry(left, right, slotY, slotH);
+        float t = 0.f;
+        if (right > left) {
+            t = clamp((x - left) / (right - left), 0.f, 1.f);
+        }
+        int steps = stepCount();
+        float value = pq->minValue + std::round(t * (steps - 1));
+        pq->setValue(clamp(value, pq->minValue, pq->maxValue));
+    }
+
+    void onDragStart(const event::DragStart& e) override {
+        accumulatedDelta = 0.f;
+        ParamWidget::onDragStart(e);
+    }
+
+    void onDragMove(const event::DragMove& e) override {
+        auto* pq = getParamQuantity();
+        if (!pq) {
+            return;
+        }
+        accumulatedDelta += e.mouseDelta.x;
+        float stepThreshold = 28.f;
+        if (std::fabs(accumulatedDelta) >= stepThreshold) {
+            float dir = (accumulatedDelta > 0.f) ? 1.f : -1.f;
+            float value = pq->getValue() + dir;
+            pq->setValue(clamp(value, pq->minValue, pq->maxValue));
+            accumulatedDelta = 0.f;
+        }
+    }
+
+    void onButton(const event::Button& e) override {
+        if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_LEFT) {
+            setValueFromPos(e.pos.x);
+            e.consume(this);
+        }
+        ParamWidget::onButton(e);
+    }
+
+    void draw(const DrawArgs& args) override {
+        auto* pq = getParamQuantity();
+        float left = 0.f;
+        float right = 0.f;
+        float slotY = 0.f;
+        float slotH = 0.f;
+        geometry(left, right, slotY, slotH);
+
+        NVGcontext* vg = args.vg;
+        float w = box.size.x;
+        float h = box.size.y;
+
+        nvgSave(vg);
+
+        int steps = stepCount();
+        if (drawBase) {
+            // Base plate (aged brass/champagne to match Chiaroscuro panel accents)
+            float radius = h * 0.32f;
+            nvgBeginPath(vg);
+            nvgRoundedRect(vg, 0.2f, 0.2f, w - 0.4f, h - 0.4f, radius);
+            NVGpaint plate = nvgLinearGradient(vg, 0, 0, 0, h,
+                nvgRGBA(186, 166, 126, 255),
+                nvgRGBA(104, 83, 56, 255));
+            nvgFillPaint(vg, plate);
+            nvgFill(vg);
+
+            // Recessed lip shading (panel cutout feel)
+            nvgBeginPath(vg);
+            nvgRoundedRect(vg, 0.5f, 0.5f, w - 1.0f, h - 1.0f, radius * 0.95f);
+            nvgStrokeColor(vg, nvgRGBA(34, 24, 14, 165));
+            nvgStrokeWidth(vg, 0.9f);
+            nvgStroke(vg);
+            nvgBeginPath(vg);
+            nvgMoveTo(vg, 1.2f, h - 1.0f);
+            nvgLineTo(vg, w - 1.2f, h - 1.0f);
+            nvgStrokeColor(vg, nvgRGBA(244, 228, 194, 65));
+            nvgStrokeWidth(vg, 0.8f);
+            nvgStroke(vg);
+
+            // Subtle brushed texture lines
+            nvgStrokeColor(vg, nvgRGBA(255, 239, 215, 24));
+            nvgStrokeWidth(vg, 0.5f);
+            for (int i = 0; i < 4; ++i) {
+                float y = (h * 0.28f) + i * (h * 0.16f);
+                nvgBeginPath(vg);
+                nvgMoveTo(vg, 1.0f, y);
+                nvgLineTo(vg, w - 1.0f, y);
+                nvgStroke(vg);
+            }
+
+            // Bezel stroke
+            nvgBeginPath(vg);
+            nvgRoundedRect(vg, 0.2f, 0.2f, w - 0.4f, h - 0.4f, radius);
+            nvgStrokeColor(vg, nvgRGBA(82, 64, 44, 210));
+            nvgStrokeWidth(vg, 0.75f);
+            nvgStroke(vg);
+
+            // Slot (darkened channel)
+            nvgBeginPath(vg);
+            nvgRoundedRect(vg, left, slotY, right - left, slotH, slotH * 0.5f);
+            NVGpaint slotPaint = nvgLinearGradient(vg, 0, slotY, 0, slotY + slotH,
+                nvgRGBA(36, 28, 20, 255),
+                nvgRGBA(14, 10, 8, 255));
+            nvgFillPaint(vg, slotPaint);
+            nvgFill(vg);
+
+            nvgBeginPath(vg);
+            nvgRoundedRect(vg, left, slotY, right - left, slotH, slotH * 0.5f);
+            nvgStrokeColor(vg, nvgRGBA(104, 86, 62, 150));
+            nvgStrokeWidth(vg, 0.5f);
+            nvgStroke(vg);
+
+            // Slot highlight lip
+            nvgBeginPath(vg);
+            nvgRoundedRect(vg, left + 0.4f, slotY + 0.25f, (right - left) - 0.8f, slotH - 0.5f, slotH * 0.4f);
+            nvgStrokeColor(vg, nvgRGBA(228, 206, 165, 55));
+            nvgStrokeWidth(vg, 0.35f);
+            nvgStroke(vg);
+
+            // Small screw heads (lab gear)
+            float screwR = h * 0.09f;
+            float screwY = h * 0.5f;
+            float screwInset = w * 0.06f;
+            for (int s = 0; s < 2; ++s) {
+                float sx = (s == 0) ? screwInset : (w - screwInset);
+                nvgBeginPath(vg);
+                nvgCircle(vg, sx, screwY, screwR);
+                nvgFillColor(vg, nvgRGBA(166, 145, 108, 255));
+                nvgFill(vg);
+                nvgBeginPath(vg);
+                nvgCircle(vg, sx, screwY, screwR);
+                nvgStrokeColor(vg, nvgRGBA(72, 56, 39, 190));
+                nvgStrokeWidth(vg, 0.4f);
+                nvgStroke(vg);
+                nvgBeginPath(vg);
+                nvgMoveTo(vg, sx - screwR * 0.6f, screwY);
+                nvgLineTo(vg, sx + screwR * 0.6f, screwY);
+                nvgStrokeColor(vg, nvgRGBA(64, 47, 30, 210));
+                nvgStrokeWidth(vg, 0.35f);
+                nvgStroke(vg);
+            }
+        }
+
+        // Terminal plate (metal base below the slot, like a Strat switch mount)
+        {
+            float termTop = slotY + slotH - 0.5f;
+            float termBottom = h - 1.0f;
+            float termH = termBottom - termTop;
+            float termInset = (right - left) * 0.04f;
+            float termLeft = left - termInset;
+            float termRight = right + termInset;
+            float termW = termRight - termLeft;
+            float termR = 1.5f;
+
+            // Plate body
+            nvgBeginPath(vg);
+            nvgRoundedRect(vg, termLeft, termTop, termW, termH, termR);
+            NVGpaint termPaint = nvgLinearGradient(vg,
+                0, termTop, 0, termBottom,
+                nvgRGBA(160, 140, 104, 255),
+                nvgRGBA(86, 68, 46, 255));
+            nvgFillPaint(vg, termPaint);
+            nvgFill(vg);
+
+            // Recessed inner shadow at top (slot edge)
+            nvgBeginPath(vg);
+            nvgMoveTo(vg, termLeft + termR, termTop + 0.5f);
+            nvgLineTo(vg, termRight - termR, termTop + 0.5f);
+            nvgStrokeColor(vg, nvgRGBA(0, 0, 0, 50));
+            nvgStrokeWidth(vg, 0.8f);
+            nvgStroke(vg);
+
+            // Bottom edge highlight
+            nvgBeginPath(vg);
+            nvgMoveTo(vg, termLeft + termR, termBottom - 0.5f);
+            nvgLineTo(vg, termRight - termR, termBottom - 0.5f);
+            nvgStrokeColor(vg, nvgRGBA(240, 220, 182, 70));
+            nvgStrokeWidth(vg, 0.6f);
+            nvgStroke(vg);
+
+            // Plate edge stroke
+            nvgBeginPath(vg);
+            nvgRoundedRect(vg, termLeft, termTop, termW, termH, termR);
+            nvgStrokeColor(vg, nvgRGBA(76, 58, 38, 170));
+            nvgStrokeWidth(vg, 0.5f);
+            nvgStroke(vg);
+
+            // Brushed texture lines
+            nvgStrokeColor(vg, nvgRGBA(255, 237, 207, 16));
+            nvgStrokeWidth(vg, 0.4f);
+            for (float ty = termTop + 1.5f; ty < termBottom - 1.0f; ty += 1.2f) {
+                nvgBeginPath(vg);
+                nvgMoveTo(vg, termLeft + 1.5f, ty);
+                nvgLineTo(vg, termRight - 1.5f, ty);
+                nvgStroke(vg);
+            }
+
+            // Mounting screws (2 corners)
+            float screwR = 1.0f;
+            float screwY = termTop + termH * 0.55f;
+            float screwInset = 3.5f;
+            float screwXs[2] = {termLeft + screwInset, termRight - screwInset};
+            for (int i = 0; i < 2; ++i) {
+                // Screw body
+                nvgBeginPath(vg);
+                nvgCircle(vg, screwXs[i], screwY, screwR);
+                NVGpaint screwPaint = nvgRadialGradient(vg,
+                    screwXs[i] - screwR * 0.2f, screwY - screwR * 0.2f,
+                    screwR * 0.1f, screwR,
+                    nvgRGBA(190, 167, 130, 255),
+                    nvgRGBA(114, 91, 65, 255));
+                nvgFillPaint(vg, screwPaint);
+                nvgFill(vg);
+                // Screw edge
+                nvgBeginPath(vg);
+                nvgCircle(vg, screwXs[i], screwY, screwR);
+                nvgStrokeColor(vg, nvgRGBA(70, 53, 34, 200));
+                nvgStrokeWidth(vg, 0.4f);
+                nvgStroke(vg);
+                // Phillips cross
+                nvgStrokeColor(vg, nvgRGBA(56, 40, 24, 210));
+                nvgStrokeWidth(vg, 0.35f);
+                nvgBeginPath(vg);
+                nvgMoveTo(vg, screwXs[i] - screwR * 0.5f, screwY);
+                nvgLineTo(vg, screwXs[i] + screwR * 0.5f, screwY);
+                nvgStroke(vg);
+                nvgBeginPath(vg);
+                nvgMoveTo(vg, screwXs[i], screwY - screwR * 0.5f);
+                nvgLineTo(vg, screwXs[i], screwY + screwR * 0.5f);
+                nvgStroke(vg);
+            }
+        }
+
+        if (drawDetents) {
+            for (int i = 0; i < steps; i++) {
+                float t = (steps <= 1) ? 0.f : (float)i / (float)(steps - 1);
+                float x = math::rescale(t, 0.f, 1.f, left, right);
+                nvgBeginPath(vg);
+                nvgMoveTo(vg, x, slotY - 0.6f);
+                nvgLineTo(vg, x, slotY + slotH + 0.6f);
+                nvgStrokeColor(vg, nvgRGBA(88, 70, 48, 140));
+                nvgStrokeWidth(vg, 0.45f);
+                nvgStroke(vg);
+
+                nvgBeginPath(vg);
+                nvgMoveTo(vg, x + 0.35f, slotY - 0.5f);
+                nvgLineTo(vg, x + 0.35f, slotY + slotH + 0.5f);
+                nvgStrokeColor(vg, nvgRGBA(236, 214, 176, 78));
+                nvgStrokeWidth(vg, 0.35f);
+                nvgStroke(vg);
+            }
+        }
+
+        // Blade position
+        float minV = pq ? pq->minValue : 0.f;
+        float maxV = pq ? pq->maxValue : (float)(steps - 1);
+        float value = pq ? pq->getValue() : 0.f;
+        float t = (maxV > minV) ? (value - minV) / (maxV - minV) : 0.f;
+        int detentIndex = (steps <= 1) ? 0 : (int) std::round(clamp(t, 0.0f, 1.0f) * (steps - 1));
+        float detentT = (steps <= 1) ? 0.0f : (float) detentIndex / (float) (steps - 1);
+        float bladeCX = math::rescale(detentT, 0.f, 1.f, left, right);
+
+        // True top-down blade selector.
+        float leverAngle = detentAngleForIndex(detentIndex, steps); // degrees
+        float angleRad = leverAngle * (float) M_PI / 180.f;
+        float leverLen = 7.2f;
+        float tipR = 2.35f;
+        float pivotR = 1.28f;
+        float baseCY = slotY + slotH * 0.5f;
+
+        // Pivot hardware (panel-aligned)
+        nvgBeginPath(vg);
+        nvgCircle(vg, bladeCX, baseCY, pivotR + 0.95f);
+        NVGpaint pivotShadow = nvgRadialGradient(vg,
+            bladeCX, baseCY,
+            pivotR * 0.3f, pivotR + 0.95f,
+            nvgRGBA(0, 0, 0, 42),
+            nvgRGBA(0, 0, 0, 0));
+        nvgFillPaint(vg, pivotShadow);
+        nvgFill(vg);
+
+        nvgBeginPath(vg);
+        nvgCircle(vg, bladeCX, baseCY, pivotR + 0.5f);
+        NVGpaint pivotRing = nvgLinearGradient(vg,
+            bladeCX - pivotR, baseCY, bladeCX + pivotR, baseCY,
+            nvgRGBA(194, 174, 136, 255),
+            nvgRGBA(90, 71, 47, 255));
+        nvgFillPaint(vg, pivotRing);
+        nvgFill(vg);
+        nvgBeginPath(vg);
+        nvgCircle(vg, bladeCX, baseCY, pivotR + 0.5f);
+        nvgStrokeColor(vg, nvgRGBA(52, 39, 25, 185));
+        nvgStrokeWidth(vg, 0.3f);
+        nvgStroke(vg);
+
+        // Blade assembly rotates around pivot
+        nvgSave(vg);
+        nvgTranslate(vg, bladeCX, baseCY);
+        nvgRotate(vg, angleRad);
+
+        // Tapered blade arm (clearly top-view geometry, not side-on rod)
+        float bladeBaseY = 0.45f;
+        float bladeTipY = -leverLen + 0.95f;
+        float bladeBaseW = 3.1f;
+        float bladeTipW = 1.55f;
+        nvgBeginPath(vg);
+        nvgMoveTo(vg, -bladeBaseW * 0.5f, bladeBaseY);
+        nvgLineTo(vg, -bladeTipW * 0.5f, bladeTipY);
+        nvgLineTo(vg, bladeTipW * 0.5f, bladeTipY);
+        nvgLineTo(vg, bladeBaseW * 0.5f, bladeBaseY);
+        nvgClosePath(vg);
+        NVGpaint bladePaint = nvgLinearGradient(vg,
+            -bladeBaseW * 0.5f, 0.f, bladeBaseW * 0.5f, 0.f,
+            nvgRGBA(205, 188, 158, 255),
+            nvgRGBA(99, 80, 58, 255));
+        nvgFillPaint(vg, bladePaint);
+        nvgFill(vg);
+        nvgBeginPath(vg);
+        nvgMoveTo(vg, -bladeBaseW * 0.5f, bladeBaseY);
+        nvgLineTo(vg, -bladeTipW * 0.5f, bladeTipY);
+        nvgLineTo(vg, bladeTipW * 0.5f, bladeTipY);
+        nvgLineTo(vg, bladeBaseW * 0.5f, bladeBaseY);
+        nvgClosePath(vg);
+        nvgStrokeColor(vg, nvgRGBA(58, 44, 30, 198));
+        nvgStrokeWidth(vg, 0.34f);
+        nvgStroke(vg);
+
+        // Flat highlight strip
+        nvgBeginPath(vg);
+        nvgMoveTo(vg, -0.18f, bladeBaseY - 0.08f);
+        nvgLineTo(vg, -0.06f, bladeTipY + 0.18f);
+        nvgStrokeColor(vg, nvgRGBA(246, 230, 194, 62));
+        nvgStrokeWidth(vg, 0.22f);
+        nvgStroke(vg);
+
+        // End cap (top view)
+        nvgBeginPath(vg);
+        nvgCircle(vg, 0.f, -leverLen, tipR);
+        NVGpaint tipPaint = nvgRadialGradient(vg,
+            -tipR * 0.28f, -leverLen - tipR * 0.28f,
+            tipR * 0.08f, tipR,
+            nvgRGBA(206, 182, 142, 255),
+            nvgRGBA(82, 62, 42, 255));
+        nvgFillPaint(vg, tipPaint);
+        nvgFill(vg);
+        nvgBeginPath(vg);
+        nvgCircle(vg, 0.f, -leverLen, tipR);
+        nvgStrokeColor(vg, nvgRGBA(54, 40, 26, 210));
+        nvgStrokeWidth(vg, 0.36f);
+        nvgStroke(vg);
+
+        // Cap screw
+        float screwR = tipR * 0.27f;
+        nvgBeginPath(vg);
+        nvgCircle(vg, 0.f, -leverLen, screwR);
+        NVGpaint tipScrew = nvgRadialGradient(vg,
+            -screwR * 0.15f, -leverLen - screwR * 0.15f,
+            screwR * 0.05f, screwR,
+            nvgRGBA(176, 157, 122, 255),
+            nvgRGBA(92, 73, 49, 255));
+        nvgFillPaint(vg, tipScrew);
+        nvgFill(vg);
+        nvgBeginPath(vg);
+        nvgMoveTo(vg, -screwR * 0.62f, -leverLen);
+        nvgLineTo(vg, screwR * 0.62f, -leverLen);
+        nvgStrokeColor(vg, nvgRGBA(58, 44, 29, 220));
+        nvgStrokeWidth(vg, 0.24f);
+        nvgStroke(vg);
+
+        // Small center rivet on blade near pivot
+        nvgBeginPath(vg);
+        nvgCircle(vg, 0.f, -0.7f, 0.38f);
+        NVGpaint bladeRivet = nvgRadialGradient(vg,
+            -0.05f, -0.75f, 0.03f, 0.38f,
+            nvgRGBA(196, 176, 140, 255),
+            nvgRGBA(94, 72, 47, 255));
+        nvgFillPaint(vg, bladeRivet);
+        nvgFill(vg);
+        nvgBeginPath(vg);
+        nvgCircle(vg, 0.f, -0.7f, 0.38f);
+        nvgStrokeColor(vg, nvgRGBA(56, 42, 27, 200));
+        nvgStrokeWidth(vg, 0.18f);
+        nvgStroke(vg);
+
+        nvgRestore(vg); // pop lever rotation
+
+        nvgRestore(vg);
+    }
+};
+
 // VUMeterWidget moved to shapetakerWidgets.hpp (namespace shapetaker)
 
 // Legacy JewelLED variants removed in favor of shapetakerWidgets.hpp LEDs
@@ -2721,8 +3162,14 @@ struct JewelLEDSmall : ModuleLightWidget {
             nvgFillColor(args.vg, nvgRGB(0x33, 0x33, 0x33));
             nvgFill(args.vg);
         }
+        // Draw SVG children first
+        widget::Widget::draw(args);
 
-        ModuleLightWidget::draw(args);
+        // Overlay the colored light using additive blending
+        nvgGlobalCompositeOperation(args.vg, NVG_LIGHTER);
+        drawLight(args);
+        nvgGlobalCompositeOperation(args.vg, NVG_SOURCE_OVER);
+        drawHalo(args);
     }
 };
 
@@ -2781,8 +3228,14 @@ struct JewelLEDCompact : ModuleLightWidget {
             nvgFillColor(args.vg, nvgRGB(0x33, 0x33, 0x33));
             nvgFill(args.vg);
         }
+        // Draw SVG children first
+        widget::Widget::draw(args);
 
-        ModuleLightWidget::draw(args);
+        // Overlay the colored light using additive blending
+        nvgGlobalCompositeOperation(args.vg, NVG_LIGHTER);
+        drawLight(args);
+        nvgGlobalCompositeOperation(args.vg, NVG_SOURCE_OVER);
+        drawHalo(args);
         nvgRestore(args.vg);
     }
 };
@@ -2843,8 +3296,14 @@ struct JewelLEDMedium : ModuleLightWidget {
             nvgFillColor(args.vg, nvgRGB(0x33, 0x33, 0x33));
             nvgFill(args.vg);
         }
+        // Draw SVG children first
+        widget::Widget::draw(args);
 
-        ModuleLightWidget::draw(args);
+        // Overlay the colored light using additive blending
+        nvgGlobalCompositeOperation(args.vg, NVG_LIGHTER);
+        drawLight(args);
+        nvgGlobalCompositeOperation(args.vg, NVG_SOURCE_OVER);
+        drawHalo(args);
         nvgRestore(args.vg);
     }
 };
@@ -2853,16 +3312,18 @@ struct JewelLEDMedium : ModuleLightWidget {
 
 struct JewelLEDLarge : ModuleLightWidget {
     JewelLEDLarge() {
-        // Set a fixed size (25% larger than 20x20 = 25x25)
-        box.size = Vec(25, 25);
+        // Set a slightly larger size for the jewel case (between medium and xlarge)
+        box.size = mm2px(Vec(12.f, 12.f));
 
         // Try to load the jewel SVG, fallback to simple shape if it fails
         widget::SvgWidget* sw = new widget::SvgWidget;
-        std::shared_ptr<Svg> svg = APP->window->loadSvg(asset::plugin(pluginInstance, "res/leds/jewel_led_medium.svg"));
+        std::shared_ptr<Svg> svg = APP->window->loadSvg(asset::plugin(pluginInstance, "res/leds/jewel_led_large.svg"));
 
         if (svg) {
             // SVG loaded successfully
             sw->setSvg(svg);
+            sw->box.size = box.size;
+            sw->box.pos = Vec(0.f, 0.f);
             addChild(sw);
         }
 
@@ -2884,72 +3345,254 @@ struct JewelLEDLarge : ModuleLightWidget {
         }
     }
 
+    void drawLight(const DrawArgs& args) override {
+        float brightness = color.a;
+        brightness = std::max(brightness, color.r);
+        brightness = std::max(brightness, color.g);
+        brightness = std::max(brightness, color.b);
+        if (brightness <= 1e-3f) {
+            return;
+        }
+
+        const float minSize = std::min(box.size.x, box.size.y);
+        const float cx = box.size.x * 0.5f;
+        const float cy = box.size.y * 0.5f;
+        const float lensRadius = 0.42f * minSize;
+
+        float glow = clamp(brightness * 2.0f, 0.f, 1.f);
+
+        nvgSave(args.vg);
+        nvgScissor(args.vg, cx - lensRadius, cy - lensRadius, lensRadius * 2.f, lensRadius * 2.f);
+
+        // Layer 1: Full-lens color wash - strong, saturated fill across the entire jewel face
+        NVGcolor washInner = color;
+        washInner.a = 0.85f * glow;
+        NVGcolor washOuter = color;
+        washOuter.a = 0.45f * glow;
+        NVGpaint wash = nvgRadialGradient(args.vg, cx, cy, 0.f, lensRadius, washInner, washOuter);
+        nvgBeginPath(args.vg);
+        nvgCircle(args.vg, cx, cy, lensRadius);
+        nvgFillPaint(args.vg, wash);
+        nvgFill(args.vg);
+
+        // Layer 2: Bright inner core - hot center for depth
+        NVGcolor coreInner = nvgRGBAf(
+            std::min(color.r * 1.5f + 0.3f, 1.f),
+            std::min(color.g * 1.5f + 0.3f, 1.f),
+            std::min(color.b * 1.5f + 0.3f, 1.f),
+            0.9f * glow);
+        NVGcolor coreOuter = color;
+        coreOuter.a = 0.2f * glow;
+        NVGpaint core = nvgRadialGradient(args.vg, cx, cy, 0.f, lensRadius * 0.5f, coreInner, coreOuter);
+        nvgBeginPath(args.vg);
+        nvgCircle(args.vg, cx, cy, lensRadius * 0.5f);
+        nvgFillPaint(args.vg, core);
+        nvgFill(args.vg);
+
+        // Layer 3: White-hot specular highlight
+        NVGcolor spec = nvgRGBAf(1.f, 1.f, 1.f, 0.35f * glow);
+        nvgBeginPath(args.vg);
+        nvgCircle(args.vg, cx - lensRadius * 0.15f, cy - lensRadius * 0.15f, lensRadius * 0.18f);
+        nvgFillColor(args.vg, spec);
+        nvgFill(args.vg);
+
+        nvgResetScissor(args.vg);
+        nvgRestore(args.vg);
+    }
+
+    void drawHalo(const DrawArgs& args) override {
+        float brightness = color.a;
+        brightness = std::max(brightness, color.r);
+        brightness = std::max(brightness, color.g);
+        brightness = std::max(brightness, color.b);
+        if (brightness <= 1e-3f) return;
+
+        float cx = box.size.x * 0.5f;
+        float cy = box.size.y * 0.5f;
+        float radius = std::min(box.size.x, box.size.y) * 0.5f;
+        float oradius = radius * 1.5f;
+
+        NVGcolor icol = color;
+        icol.a = 0.25f * brightness;
+        NVGcolor ocol = color;
+        ocol.a = 0.0f;
+
+        NVGpaint paint = nvgRadialGradient(args.vg, cx, cy, radius * 0.15f, oradius, icol, ocol);
+        nvgBeginPath(args.vg);
+        nvgRect(args.vg, cx - oradius, cy - oradius, oradius * 2.f, oradius * 2.f);
+        nvgFillPaint(args.vg, paint);
+        nvgFill(args.vg);
+    }
+
     void draw(const DrawArgs& args) override {
+        // Draw SVG bezel/facets first
         if (children.empty()) {
+            float cx = box.size.x * 0.5f;
+            float cy = box.size.y * 0.5f;
+            float outerRadius = 0.48f * std::min(box.size.x, box.size.y);
+            float innerRadius = outerRadius * 0.67f;
+
             nvgBeginPath(args.vg);
-            nvgCircle(args.vg, 12.5, 12.5, 12.0);
+            nvgCircle(args.vg, cx, cy, outerRadius);
             nvgFillColor(args.vg, nvgRGB(0xc0, 0xc0, 0xc0));
             nvgFill(args.vg);
 
             nvgBeginPath(args.vg);
-            nvgCircle(args.vg, 12.5, 12.5, 8.0);
+            nvgCircle(args.vg, cx, cy, innerRadius);
             nvgFillColor(args.vg, nvgRGB(0x33, 0x33, 0x33));
             nvgFill(args.vg);
         }
+        widget::Widget::draw(args);
 
-        ModuleLightWidget::draw(args);
+        // Overlay the colored light using additive blending so it glows through the SVG facets
+        nvgGlobalCompositeOperation(args.vg, NVG_LIGHTER);
+        drawLight(args);
+        nvgGlobalCompositeOperation(args.vg, NVG_SOURCE_OVER);
+
+        // Subtle external halo for visibility
+        drawHalo(args);
     }
 };
 
-/* struct JewelLEDXLarge : ModuleLightWidget {
+struct JewelLEDXLarge : ModuleLightWidget {
     JewelLEDXLarge() {
-        // Set a fixed size
-        box.size = Vec(40, 40);
-        
+        // Set a larger size for the jewel case
+        box.size = mm2px(Vec(16.f, 16.f));
+
         // Try to load the jewel SVG, fallback to simple shape if it fails
         widget::SvgWidget* sw = new widget::SvgWidget;
         std::shared_ptr<Svg> svg = APP->window->loadSvg(asset::plugin(pluginInstance, "res/leds/jewel_led_xlarge.svg"));
-        
+
         if (svg) {
             // SVG loaded successfully
             sw->setSvg(svg);
+            sw->box.size = box.size;
+            sw->box.pos = Vec(0.f, 0.f);
             addChild(sw);
         }
-        
+
         // Set up proper RGB color mixing like RedGreenBlueLight
         addBaseColor(nvgRGB(0xff, 0x00, 0x00)); // Red channel
-        addBaseColor(nvgRGB(0x00, 0xff, 0x00)); // Green channel  
+        addBaseColor(nvgRGB(0x00, 0xff, 0x00)); // Green channel
         addBaseColor(nvgRGB(0x00, 0x00, 0xff)); // Blue channel
     }
-    
+
     void step() override {
         ModuleLightWidget::step();
-        
+
         if (module) {
             float r = module->lights[firstLightId + 0].getBrightness();
             float g = module->lights[firstLightId + 1].getBrightness();
             float b = module->lights[firstLightId + 2].getBrightness();
-            
-            color = nvgRGBAf(r, g, b, fmaxf(r, g));
+
+            color = nvgRGBAf(r, g, b, fmaxf(fmaxf(r, g), b));
         }
     }
-    
+
+    void drawLight(const DrawArgs& args) override {
+        // Keep illumination inside the jewel lens, not the bezel
+        float brightness = color.a;
+        brightness = std::max(brightness, color.r);
+        brightness = std::max(brightness, color.g);
+        brightness = std::max(brightness, color.b);
+        if (brightness <= 1e-3f) {
+            return;
+        }
+
+        const float minSize = std::min(box.size.x, box.size.y);
+        const float cx = box.size.x * 0.5f;
+        const float cy = box.size.y * 0.5f;
+        const float lensRadius = 0.42f * minSize;
+        const float innerRadius = lensRadius * 0.55f;
+
+        float glow = clamp(brightness * 1.7f, 0.f, 1.f);
+        NVGcolor inner = color;
+        inner.a = 1.0f * glow;
+        NVGcolor outer = color;
+        outer.a = 0.38f * glow;
+
+        nvgSave(args.vg);
+        nvgScissor(args.vg, cx - lensRadius, cy - lensRadius, lensRadius * 2.f, lensRadius * 2.f);
+        NVGpaint paint = nvgRadialGradient(args.vg, cx, cy, innerRadius, lensRadius, inner, outer);
+        nvgBeginPath(args.vg);
+        nvgCircle(args.vg, cx, cy, lensRadius);
+        nvgFillPaint(args.vg, paint);
+        nvgFill(args.vg);
+
+        // Secondary bloom to make the glow feel fuller (still inside the lens)
+        NVGcolor bloomInner = color;
+        bloomInner.a = 0.6f * glow;
+        NVGcolor bloomOuter = color;
+        bloomOuter.a = 0.10f * glow;
+        NVGpaint bloom = nvgRadialGradient(args.vg, cx, cy, 0.f, lensRadius * 0.95f, bloomInner, bloomOuter);
+        nvgBeginPath(args.vg);
+        nvgCircle(args.vg, cx, cy, lensRadius * 0.95f);
+        nvgFillPaint(args.vg, bloom);
+        nvgFill(args.vg);
+
+        // Tight specular highlight to give the facets a lit sheen
+        NVGcolor spec = nvgRGBAf(1.f, 1.f, 1.f, 0.22f * glow);
+        nvgBeginPath(args.vg);
+        nvgCircle(args.vg, cx - lensRadius * 0.18f, cy - lensRadius * 0.18f, lensRadius * 0.16f);
+        nvgFillColor(args.vg, spec);
+        nvgFill(args.vg);
+        nvgResetScissor(args.vg);
+        nvgRestore(args.vg);
+    }
+
+    void drawHalo(const DrawArgs& args) override {
+        float brightness = color.a;
+        brightness = std::max(brightness, color.r);
+        brightness = std::max(brightness, color.g);
+        brightness = std::max(brightness, color.b);
+        if (brightness <= 1e-3f) return;
+
+        float cx = box.size.x * 0.5f;
+        float cy = box.size.y * 0.5f;
+        float radius = std::min(box.size.x, box.size.y) * 0.5f;
+        float oradius = radius * 2.5f;
+
+        NVGcolor icol = color;
+        icol.a = 0.18f * brightness;
+        NVGcolor ocol = color;
+        ocol.a = 0.0f;
+
+        NVGpaint paint = nvgRadialGradient(args.vg, cx, cy, radius * 0.4f, oradius, icol, ocol);
+        nvgBeginPath(args.vg);
+        nvgRect(args.vg, cx - oradius, cy - oradius, oradius * 2.f, oradius * 2.f);
+        nvgFillPaint(args.vg, paint);
+        nvgFill(args.vg);
+    }
+
     void draw(const DrawArgs& args) override {
+        // Draw SVG bezel/facets first
         if (children.empty()) {
+            float cx = box.size.x * 0.5f;
+            float cy = box.size.y * 0.5f;
+            float outerRadius = 0.48f * std::min(box.size.x, box.size.y);
+            float innerRadius = outerRadius * 0.67f;
+
             nvgBeginPath(args.vg);
-            nvgCircle(args.vg, 20, 20, 19.2);
+            nvgCircle(args.vg, cx, cy, outerRadius);
             nvgFillColor(args.vg, nvgRGB(0xc0, 0xc0, 0xc0));
             nvgFill(args.vg);
-            
+
             nvgBeginPath(args.vg);
-            nvgCircle(args.vg, 20, 20, 12.8);
+            nvgCircle(args.vg, cx, cy, innerRadius);
             nvgFillColor(args.vg, nvgRGB(0x33, 0x33, 0x33));
             nvgFill(args.vg);
         }
-        
-        ModuleLightWidget::draw(args);
+        widget::Widget::draw(args);
+
+        // Overlay the colored light using additive blending so it glows through the SVG facets
+        nvgGlobalCompositeOperation(args.vg, NVG_LIGHTER);
+        drawLight(args);
+        nvgGlobalCompositeOperation(args.vg, NVG_SOURCE_OVER);
+
+        // Subtle external halo for visibility
+        drawHalo(args);
     }
-}; */
+};
 
 /* struct JewelLEDHuge : ModuleLightWidget {
     JewelLEDHuge() {

@@ -5,6 +5,7 @@
 #include <array>
 #include <string>
 #include <cctype>
+#include <cstdio>
 
 // Forward declaration for Chiaroscuro module (needed by widgets)
 struct Chiaroscuro;
@@ -17,6 +18,43 @@ static constexpr int CHIAROSC_MIX_PARAM = 6;
 static constexpr int CHIAROSC_LED_R = 0;
 static constexpr int CHIAROSC_LED_G = 1;
 static constexpr int CHIAROSC_LED_B = 2;
+
+static inline void getDistortionTypeColor(int type, float& r, float& g, float& b) {
+    switch (type) {
+        case 0: // Hard Clip - Teal (darkened for jewel lens)
+            r = 0.09f; g = 0.45f; b = 0.38f;
+            break;
+        case 1: // Tube Sat - Aqua (darkened for jewel lens)
+            r = 0.20f; g = 0.50f; b = 0.50f;
+            break;
+        case 2: // Wave Fold - Cyan Blue (darkened for jewel lens)
+            r = 0.18f; g = 0.38f; b = 0.58f;
+            break;
+        case 3: // Bit Crush - Deep Blue (darkened for jewel lens)
+            r = 0.13f; g = 0.25f; b = 0.58f;
+            break;
+        case 4: // Destroy - Violet (darkened for jewel lens)
+            r = 0.28f; g = 0.20f; b = 0.58f;
+            break;
+        case 5: // Ring Mod - Magenta Purple (darkened for jewel lens)
+            r = 0.38f; g = 0.17f; b = 0.58f;
+            break;
+        default:
+            r = 0.26f; g = 0.34f; b = 0.46f;
+    }
+}
+
+static inline const char* getDistortionTypeName(int type) {
+    switch (type) {
+        case 0: return "HARD CLIP";
+        case 1: return "TUBE SAT";
+        case 2: return "WAVE FOLD";
+        case 3: return "BIT CRUSH";
+        case 4: return "DESTROY";
+        case 5: return "RING MOD";
+        default: return "DIST TYPE";
+    }
+}
 
 // Vintage Dot Matrix Display Widget with Sun/Moon Eclipse
 struct VintageDotMatrix : Widget {
@@ -191,7 +229,7 @@ private:
     float getTextPixelBrightness(int x, int y, int distortionType) {
         // Define full distortion type names for 48x14 matrix
         static const char* fullNames[] = {
-            "HARD CLIP", "WAVE FOLD", "BIT CRUSH", "DESTROY", "RING MOD", "TUBE SAT"
+            "HARD CLIP", "TUBE SAT", "WAVE FOLD", "BIT CRUSH", "DESTROY", "RING MOD"
         };
 
         if (distortionType < 0 || distortionType >= 6) return 0.0f;
@@ -371,6 +409,9 @@ struct Chiaroscuro : Module {
         DIST_LED_G,
         DIST_LED_B,
         SIDECHAIN_LED,     // Visual feedback for sidechain activity
+        GAIN_LED_R,
+        GAIN_LED_G,
+        GAIN_LED_B,
         NUM_LIGHTS
     };
 
@@ -447,6 +488,7 @@ struct Chiaroscuro : Module {
     float smoothed_distortion_display = 0.0f;
     float smoothed_drive_display = 0.0f;
     float smoothed_mix_display = 0.0f;
+    int currentDistortionType = 0;
     // Smoothed distortion value for LED color calculation (same value LEDs use)
     float smoothed_distortion_for_leds = 0.0f;
 
@@ -475,6 +517,32 @@ struct Chiaroscuro : Module {
     float prev_drive = 0.0f;
     float prev_mix = 0.0f;
 
+    enum DisplayOverride {
+        DISPLAY_NONE = 0,
+        DISPLAY_DIST,
+        DISPLAY_DRIVE,
+        DISPLAY_MIX,
+        DISPLAY_DIST_CV,
+        DISPLAY_DRIVE_CV,
+        DISPLAY_MIX_CV
+    };
+
+    int displayOverride = DISPLAY_NONE;
+    float displayOverrideSeconds = 0.0f;
+    float displayDistValue = 0.0f;
+    float displayDriveValue = 0.0f;
+    float displayMixValue = 0.0f;
+    float displayDistAttValue = 0.0f;
+    float displayDriveAttValue = 0.0f;
+    float displayMixAttValue = 0.0f;
+    float lastDisplayDist = 0.0f;
+    float lastDisplayDrive = 0.0f;
+    float lastDisplayMix = 0.0f;
+    float lastDisplayDistAtt = 0.0f;
+    float lastDisplayDriveAtt = 0.0f;
+    float lastDisplayMixAtt = 0.0f;
+    bool displayInitialized = false;
+
     // Cached smoothing coefficients (updated on sample-rate changes)
     float displaySmoothFast = 0.0f;
     float displaySmoothSlow = 0.0f;
@@ -485,7 +553,7 @@ struct Chiaroscuro : Module {
 
     // Sidechain mode (context menu): 0=Enhancement, 1=Ducking, 2=Direct
     int sidechainMode = 0;
-    int oversampleFactor = 2;
+    int oversampleFactor = 4;  // Increased from 2x to 4x for better aliasing suppression
     float currentSampleRate = 44100.0f;
 
     Chiaroscuro() {
@@ -493,7 +561,7 @@ struct Chiaroscuro : Module {
         
         shapetaker::ParameterHelper::configGain(this, VCA_PARAM, "vca gain");
         shapetaker::ParameterHelper::configSwitch(this, TYPE_PARAM, "dist type",
-            {"hard clip", "wave fold", "bit crush", "destroy", "ring mod", "tube sat"}, 0);
+            {"hard clip", "tube sat", "wave fold", "bit crush", "destroy", "ring mod"}, 0);
         shapetaker::ParameterHelper::configGain(this, DIST_PARAM, "dist %");
         shapetaker::ParameterHelper::configAttenuverter(this, DIST_ATT_PARAM, "dist cv");
         shapetaker::ParameterHelper::configDrive(this, DRIVE_PARAM);
@@ -674,6 +742,7 @@ struct Chiaroscuro : Module {
         float drive = clamp(smoothed_drive, 0.0f, 1.0f);
         float mix = clamp(smoothed_mix, 0.0f, 1.0f);
         int distortion_type = clamp((int)std::round(smoothed_type), 0, 5);
+        currentDistortionType = distortion_type;
         
         // Distortion amount parameter with CV
         float dist_amount = params[DIST_PARAM].getValue();
@@ -683,6 +752,63 @@ struct Chiaroscuro : Module {
             dist_amount += (cv_voltage / 10.0f) * cv_amount; // 10V CV = 100% parameter change when attenuverter = 100%
         }
         dist_amount = clamp(dist_amount, 0.0f, 1.0f);
+
+        // Cache values for on-screen display
+        displayDistValue = dist_amount;
+        displayDriveValue = drive;
+        displayMixValue = mix;
+        displayDistAttValue = params[DIST_ATT_PARAM].getValue();
+        displayDriveAttValue = params[DRIVE_ATT_PARAM].getValue();
+        displayMixAttValue = params[MIX_ATT_PARAM].getValue();
+
+        // Momentary display when values change
+        const float displayHoldSeconds = 0.9f;
+        const float displayTriggerThreshold = 0.0025f;
+        if (!displayInitialized) {
+            lastDisplayDist = displayDistValue;
+            lastDisplayDrive = displayDriveValue;
+            lastDisplayMix = displayMixValue;
+            lastDisplayDistAtt = displayDistAttValue;
+            lastDisplayDriveAtt = displayDriveAttValue;
+            lastDisplayMixAtt = displayMixAttValue;
+            displayInitialized = true;
+        }
+        displayOverrideSeconds = fmaxf(0.0f, displayOverrideSeconds - args.sampleTime);
+
+        if (fabsf(displayDistValue - lastDisplayDist) > displayTriggerThreshold) {
+            displayOverride = DISPLAY_DIST;
+            displayOverrideSeconds = displayHoldSeconds;
+            lastDisplayDist = displayDistValue;
+        }
+        if (fabsf(displayDriveValue - lastDisplayDrive) > displayTriggerThreshold) {
+            displayOverride = DISPLAY_DRIVE;
+            displayOverrideSeconds = displayHoldSeconds;
+            lastDisplayDrive = displayDriveValue;
+        }
+        if (fabsf(displayMixValue - lastDisplayMix) > displayTriggerThreshold) {
+            displayOverride = DISPLAY_MIX;
+            displayOverrideSeconds = displayHoldSeconds;
+            lastDisplayMix = displayMixValue;
+        }
+        if (fabsf(displayDistAttValue - lastDisplayDistAtt) > displayTriggerThreshold) {
+            displayOverride = DISPLAY_DIST_CV;
+            displayOverrideSeconds = displayHoldSeconds;
+            lastDisplayDistAtt = displayDistAttValue;
+        }
+        if (fabsf(displayDriveAttValue - lastDisplayDriveAtt) > displayTriggerThreshold) {
+            displayOverride = DISPLAY_DRIVE_CV;
+            displayOverrideSeconds = displayHoldSeconds;
+            lastDisplayDriveAtt = displayDriveAttValue;
+        }
+        if (fabsf(displayMixAttValue - lastDisplayMixAtt) > displayTriggerThreshold) {
+            displayOverride = DISPLAY_MIX_CV;
+            displayOverrideSeconds = displayHoldSeconds;
+            lastDisplayMixAtt = displayMixAttValue;
+        }
+
+        if (displayOverrideSeconds <= 0.0f) {
+            displayOverride = DISPLAY_NONE;
+        }
 
         // Store processed values for UI display (pixel ring) using smoothed controls
         processed_distortion = dist_amount;
@@ -769,9 +895,25 @@ struct Chiaroscuro : Module {
         // The actual distortion amount used in processing - use effective drive for sidechain mode
         float distortion_amount = smoothed_distortion * effective_drive;
 
-        // LED brightness calculation using shared utility
-        const float max_brightness = 0.6f;
-        currentLEDColor = shapetaker::LightingHelper::getChiaroscuroColor(smoothed_distortion, max_brightness);
+        // Distortion LED: product-based (reflects actual distortion heard) plus
+        // a small peak hint so any single knob at ~half shows a subtle glow
+        float product = smoothed_distortion_display * smoothed_drive_display * smoothed_mix_display;
+        float peak = std::max(smoothed_distortion_display, std::max(smoothed_drive_display, smoothed_mix_display));
+        float dist_intensity = clamp(product + peak * peak * 0.1f, 0.0f, 1.0f);
+        // Boost brightness while keeping darker base hues; allow >1.0 pre-clamp for stronger glow.
+        float dist_led_brightness = std::pow(dist_intensity, 0.55f) * 1.8f;
+
+        // Color palette for each distortion type (normalized RGB)
+        float dist_r = 0.26f;
+        float dist_g = 0.34f;
+        float dist_b = 0.46f;
+        getDistortionTypeColor(distortion_type, dist_r, dist_g, dist_b);
+
+        // Apply brightness to the type color, clamping per channel for LED intensity
+        currentLEDColor = shapetaker::RGBColor(
+            clamp(dist_r * dist_led_brightness, 0.0f, 1.0f),
+            clamp(dist_g * dist_led_brightness, 0.0f, 1.0f),
+            clamp(dist_b * dist_led_brightness, 0.0f, 1.0f));
 
         lights[DIST_LED_R].setBrightness(currentLEDColor.r);
         lights[DIST_LED_G].setBrightness(currentLEDColor.g);
@@ -784,6 +926,8 @@ struct Chiaroscuro : Module {
         const float normalizationVoltage = NOMINAL_LEVEL;
         const float invNormalization = 1.0f / normalizationVoltage;
         const float minLevel = 1e-4f;
+
+        float gain_led_peak = 0.0f;
 
         // Process each voice
         for (int ch = 0; ch < channels; ch++) {
@@ -882,6 +1026,7 @@ struct Chiaroscuro : Module {
             float wetAbsR = fabsf(wet_r);
             cleanLevelR[ch] += (cleanAbsR - cleanLevelR[ch]) * levelSmoothCoeff;
             wetLevelR[ch] += (wetAbsR - wetLevelR[ch]) * levelSmoothCoeff;
+            gain_led_peak = fmaxf(gain_led_peak, fmaxf(cleanLevelL[ch], cleanLevelR[ch]));
 
             float desiredGainL = 1.0f;
             float desiredGainR = 1.0f;
@@ -946,241 +1091,350 @@ struct Chiaroscuro : Module {
             outputs[AUDIO_L_OUTPUT].setVoltage(output_l, ch);
             outputs[AUDIO_R_OUTPUT].setVoltage(output_r, ch);
         }
+
+        // Gain LED: Show effective VCA gain (knob + CV) with teal color
+        float gain_cv_level = 0.0f;
+        if (inputs[VCA_CV_INPUT].isConnected()) {
+            // Use maximum effective gain across all channels
+            for (int ch = 0; ch < channels; ch++) {
+                float cv = inputs[VCA_CV_INPUT].getPolyVoltage(ch) * 0.1f; // 10V -> 1.0
+                cv = clamp(cv, -1.0f, 1.0f);
+                float effective_gain = clamp(base_vca_gain + cv, 0.0f, 1.0f);
+                gain_cv_level = fmaxf(gain_cv_level, effective_gain);
+            }
+        } else {
+            // No CV connected - show knob position (0-1 range maps directly)
+            gain_cv_level = clamp(base_vca_gain, 0.0f, 1.0f);
+        }
+
+        // Teal color for gain LED (matches Channel A theme)
+        // Use sqrt for better low-end visibility
+        float gain_brightness = clamp(std::sqrt(gain_cv_level), 0.0f, 1.0f);
+        lights[GAIN_LED_R].setSmoothBrightness(0.0f, args.sampleTime);
+        lights[GAIN_LED_G].setSmoothBrightness(gain_brightness, args.sampleTime);
+        lights[GAIN_LED_B].setSmoothBrightness(gain_brightness * 0.7f, args.sampleTime);
     }
 };
 
-// 8-bit style pixel ring display that surrounds the distortion selector
-// Hardware-feasible design that could be built with 24-32 RGB LEDs in a circle
-struct PixelRingWidget : TransparentWidget {
-    Module* module = nullptr;
-    Chiaroscuro* chiaroscuroModule = nullptr;  // Typed pointer to avoid dynamic_cast
-    int distParamId = -1;
-    int driveParamId = -1;
-    int mixParamId = -1;
-    int typeParamId = -1;
-    float lastTime = 0.0f;
+// Unified LCD + selector base unit for distortion type
+struct DistortionTypeLCD : Widget {
+    Chiaroscuro* module = nullptr;
+    Rect screenRect;
+    float slotTop = 0.f;
+    float slotHeight = 0.f;
 
-    // Hardware-like specifications
-    static const int RING_PIXELS = 36;  // 36 RGB LEDs on single ring
-    static const int PIXEL_SIZE = 2;   // 2x2 pixel blocks
-
-    // Display state
-    struct Pixel {
-        uint8_t r, g, b;
-        bool active;
-        Pixel() : r(0), g(0), b(0), active(false) {}
-        Pixel(uint8_t red, uint8_t green, uint8_t blue, bool on = true)
-            : r(red), g(green), b(blue), active(on) {}
-    };
-
-    Pixel ringPixels[RING_PIXELS];
-    float eclipseProgress = 0.0f;
-    float driveIntensity = 0.0f;
-    float mixLevel = 0.0f;
-    int distortionType = 0;
-    float animationPhase = 0.0f;
-
-    // Previous values for conditional animation (#16)
-    float prevEclipseProgress = 0.0f;
-    float prevDriveIntensity = 0.0f;
-    float prevMixLevel = 0.0f;
-
-    PixelRingWidget() {
-        box.size = Vec(80, 80); // Smaller size for single ring
-    }
-
-    void step() override {
-        TransparentWidget::step();
-
-        if (!chiaroscuroModule) return;
-
-        float currentTime = glfwGetTime();
-        float deltaTime = currentTime - lastTime;
-        lastTime = currentTime;
-        deltaTime = clamp(deltaTime, 0.0f, 1.0f / 30.0f);
-
-        // Get smoothed display parameters (prevents audio-rate flickering)
-        // Use smoothed values for LED display to prevent glitching at audio rates
-        eclipseProgress = clamp(chiaroscuroModule->smoothed_distortion_display, 0.0f, 1.0f);
-        driveIntensity = clamp(chiaroscuroModule->smoothed_drive_display, 0.0f, 1.0f);
-        mixLevel = clamp(chiaroscuroModule->smoothed_mix_display, 0.0f, 1.0f);
-        distortionType = (typeParamId >= 0) ? (int)chiaroscuroModule->params[typeParamId].getValue() : 0;
-
-        // Check if parameters have changed to conditionally pause animation
-        const float changeThreshold = 0.001f;
-        bool parametersStable =
-            fabsf(eclipseProgress - prevEclipseProgress) < changeThreshold &&
-            fabsf(driveIntensity - prevDriveIntensity) < changeThreshold &&
-            fabsf(mixLevel - prevMixLevel) < changeThreshold;
-
-        prevEclipseProgress = eclipseProgress;
-        prevDriveIntensity = driveIntensity;
-        prevMixLevel = mixLevel;
-
-        // Only animate when parameters are changing or drive is high (for sparkles)
-        if (!parametersStable || driveIntensity > 0.4f) {
-            animationPhase += deltaTime * 2.0f; // Slow animation for retro feel
-        }
-
-        updatePixelRing();
-    }
-
-    void updatePixelRing() {
-        // Clear all pixels first
-        for (int i = 0; i < RING_PIXELS; i++) {
-            ringPixels[i] = Pixel();
-        }
-
-        // Get base colors based on distortion type (retro palette)
-        // Each type has unique distortedColor for clear visual distinction
-        Pixel cleanColor, distortedColor;
-        switch (distortionType) {
-            case 0: // Hard Clip - classic green terminal to bright red
-                cleanColor = Pixel(0, 255, 0);
-                distortedColor = Pixel(255, 0, 0);  // Bright Red
-                break;
-            case 1: // Wave Fold - amber to deep orange red
-                cleanColor = Pixel(255, 191, 0);
-                distortedColor = Pixel(255, 69, 0);  // Deep Orange (OrangeRed)
-                break;
-            case 2: // Bit Crush - cyan to electric blue
-                cleanColor = Pixel(0, 255, 255);
-                distortedColor = Pixel(0, 100, 255);  // Electric Blue
-                break;
-            case 3: // Destroy - yellow to crimson
-                cleanColor = Pixel(255, 255, 0);
-                distortedColor = Pixel(220, 20, 60);  // Crimson
-                break;
-            case 4: // Ring Mod - cool white to magenta
-                cleanColor = Pixel(255, 255, 255);
-                distortedColor = Pixel(255, 0, 255);  // Magenta
-                break;
-            case 5: // Tube Sat - warm white to gold
-                cleanColor = Pixel(255, 220, 160);
-                distortedColor = Pixel(255, 165, 0);  // Gold
-                break;
-            default:
-                cleanColor = Pixel(255, 255, 255);
-                distortedColor = Pixel(128, 128, 128);
-        }
-
-        // Drive only affects brightness of active distorted pixels, not baseline visibility
-        // Keep base colors at full intensity, drive will be applied per-pixel
-        // No modification of base colors here
-
-        // Single-ring eclipse animation
-        // Ring shows distortion progress from 0 to full circle
-        int distortionPixels = (int)ceil(eclipseProgress * RING_PIXELS);
-
-        // Process single ring
-        for (int i = 0; i < RING_PIXELS; i++) {
-            bool inDistortionZone = (i < distortionPixels);
-
-            if (inDistortionZone) {
-                // Distorted pixels: mix determines color, drive determines brightness
-                uint8_t mixedR = (uint8_t)(cleanColor.r * (1.0f - mixLevel) + distortedColor.r * mixLevel);
-                uint8_t mixedG = (uint8_t)(cleanColor.g * (1.0f - mixLevel) + distortedColor.g * mixLevel);
-                uint8_t mixedB = (uint8_t)(cleanColor.b * (1.0f - mixLevel) + distortedColor.b * mixLevel);
-
-                // Drive controls brightness of distorted pixels
-                float driveBrightness = 0.4f + driveIntensity * 0.6f; // 40% to 100% based on drive
-                mixedR = (uint8_t)(mixedR * driveBrightness);
-                mixedG = (uint8_t)(mixedG * driveBrightness);
-                mixedB = (uint8_t)(mixedB * driveBrightness);
-
-                ringPixels[i] = Pixel(mixedR, mixedG, mixedB, true);
-            } else {
-                // Clean pixels: baseline clean color at low brightness
-                uint8_t baseR = (uint8_t)(cleanColor.r * 0.2f);
-                uint8_t baseG = (uint8_t)(cleanColor.g * 0.2f);
-                uint8_t baseB = (uint8_t)(cleanColor.b * 0.2f);
-
-                ringPixels[i] = Pixel(baseR, baseG, baseB, true);
-            }
-        }
-
-        // Layer 3: Drive sparkle effect
-        if (driveIntensity > 0.4f) {
-            int sparkleCount = (int)(driveIntensity * 4.0f); // More sparkles with higher drive
-
-            // Ring sparkles
-            for (int s = 0; s < sparkleCount; s++) {
-                int sparkleIndex = (int)(animationPhase * (2.0f + s * 1.5f)) % RING_PIXELS;
-                if (ringPixels[sparkleIndex].active) {
-                    ringPixels[sparkleIndex].r = fminf(ringPixels[sparkleIndex].r + 80, 255);
-                    ringPixels[sparkleIndex].g = fminf(ringPixels[sparkleIndex].g + 80, 255);
-                    ringPixels[sparkleIndex].b = fminf(ringPixels[sparkleIndex].b + 80, 255);
-                }
-            }
-        }
-
-        // Layer 4: Subtle retro flicker
-        for (int i = 0; i < RING_PIXELS; i++) {
-            if (ringPixels[i].active) {
-                float flicker = 0.85f + 0.15f * sin(animationPhase * 6.0f + i * 0.3f);
-                ringPixels[i].r = (uint8_t)(ringPixels[i].r * flicker);
-                ringPixels[i].g = (uint8_t)(ringPixels[i].g * flicker);
-                ringPixels[i].b = (uint8_t)(ringPixels[i].b * flicker);
-            }
-        }
-    }
+    DistortionTypeLCD(Chiaroscuro* mod, const Rect& screenRectPx, float slotTopPx, float slotHeightPx)
+        : module(mod), screenRect(screenRectPx), slotTop(slotTopPx), slotHeight(slotHeightPx) {}
 
     void draw(const DrawArgs& args) override {
-        if (!chiaroscuroModule) return;
+        NVGcontext* vg = args.vg;
+        float w = box.size.x;
+        float h = box.size.y;
 
-        Vec center = box.size.div(2);
-        float ringRadius = 28.0f;  // Single ring radius (adjusted to meet larger switch)
+        nvgSave(vg);
 
-        nvgSave(args.vg);
+        // Unified bezel (aged, chunkier)
+        nvgBeginPath(vg);
+        nvgRoundedRect(vg, 0.f, 0.f, w, h, 3.2f);
+        NVGpaint bezel = nvgLinearGradient(vg, 0, 0, 0, h,
+            nvgRGBA(52, 46, 38, 255),
+            nvgRGBA(8, 6, 5, 255));
+        nvgFillPaint(vg, bezel);
+        nvgFill(vg);
 
-        // Draw hardware substrate - dark background ring for realistic LED strip look
-        float substrate_width = 3.0f; // Width of the black substrate
+        // Bezel edge highlight
+        nvgBeginPath(vg);
+        nvgRoundedRect(vg, 0.6f, 0.6f, w - 1.2f, h - 1.2f, 2.8f);
+        nvgStrokeColor(vg, nvgRGBA(220, 205, 170, 70));
+        nvgStrokeWidth(vg, 0.95f);
+        nvgStroke(vg);
 
-        // Ring substrate
-        nvgBeginPath(args.vg);
-        nvgCircle(args.vg, center.x, center.y, ringRadius + substrate_width);
-        nvgCircle(args.vg, center.x, center.y, ringRadius - substrate_width);
-        nvgPathWinding(args.vg, NVG_HOLE);
-        nvgFillColor(args.vg, nvgRGBA(15, 15, 18, 220)); // Very dark substrate
-        nvgFill(args.vg);
+        // Inner recess
+        const float inset = 1.6f;
+        nvgBeginPath(vg);
+        nvgRoundedRect(vg, inset, inset, w - inset * 2.f, h - inset * 2.f, 2.1f);
+        nvgFillColor(vg, nvgRGBA(12, 10, 8, 220));
+        nvgFill(vg);
 
-        // Add subtle edge highlights to simulate PCB traces
-        nvgBeginPath(args.vg);
-        nvgCircle(args.vg, center.x, center.y, ringRadius + substrate_width);
-        nvgStrokeColor(args.vg, nvgRGBA(40, 40, 45, 100));
-        nvgStrokeWidth(args.vg, 0.3f);
-        nvgStroke(args.vg);
+        // Inner shadow lip
+        nvgBeginPath(vg);
+        nvgRoundedRect(vg, inset + 0.3f, inset + 0.3f, w - (inset + 0.3f) * 2.f, h - (inset + 0.3f) * 2.f, 1.9f);
+        nvgStrokeColor(vg, nvgRGBA(0, 0, 0, 140));
+        nvgStrokeWidth(vg, 0.9f);
+        nvgStroke(vg);
 
-        nvgBeginPath(args.vg);
-        nvgCircle(args.vg, center.x, center.y, ringRadius - substrate_width);
-        nvgStrokeColor(args.vg, nvgRGBA(40, 40, 45, 100));
-        nvgStrokeWidth(args.vg, 0.3f);
-        nvgStroke(args.vg);
-
-        // Draw ring pixels
-        for (int i = 0; i < RING_PIXELS; i++) {
-            if (!ringPixels[i].active) continue;
-
-            float angle = (float)i / RING_PIXELS * 2.0f * M_PI - M_PI / 2.0f; // Start from top
-            float pixelX = center.x + cos(angle) * ringRadius;
-            float pixelY = center.y + sin(angle) * ringRadius;
-
-            // Draw pixel as small square
-            nvgBeginPath(args.vg);
-            nvgRect(args.vg, pixelX - PIXEL_SIZE/2, pixelY - PIXEL_SIZE/2, PIXEL_SIZE, PIXEL_SIZE);
-            nvgFillColor(args.vg, nvgRGBA(ringPixels[i].r, ringPixels[i].g, ringPixels[i].b, 255));
-            nvgFill(args.vg);
-
-            // Add slight glow for LED realism
-            if (ringPixels[i].r > 50 || ringPixels[i].g > 50 || ringPixels[i].b > 50) {
-                nvgBeginPath(args.vg);
-                nvgCircle(args.vg, pixelX, pixelY, PIXEL_SIZE * 1.2f);
-                nvgFillColor(args.vg, nvgRGBA(ringPixels[i].r, ringPixels[i].g, ringPixels[i].b, 30));
-                nvgFill(args.vg);
+        // Bezel screws
+        float screwR = 0.8f;
+        float screwInset = 2.2f;
+        float screwXs[2] = {screwInset, w - screwInset};
+        float screwYs[2] = {screwInset, h - screwInset};
+        for (int iy = 0; iy < 2; ++iy) {
+            for (int ix = 0; ix < 2; ++ix) {
+                float sx = screwXs[ix];
+                float sy = screwYs[iy];
+                nvgBeginPath(vg);
+                nvgCircle(vg, sx, sy, screwR);
+                nvgFillColor(vg, nvgRGBA(130, 120, 102, 255));
+                nvgFill(vg);
+                nvgBeginPath(vg);
+                nvgCircle(vg, sx, sy, screwR);
+                nvgStrokeColor(vg, nvgRGBA(60, 52, 42, 180));
+                nvgStrokeWidth(vg, 0.4f);
+                nvgStroke(vg);
+                nvgBeginPath(vg);
+                nvgMoveTo(vg, sx - screwR * 0.6f, sy);
+                nvgLineTo(vg, sx + screwR * 0.6f, sy);
+                nvgStrokeColor(vg, nvgRGBA(70, 60, 50, 200));
+                nvgStrokeWidth(vg, 0.35f);
+                nvgStroke(vg);
             }
         }
 
-        nvgRestore(args.vg);
+        // Screen area
+        float sw = screenRect.size.x;
+        float sh = screenRect.size.y;
+        float sx = screenRect.pos.x;
+        float sy = screenRect.pos.y;
+        nvgBeginPath(vg);
+        nvgRoundedRect(vg, sx, sy, sw, sh, 1.6f);
+        NVGpaint screen = nvgLinearGradient(vg, 0, sy, 0, sy + sh,
+            nvgRGBA(12, 20, 16, 255),
+            nvgRGBA(6, 10, 8, 255));
+        nvgFillPaint(vg, screen);
+        nvgFill(vg);
+
+        // Subtle inner bezel edge
+        nvgBeginPath(vg);
+        nvgRoundedRect(vg, sx + 0.6f, sy + 0.6f, sw - 1.2f, sh - 1.2f, 1.2f);
+        nvgStrokeColor(vg, nvgRGBA(70, 60, 45, 70));
+        nvgStrokeWidth(vg, 0.6f);
+        nvgStroke(vg);
+
+        // Scanlines
+        nvgStrokeColor(vg, nvgRGBA(255, 255, 255, 14));
+        nvgStrokeWidth(vg, 1.f);
+        for (float y = sy + 1.2f; y < sy + sh - 1.f; y += 2.0f) {
+            nvgBeginPath(vg);
+            nvgMoveTo(vg, sx + 1.f, y);
+            nvgLineTo(vg, sx + sw - 1.f, y);
+            nvgStroke(vg);
+        }
+
+        // Vertical phosphor mask (very subtle)
+        nvgStrokeColor(vg, nvgRGBA(170, 200, 170, 12));
+        nvgStrokeWidth(vg, 0.6f);
+        for (float x = sx + 1.2f; x < sx + sw - 1.2f; x += 2.0f) {
+            nvgBeginPath(vg);
+            nvgMoveTo(vg, x, sy + 1.f);
+            nvgLineTo(vg, x, sy + sh - 1.f);
+            nvgStroke(vg);
+        }
+
+        // Light speckle noise (static)
+        nvgFillColor(vg, nvgRGBA(255, 255, 255, 10));
+        for (int i = 0; i < 26; ++i) {
+            float fx = fmodf(i * 7.3f, std::max(1.f, sw - 2.f)) + sx + 1.f;
+            float fy = fmodf(i * 11.1f, std::max(1.f, sh - 2.f)) + sy + 1.f;
+            nvgBeginPath(vg);
+            nvgCircle(vg, fx, fy, 0.4f);
+            nvgFill(vg);
+        }
+
+        // Glass highlight
+        nvgBeginPath(vg);
+        nvgRoundedRect(vg, sx + 0.8f, sy + 0.6f, sw * 0.6f, sh * 0.35f, 1.2f);
+        NVGpaint glass = nvgLinearGradient(vg, sx, sy, sx + sw * 0.6f, sy + sh * 0.4f,
+            nvgRGBA(160, 170, 120, 22),
+            nvgRGBA(160, 170, 120, 0));
+        nvgFillPaint(vg, glass);
+        nvgFill(vg);
+
+        // Phosphor bloom (warm)
+        NVGpaint bloom = nvgRadialGradient(
+            vg,
+            sx + sw * 0.5f, sy + sh * 0.5f,
+            std::min(sw, sh) * 0.12f,
+            std::min(sw, sh) * 0.45f,
+            nvgRGBA(200, 170, 90, 35),
+            nvgRGBA(200, 170, 90, 0));
+        nvgBeginPath(vg);
+        nvgRoundedRect(vg, sx, sy, sw, sh, 1.6f);
+        nvgFillPaint(vg, bloom);
+        nvgFill(vg);
+
+        // Vignette edges
+        NVGpaint vignette = nvgRadialGradient(
+            vg,
+            sx + sw * 0.5f, sy + sh * 0.5f,
+            std::min(sw, sh) * 0.2f,
+            std::min(sw, sh) * 0.65f,
+            nvgRGBA(0, 0, 0, 0),
+            nvgRGBA(0, 0, 0, 70));
+        nvgBeginPath(vg);
+        nvgRoundedRect(vg, sx, sy, sw, sh, 1.6f);
+        nvgFillPaint(vg, vignette);
+        nvgFill(vg);
+
+        // Slot channel (vintage instrument)
+        float slotInset = w * 0.08f;
+        float slotW = w - slotInset * 2.f;
+        nvgBeginPath(vg);
+        nvgRoundedRect(vg, slotInset, slotTop, slotW, slotHeight, slotHeight * 0.5f);
+        NVGpaint slotBase = nvgLinearGradient(vg, 0, slotTop, 0, slotTop + slotHeight,
+            nvgRGBA(26, 28, 22, 255),
+            nvgRGBA(10, 12, 9, 255));
+        nvgFillPaint(vg, slotBase);
+        nvgFill(vg);
+
+        nvgBeginPath(vg);
+        nvgRoundedRect(vg, slotInset, slotTop, slotW, slotHeight, slotHeight * 0.5f);
+        nvgStrokeColor(vg, nvgRGBA(90, 96, 80, 120));
+        nvgStrokeWidth(vg, 0.5f);
+        nvgStroke(vg);
+
+        nvgBeginPath(vg);
+        nvgRoundedRect(vg, slotInset + 0.5f, slotTop + 0.3f, slotW - 1.0f, slotHeight - 0.6f, slotHeight * 0.4f);
+        nvgStrokeColor(vg, nvgRGBA(190, 196, 180, 45));
+        nvgStrokeWidth(vg, 0.35f);
+        nvgStroke(vg);
+
+        // Get type + color
+        int typeIndex = 0;
+        if (module) {
+            typeIndex = clamp(module->currentDistortionType, 0, 5);
+        }
+        const char* label = getDistortionTypeName(typeIndex);
+        char overrideLabel[32] = {};
+        bool showingOverride = false;
+        if (module && module->displayOverrideSeconds > 0.0f && module->displayOverride != Chiaroscuro::DISPLAY_NONE) {
+            float value = 0.0f;
+            switch (module->displayOverride) {
+                case Chiaroscuro::DISPLAY_DIST:
+                    value = module->displayDistValue;
+                    std::snprintf(overrideLabel, sizeof(overrideLabel), "DIST %d%%", (int)std::round(value * 100.f));
+                    break;
+                case Chiaroscuro::DISPLAY_DRIVE:
+                    value = module->displayDriveValue;
+                    std::snprintf(overrideLabel, sizeof(overrideLabel), "DRIVE %d%%", (int)std::round(value * 100.f));
+                    break;
+                case Chiaroscuro::DISPLAY_MIX:
+                    value = module->displayMixValue;
+                    std::snprintf(overrideLabel, sizeof(overrideLabel), "MIX %d%%", (int)std::round(value * 100.f));
+                    break;
+                case Chiaroscuro::DISPLAY_DIST_CV:
+                    value = module->displayDistAttValue;
+                    std::snprintf(overrideLabel, sizeof(overrideLabel), "DIST CV %c%d%%",
+                        (value >= 0.f ? '+' : '-'), (int)std::round(std::fabs(value) * 100.f));
+                    break;
+                case Chiaroscuro::DISPLAY_DRIVE_CV:
+                    value = module->displayDriveAttValue;
+                    std::snprintf(overrideLabel, sizeof(overrideLabel), "DRIVE CV %c%d%%",
+                        (value >= 0.f ? '+' : '-'), (int)std::round(std::fabs(value) * 100.f));
+                    break;
+                case Chiaroscuro::DISPLAY_MIX_CV:
+                    value = module->displayMixAttValue;
+                    std::snprintf(overrideLabel, sizeof(overrideLabel), "MIX CV %c%d%%",
+                        (value >= 0.f ? '+' : '-'), (int)std::round(std::fabs(value) * 100.f));
+                    break;
+                default:
+                    break;
+            }
+            if (overrideLabel[0] != '\0') {
+                label = overrideLabel;
+                showingOverride = true;
+            }
+        }
+
+        float r = 0.3f, g = 0.45f, b = 0.6f;
+        getDistortionTypeColor(typeIndex, r, g, b);
+        float boost = 1.7f;
+        NVGcolor textColor = nvgRGBAf(
+            clamp(r * boost, 0.f, 1.f),
+            clamp(g * boost, 0.f, 1.f),
+            clamp(b * boost, 0.f, 1.f),
+            1.f);
+
+        // Text
+        if (APP && APP->window && APP->window->uiFont) {
+            nvgFontFaceId(vg, APP->window->uiFont->handle);
+        }
+        float valueFontSize = sh * 0.55f;
+        float titleFontSize = sh * 0.68f;
+        nvgFontSize(vg, showingOverride ? valueFontSize : titleFontSize);
+        nvgTextAlign(vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+
+        float maxW = sw - 6.f;
+        if (showingOverride) {
+            const char* referenceLabel = "DRIVE CV +100%";
+            float refBounds[4];
+            nvgTextBounds(vg, 0.f, 0.f, referenceLabel, nullptr, refBounds);
+            float refW = refBounds[2] - refBounds[0];
+            if (refW > maxW && refW > 0.0f) {
+                float scale = maxW / refW;
+                nvgFontSize(vg, valueFontSize * scale);
+            }
+        } else {
+            const char* referenceTitle = "WAVE FOLD";
+            float refBounds[4];
+            nvgTextBounds(vg, 0.f, 0.f, referenceTitle, nullptr, refBounds);
+            float refW = refBounds[2] - refBounds[0];
+            if (refW > maxW && refW > 0.0f) {
+                float scale = maxW / refW;
+                nvgFontSize(vg, titleFontSize * scale);
+            }
+        }
+
+        float bounds[4];
+        nvgTextBounds(vg, 0.f, 0.f, label, nullptr, bounds);
+        float textW = bounds[2] - bounds[0];
+
+        float cx = sx + sw * 0.5f;
+        float cy = sy + sh * 0.5f;
+
+        // Keep text within the screen area
+        nvgScissor(vg, sx + 0.6f, sy + 0.6f, sw - 1.2f, sh - 1.2f);
+
+        // Soft phosphor glow (embedded)
+        nvgFontBlur(vg, 3.6f);
+        nvgFillColor(vg, nvgRGBAf(textColor.r * 0.8f + 0.2f, textColor.g * 0.8f + 0.2f, textColor.b * 0.6f, 0.38f));
+        nvgText(vg, cx - 0.15f, cy + 0.25f, label, nullptr);
+        nvgText(vg, cx + 0.15f, cy + 0.05f, label, nullptr);
+
+        // Slight horizontal bleed
+        nvgFontBlur(vg, 1.2f);
+        nvgFillColor(vg, nvgRGBAf(textColor.r * 0.95f, textColor.g * 0.95f, textColor.b * 0.85f, 0.32f));
+        nvgText(vg, cx + 0.6f, cy + 0.1f, label, nullptr);
+
+        // Grainy core text (multiple jittered passes)
+        nvgFontBlur(vg, 0.6f);
+        nvgFillColor(vg, nvgRGBAf(textColor.r, textColor.g, textColor.b, 0.72f));
+        nvgText(vg, cx + 0.1f, cy + 0.2f, label, nullptr);
+        nvgText(vg, cx - 0.1f, cy + 0.15f, label, nullptr);
+        nvgText(vg, cx + 0.0f, cy + 0.25f, label, nullptr);
+
+        // Final crisp layer (still a touch soft)
+        nvgFontBlur(vg, 0.15f);
+        nvgFillColor(vg, nvgRGBAf(textColor.r, textColor.g, textColor.b, 0.88f));
+        nvgText(vg, cx, cy + 0.2f, label, nullptr);
+
+        // Phosphor speckle within text bounds
+        float textH = bounds[3] - bounds[1];
+        float textBoxW = (textW > 0.f) ? textW : (sw * 0.6f);
+        float textBoxH = (textH > 0.f) ? textH : (sh * 0.6f);
+        float tx0 = cx - textBoxW * 0.5f;
+        float ty0 = cy - textBoxH * 0.5f;
+        nvgFillColor(vg, nvgRGBAf(textColor.r, textColor.g, textColor.b, 0.18f));
+        for (int i = 0; i < 14; ++i) {
+            float fx = tx0 + fmodf(i * 7.3f, std::max(1.f, textBoxW));
+            float fy = ty0 + fmodf(i * 5.9f, std::max(1.f, textBoxH));
+            nvgBeginPath(vg);
+            nvgRect(vg, fx, fy, 0.6f, 0.4f);
+            nvgFill(vg);
+        }
+
+        nvgResetScissor(vg);
+
+        nvgRestore(vg);
     }
 };
 
@@ -1230,27 +1484,46 @@ struct ChiaroscuroWidget : ModuleWidget {
         menu->addChild(construct<SidechainModeItem>(&MenuItem::text, "Direct Control", &SidechainModeItem::module, module, &SidechainModeItem::mode, 2));
     }
 
-    // Draw leather texture background
+    // Use fixed-density leather mapping to avoid horizontal stretch on
+    // wider panels; blend an offset pass to soften repeat seams.
     void draw(const DrawArgs& args) override {
         std::shared_ptr<Image> bg = APP->window->loadImage(asset::plugin(pluginInstance, "res/panels/panel_background.png"));
         if (bg) {
-            // Draw image stretched to fill entire panel, no tiling
+            constexpr float inset = 2.0f;
+            constexpr float textureAspect = 2880.f / 4553.f;  // panel_background.png
+            float tileH = box.size.y + inset * 2.f;
+            float tileW = tileH * textureAspect;
+            float x = -inset;
+            float y = -inset;
             nvgSave(args.vg);
             nvgBeginPath(args.vg);
             nvgRect(args.vg, 0.f, 0.f, box.size.x, box.size.y);
-            NVGpaint paint = nvgImagePattern(args.vg, 0.f, 0.f, box.size.x, box.size.y, 0.f, bg->handle, 1.0f);
-            nvgFillPaint(args.vg, paint);
+            NVGpaint paintA = nvgImagePattern(args.vg, x, y, tileW, tileH, 0.f, bg->handle, 1.0f);
+            nvgFillPaint(args.vg, paintA);
+            nvgFill(args.vg);
+
+            nvgBeginPath(args.vg);
+            nvgRect(args.vg, 0.f, 0.f, box.size.x, box.size.y);
+            NVGpaint paintB = nvgImagePattern(args.vg, x + tileW * 0.5f, y, tileW, tileH, 0.f, bg->handle, 0.35f);
+            nvgFillPaint(args.vg, paintB);
+            nvgFill(args.vg);
+
+            nvgBeginPath(args.vg);
+            nvgRect(args.vg, 0.f, 0.f, box.size.x, box.size.y);
+            nvgFillColor(args.vg, nvgRGBA(0, 0, 0, 18));
             nvgFill(args.vg);
             nvgRestore(args.vg);
         }
         ModuleWidget::draw(args);
 
-        // Draw black border on top to cover default gray panel border
+        // Draw a black inner frame to fully mask any edge tinting
+        constexpr float frame = 1.0f;
         nvgBeginPath(args.vg);
         nvgRect(args.vg, 0.f, 0.f, box.size.x, box.size.y);
-        nvgStrokeColor(args.vg, nvgRGB(0, 0, 0));
-        nvgStrokeWidth(args.vg, 1.0f);
-        nvgStroke(args.vg);
+        nvgRect(args.vg, frame, frame, box.size.x - 2.f * frame, box.size.y - 2.f * frame);
+        nvgPathWinding(args.vg, NVG_HOLE);
+        nvgFillColor(args.vg, nvgRGB(0, 0, 0));
+        nvgFill(args.vg);
     }
 
     ChiaroscuroWidget(Chiaroscuro* module) {
@@ -1261,79 +1534,77 @@ struct ChiaroscuroWidget : ModuleWidget {
 
         LayoutHelper::ScrewPositions::addStandardScrews<ScrewJetBlack>(this, box.size.x);
 
-        // Create positioning helper from SVG panel
-        auto centerPx = LayoutHelper::createCenterPxHelper(
-            asset::plugin(pluginInstance, "res/panels/Chiaroscuro.svg")
-        );
+        // Create positioning helpers from SVG panel
+        auto svgPath = asset::plugin(pluginInstance, "res/panels/Chiaroscuro.svg");
+        auto centerPx = LayoutHelper::createCenterPxHelper(svgPath);
+
+        // Jewel LEDs
+        addChild(createLightCentered<JewelLEDLarge>(
+            centerPx("gain_led", 9.3945856f, 19.047686f), module, Chiaroscuro::GAIN_LED_R));
+        addChild(createLightCentered<JewelLEDLarge>(
+            centerPx("dist_amt_led", 52.005203f, 19.047686f), module, Chiaroscuro::DIST_LED_R));
         
         // Audio I/O - BNC connectors for vintage oscilloscope look
-        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("audio-in-l", 7.5756826f, 114.8209f), module, Chiaroscuro::AUDIO_L_INPUT));
-        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("audio-in-r", 22.049751f, 114.8209f), module, Chiaroscuro::AUDIO_R_INPUT));
-        addOutput(createOutputCentered<ShapetakerBNCPort>(centerPx("audio-out-l", 36.523819f, 114.8209f), module, Chiaroscuro::AUDIO_L_OUTPUT));
-        addOutput(createOutputCentered<ShapetakerBNCPort>(centerPx("audio-out-r", 50.997887f, 114.8209f), module, Chiaroscuro::AUDIO_R_OUTPUT));
+        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("audio-in-l", 10.691628f, 114.48771f), module, Chiaroscuro::AUDIO_L_INPUT));
+        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("audio-in-r", 24.030479f, 114.45824f), module, Chiaroscuro::AUDIO_R_INPUT));
+        addOutput(createOutputCentered<ShapetakerBNCPort>(centerPx("audio-out-l", 37.369331f, 114.45824f), module, Chiaroscuro::AUDIO_L_OUTPUT));
+        addOutput(createOutputCentered<ShapetakerBNCPort>(centerPx("audio-out-r", 50.708183f, 114.48771f), module, Chiaroscuro::AUDIO_R_OUTPUT));
         
         // Main VCA knob — Vintage XLarge (27mm)
-        addParam(createParamCentered<ShapetakerKnobVintageXLarge>(centerPx("vca-knob", 18.328495f, 50.193539f), module, Chiaroscuro::VCA_PARAM));
+        addParam(createParamCentered<ShapetakerKnobVintageXLarge>(centerPx("vca-knob", 30.699905f, 20.462957f), module, Chiaroscuro::VCA_PARAM));
         
         // VCA CV input
-        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("vca-cv", 7.5756836f, 98.635521f), module, Chiaroscuro::VCA_CV_INPUT));
+        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("vca-cv", 10.691628f, 101.572f), module, Chiaroscuro::VCA_CV_INPUT));
         
         // Linear/Exponential response switch
-        Vec responseCenter = centerPx("lin-exp-switch", 34.048016f, 33.862297f);
+        Vec responseCenter = centerPx("lin-exp-switch", 52.005203f, 35.89994f);
         auto* responseSwitch = createParamCentered<ShapetakerDarkToggle>(responseCenter, module, Chiaroscuro::RESPONSE_PARAM);
         addParam(responseSwitch);
         
         // Link switch
-        Vec linkCenter = centerPx("lin-lr-switch", 34.048016f, 20.758846f);
+        Vec linkCenter = centerPx("lin-lr-switch", 9.3945856f, 35.89994f);
         auto* linkSwitch = createParamCentered<ShapetakerDarkToggle>(linkCenter, module, Chiaroscuro::LINK_PARAM);
         addParam(linkSwitch);
         
         // Sidechain input
-        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("sidechain-detect-cv", 7.5756826f, 101.61994f), module, Chiaroscuro::SIDECHAIN_INPUT));
+        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("sidechain-detect-cv", 50.708183f, 101.572f), module, Chiaroscuro::SIDECHAIN_INPUT));
 
         // Distortion type CV input
-        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("dist-type-cv", 36.523819f, 82.450134f), module, Chiaroscuro::TYPE_CV_INPUT));
+        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("dist-type-cv", 30.699905f, 101.572f), module, Chiaroscuro::TYPE_CV_INPUT));
         
         // Distortion knob — Vintage SmallMedium (15mm)
-        addParam(createParamCentered<ShapetakerKnobVintageSmallMedium>(centerPx("dist-knob", 50.997887f, 66.264755f), module, Chiaroscuro::DIST_PARAM));
+        addParam(createParamCentered<ShapetakerKnobVintageSmallMedium>(centerPx("dist-knob", 10.691628f, 52.975525f), module, Chiaroscuro::DIST_PARAM));
 
         // Distortion CV input
-        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("dist-cv", 7.5756836f, 82.450134f), module, Chiaroscuro::DIST_CV_INPUT));
+        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("dist-cv", 10.691628f, 88.656288f), module, Chiaroscuro::DIST_CV_INPUT));
 
         // Drive knob — Vintage SmallMedium (15mm)
-        addParam(createParamCentered<ShapetakerKnobVintageSmallMedium>(centerPx("drive-knob", 50.997887f, 82.717743f), module, Chiaroscuro::DRIVE_PARAM));
+        addParam(createParamCentered<ShapetakerKnobVintageSmallMedium>(centerPx("drive-knob", 30.699905f, 52.975525f), module, Chiaroscuro::DRIVE_PARAM));
 
         // Drive CV input
-        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("drive-cv", 22.049751f, 82.450134f), module, Chiaroscuro::DRIVE_CV_INPUT));
+        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("drive-cv", 30.699905f, 88.656288f), module, Chiaroscuro::DRIVE_CV_INPUT));
 
         // Mix knob — Vintage SmallMedium (15mm)
-        addParam(createParamCentered<ShapetakerKnobVintageSmallMedium>(centerPx("mix-knob", 50.997887f, 99.170738f), module, Chiaroscuro::MIX_PARAM));
+        addParam(createParamCentered<ShapetakerKnobVintageSmallMedium>(centerPx("mix-knob", 50.708183f, 52.975525f), module, Chiaroscuro::MIX_PARAM));
 
         // ATTENUVERTERS (knobs)
         // Distortion attenuverter
-        addParam(createParamCentered<ShapetakerAttenuverterOscilloscope>(centerPx("dist-atten", 7.5756836f, 66.264755f), module, Chiaroscuro::DIST_ATT_PARAM));
+        addParam(createParamCentered<ShapetakerAttenuverterOscilloscope>(centerPx("dist-atten", 10.691628f, 70.16468f), module, Chiaroscuro::DIST_ATT_PARAM));
 
         // Drive attenuverter
-        addParam(createParamCentered<ShapetakerAttenuverterOscilloscope>(centerPx("drive-atten", 22.049751f, 66.264755f), module, Chiaroscuro::DRIVE_ATT_PARAM));
+        addParam(createParamCentered<ShapetakerAttenuverterOscilloscope>(centerPx("drive-atten", 30.699905f, 70.16468f), module, Chiaroscuro::DRIVE_ATT_PARAM));
 
         // Mix attenuverter
-        addParam(createParamCentered<ShapetakerAttenuverterOscilloscope>(centerPx("mix-atten", 36.523819f, 66.264755f), module, Chiaroscuro::MIX_ATT_PARAM));
+        addParam(createParamCentered<ShapetakerAttenuverterOscilloscope>(centerPx("mix-atten", 50.708183f, 70.16468f), module, Chiaroscuro::MIX_ATT_PARAM));
 
         // Mix CV input
-        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("mix-cv", 36.523819f, 99.170738f), module, Chiaroscuro::MIX_CV_INPUT));
+        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("mix-cv", 50.708183f, 88.656288f), module, Chiaroscuro::MIX_CV_INPUT));
 
-        // Distortion type selector
-        Vec selectorCenter = centerPx("dist-type-select", 42.631508f, 50.193539f);
-        addParam(createParamCentered<ShapetakerHorizontalDistortionSelector>(selectorCenter, module, Chiaroscuro::TYPE_PARAM));
-
-        // Vintage dot matrix display with sun/moon eclipse
-#if 0
-        // Temporarily disabled to remove the screen from the hardware panel while keeping the code handy.
-        VintageDotMatrix* dotMatrix = new VintageDotMatrix(module);
-        Vec dotMatrixCenter = centerPx("dot_matrix", 30.7f, 104.272f);  // Center of the 48.36x14.61 rectangle
-        dotMatrix->box.pos = dotMatrixCenter.minus(dotMatrix->box.size.div(2));
-        addChild(dotMatrix);
-#endif
+        // Distortion type selector: analog blade switch with 6 positions
+        Vec selectorCenter = centerPx("dist-type-select", 30.699905f, 39.287804f);
+        auto* selector = createParamCentered<ShapetakerBladeDistortionSelector>(selectorCenter, module, Chiaroscuro::TYPE_PARAM);
+        selector->drawDetents = true;
+        addParam(selector);
     }
 };
 

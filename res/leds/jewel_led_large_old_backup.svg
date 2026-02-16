@@ -1,0 +1,313 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg
+   width="20"
+   height="20"
+   viewBox="0 0 20 20"
+   version="1.1"
+   id="svg10"
+   xmlns="http://www.w3.org/2000/svg">
+  <defs id="defs1">
+    <!-- Dome gradient - lighter in center, darker at edges -->
+    <radialGradient id="domeGradient" cx="0.45" cy="0.4" r="0.7">
+      <stop offset="0%" style="stop-color:#ffffff;stop-opacity:0.9" />
+      <stop offset="30%" style="stop-color:#f0f0f0;stop-opacity:0.7" />
+      <stop offset="70%" style="stop-color:#a0a0a0;stop-opacity:0.5" />
+      <stop offset="100%" style="stop-color:#707070;stop-opacity:0.4" />
+    </radialGradient>
+
+    <!-- Specular highlight -->
+    <radialGradient id="specularHighlight" cx="0.35" cy="0.35" r="0.4">
+      <stop offset="0%" style="stop-color:#ffffff;stop-opacity:0.95" />
+      <stop offset="40%" style="stop-color:#ffffff;stop-opacity:0.6" />
+      <stop offset="100%" style="stop-color:#ffffff;stop-opacity:0" />
+    </radialGradient>
+
+    <!-- Edge rim light -->
+    <radialGradient id="rimLight" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0%" style="stop-color:#ffffff;stop-opacity:0" />
+      <stop offset="75%" style="stop-color:#ffffff;stop-opacity:0" />
+      <stop offset="90%" style="stop-color:#ffffff;stop-opacity:0.4" />
+      <stop offset="100%" style="stop-color:#ffffff;stop-opacity:0.7" />
+    </radialGradient>
+
+    <!-- Brass bezel gradient -->
+    <linearGradient id="brassGradient" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" style="stop-color:#d4a659;stop-opacity:1" />
+      <stop offset="40%" style="stop-color:#b8844a;stop-opacity:1" />
+      <stop offset="60%" style="stop-color:#9a7040;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#7a5d36;stop-opacity:1" />
+    </linearGradient>
+
+    <!-- Dark inner bezel -->
+    <radialGradient id="innerBezel" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0%" style="stop-color:#1a1a1a;stop-opacity:1" />
+      <stop offset="85%" style="stop-color:#2a2a2a;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#404040;stop-opacity:1" />
+    </radialGradient>
+  </defs>
+
+  <g transform="translate(10, 10) scale(0.8) translate(-12.5, -12.5)" id="g1">
+
+    <!-- Outer brass bezel ring -->
+    <circle
+       cx="12.5"
+       cy="12.5"
+       r="12"
+       fill="url(#brassGradient)"
+       stroke="#7a5d36"
+       stroke-width="0.3"
+       id="outerBezel" />
+
+    <!-- Middle brass ring with highlight -->
+    <circle
+       cx="12.5"
+       cy="12.5"
+       r="10.2"
+       fill="#a8844e"
+       stroke="#8f6d3c"
+       stroke-width="0.2"
+       id="middleBezel" />
+
+    <!-- Inner dark bezel (the mounting hole) -->
+    <circle
+       cx="12.5"
+       cy="12.5"
+       r="9"
+       fill="url(#innerBezel)"
+       stroke="#151515"
+       stroke-width="0.2"
+       id="innerBezel" />
+
+    <!-- Very subtle brass edge inside dark bezel -->
+    <circle
+       cx="12.5"
+       cy="12.5"
+       r="8.8"
+       fill="none"
+       stroke="#6a5538"
+       stroke-width="0.15"
+       opacity="0.6"
+       id="innerBezelEdge" />
+
+    <!-- Base jewel dome (main translucent body) -->
+    <circle
+       cx="12.5"
+       cy="12.5"
+       r="8.2"
+       fill="url(#domeGradient)"
+       id="jewelBase" />
+
+    <!-- 8 Large radial facets (octagonal cut) - lighter strokes -->
+    <!-- Facet 1 - Top -->
+    <path
+       d="M 12.5,4.5 L 15.3,7.8 L 12.5,12.5 L 9.7,7.8 Z"
+       fill="#ffffff"
+       opacity="0.3"
+       stroke="#707070"
+       stroke-width="0.25"
+       stroke-opacity="0.65"
+       id="facet1" />
+
+    <!-- Facet 2 - Top Right -->
+    <path
+       d="M 15.3,7.8 L 20.3,9.7 L 17.2,12.5 L 12.5,12.5 Z"
+       fill="#e8e8e8"
+       opacity="0.25"
+       stroke="#707070"
+       stroke-width="0.25"
+       stroke-opacity="0.65"
+       id="facet2" />
+
+    <!-- Facet 3 - Right -->
+    <path
+       d="M 17.2,12.5 L 20.5,12.5 L 17.2,15.5 L 12.5,12.5 Z"
+       fill="#d8d8d8"
+       opacity="0.22"
+       stroke="#707070"
+       stroke-width="0.25"
+       stroke-opacity="0.65"
+       id="facet3" />
+
+    <!-- Facet 4 - Bottom Right -->
+    <path
+       d="M 17.2,15.5 L 15.3,17.2 L 12.5,16.5 L 12.5,12.5 Z"
+       fill="#c8c8c8"
+       opacity="0.2"
+       stroke="#707070"
+       stroke-width="0.25"
+       stroke-opacity="0.65"
+       id="facet4" />
+
+    <!-- Facet 5 - Bottom -->
+    <path
+       d="M 12.5,16.5 L 15.3,17.2 L 12.5,20.5 L 9.7,17.2 Z"
+       fill="#d0d0d0"
+       opacity="0.22"
+       stroke="#707070"
+       stroke-width="0.25"
+       stroke-opacity="0.65"
+       id="facet5" />
+
+    <!-- Facet 6 - Bottom Left -->
+    <path
+       d="M 9.7,17.2 L 7.8,15.5 L 12.5,12.5 L 12.5,16.5 Z"
+       fill="#c8c8c8"
+       opacity="0.2"
+       stroke="#707070"
+       stroke-width="0.25"
+       stroke-opacity="0.65"
+       id="facet6" />
+
+    <!-- Facet 7 - Left -->
+    <path
+       d="M 7.8,15.5 L 4.7,12.5 L 7.8,9.7 L 12.5,12.5 Z"
+       fill="#d8d8d8"
+       opacity="0.22"
+       stroke="#707070"
+       stroke-width="0.25"
+       stroke-opacity="0.65"
+       id="facet7" />
+
+    <!-- Facet 8 - Top Left -->
+    <path
+       d="M 7.8,9.7 L 9.7,7.8 L 12.5,12.5 L 7.8,12.5 Z"
+       fill="#e8e8e8"
+       opacity="0.25"
+       stroke="#707070"
+       stroke-width="0.25"
+       stroke-opacity="0.65"
+       id="facet8" />
+
+    <!-- Primary radial separator lines (8 main divisions) - lighter gray -->
+    <line x1="12.5" y1="4.5" x2="12.5" y2="12.5" stroke="#606060" stroke-width="0.25" opacity="0.7" />
+    <line x1="12.5" y1="12.5" x2="17.678" y2="7.322" stroke="#606060" stroke-width="0.25" opacity="0.7" />
+    <line x1="12.5" y1="12.5" x2="20.5" y2="12.5" stroke="#606060" stroke-width="0.25" opacity="0.7" />
+    <line x1="12.5" y1="12.5" x2="17.678" y2="17.678" stroke="#606060" stroke-width="0.25" opacity="0.7" />
+    <line x1="12.5" y1="12.5" x2="12.5" y2="20.5" stroke="#606060" stroke-width="0.25" opacity="0.7" />
+    <line x1="12.5" y1="12.5" x2="7.322" y2="17.678" stroke="#606060" stroke-width="0.25" opacity="0.7" />
+    <line x1="12.5" y1="12.5" x2="4.5" y2="12.5" stroke="#606060" stroke-width="0.25" opacity="0.7" />
+    <line x1="12.5" y1="12.5" x2="7.322" y2="7.322" stroke="#606060" stroke-width="0.25" opacity="0.7" />
+
+    <!-- Secondary concentric ring lines for more detail -->
+    <circle cx="12.5" cy="12.5" r="6" fill="none" stroke="#707070" stroke-width="0.2" opacity="0.5" />
+    <circle cx="12.5" cy="12.5" r="4" fill="none" stroke="#707070" stroke-width="0.2" opacity="0.5" />
+
+    <!-- Additional radial lines between main facets (16 total lines) -->
+    <line x1="12.5" y1="12.5" x2="15.0" y2="6.0" stroke="#808080" stroke-width="0.15" opacity="0.4" />
+    <line x1="12.5" y1="12.5" x2="19.0" y2="8.5" stroke="#808080" stroke-width="0.15" opacity="0.4" />
+    <line x1="12.5" y1="12.5" x2="19.0" y2="16.5" stroke="#808080" stroke-width="0.15" opacity="0.4" />
+    <line x1="12.5" y1="12.5" x2="15.0" y2="19.0" stroke="#808080" stroke-width="0.15" opacity="0.4" />
+    <line x1="12.5" y1="12.5" x2="10.0" y2="19.0" stroke="#808080" stroke-width="0.15" opacity="0.4" />
+    <line x1="12.5" y1="12.5" x2="6.0" y2="16.5" stroke="#808080" stroke-width="0.15" opacity="0.4" />
+    <line x1="12.5" y1="12.5" x2="6.0" y2="8.5" stroke="#808080" stroke-width="0.15" opacity="0.4" />
+    <line x1="12.5" y1="12.5" x2="10.0" y2="6.0" stroke="#808080" stroke-width="0.15" opacity="0.4" />
+
+    <!-- Smaller inner facets for detail -->
+    <path
+       d="M 11.5,7.5 L 13.5,7.5 L 12.5,9.5 Z"
+       fill="#ffffff"
+       opacity="0.35"
+       stroke="#808080"
+       stroke-width="0.15"
+       stroke-opacity="0.5"
+       id="smallFacet1" />
+
+    <path
+       d="M 15.5,11.5 L 15.5,13.5 L 13.5,12.5 Z"
+       fill="#f0f0f0"
+       opacity="0.3"
+       stroke="#808080"
+       stroke-width="0.15"
+       stroke-opacity="0.5"
+       id="smallFacet2" />
+
+    <path
+       d="M 13.5,15.5 L 11.5,15.5 L 12.5,13.5 Z"
+       fill="#e8e8e8"
+       opacity="0.25"
+       stroke="#808080"
+       stroke-width="0.15"
+       stroke-opacity="0.5"
+       id="smallFacet3" />
+
+    <path
+       d="M 9.5,13.5 L 9.5,11.5 L 11.5,12.5 Z"
+       fill="#f0f0f0"
+       opacity="0.3"
+       stroke="#808080"
+       stroke-width="0.15"
+       stroke-opacity="0.5"
+       id="smallFacet4" />
+
+    <!-- Central raised dome highlight -->
+    <ellipse
+       cx="12.5"
+       cy="12"
+       rx="4.5"
+       ry="4"
+       fill="url(#specularHighlight)"
+       id="centralHighlight" />
+
+    <!-- Strong specular "hot spot" -->
+    <ellipse
+       cx="11"
+       cy="9.5"
+       rx="2"
+       ry="1.8"
+       fill="#ffffff"
+       opacity="0.85"
+       id="hotSpot" />
+
+    <!-- Small sharp highlight (the "star" catchlight) -->
+    <circle
+       cx="10.5"
+       cy="9"
+       r="0.8"
+       fill="#ffffff"
+       opacity="0.95"
+       id="starHighlight" />
+
+    <!-- Secondary small highlight for realism -->
+    <ellipse
+       cx="14.5"
+       cy="14"
+       rx="1"
+       ry="0.8"
+       fill="#ffffff"
+       opacity="0.4"
+       id="secondaryHighlight" />
+
+    <!-- Edge rim light effect -->
+    <circle
+       cx="12.5"
+       cy="12.5"
+       r="8.2"
+       fill="url(#rimLight)"
+       id="rimHighlight" />
+
+    <!-- Subtle prismatic color dispersion (very faint) -->
+    <path
+       d="M 8,9 L 10,10.5 L 9,11.5 Z"
+       fill="#ff88ff"
+       opacity="0.08"
+       id="prism1" />
+
+    <path
+       d="M 15,14 L 16,15.5 L 14.5,16 Z"
+       fill="#88ffff"
+       opacity="0.08"
+       id="prism2" />
+
+    <!-- Outer edge definition for sharpness -->
+    <circle
+       cx="12.5"
+       cy="12.5"
+       r="8.2"
+       fill="none"
+       stroke="#606060"
+       stroke-width="0.2"
+       opacity="0.6"
+       id="jewelOutline" />
+
+  </g>
+</svg>
