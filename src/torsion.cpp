@@ -35,15 +35,34 @@ namespace {
         return centered * (0.35f + 0.25f * amount);
     }
 
+    constexpr int kFastPowTSize = 256;
+    constexpr int kFastPowExpSize = 128;
+    constexpr float kFastPowExpMin = 0.05f;
+    constexpr float kFastPowExpMax = 5.f;
+    static bool gFastPowLookupInitialized = false;
+    static float gFastPowLookupTable[kFastPowExpSize][kFastPowTSize] = {};
+
+    inline void initializeFastPowLookupTable() {
+        if (gFastPowLookupInitialized) {
+            return;
+        }
+
+        for (int ei = 0; ei < kFastPowExpSize; ++ei) {
+            float expVal = kFastPowExpMin + (kFastPowExpMax - kFastPowExpMin) * ((float)ei / (kFastPowExpSize - 1));
+            for (int ti = 0; ti < kFastPowTSize; ++ti) {
+                float tVal = (float)ti / (kFastPowTSize - 1);
+                gFastPowLookupTable[ei][ti] = std::pow(tVal, expVal);
+            }
+        }
+        gFastPowLookupInitialized = true;
+    }
+
     // Precomputed pow() table for curve/wave shaping to avoid repeated std::pow calls
     inline float fastPowLookup(float t, float exponent) {
-        constexpr int kTSize = 256;
-        constexpr int kExpSize = 128;
-        constexpr float kExpMin = 0.05f;
-        constexpr float kExpMax = 5.f;
-
-        static bool initialized = false;
-        static float table[kExpSize][kTSize] = {};
+        constexpr int kTSize = kFastPowTSize;
+        constexpr int kExpSize = kFastPowExpSize;
+        constexpr float kExpMin = kFastPowExpMin;
+        constexpr float kExpMax = kFastPowExpMax;
 
         t = rack::math::clamp(t, 0.f, 1.f);
         exponent = rack::math::clamp(exponent, kExpMin, kExpMax);
@@ -55,15 +74,8 @@ namespace {
             return 1.f;
         }
 
-        if (!initialized) {
-            for (int ei = 0; ei < kExpSize; ++ei) {
-                float expVal = kExpMin + (kExpMax - kExpMin) * ((float)ei / (kExpSize - 1));
-                for (int ti = 0; ti < kTSize; ++ti) {
-                    float tVal = (float)ti / (kTSize - 1);
-                    table[ei][ti] = std::pow(tVal, expVal);
-                }
-            }
-            initialized = true;
+        if (!gFastPowLookupInitialized) {
+            initializeFastPowLookupTable();
         }
 
         float ePos = (exponent - kExpMin) * (kExpSize - 1) / (kExpMax - kExpMin);
@@ -74,10 +86,10 @@ namespace {
         int tIdx = rack::math::clamp((int)tPos, 0, kTSize - 2);
         float tFrac = tPos - (float)tIdx;
 
-        float v00 = table[eIdx][tIdx];
-        float v01 = table[eIdx][tIdx + 1];
-        float v10 = table[eIdx + 1][tIdx];
-        float v11 = table[eIdx + 1][tIdx + 1];
+        float v00 = gFastPowLookupTable[eIdx][tIdx];
+        float v01 = gFastPowLookupTable[eIdx][tIdx + 1];
+        float v10 = gFastPowLookupTable[eIdx + 1][tIdx];
+        float v11 = gFastPowLookupTable[eIdx + 1][tIdx + 1];
 
         float v0 = rack::math::crossfade(v00, v01, tFrac);
         float v1 = rack::math::crossfade(v10, v11, tFrac);
@@ -326,6 +338,7 @@ struct Torsion : Module {
     float cachedReleaseCoeffBase = 0.f;
     float cachedTorsionSlewCoeff = 0.f;
     float cachedTrigTailCoeff = 0.f;
+    float cachedInactiveDecay = 0.f;
 
     // Cached polyphony compensation (updated when channel count changes)
     float cachedPolyComp = 1.f;
@@ -347,6 +360,7 @@ struct Torsion : Module {
     int vintageNoiseIndex = 0;
 
     Torsion() {
+        initializeFastPowLookupTable();
         config(PARAMS_LEN, INPUTS_LEN, OUTPUTS_LEN, LIGHTS_LEN);
 
         configParam(COARSE_PARAM, -2.f, 2.f, 0.f, "octave", " oct");
@@ -450,6 +464,7 @@ struct Torsion : Module {
         cachedSuppressorEndDecay = std::exp(-sampleTime * 800.f); // ~2 ms tail for end-of-seq
         cachedSuppressorRise = std::exp(-sampleTime * 700.f);   // ~1.4 ms fade-in
         cachedTrigTailCoeff = std::exp(-sampleTime * 400.f);    // ~2.5 ms post-stage tail for trig mode
+        cachedInactiveDecay = std::exp(-sampleTime * 40.f);     // ~25 ms decay tail for inactive trig mode
         cachedReleaseCoeffBase = sampleTime;  // Will multiply by rate later
         cachedTorsionSlewCoeff = std::exp(-sampleTime * 400.f);  // ~2.5 ms torsion CV smoothing
 
@@ -616,6 +631,8 @@ struct Torsion : Module {
         float feedbackBase = params[FEEDBACK_PARAM].getValue();
         float feedbackAtten = params[FEEDBACK_ATTEN_PARAM].getValue();
         bool feedbackCvConnected = inputs[FEEDBACK_CV_INPUT].isConnected();
+        bool voctConnected = inputs[VOCT_INPUT].isConnected();
+        bool torsionCvConnected = inputs[TORSION_CV_INPUT].isConnected();
         float subLevel = params[SUB_LEVEL_PARAM].getValue();
         float subWarpParam = params[SUB_WARP_PARAM].getValue();
         bool subHardSync = params[SUB_SYNC_PARAM].getValue() > 0.5f;
@@ -711,12 +728,18 @@ struct Torsion : Module {
         float chorusPhaseInc = 0.f;
         int chorusBaseSamples = 0;
         int chorusDepthSamples = 0;
+        float chorusDryMix = 0.f;
+        float chorusWetMix = 0.f;
+        float chorusCrossMix = 0.f;
         if (chorusEnabled) {
             float sampleRate = args.sampleRate;
             chorusPhaseInc = 2.f * float(M_PI) * kChorusRateHz * args.sampleTime;
             chorusBaseSamples = (int)std::round(kChorusBaseDelayMs * 0.001f * sampleRate);
             chorusDepthSamples = (int)std::round(kChorusDepthMs * 0.001f * sampleRate);
             chorusDepthSamples = std::max(1, chorusDepthSamples);
+            chorusDryMix = std::cos(kChorusMix * float(M_PI) * 0.5f);
+            chorusWetMix = std::sin(kChorusMix * float(M_PI) * 0.5f);
+            chorusCrossMix = kChorusCrossMix * chorusWetMix;
 
             // Optimization #3: Decimate chorus LFO calculation
             // Only update modulation values every N samples, interpolate between
@@ -750,6 +773,7 @@ struct Torsion : Module {
             bool gateConnected = gateConnectedGlobal;
             bool trigConnected = trigConnectedGlobal && !gateConnected;
             float gateVolt = 0.f;
+            float trigVolt = 0.f;
             bool gateHigh = !gateConnected;
             bool retriggered = false;
             bool trigFired = false;
@@ -758,7 +782,7 @@ struct Torsion : Module {
                 gateHigh = gateVolt >= 1.f;
                 retriggered = gateHigh && !gateHeld[ch];
             } else if (trigConnected) {
-                float trigVolt = inputs[STAGE_TRIG_INPUT].getPolyVoltage(ch);
+                trigVolt = inputs[STAGE_TRIG_INPUT].getPolyVoltage(ch);
                 trigFired = stageTriggers[ch].process(trigVolt);
                 retriggered = trigFired;
             }
@@ -779,7 +803,7 @@ struct Torsion : Module {
 
             float pitch = coarse;
             pitch += drift;
-            if (inputs[VOCT_INPUT].isConnected()) {
+            if (voctConnected) {
                 pitch += inputs[VOCT_INPUT].getPolyVoltage(ch);
             }
 
@@ -871,8 +895,7 @@ struct Torsion : Module {
                 if (trigFired) {
                     stagePos = 0.f;
                     stageActive[ch] = true;
-                    // trigVolt was read for trigFired; reuse magnitude via last input read
-                    velocityHold[ch] = rack::math::clamp(std::fabs(inputs[STAGE_TRIG_INPUT].getPolyVoltage(ch)) / 10.f, 0.f, 1.f);
+                    velocityHold[ch] = rack::math::clamp(std::fabs(trigVolt) / 10.f, 0.f, 1.f);
                 }
 
                 if (stageActive[ch]) {
@@ -921,7 +944,7 @@ struct Torsion : Module {
 
             // Optimization #3: Reduce redundant clamping - clamp once at the end
             float torsionA = torsionBase;
-            if (inputs[TORSION_CV_INPUT].isConnected()) {
+            if (torsionCvConnected) {
                 torsionA += inputs[TORSION_CV_INPUT].getPolyVoltage(ch) * torsionAtten * 0.1f;
             }
 
@@ -1007,8 +1030,7 @@ struct Torsion : Module {
             // In triggered mode when inactive, let envelope decay naturally instead of hard reset
             if (trigConnected && !stageActive[ch]) {
                 // Gently pull toward zero with a slower slew to avoid clicks
-                float decayCoeff = std::exp(-args.sampleTime * 40.f); // ~25ms decay tail
-                env = stageEnvelope[ch] * decayCoeff;
+                env = stageEnvelope[ch] * cachedInactiveDecay;
                 stageEnvelope[ch] = env;
             }
 
@@ -1183,11 +1205,8 @@ struct Torsion : Module {
                 float input = dcBlockedMain;
                 float delayOutL = chorusState.delayL.process(input, delayA);
                 float delayOutR = chorusState.delayR.process(input, delayB);
-                float dryMix = std::cos(kChorusMix * float(M_PI) * 0.5f);
-                float wetMix = std::sin(kChorusMix * float(M_PI) * 0.5f);
-                float crossMix = kChorusCrossMix * wetMix;
-                stereoLeft = input * dryMix + delayOutL * wetMix + delayOutR * crossMix;
-                stereoRight = input * dryMix + delayOutR * wetMix + delayOutL * crossMix;
+                stereoLeft = input * chorusDryMix + delayOutL * chorusWetMix + delayOutR * chorusCrossMix;
+                stereoRight = input * chorusDryMix + delayOutR * chorusWetMix + delayOutL * chorusCrossMix;
             }
 
             outputs[MAIN_L_OUTPUT].setVoltage(

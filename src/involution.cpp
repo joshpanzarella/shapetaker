@@ -93,8 +93,19 @@ struct Involution : Module {
     shapetaker::FastSmoother crossSmooth, modSmooth, shimmerSmooth;
     shapetaker::FastSmoother modRateSmooth;
 
-    static constexpr float PARAM_SMOOTH_TC    = 0.015f;
+    static constexpr float PARAM_SMOOTH_TC     = 0.015f;
     static constexpr float CUTOFF_CV_SMOOTH_TC = 0.002f;
+    static constexpr float CUTOFF_CURVE_EXP    = 1.5f;    // x^1.5 knob shaping — tighter near cutoff
+    static constexpr float CUTOFF_HZ_BASE      = 20.f;    // lowest cutoff frequency in Hz
+    static constexpr float CUTOFF_HZ_OCTAVES   = 10.f;    // number of octaves across knob travel
+    static constexpr float CHAOS_CUTOFF_RANGE  = 0.15f;   // ±normalized range for chaos LFO on cutoff
+    static constexpr float MOD_RATE_CV_SCALE   = 0.5f;    // V/oct-ish scale for mod rate CV
+    static constexpr float EFFECT_THRESHOLD    = 0.001f;  // min amount before cross/shimmer is applied
+    static constexpr float SHIMMER_DELAY_A_S   = 0.075f;  // shimmer delay time channel A (seconds)
+    static constexpr float SHIMMER_DELAY_B_S   = 0.083f;  // shimmer delay time channel B (seconds)
+    static constexpr float SHIMMER_FEEDBACK    = 0.30f;   // shimmer internal feedback
+    static constexpr float SHIMMER_SEND        = 0.5f;    // shimmer wet send level
+    static constexpr float SHIMMER_BLEND       = 0.55f;   // shimmer dry/wet crossfade amount
 
     // Bidirectional linking state
     float lastCutoffA = -1.f, lastCutoffB = -1.f;
@@ -117,10 +128,10 @@ struct Involution : Module {
     Involution() {
         config(PARAMS_LEN, INPUTS_LEN, OUTPUTS_LEN, LIGHTS_LEN);
 
-        configParam(CUTOFF_A_PARAM,     0.f,  1.f,  1.f,   "Filter A Cutoff",    " Hz", std::pow(2.f, 10.f), 20.f);
-        configParam(RESONANCE_A_PARAM,  0.707f, 2.8f, 0.707f, "Filter A Resonance");
-        configParam(CUTOFF_B_PARAM,     0.f,  1.f,  1.f,   "Filter B Cutoff",    " Hz", std::pow(2.f, 10.f), 20.f);
-        configParam(RESONANCE_B_PARAM,  0.707f, 2.8f, 0.707f, "Filter B Resonance");
+        configParam(CUTOFF_A_PARAM,     0.f,  1.f,  1.f,   "Filter A Cutoff",    " Hz", std::pow(2.f, CUTOFF_HZ_OCTAVES), CUTOFF_HZ_BASE);
+        configParam(RESONANCE_A_PARAM,  LiquidFilter::RESONANCE_MIN, LiquidFilter::RESONANCE_MAX, LiquidFilter::RESONANCE_MIN, "Filter A Resonance");
+        configParam(CUTOFF_B_PARAM,     0.f,  1.f,  1.f,   "Filter B Cutoff",    " Hz", std::pow(2.f, CUTOFF_HZ_OCTAVES), CUTOFF_HZ_BASE);
+        configParam(RESONANCE_B_PARAM,  LiquidFilter::RESONANCE_MIN, LiquidFilter::RESONANCE_MAX, LiquidFilter::RESONANCE_MIN, "Filter B Resonance");
         configParam(MORPH_PARAM,        0.f,  1.f,  0.f,   "Filter Morph",       "", 0.f, 0.f);
         configParam(CROSS_PARAM,        0.f,  1.f,  0.f,   "Cross-feedback",     "%", 0.f, 100.f);
         configParam(MOD_PARAM,          0.f,  1.f,  0.f,   "Mod Depth",          "%", 0.f, 100.f);
@@ -278,7 +289,7 @@ struct Involution : Module {
 
         float modRateTarget = clamp(params[MOD_RATE_PARAM].getValue(), MOD_RATE_MIN_HZ, MOD_RATE_MAX_HZ);
         if (inputs[MOD_RATE_CV_INPUT].isConnected())
-            modRateTarget = clamp(modRateTarget + inputs[MOD_RATE_CV_INPUT].getVoltage() * 0.5f,
+            modRateTarget = clamp(modRateTarget + inputs[MOD_RATE_CV_INPUT].getVoltage() * MOD_RATE_CV_SCALE,
                                   MOD_RATE_MIN_HZ, MOD_RATE_MAX_HZ);
         float modRate = modRateSmooth.process(modRateTarget, args.sampleTime);
         smoothedChaosRate = modRate; // visualizer compat alias
@@ -311,10 +322,10 @@ struct Involution : Module {
                                  * params[CUTOFF_B_ATTEN_PARAM].getValue() / 10.f, 0.f, 1.f);
             if (inputs[RESONANCE_A_CV_INPUT].isConnected())
                 dResA = clamp(dResA + inputs[RESONANCE_A_CV_INPUT].getPolyVoltage(0)
-                              * params[RESONANCE_A_ATTEN_PARAM].getValue() / 10.f, 0.707f, 2.8f);
+                              * params[RESONANCE_A_ATTEN_PARAM].getValue() / 10.f, LiquidFilter::RESONANCE_MIN, LiquidFilter::RESONANCE_MAX);
             if (inputs[RESONANCE_B_CV_INPUT].isConnected())
                 dResB = clamp(dResB + inputs[RESONANCE_B_CV_INPUT].getPolyVoltage(0)
-                              * params[RESONANCE_B_ATTEN_PARAM].getValue() / 10.f, 0.707f, 2.8f);
+                              * params[RESONANCE_B_ATTEN_PARAM].getValue() / 10.f, LiquidFilter::RESONANCE_MIN, LiquidFilter::RESONANCE_MAX);
             effectiveCutoffA    = dCutoffA;
             effectiveCutoffB    = dCutoffB;
             effectiveResonanceA = dResA;
@@ -353,7 +364,7 @@ struct Involution : Module {
                 if (!std::isfinite(audioB)) audioB = 0.f;
 
                 // --- Cross-feedback (pre-filter, soft-limited) ---
-                if (crossAmount > 0.001f) {
+                if (crossAmount > EFFECT_THRESHOLD) {
                     auto cf = crossFeedbackVoices[c].process(audioA, audioB, crossAmount);
                     audioA = cf.outputA;
                     audioB = cf.outputB;
@@ -369,26 +380,25 @@ struct Involution : Module {
                     float att = params[CUTOFF_A_ATTEN_PARAM].getValue();
                     voiceCutoffA += inputs[CUTOFF_A_CV_INPUT].getPolyVoltage(c) * att / 10.f;
                 }
-                // Add chaos LFO — ±0.15 normalized octave range
-                voiceCutoffA = clamp(voiceCutoffA + chaosOut * 0.15f, 0.f, 1.f);
+                voiceCutoffA = clamp(voiceCutoffA + chaosOut * CHAOS_CUTOFF_RANGE, 0.f, 1.f);
                 voiceCutoffA = cutoffASmoothers[c].process(voiceCutoffA, args.sampleTime, CUTOFF_CV_SMOOTH_TC);
 
                 if (inputs[CUTOFF_B_CV_INPUT].isConnected()) {
                     float att = params[CUTOFF_B_ATTEN_PARAM].getValue();
                     voiceCutoffB += inputs[CUTOFF_B_CV_INPUT].getPolyVoltage(c) * att / 10.f;
                 }
-                voiceCutoffB = clamp(voiceCutoffB + chaosOut * 0.15f, 0.f, 1.f);
+                voiceCutoffB = clamp(voiceCutoffB + chaosOut * CHAOS_CUTOFF_RANGE, 0.f, 1.f);
                 voiceCutoffB = cutoffBSmoothers[c].process(voiceCutoffB, args.sampleTime, CUTOFF_CV_SMOOTH_TC);
 
                 if (inputs[RESONANCE_A_CV_INPUT].isConnected()) {
                     float att = params[RESONANCE_A_ATTEN_PARAM].getValue();
                     voiceResA = clamp(voiceResA + inputs[RESONANCE_A_CV_INPUT].getPolyVoltage(c) * att / 10.f,
-                                      0.707f, 2.8f);
+                                      LiquidFilter::RESONANCE_MIN, LiquidFilter::RESONANCE_MAX);
                 }
                 if (inputs[RESONANCE_B_CV_INPUT].isConnected()) {
                     float att = params[RESONANCE_B_ATTEN_PARAM].getValue();
                     voiceResB = clamp(voiceResB + inputs[RESONANCE_B_CV_INPUT].getPolyVoltage(c) * att / 10.f,
-                                      0.707f, 2.8f);
+                                      LiquidFilter::RESONANCE_MIN, LiquidFilter::RESONANCE_MAX);
                 }
 
                 // --- Liquid filter (drive = 1.0 — no pre-gain) ---
@@ -396,22 +406,26 @@ struct Involution : Module {
                 // which occupies roughly 55–80% of knob travel. Gives a deliberate,
                 // elastic feel — the filter "breathes" through harmonics rather than
                 // shooting past them.
-                float shapedA = std::pow(voiceCutoffA, 1.5f);
-                float shapedB = std::pow(voiceCutoffB, 1.5f);
-                float cutoffAHz = 20.f * std::pow(2.f, shapedA * 10.f);
-                float cutoffBHz = 20.f * std::pow(2.f, shapedB * 10.f);
+                float shapedA   = std::pow(voiceCutoffA, CUTOFF_CURVE_EXP);
+                float shapedB   = std::pow(voiceCutoffB, CUTOFF_CURVE_EXP);
+                float cutoffAHz = CUTOFF_HZ_BASE * std::pow(2.f, shapedA * CUTOFF_HZ_OCTAVES);
+                float cutoffBHz = CUTOFF_HZ_BASE * std::pow(2.f, shapedB * CUTOFF_HZ_OCTAVES);
 
                 float processedA = filtersA[c].process(audioA, cutoffAHz, voiceResA, 1.0f);
                 float processedB = filtersB[c].process(audioB, cutoffBHz, voiceResB, 1.0f);
 
+                // Store filter outputs so CrossFeedback can inject them into the
+                // other channel's input on the next cycle.
+                if (crossAmount > EFFECT_THRESHOLD)
+                    crossFeedbackVoices[c].storeOutputs(processedA, processedB);
+
                 // --- Global shimmer (shared buffer — poly voices blend into one reverb tail) ---
-                if (shimmerAmount > 0.001f) {
-                    // delayTime args are in seconds (ShimmerDelay uses 48000 internally)
-                    // Slightly different times for A and B give natural stereo width
-                    float shimOutA = shimmerA.process(processedA, 0.075f, 0.30f, shimmerAmount * 0.5f);
-                    float shimOutB = shimmerB.process(processedB, 0.083f, 0.30f, shimmerAmount * 0.5f);
-                    processedA = rack::math::crossfade(processedA, shimOutA, shimmerAmount * 0.55f);
-                    processedB = rack::math::crossfade(processedB, shimOutB, shimmerAmount * 0.55f);
+                if (shimmerAmount > EFFECT_THRESHOLD) {
+                    // Slightly different delay times for A and B give natural stereo width
+                    float shimOutA = shimmerA.process(processedA, SHIMMER_DELAY_A_S, SHIMMER_FEEDBACK, shimmerAmount * SHIMMER_SEND);
+                    float shimOutB = shimmerB.process(processedB, SHIMMER_DELAY_B_S, SHIMMER_FEEDBACK, shimmerAmount * SHIMMER_SEND);
+                    processedA = rack::math::crossfade(processedA, shimOutA, shimmerAmount * SHIMMER_BLEND);
+                    processedB = rack::math::crossfade(processedB, shimOutB, shimmerAmount * SHIMMER_BLEND);
                 }
 
                 // --- Output DC blocking ---

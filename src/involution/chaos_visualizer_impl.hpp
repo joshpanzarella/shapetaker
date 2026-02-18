@@ -434,7 +434,7 @@ inline void ChaosVisualizer::drawSquareChaos(NVGcontext* vg, float cx, float cy,
 
         float baseSize = 0.35f + chaosAmount * 0.6f + orbitAmount * 0.2f;
         float sizeVar = sinf(time * (4.0f + tideAmount * 1.5f) + i * 0.32f + auraPhase * 0.5f) * (0.18f + orbitAmount * 0.1f);
-        float resonanceScale = 0.2f + 0.4f * (1.f - resonanceActivity);
+        float resonanceScale = 0.2f + 0.4f * resonanceActivity;
         float resonanceSize = resonanceScale * 0.45f + sinf(time * 5.5f + i * 0.3f) * resonanceScale * 0.32f;
         float dotRadius = clamp(baseSize + sizeVar + resonanceSize, 0.18f, 1.4f);
 

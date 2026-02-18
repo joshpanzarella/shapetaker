@@ -47,34 +47,45 @@ public:
  */
 class CrossFeedback {
 private:
-    float feedbackMemoryA = 0.f;
-    float feedbackMemoryB = 0.f;
-    
+    float lastOutputA = 0.f;  // previous cycle's filter A output
+    float lastOutputB = 0.f;  // previous cycle's filter B output
+
 public:
     struct IO {
         float inputA, inputB;
         float outputA, outputB;
     };
-    
+
+    // Call BEFORE filtering: injects previous cycle's opposite-channel filter
+    // output into this cycle's filter input.  Because we inject the FILTER
+    // OUTPUT (not the raw dry input), the two filters hear each other's
+    // spectrally-shaped signal — if their cutoffs or resonances differ, this
+    // creates genuine tonal interaction rather than a level-neutral crossfade
+    // of identical dry signals.
+    //
+    // Additive injection preserves input level (no crossfade volume drop).
+    // blend = amount * 0.15 keeps the cross-channel loop gain (blend^2 * Gpeak^2)
+    // safely below 1 even at high resonance: 0.15^2 * 4^2 = 0.36 at peak gain 4×.
     IO process(float inputA, float inputB, float amount) {
         amount = rack::math::clamp(amount, 0.f, 1.f);
-        
-        // Cross-feed the previous outputs
-        float crossA = inputA + feedbackMemoryB * amount;
-        float crossB = inputB + feedbackMemoryA * amount;
-        
-        // Apply soft limiting to prevent feedback runaway
-        crossA = std::tanh(crossA * 0.7f) * 1.4f;
-        crossB = std::tanh(crossB * 0.7f) * 1.4f;
-        
-        feedbackMemoryA = crossA;
-        feedbackMemoryB = crossB;
-        
+
+        float blend = amount * 0.15f;
+
+        float crossA = inputA + lastOutputB * blend;
+        float crossB = inputB + lastOutputA * blend;
+
         return {crossA, crossB, crossA, crossB};
     }
-    
+
+    // Call AFTER filtering: store outputs for next cycle's cross-injection.
+    // tanh-limits to ±12V so resonant peaks don't drive runaway injection.
+    void storeOutputs(float outputA, float outputB) {
+        lastOutputA = std::tanh(outputA * (1.f / 12.f)) * 12.f;
+        lastOutputB = std::tanh(outputB * (1.f / 12.f)) * 12.f;
+    }
+
     void reset() {
-        feedbackMemoryA = feedbackMemoryB = 0.f;
+        lastOutputA = lastOutputB = 0.f;
     }
 };
 

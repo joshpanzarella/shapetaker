@@ -12,10 +12,19 @@
  *   causing pumping oscillation.  Resonance comes entirely from global feedback.
  * - Feedback is 2nd-order HP'd at 20% of the filter cutoff (-12dB/oct), so
  *   bass below the resonant region is strongly protected; clamped 30–160Hz.
- * - lastFeedback is tanh-limited to ±2.5V — prevents integrator runaway and
- *   gives the feedback loop extra "spring" for an elastic, liquid character.
- * - resonanceNormalized capped at 0.88 → feedbackAmount ceiling 1.76: loop
- *   gain at -180° ≈ 0.74, near-oscillating elastic ring, provably stable.
+ * - lastFeedback is tanh-limited to ±FEEDBACK_TANH_SWING — prevents integrator
+ *   runaway and gives the feedback loop extra "spring" for an elastic, liquid
+ *   character.
+ * - resonanceNormalized capped at RESONANCE_NORM_CAP → feedbackAmount ceiling
+ *   ≈1.76: loop gain at -180° ≈ 0.74, near-oscillating elastic ring, provably
+ *   stable.
+ * - Dual-envelope cutoff breathing: a fast input follower (ENV_ATTACK_TC /
+ *   ENV_RELEASE_TC) opens the cutoff on transients; a slow output follower
+ *   (OUT_ENV_ATTACK_TC / OUT_ENV_RELEASE_TC) adds a secondary "bloom" as the
+ *   resonant peak itself builds then decays.  The two envelopes create a
+ *   multi-stage release — the resonance seeks, detunes slightly, and settles —
+ *   which is the defining liquid quality of vintage analog ladder filters
+ *   reacting to their own current draw.
  * - Tighter inter-stage saturation prevents amplitude buildup through the cascade
  *   and adds organic harmonic compression.
  * - 2x oversampling for alias suppression.
@@ -28,7 +37,36 @@ public:
         MORPH           // Continuous LP→BP blend via filterMorph parameter
     };
 
+    // Parameter bounds — referenced by the host module's configParam/clamp calls
+    static constexpr float RESONANCE_MIN = 0.707f;
+    static constexpr float RESONANCE_MAX = 2.05f;
+
 private:
+    // -------------------------------------------------------------------------
+    // DSP tuning constants
+    // -------------------------------------------------------------------------
+    static constexpr float RESONANCE_NORM_CAP   = 0.88f;   // hard cap on normalised resonance
+    static constexpr float FEEDBACK_EXP         = 0.85f;   // concentrates resonance in mid-sweep
+    static constexpr float FEEDBACK_SCALE       = 2.0f;    // feedbackAmount multiplier
+    static constexpr float BREATH_CUTOFF_SCALE  = 0.20f;   // max cutoff shift from input breath (20%)
+    static constexpr float BLOOM_CUTOFF_SCALE   = 0.06f;   // max cutoff shift from output bloom (6%)
+    static constexpr float ENV_ATTACK_TC        = 0.003f;  // 3ms   — input transient attack
+    static constexpr float ENV_RELEASE_TC       = 0.120f;  // 120ms — input breath release
+    static constexpr float OUT_ENV_ATTACK_TC    = 0.010f;  // 10ms  — output bloom attack
+    static constexpr float OUT_ENV_RELEASE_TC   = 0.250f;  // 250ms — output bloom release
+    static constexpr float FEEDBACK_TANH_SWING  = 2.5f;    // ±V limit on tanh-clamped feedback
+    static constexpr float FEEDBACK_PRESCALE    = 0.4f;    // pre-tanh scale on stage3 LP output
+    static constexpr float SIGNAL_HEADROOM      = 12.f;    // ±V headroom throughout the signal path
+    static constexpr float INPUT_PEAK_NORM      = 10.f;    // normalise input envelope to 10V peak = 1.0
+    static constexpr float SVF_K                = 2.f;     // critically-damped SVF damping coefficient
+    static constexpr float HP_CUTOFF_RATIO      = 0.20f;   // feedback HP as fraction of filter cutoff
+    static constexpr float HP_CUTOFF_MIN_HZ     = 30.f;    // lower bound for feedback HP
+    static constexpr float HP_CUTOFF_MAX_HZ     = 160.f;   // upper bound for feedback HP
+    static constexpr float SAT_DRIVE_PRE         = 0.15f;  // saturation drive growth post-injection
+    static constexpr float SAT_DRIVE_INTER      = 0.20f;  // saturation drive growth between stages
+    static constexpr float SAT_DRIVE_POST       = 0.08f;  // saturation drive growth post-cascade
+    static constexpr float BREATH_RESONANCE_DAMP = 0.4f;  // how much breath modulation scales back at max resonance
+
     // Three 2-pole SVF stages
     struct SVF2Pole {
         float ic1eq = 0.f;
@@ -72,6 +110,20 @@ private:
     // Global feedback state (ladder-style resonance)
     float lastFeedback = 0.f;
 
+    // Input envelope follower: fast attack, medium release
+    // Tracks the incoming signal level to open the cutoff on transients.
+    float signalEnvelope  = 0.f;
+    float envAttackCoeff  = 0.f;
+    float envReleaseCoeff = 0.f;
+
+    // Output envelope follower: slow attack, slow release ("bloom")
+    // Tracks the filter output level — when the resonant peak builds up,
+    // the cutoff shifts slightly, detuning the peak and creating the
+    // liquid "seeking-and-settling" motion of vintage ladder filters.
+    float outputEnvelope     = 0.f;
+    float outEnvAttackCoeff  = 0.f;
+    float outEnvReleaseCoeff = 0.f;
+
     // 2nd-order HP on the feedback path: two cascaded 1-pole LP states.
     // Subtracting only the HP'd feedback from the input preserves bass.
     // Two poles give -12dB/oct below the HP cutoff (vs -6dB/oct with one pole),
@@ -82,10 +134,9 @@ private:
     // Transistor-style saturation curve
     // Linear for small signals (< 0.5), smooth transition, hard clip above 1.0
     float saturate(float input, float drive) {
-        drive = rack::math::clamp(drive, 0.1f, 12.f);
+        drive = rack::math::clamp(drive, 0.1f, SIGNAL_HEADROOM);
 
-        constexpr float SATURATION_HEADROOM = 12.f;
-        float normalized = (input * drive) / SATURATION_HEADROOM;
+        float normalized = (input * drive) / SIGNAL_HEADROOM;
         normalized = rack::math::clamp(normalized, -2.8f, 2.8f);
 
         // Transistor curve: linear below 0.5, smooth compression 0.5-1.0, clip above 1.0
@@ -101,8 +152,18 @@ private:
             normalized = sign * (0.75f + 0.25f * (1.f - std::pow(2.f - 2.f * abs_x, 2.f)));
         }
 
-        float output = (normalized * SATURATION_HEADROOM) / drive;
-        return rack::math::clamp(output, -12.f, 12.f);
+        float output = (normalized * SIGNAL_HEADROOM) / drive;
+        return rack::math::clamp(output, -SIGNAL_HEADROOM, SIGNAL_HEADROOM);
+    }
+
+    // Smooth tanh-based limiter used for in-filter saturation.
+    // Unlike saturate(), this has no hard-clip region — it compresses asymptotically
+    // toward SIGNAL_HEADROOM/drive.  This prevents the resonant ring-up from
+    // transient-heavy inputs (PWM, hard sync) from triggering harsh clipping artefacts
+    // while still providing effective amplitude control inside the cascade.
+    float filterSaturate(float input, float drive) {
+        drive = rack::math::clamp(drive, 0.1f, SIGNAL_HEADROOM);
+        return std::tanh(input * drive / SIGNAL_HEADROOM) * SIGNAL_HEADROOM / drive;
     }
 
     float driveSaturate(float input, float drive) {
@@ -121,18 +182,26 @@ private:
         float dry = 1.f - wet;
 
         float result = dry * input + wet * shaped * makeup;
-        return rack::math::clamp(result, -12.f, 12.f);
+        return rack::math::clamp(result, -SIGNAL_HEADROOM, SIGNAL_HEADROOM);
     }
 
 public:
     LiquidFilter() : decimator(0.9f), upsampler(0.9f) {
-        oversampledRate = baseSampleRate * OVERSAMPLE_FACTOR;
+        oversampledRate    = baseSampleRate * OVERSAMPLE_FACTOR;
+        envAttackCoeff     = std::exp(-1.f / (baseSampleRate * ENV_ATTACK_TC));
+        envReleaseCoeff    = std::exp(-1.f / (baseSampleRate * ENV_RELEASE_TC));
+        outEnvAttackCoeff  = std::exp(-1.f / (baseSampleRate * OUT_ENV_ATTACK_TC));
+        outEnvReleaseCoeff = std::exp(-1.f / (baseSampleRate * OUT_ENV_RELEASE_TC));
         reset();
     }
 
     void setSampleRate(float sr) {
-        baseSampleRate = sr;
-        oversampledRate = sr * OVERSAMPLE_FACTOR;
+        baseSampleRate     = sr;
+        oversampledRate    = sr * OVERSAMPLE_FACTOR;
+        envAttackCoeff     = std::exp(-1.f / (sr * ENV_ATTACK_TC));
+        envReleaseCoeff    = std::exp(-1.f / (sr * ENV_RELEASE_TC));
+        outEnvAttackCoeff  = std::exp(-1.f / (sr * OUT_ENV_ATTACK_TC));
+        outEnvReleaseCoeff = std::exp(-1.f / (sr * OUT_ENV_RELEASE_TC));
     }
 
     void setFilterMode(FilterMode mode) {
@@ -152,6 +221,8 @@ public:
         lastFeedback = 0.f;
         hpFeedbackLP1 = 0.f;
         hpFeedbackLP2 = 0.f;
+        signalEnvelope = 0.f;
+        outputEnvelope = 0.f;
     }
 
     float process(float input, float cutoff, float resonance, float drive = 1.f) {
@@ -160,26 +231,50 @@ public:
         if (oversampledRate <= 0.f) return input;
 
         // Clamp parameters to safe ranges
-        cutoff = rack::math::clamp(cutoff, 1.f, oversampledRate * 0.45f);
+        cutoff    = rack::math::clamp(cutoff,    1.f, oversampledRate * 0.45f);
         resonance = rack::math::clamp(resonance, 0.1f, 10.f);
-        drive = rack::math::clamp(drive, 0.1f, 10.f);
+        drive     = rack::math::clamp(drive,     0.1f, 10.f);
 
         // Map resonance to normalized 0..1
-        constexpr float resonanceMin    = 0.707f;
-        constexpr float resonanceSoftMax = 2.8f;
-        const float resonanceRange = std::max(resonanceSoftMax - resonanceMin, 0.001f);
-        float resonanceClamped     = rack::math::clamp(resonance, resonanceMin, resonanceSoftMax);
-        // Cap at 0.88 so feedbackAmount never exceeds 1.76 — keeps loop gain
-        // comfortably below 1 (0.74 at ceiling) and prevents instability above
-        // resonance ~2.6 while still delivering near-self-oscillating elasticity.
-        float resonanceNormalized  = rack::math::clamp((resonanceClamped - resonanceMin) / resonanceRange, 0.f, 0.88f);
+        const float resonanceRange = std::max(RESONANCE_MAX - RESONANCE_MIN, 0.001f);
+        float resonanceClamped    = rack::math::clamp(resonance, RESONANCE_MIN, RESONANCE_MAX);
+        // Cap at RESONANCE_NORM_CAP so feedbackAmount never exceeds ~1.76 — keeps
+        // loop gain comfortably below 1 (≈0.74 at ceiling) and prevents instability
+        // while still delivering near-self-oscillating elasticity.
+        float resonanceNormalized = rack::math::clamp(
+            (resonanceClamped - RESONANCE_MIN) / resonanceRange, 0.f, RESONANCE_NORM_CAP);
 
         // Global feedback amount.
-        // With k=2.0 per stage, the -180° phase crossing is at ω=0.577·ωc where
-        // the three-stage LP gain is 0.422.  Max stable feedbackAmount ≈ 2.37.
-        // Ceiling at 1.76 (resonanceNormalized capped 0.88) keeps loop gain ≈ 0.74,
-        // well inside stability while delivering an elastic, near-oscillating ring.
-        float feedbackAmount = std::pow(resonanceNormalized, 1.1f) * 2.0f;
+        // Exponent FEEDBACK_EXP (vs 1.0 linear) concentrates resonance presence in the
+        // lower-middle of the knob range, so the elastic ring is audible across more of
+        // the sweep rather than appearing only near the top.
+        float feedbackAmount = std::pow(resonanceNormalized, FEEDBACK_EXP) * FEEDBACK_SCALE;
+
+        // ====================================================================
+        // DUAL-ENVELOPE CUTOFF BREATHING
+        // ====================================================================
+        // Input follower: fast attack / medium release.
+        // Opens the cutoff on incoming transients, then exhales over ~120ms.
+        {
+            float envIn   = std::abs(input) * (1.f / INPUT_PEAK_NORM);
+            float envCoeff = (envIn > signalEnvelope) ? envAttackCoeff : envReleaseCoeff;
+            signalEnvelope += (1.f - envCoeff) * (envIn - signalEnvelope);
+            signalEnvelope  = rack::math::clamp(signalEnvelope, 0.f, 1.f);
+        }
+        // outputEnvelope holds the previous cycle's tracked output level (0-1).
+        // It is updated after decimation (below) so this cycle uses last cycle's
+        // value — a 1-sample delay that avoids an algebraic loop.  The bloom
+        // effect is too slow (OUT_ENV_RELEASE_TC) to be sensitive to 1-sample jitter.
+
+        // Input breath: up to BREATH_CUTOFF_SCALE cutoff shift at full signal (≈3.2 semitones).
+        // Scale back with resonance: PWM and sync produce dense transients that trigger the
+        // breath follower continuously, causing rapid cutoff modulation that interacts badly
+        // with the near-oscillating loop.  At max resonance the shift is ~60% of its base value.
+        // Output bloom: up to BLOOM_CUTOFF_SCALE additional shift as resonance builds (≈1 semitone)
+        float breathScale = BREATH_CUTOFF_SCALE * (1.f - resonanceNormalized * BREATH_RESONANCE_DAMP);
+        float breathCutoff = cutoff * (1.f + signalEnvelope * breathScale
+                                           + outputEnvelope * BLOOM_CUTOFF_SCALE);
+        breathCutoff = rack::math::clamp(breathCutoff, 1.f, oversampledRate * 0.45f);
 
         // Upsample
         float upsampledBuffer[OVERSAMPLE_FACTOR];
@@ -193,19 +288,21 @@ public:
             // Pre-filter drive saturation
             x = driveSaturate(x, drive);
 
-            // Filter coefficients at oversampled rate
-            float g = std::tan(M_PI * cutoff / oversampledRate);
+            // Filter coefficients at oversampled rate.
+            // breathCutoff carries the envelope-modulated cutoff for elasticity.
+            float g = std::tan(M_PI * breathCutoff / oversampledRate);
             g = rack::math::clamp(g, 0.f, 0.99f);
 
             // ================================================================
             // GLOBAL FEEDBACK TOPOLOGY (ladder-style)
             // ================================================================
-            // 2nd-order HP on feedback at 20% of filter cutoff (-12dB/oct).
-            // e.g. cutoff=400Hz → HP at 80Hz; 40Hz is then -24dB down in
-            // the feedback signal.  Clamped 30–160Hz to stay well below the
-            // musical midrange and protect more of the bass spectrum.
+            // 2nd-order HP on feedback at HP_CUTOFF_RATIO of filter cutoff (-12dB/oct).
+            // e.g. cutoff=400Hz → HP at 80Hz; 40Hz is then -24dB down in the feedback
+            // signal.  Clamped HP_CUTOFF_MIN_HZ–HP_CUTOFF_MAX_HZ to stay well below
+            // the musical midrange and protect more of the bass spectrum.
             {
-                float HP_CUTOFF_HZ = rack::math::clamp(cutoff * 0.20f, 30.f, 160.f);
+                float HP_CUTOFF_HZ = rack::math::clamp(
+                    breathCutoff * HP_CUTOFF_RATIO, HP_CUTOFF_MIN_HZ, HP_CUTOFF_MAX_HZ);
                 float hpAlpha = rack::math::clamp(
                     (2.f * static_cast<float>(M_PI) * HP_CUTOFF_HZ) / oversampledRate,
                     0.f, 0.99f);
@@ -217,39 +314,39 @@ public:
                 x = x - feedbackHPed * feedbackAmount;
             }
 
-            // Post-injection saturation: base=1.0 so normal audio passes cleanly;
-            // drive grows with feedbackAmount, shaping peaks at high resonance.
-            x = saturate(x, 1.0f + feedbackAmount * 0.15f);
+            // Post-injection saturation: smooth tanh limit so feedback peaks at high
+            // resonance are rounded rather than hard-clipped.
+            x = filterSaturate(x, 1.0f + feedbackAmount * SAT_DRIVE_PRE);
 
             // Compute bandpass mix from filter mode
             float bpMix = 0.f;
             if (filterMode == BANDPASS) bpMix = 1.f;
             else if (filterMode == MORPH) bpMix = filterMorph;
 
-            // Cascade three critically-damped 2-pole stages (k=2.0).
-            // Keeping k=2.0 is mandatory for stability: reducing k shifts the
+            // Cascade three critically-damped 2-pole stages (k=SVF_K).
+            // Keeping SVF_K=2.0 is mandatory for stability: reducing k shifts the
             // -180° phase crossing to a higher-gain frequency, dropping the max
             // stable feedbackAmount well below 2 (causes the pumping distortion).
-            x = stage1.process(x, g, 2.f, bpMix);
+            x = stage1.process(x, g, SVF_K, bpMix);
 
-            // Inter-stage saturation: drive scaled up so peaks are compressed
-            // between stages, preventing amplitude buildup through the cascade.
-            x = saturate(x, 1.0f + feedbackAmount * 0.2f);
+            // Inter-stage saturation: smooth tanh prevents amplitude buildup through
+            // the cascade without adding hard-clip artefacts to the resonant ring.
+            x = filterSaturate(x, 1.0f + feedbackAmount * SAT_DRIVE_INTER);
 
-            x = stage2.process(x, g, 2.f, bpMix);
-            x = saturate(x, 1.0f + feedbackAmount * 0.2f);
+            x = stage2.process(x, g, SVF_K, bpMix);
+            x = filterSaturate(x, 1.0f + feedbackAmount * SAT_DRIVE_INTER);
 
-            x = stage3.process(x, g, 2.f, bpMix);
+            x = stage3.process(x, g, SVF_K, bpMix);
 
             // Store LP integrator state for feedback.
-            // tanh soft-limits to ±2.5V — prevents integrator runaway while
-            // allowing slightly more resonant swing than a tighter limit.
-            // The wider ±2.5V range gives the feedback loop more "spring",
-            // producing the elastic ring characteristic of liquid filter sweeps.
-            lastFeedback = std::tanh(stage3.lastV2 * 0.4f) * 2.5f;
+            // tanh soft-limits to ±FEEDBACK_TANH_SWING — prevents integrator runaway
+            // while allowing slightly more resonant swing than a tighter limit.
+            // The wider swing gives the feedback loop more "spring", producing the
+            // elastic ring characteristic of liquid filter sweeps.
+            lastFeedback = std::tanh(stage3.lastV2 * FEEDBACK_PRESCALE) * FEEDBACK_TANH_SWING;
 
-            // Post-cascade saturation (subtle rounding)
-            x = saturate(x, 1.f + feedbackAmount * 0.08f);
+            // Post-cascade saturation (subtle rounding — smooth tanh, no hard clip)
+            x = filterSaturate(x, 1.f + feedbackAmount * SAT_DRIVE_POST);
 
             oversampledOutputs[i] = x;
         }
@@ -257,16 +354,24 @@ public:
         // Downsample back to base rate
         float output = decimator.process(oversampledOutputs);
 
-        // Resonance gain compensation: the resonant peak adds significant level.
-        // Roll back gain progressively so it never hard-clips the output stage.
-        float resonanceGainComp = 1.f - 0.18f * resonanceNormalized;
-        resonanceGainComp = rack::math::clamp(resonanceGainComp, 0.78f, 1.05f);
-        output *= resonanceGainComp;
+        // Update output bloom envelope for next cycle.
+        // Tracks filter output level (normalized to 0-1 at ±SIGNAL_HEADROOM peak).
+        // Slow attack ignores transients; slow release holds the bloom long enough
+        // to create the liquid "seeking-and-settling" motion.
+        {
+            float envOut  = std::abs(output) * (1.f / SIGNAL_HEADROOM);
+            float outCoeff = (envOut > outputEnvelope) ? outEnvAttackCoeff : outEnvReleaseCoeff;
+            outputEnvelope += (1.f - outCoeff) * (envOut - outputEnvelope);
+            outputEnvelope  = rack::math::clamp(outputEnvelope, 0.f, 1.f);
+        }
 
-        // Soft output limiter: tanh never hard-clips, so resonant peaks are
-        // shaped smoothly rather than with the harsh transistor knee.
-        // ±12V headroom — normal audio (±5V) gets only ~5% compression.
-        output = std::tanh(output * (1.0f / 12.0f)) * 12.0f;
+        // Soft output limiter: tanh handles any resonant peak buildup smoothly.
+        // No separate gain compensation — blanket gain rolloff was causing the
+        // perceived -3dB drop at high resonance.  The tanh only compresses the
+        // loudest peaks (resonant spikes) while leaving the passband at full level,
+        // which is more authentic to analog behavior and sounds more alive.
+        // ±SIGNAL_HEADROOM — normal audio (±5V) gets only ~5% compression.
+        output = std::tanh(output * (1.0f / SIGNAL_HEADROOM)) * SIGNAL_HEADROOM;
 
         if (!std::isfinite(output)) {
             reset();

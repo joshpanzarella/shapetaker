@@ -11,14 +11,35 @@
 struct ClairaudientModule : Module, IOscilloscopeSource {
 
     // DSP Constants
-    static constexpr float MIDDLE_C_HZ = 261.626f;
-    static constexpr float CV_FINE_SCALE = 1.f / 50.f;
-    static constexpr float CV_SHAPE_SCALE = 1.f / 5.f;
-    static constexpr float CV_XFADE_SCALE = 1.f / 10.f;
-    static constexpr float OUTPUT_GAIN = 5.f;
-    static constexpr float NOISE_V_PEAK = 0.45f;
-    static constexpr float HIGH_CUT_HZ = 14500.f;
-    static constexpr float ANTI_ALIAS_CUTOFF = 0.45f;
+    static constexpr float MIDDLE_C_HZ           = 261.626f;
+    static constexpr float CV_FINE_SCALE          = 1.f / 50.f;
+    static constexpr float CV_SHAPE_SCALE         = 1.f / 5.f;
+    static constexpr float CV_XFADE_SCALE         = 1.f / 10.f;
+    static constexpr float OUTPUT_GAIN            = 5.f;
+    static constexpr float NOISE_V_PEAK           = 0.45f;
+    static constexpr float HIGH_CUT_HZ            = 14500.f;
+    static constexpr float ANTI_ALIAS_CUTOFF      = 0.45f;
+    static constexpr float UINT32_NORM            = 1.f / 4294967296.f; // 1 / 2^32
+    // Frequency parameter ranges
+    static constexpr float FREQ1_OCT_MIN          = -2.f;
+    static constexpr float FREQ1_OCT_MAX          =  2.f;
+    static constexpr float FREQ2_ST_RANGE         = 24.f;    // ±24 semitones
+    static constexpr float FINE_TUNE_RANGE        = 0.2f;    // ±20 cents
+    static constexpr float SEMITONES_PER_OCTAVE   = 12.f;
+    static constexpr float DETUNE_HALF            = 0.5f;    // symmetric detune split
+    // Waveform / mixing
+    static constexpr float NOISE_SHAPE_EXP        = 0.65f;   // perceptual noise shaping curve
+    static constexpr float PHASE_NOISE_SCALE      = 0.00005f; // per-sample phase jitter scale
+    static constexpr float STEREO_SWAP_WIDTH_GAIN = 0.35f;   // crossfeed gain in stereo swap mode
+    // Drift
+    static constexpr float BASE_DRIFT_SPEED       = 0.00002f; // random walk speed (octaves/s²)
+    static constexpr float DRIFT_LIMIT            = 0.001f;   // ±octave limit at full drift amount
+    // Oversampling
+    static constexpr int   MIN_OVERSAMPLE         = 1;
+    static constexpr int   MAX_OVERSAMPLE         = 8;
+    // Oscilloscope
+    static constexpr float OSCOPE_TARGET_CYCLES   = 1.5f;
+    static constexpr int   OSCOPE_MAX_DOWNSAMPLE  = 128;
 
     enum ParamId {
         FREQ1_PARAM,
@@ -119,7 +140,7 @@ struct ClairaudientModule : Module, IOscilloscopeSource {
     std::atomic<bool> quantizeOscZ = {true};  // Z oscillator quantized to semitones by default
     std::atomic<int> crossfadeMode = {CROSSFADE_EQUAL_POWER};
     std::atomic<int> waveformMode = {WAVEFORM_SIGMOID_SAW};
-    std::atomic<int> oversampleFactor = {2};
+    std::atomic<int> oversampleFactor = {4};
     std::atomic<bool> highCutEnabled = {false};
     std::atomic<float> driftAmount = {0.0f};
     std::atomic<int> oscilloscopeTheme = {shapetaker::ui::ThemeManager::DisplayTheme::PHOSPHOR};
@@ -255,7 +276,7 @@ struct ClairaudientModule : Module, IOscilloscopeSource {
     }
 
     static inline float fastUniform(uint32_t& state) {
-        return xorshift32(state) * (1.0f / 4294967296.0f);
+        return xorshift32(state) * UINT32_NORM;
     }
 
     static inline float fastUniformSigned(uint32_t& state) {
@@ -268,10 +289,10 @@ struct ClairaudientModule : Module, IOscilloscopeSource {
 
         // Frequency controls
         // V oscillator snaps to whole octaves (5 total values: -2, -1, 0, +1, +2)
-        configParam(FREQ1_PARAM, -2.f, 2.f, 0.f, "v osc octave", " oct");
+        configParam(FREQ1_PARAM, FREQ1_OCT_MIN, FREQ1_OCT_MAX, 0.f, "v osc octave", " oct");
 
         // Z oscillator snaps to semitones (49 total values: -24 to +24 semitones)
-        configParam(FREQ2_PARAM, -24.f, 24.f, 0.f, "z osc semitone", " st");
+        configParam(FREQ2_PARAM, -FREQ2_ST_RANGE, FREQ2_ST_RANGE, 0.f, "z osc semitone", " st");
 
         // Initialize parameter snapping based on default quantization modes
         updateParameterSnapping();
@@ -280,8 +301,8 @@ struct ClairaudientModule : Module, IOscilloscopeSource {
         // FREQ2: Quantized to semitones within 4-octave range for musical intervals
         
         // Fine tune controls (±20 cents, centered at 0 for no detune)
-        configParam(FINE1_PARAM, -0.2f, 0.2f, 0.f, "v fine", " cents", 0.f, 100.f);
-        configParam(FINE2_PARAM, -0.2f, 0.2f, 0.f, "z fine", " cents", 0.f, 100.f);
+        configParam(FINE1_PARAM, -FINE_TUNE_RANGE, FINE_TUNE_RANGE, 0.f, "v fine", " cents", 0.f, 100.f);
+        configParam(FINE2_PARAM, -FINE_TUNE_RANGE, FINE_TUNE_RANGE, 0.f, "z fine", " cents", 0.f, 100.f);
         
         // Fine tune CV attenuverters
         ParameterHelper::configAttenuverter(this, FINE1_ATTEN_PARAM, "v fine tune cv");
@@ -373,7 +394,7 @@ struct ClairaudientModule : Module, IOscilloscopeSource {
 
         json_t* oversampleJ = json_object_get(rootJ, "oversampleFactor");
         if (oversampleJ) {
-            int newOversample = clamp((int)json_integer_value(oversampleJ), 1, 8);
+            int newOversample = clamp((int)json_integer_value(oversampleJ), MIN_OVERSAMPLE, MAX_OVERSAMPLE);
             oversampleFactor.store(newOversample, std::memory_order_relaxed);
             if (newOversample != prevOversample)
                 pendingFilterReset.store(true, std::memory_order_relaxed);
@@ -411,7 +432,7 @@ struct ClairaudientModule : Module, IOscilloscopeSource {
                 {outputs[LEFT_OUTPUT], outputs[RIGHT_OUTPUT]}),
             MAX_POLY_VOICES);
 
-        // Apply the configured oversampling factor (1×, 2×, 4×, or 8×, default 2×)
+        // Apply the configured oversampling factor (1×, 2×, 4×, or 8×, default 4×)
         const int oversample = std::max(1, oversampleFactor.load(std::memory_order_relaxed));
         const bool highCutEnabledLocal = highCutEnabled.load(std::memory_order_relaxed);
         const int crossfadeModeLocal = crossfadeMode.load(std::memory_order_relaxed);
@@ -423,7 +444,7 @@ struct ClairaudientModule : Module, IOscilloscopeSource {
         const float oscNoise = oscNoiseAmount.load(std::memory_order_relaxed);
         if (oscNoise != cachedOscNoiseAmount) {
             cachedOscNoiseAmount = oscNoise;
-            cachedShapedNoise = std::pow(clamp(oscNoise, 0.f, 1.f), 0.65f);
+            cachedShapedNoise = std::pow(clamp(oscNoise, 0.f, 1.f), NOISE_SHAPE_EXP);
         }
         float shapedNoise = cachedShapedNoise;
         float invOversampleRate = 1.f / oversampleRate; // Pre-compute reciprocal for faster multiplication
@@ -445,7 +466,7 @@ struct ClairaudientModule : Module, IOscilloscopeSource {
 
             cachedBaseSemitoneZ = params[FREQ2_PARAM].getValue();
             if (quantizeOscZ.load(std::memory_order_relaxed))
-                cachedBaseSemitoneZ = shapetaker::dsp::PitchHelper::quantizeToSemitone(cachedBaseSemitoneZ, 24.f);
+                cachedBaseSemitoneZ = shapetaker::dsp::PitchHelper::quantizeToSemitone(cachedBaseSemitoneZ, FREQ2_ST_RANGE);
 
             cachedFineTune1 = params[FINE1_PARAM].getValue();
             cachedFineTune2 = params[FINE2_PARAM].getValue();
@@ -498,24 +519,24 @@ struct ClairaudientModule : Module, IOscilloscopeSource {
             float pitch1 = cachedBasePitch1 + voct1;
 
             // Z Oscillator: use pre-quantized cached value, then add CV
-            float pitch2 = cachedBaseSemitoneZ / 12.0f + voct2;
+            float pitch2 = cachedBaseSemitoneZ / SEMITONES_PER_OCTAVE + voct2;
 
             float fineTune1 = cachedFineTune1;
             if (cachedFine1CVConnected) {
                 float cvAmount = cachedFine1Atten;
-                fineTune1 = clamp(fineTune1 + inputs[FINE1_CV_INPUT].getPolyVoltage(ch) * cvAmount * CV_FINE_SCALE, -0.2f, 0.2f);
+                fineTune1 = clamp(fineTune1 + inputs[FINE1_CV_INPUT].getPolyVoltage(ch) * cvAmount * CV_FINE_SCALE, -FINE_TUNE_RANGE, FINE_TUNE_RANGE);
             }
 
             // Fine 2 CV is independent (no normalization)
             float fineTune2 = cachedFineTune2;
             if (cachedFine2CVConnected) {
                 float cvAmount = cachedFine2Atten;
-                fineTune2 = clamp(fineTune2 + inputs[FINE2_CV_INPUT].getPolyVoltage(ch) * cvAmount * CV_FINE_SCALE, -0.2f, 0.2f);
+                fineTune2 = clamp(fineTune2 + inputs[FINE2_CV_INPUT].getPolyVoltage(ch) * cvAmount * CV_FINE_SCALE, -FINE_TUNE_RANGE, FINE_TUNE_RANGE);
             }
 
             // Convert semitone offsets to octaves
-            fineTune1 /= 12.f;
-            fineTune2 /= 12.f;
+            fineTune1 /= SEMITONES_PER_OCTAVE;
+            fineTune2 /= SEMITONES_PER_OCTAVE;
 
             // Get shape parameters with attenuverters (use cached base values)
             float shape1 = cachedShape1;
@@ -545,8 +566,8 @@ struct ClairaudientModule : Module, IOscilloscopeSource {
             // Pre-calculate frequencies outside oversample loop (major optimization)
             // Use exp2f() instead of std::pow(2.f, x) for ~2-3x faster computation
             // Symmetric detune: A goes flat by half, B goes sharp by half — keeps center pitch stable
-            float halfFine1 = fineTune1 * 0.5f;
-            float halfFine2 = fineTune2 * 0.5f;
+            float halfFine1 = fineTune1 * DETUNE_HALF;
+            float halfFine2 = fineTune2 * DETUNE_HALF;
             float freq1A = MIDDLE_C_HZ * exp2f(pitch1 - halfFine1 + drift1A[ch]);
             float freq1B = MIDDLE_C_HZ * exp2f(pitch1 + halfFine1 + drift1B[ch]);
             float freq2A = MIDDLE_C_HZ * exp2f(pitch2 - halfFine2 + drift2A[ch]);
@@ -569,159 +590,89 @@ struct ClairaudientModule : Module, IOscilloscopeSource {
             bool stereoSwap = (crossfadeModeLocal == CROSSFADE_STEREO_SWAP);
             // Width accent for swap: crossfeed with opposite polarity peaks at mid fade
             float widthBlend = cachedXfadeCVConnected ? std::sin(xfadeClamped * (float)M_PI) : widthBlendGlobal;
-            float widthGain = 0.35f * widthBlend;
+            float widthGain = STEREO_SWAP_WIDTH_GAIN * widthBlend;
 
-            const float noiseScale = 0.00005f * shapedNoise;
-            if (waveformModeLocal == WAVEFORM_PWM) {
-                for (int os = 0; os < oversample; os++) {
+            const float noiseScale = PHASE_NOISE_SCALE * shapedNoise;
 
-                    // Add subtle phase noise for organic character (scaled by shaped user amount)
-                    phase1A[ch] += deltaPhase1A + noise1A[ch] * noiseScale;
-                    phase1B[ch] += deltaPhase1B + noise1B[ch] * noiseScale;
-                    phase2A[ch] += deltaPhase2A * phaseDir2A[ch] + noise2A[ch] * noiseScale;
-                    phase2B[ch] += deltaPhase2B * phaseDir2B[ch] + noise2B[ch] * noiseScale;
+            // Select oscillator function once outside the loop to avoid branching every sample
+            auto computeOsc = [&](float phase, float shape, float freq) -> float {
+                if (waveformModeLocal == WAVEFORM_PWM)
+                    return shapetaker::dsp::OscillatorHelper::pwmWithPolyBLEP(phase, shape, freq, oversampleRate);
+                return shapetaker::dsp::OscillatorHelper::organicSigmoidSaw(phase, shape, freq, oversampleRate);
+            };
 
-                    wrapPhase(phase1A[ch]);
-                    wrapPhase(phase1B[ch]);
-                    wrapPhaseBidirectional(phase2A[ch]);
-                    wrapPhaseBidirectional(phase2B[ch]);
+            for (int os = 0; os < oversample; os++) {
 
-                    // Detect V master (1A) cycle completion
-                    bool vCycleComplete = phase1A[ch] < deltaPhase1A;
+                // Add subtle phase noise for organic character (scaled by shaped user amount)
+                phase1A[ch] += deltaPhase1A + noise1A[ch] * noiseScale;
+                phase1B[ch] += deltaPhase1B + noise1B[ch] * noiseScale;
+                phase2A[ch] += deltaPhase2A * phaseDir2A[ch] + noise2A[ch] * noiseScale;
+                phase2B[ch] += deltaPhase2B * phaseDir2B[ch] + noise2B[ch] * noiseScale;
 
-                    // Cross-sync: V master resets Z slave phases
-                    if (sync1 && vCycleComplete) {
-                        phase2A[ch] = phase1A[ch];
-                        phase2B[ch] = phase1A[ch];
-                        phaseDir2A[ch] = 1.f;
-                        phaseDir2B[ch] = 1.f;
-                    }
+                wrapPhase(phase1A[ch]);
+                wrapPhase(phase1B[ch]);
+                wrapPhaseBidirectional(phase2A[ch]);
+                wrapPhaseBidirectional(phase2B[ch]);
 
-                    // Reverse sync: V master reverses Z slave direction
-                    if (sync2 && !sync1 && vCycleComplete) {
-                        phaseDir2A[ch] = -phaseDir2A[ch];
-                        phaseDir2B[ch] = -phaseDir2B[ch];
-                    }
+                // Detect V master (1A) cycle completion
+                bool vCycleComplete = phase1A[ch] < deltaPhase1A;
 
-                    // Reset direction when neither sync is active
-                    if (!sync1 && !sync2) {
-                        phaseDir2A[ch] = 1.f;
-                        phaseDir2B[ch] = 1.f;
-                    }
-
-                    // PWM mode - shape parameter controls pulse width
-                    float osc1A = shapetaker::dsp::OscillatorHelper::pwmWithPolyBLEP(phase1A[ch], shape1, freq1A, oversampleRate);
-                    float osc1B = shapetaker::dsp::OscillatorHelper::pwmWithPolyBLEP(phase1B[ch], shape1, freq1B, oversampleRate);
-                    float osc2A = shapetaker::dsp::OscillatorHelper::pwmWithPolyBLEP(phase2A[ch], shape2, freq2A, oversampleRate);
-                    float osc2B = shapetaker::dsp::OscillatorHelper::pwmWithPolyBLEP(phase2B[ch], shape2, freq2B, oversampleRate);
-
-                    float leftOutput;
-                    float rightOutput;
-
-                    // Use pre-calculated trig values to avoid sin/cos in hot loop
-                    if (!stereoSwap) {
-                        leftOutput = osc1A * xfadeCos + osc2A * xfadeSin;
-                        rightOutput = osc1B * xfadeCos + osc2B * xfadeSin;
-                    } else {
-                        float baseLeft = osc1A * xfadeCos + osc2B * xfadeSin;
-                        float baseRight = osc1B * xfadeCos + osc2A * xfadeSin;
-                        // Out-of-phase crossfeed widens and makes swap distinct from equal-power
-                        float leftCross = -(osc1B * (1.f - xfadeClamped) + osc2A * xfadeClamped);
-                        float rightCross = -(osc1A * (1.f - xfadeClamped) + osc2B * xfadeClamped);
-                        leftOutput = baseLeft + widthGain * leftCross;
-                        rightOutput = baseRight + widthGain * rightCross;
-                    }
-
-                    // Apply anti-aliasing filter to each channel separately for true stereo
-                    float filteredLeft = doAntiAlias
-                        ? antiAliasFilterLeftStage2[ch].processWithAlpha(
-                            antiAliasFilterLeft[ch].processWithAlpha(leftOutput, antiAliasAlpha),
-                            antiAliasAlpha)
-                        : leftOutput;
-                    float filteredRight = doAntiAlias
-                        ? antiAliasFilterRightStage2[ch].processWithAlpha(
-                            antiAliasFilterRight[ch].processWithAlpha(rightOutput, antiAliasAlpha),
-                            antiAliasAlpha)
-                        : rightOutput;
-
-                    finalLeft += filteredLeft;
-                    finalRight += filteredRight;
+                // Cross-sync: V master resets Z slave phases
+                if (sync1 && vCycleComplete) {
+                    phase2A[ch] = phase1A[ch];
+                    phase2B[ch] = phase1A[ch];
+                    phaseDir2A[ch] = 1.f;
+                    phaseDir2B[ch] = 1.f;
                 }
-            } else {
-                for (int os = 0; os < oversample; os++) {
 
-                    // Add subtle phase noise for organic character (scaled by shaped user amount)
-                    phase1A[ch] += deltaPhase1A + noise1A[ch] * noiseScale;
-                    phase1B[ch] += deltaPhase1B + noise1B[ch] * noiseScale;
-                    phase2A[ch] += deltaPhase2A * phaseDir2A[ch] + noise2A[ch] * noiseScale;
-                    phase2B[ch] += deltaPhase2B * phaseDir2B[ch] + noise2B[ch] * noiseScale;
-
-                    wrapPhase(phase1A[ch]);
-                    wrapPhase(phase1B[ch]);
-                    wrapPhaseBidirectional(phase2A[ch]);
-                    wrapPhaseBidirectional(phase2B[ch]);
-
-                    // Detect V master (1A) cycle completion
-                    bool vCycleComplete = phase1A[ch] < deltaPhase1A;
-
-                    // Cross-sync: V master resets Z slave phases
-                    if (sync1 && vCycleComplete) {
-                        phase2A[ch] = phase1A[ch];
-                        phase2B[ch] = phase1A[ch];
-                        phaseDir2A[ch] = 1.f;
-                        phaseDir2B[ch] = 1.f;
-                    }
-
-                    // Reverse sync: V master reverses Z slave direction
-                    if (sync2 && !sync1 && vCycleComplete) {
-                        phaseDir2A[ch] = -phaseDir2A[ch];
-                        phaseDir2B[ch] = -phaseDir2B[ch];
-                    }
-
-                    // Reset direction when neither sync is active
-                    if (!sync1 && !sync2) {
-                        phaseDir2A[ch] = 1.f;
-                        phaseDir2B[ch] = 1.f;
-                    }
-
-                    // Sigmoid saw mode (default)
-                    float osc1A = shapetaker::dsp::OscillatorHelper::organicSigmoidSaw(phase1A[ch], shape1, freq1A, oversampleRate);
-                    float osc1B = shapetaker::dsp::OscillatorHelper::organicSigmoidSaw(phase1B[ch], shape1, freq1B, oversampleRate);
-                    float osc2A = shapetaker::dsp::OscillatorHelper::organicSigmoidSaw(phase2A[ch], shape2, freq2A, oversampleRate);
-                    float osc2B = shapetaker::dsp::OscillatorHelper::organicSigmoidSaw(phase2B[ch], shape2, freq2B, oversampleRate);
-
-                    float leftOutput;
-                    float rightOutput;
-
-                    // Use pre-calculated trig values to avoid sin/cos in hot loop
-                    if (!stereoSwap) {
-                        leftOutput = osc1A * xfadeCos + osc2A * xfadeSin;
-                        rightOutput = osc1B * xfadeCos + osc2B * xfadeSin;
-                    } else {
-                        float baseLeft = osc1A * xfadeCos + osc2B * xfadeSin;
-                        float baseRight = osc1B * xfadeCos + osc2A * xfadeSin;
-                        // Out-of-phase crossfeed widens and makes swap distinct from equal-power
-                        float leftCross = -(osc1B * (1.f - xfadeClamped) + osc2A * xfadeClamped);
-                        float rightCross = -(osc1A * (1.f - xfadeClamped) + osc2B * xfadeClamped);
-                        leftOutput = baseLeft + widthGain * leftCross;
-                        rightOutput = baseRight + widthGain * rightCross;
-                    }
-
-                    // Apply anti-aliasing filter to each channel separately for true stereo
-                    float filteredLeft = doAntiAlias
-                        ? antiAliasFilterLeftStage2[ch].processWithAlpha(
-                            antiAliasFilterLeft[ch].processWithAlpha(leftOutput, antiAliasAlpha),
-                            antiAliasAlpha)
-                        : leftOutput;
-                    float filteredRight = doAntiAlias
-                        ? antiAliasFilterRightStage2[ch].processWithAlpha(
-                            antiAliasFilterRight[ch].processWithAlpha(rightOutput, antiAliasAlpha),
-                            antiAliasAlpha)
-                        : rightOutput;
-
-                    finalLeft += filteredLeft;
-                    finalRight += filteredRight;
+                // Reverse sync: V master reverses Z slave direction
+                if (sync2 && !sync1 && vCycleComplete) {
+                    phaseDir2A[ch] = -phaseDir2A[ch];
+                    phaseDir2B[ch] = -phaseDir2B[ch];
                 }
+
+                // Reset direction when neither sync is active
+                if (!sync1 && !sync2) {
+                    phaseDir2A[ch] = 1.f;
+                    phaseDir2B[ch] = 1.f;
+                }
+
+                float osc1A = computeOsc(phase1A[ch], shape1, freq1A);
+                float osc1B = computeOsc(phase1B[ch], shape1, freq1B);
+                float osc2A = computeOsc(phase2A[ch], shape2, freq2A);
+                float osc2B = computeOsc(phase2B[ch], shape2, freq2B);
+
+                float leftOutput;
+                float rightOutput;
+
+                // Use pre-calculated trig values to avoid sin/cos in hot loop
+                if (!stereoSwap) {
+                    leftOutput  = osc1A * xfadeCos + osc2A * xfadeSin;
+                    rightOutput = osc1B * xfadeCos + osc2B * xfadeSin;
+                } else {
+                    float baseLeft  = osc1A * xfadeCos + osc2B * xfadeSin;
+                    float baseRight = osc1B * xfadeCos + osc2A * xfadeSin;
+                    // Out-of-phase crossfeed widens and makes swap distinct from equal-power
+                    float leftCross  = -(osc1B * (1.f - xfadeClamped) + osc2A * xfadeClamped);
+                    float rightCross = -(osc1A * (1.f - xfadeClamped) + osc2B * xfadeClamped);
+                    leftOutput  = baseLeft  + widthGain * leftCross;
+                    rightOutput = baseRight + widthGain * rightCross;
+                }
+
+                // Apply anti-aliasing filter to each channel separately for true stereo
+                float filteredLeft = doAntiAlias
+                    ? antiAliasFilterLeftStage2[ch].processWithAlpha(
+                        antiAliasFilterLeft[ch].processWithAlpha(leftOutput, antiAliasAlpha),
+                        antiAliasAlpha)
+                    : leftOutput;
+                float filteredRight = doAntiAlias
+                    ? antiAliasFilterRightStage2[ch].processWithAlpha(
+                        antiAliasFilterRight[ch].processWithAlpha(rightOutput, antiAliasAlpha),
+                        antiAliasAlpha)
+                    : rightOutput;
+
+                finalLeft  += filteredLeft;
+                finalRight += filteredRight;
             }
             
             // Average the oversampled result for this voice
@@ -757,9 +708,8 @@ struct ClairaudientModule : Module, IOscilloscopeSource {
                 float dominantFreq = (xfade < 0.5f) ? baseFreq1 : baseFreq2;
                 dominantFreq = std::max(dominantFreq, 1.f); // Prevent division by zero or very small numbers
 
-                const float targetCyclesInDisplay = 1.5f; // Aim to show fewer cycles for snappier updates
-                int downsampleFactor = (int)roundf((targetCyclesInDisplay * args.sampleRate) / (OSCILLOSCOPE_BUFFER_SIZE * dominantFreq));
-                downsampleFactor = clamp(downsampleFactor, 1, 128); // Clamp to a reasonable range
+                int downsampleFactor = (int)roundf((OSCOPE_TARGET_CYCLES * args.sampleRate) / (OSCILLOSCOPE_BUFFER_SIZE * dominantFreq));
+                downsampleFactor = clamp(downsampleFactor, 1, OSCOPE_MAX_DOWNSAMPLE);
                 
                 // --- Oscilloscope Buffering Logic ---
                 // Downsample the audio rate to fill the buffer at a reasonable speed for the UI
@@ -804,8 +754,7 @@ private:
 
         if (updateDrift) {
             // Very slow random walk for frequency drift (like analog oscillator aging)
-            const float baseDriftSpeed = 0.00002f;
-            float driftSpeed = baseDriftSpeed * amount;
+            float driftSpeed = BASE_DRIFT_SPEED * amount;
 
             drift1A[voice] += fastUniformSigned(rng) * driftSpeed * sampleTime;
             drift1B[voice] += fastUniformSigned(rng) * driftSpeed * sampleTime;
@@ -813,7 +762,7 @@ private:
             drift2B[voice] += fastUniformSigned(rng) * driftSpeed * sampleTime;
 
             // Limit drift to very small amounts (about ±1.2 cents at full amount)
-            const float driftLimit = 0.001f * amount;
+            float driftLimit = DRIFT_LIMIT * amount;
             drift1A[voice] = clamp(drift1A[voice], -driftLimit, driftLimit);
             drift1B[voice] = clamp(drift1B[voice], -driftLimit, driftLimit);
             drift2A[voice] = clamp(drift2A[voice], -driftLimit, driftLimit);
@@ -832,13 +781,18 @@ private:
 // KnobShadowWidget is now defined in plugin.hpp and shared across all modules
 
 struct ClairaudientWidget : ModuleWidget {
+    // Panel background rendering constants
+    static constexpr float BG_TEXTURE_ASPECT = 2880.f / 4553.f; // panel_background.png dimensions
+    static constexpr float BG_OFFSET_OPACITY = 0.35f;            // opacity of the seam-softening pass
+    static constexpr int   BG_DARKEN_ALPHA   = 18;               // panel darkening overlay alpha
+
     // Match the uniform Clairaudient/Tessellation/Transmutation/Torsion leather treatment
     void draw(const DrawArgs& args) override {
         std::shared_ptr<Image> bg = APP->window->loadImage(asset::plugin(pluginInstance, "res/panels/panel_background.png"));
         if (bg) {
             // Keep leather grain density consistent across panel widths via fixed-height tiling.
             constexpr float inset = 2.0f;
-            constexpr float textureAspect = 2880.f / 4553.f;  // panel_background.png
+            constexpr float textureAspect = BG_TEXTURE_ASPECT;
             float tileH = box.size.y + inset * 2.f;
             float tileW = tileH * textureAspect;
             float x = -inset;
@@ -856,14 +810,14 @@ struct ClairaudientWidget : ModuleWidget {
             // Offset low-opacity pass to soften seam visibility
             nvgBeginPath(args.vg);
             nvgRect(args.vg, 0.f, 0.f, box.size.x, box.size.y);
-            NVGpaint paintB = nvgImagePattern(args.vg, x + tileW * 0.5f, y, tileW, tileH, 0.f, bg->handle, 0.35f);
+            NVGpaint paintB = nvgImagePattern(args.vg, x + tileW * 0.5f, y, tileW, tileH, 0.f, bg->handle, BG_OFFSET_OPACITY);
             nvgFillPaint(args.vg, paintB);
             nvgFill(args.vg);
 
             // Slight darkening to match existing module tone
             nvgBeginPath(args.vg);
             nvgRect(args.vg, 0.f, 0.f, box.size.x, box.size.y);
-            nvgFillColor(args.vg, nvgRGBA(0, 0, 0, 18));
+            nvgFillColor(args.vg, nvgRGBA(0, 0, 0, BG_DARKEN_ALPHA));
             nvgFill(args.vg);
 
             nvgRestore(args.vg);
