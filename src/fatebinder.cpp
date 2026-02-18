@@ -381,6 +381,7 @@ struct Fatebinder : Module {
         RESET_INPUT,
         CHAOS_CV_INPUT,
         PROBABILITY_CV_INPUT,
+        ROTATION_CV_INPUT,
         INPUTS_LEN
     };
 
@@ -409,10 +410,12 @@ struct Fatebinder : Module {
     dsp::SchmittTrigger resetTrigger;
     dsp::SchmittTrigger freezeTrigger;
     dsp::SchmittTrigger resetPatternTrigger;
+    dsp::PulseGenerator ringTriggerPulse[kNumRings];
 
     bool frozen = false;
     RhythmMode rhythmMode = EUCLIDEAN_MODE;
     bool bipolarOutputs = false;
+    int overlapModeState = 0; // 0=Add, 1=Max, 2=Ring mod
 
     // Envelope pool
     static constexpr int kMaxEnvelopes = 24; // More envelopes for 3 rings
@@ -438,6 +441,10 @@ struct Fatebinder : Module {
 
         // Rhythm parameters
         configParam(STEPS_PARAM, 3.f, 32.f, 8.f, "Steps");
+        if (paramQuantities[STEPS_PARAM]) {
+            paramQuantities[STEPS_PARAM]->snapEnabled = true;
+            paramQuantities[STEPS_PARAM]->smoothEnabled = false;
+        }
         configParam(HITS_PARAM, 1.f, 32.f, 4.f, "Hits");
         configParam(ROTATION_PARAM, 0.f, 31.f, 0.f, "Rotation");
         configParam(TEMPO_PARAM, 20.f, 240.f, 120.f, "Tempo", " BPM");
@@ -467,12 +474,13 @@ struct Fatebinder : Module {
         configInput(RESET_INPUT, "Reset");
         configInput(CHAOS_CV_INPUT, "Chaos CV");
         configInput(PROBABILITY_CV_INPUT, "Probability CV");
+        configInput(ROTATION_CV_INPUT, "Rotation CV");
 
         // Outputs
         configOutput(MAIN_CV_OUTPUT, "Main Mix CV");
-        configOutput(RING_1_OUTPUT, "Ring 1 CV");
-        configOutput(RING_2_OUTPUT, "Ring 2 CV");
-        configOutput(RING_3_OUTPUT, "Ring 3 CV");
+        configOutput(RING_1_OUTPUT, "Ring 1 Trigger");
+        configOutput(RING_2_OUTPUT, "Ring 2 Trigger");
+        configOutput(RING_3_OUTPUT, "Ring 3 Trigger");
         configOutput(GATE_OUTPUT, "Composite Gate");
         configOutput(ACCENT_OUTPUT, "Accent");
 
@@ -514,6 +522,10 @@ struct Fatebinder : Module {
         int steps = (int)params[STEPS_PARAM].getValue();
         int hits = (int)params[HITS_PARAM].getValue();
         int rotation = (int)params[ROTATION_PARAM].getValue();
+        if (inputs[ROTATION_CV_INPUT].isConnected()) {
+            rotation += (int)(inputs[ROTATION_CV_INPUT].getVoltage() * 3.1f);
+            rotation = ((rotation % steps) + steps) % steps; // wrap to valid range
+        }
         int ring2Div = (int)params[RING_2_DIV_PARAM].getValue();
         int ring3Div = (int)params[RING_3_DIV_PARAM].getValue();
 
@@ -652,7 +664,7 @@ struct Fatebinder : Module {
 
         // Process all envelopes
         float mainCV = 0.f;
-        int overlapMode = (int)params[OVERLAP_MODE_PARAM].getValue();
+        int overlapMode = overlapModeState;
 
         for (int ring = 0; ring < kNumRings; ring++) {
             ringCV[ring] = 0.f;
@@ -698,26 +710,19 @@ struct Fatebinder : Module {
 
         // Outputs
         float mainOut = mainCV;
-        float ringOut = rack::math::clamp(ringCV[0], 0.f, 1.f);
-        float ringOut2 = rack::math::clamp(ringCV[1], 0.f, 1.f);
-        float ringOut3 = rack::math::clamp(ringCV[2], 0.f, 1.f);
-
-        // Check bipolar switch parameter
-        bool useBipolar = params[BIPOLAR_PARAM].getValue() > 0.5f;
+        // Check bipolar state (context menu setting)
+        bool useBipolar = bipolarOutputs;
 
         if (useBipolar) {
             // Bipolar mode: -5V to +5V
             outputs[MAIN_CV_OUTPUT].setVoltage(mainOut * 10.f - 5.f);
-            outputs[RING_1_OUTPUT].setVoltage(ringOut * 10.f - 5.f);
-            outputs[RING_2_OUTPUT].setVoltage(ringOut2 * 10.f - 5.f);
-            outputs[RING_3_OUTPUT].setVoltage(ringOut3 * 10.f - 5.f);
         } else {
             // Unipolar mode: 0V to +10V
             outputs[MAIN_CV_OUTPUT].setVoltage(mainOut * 10.f);
-            outputs[RING_1_OUTPUT].setVoltage(ringOut * 10.f);
-            outputs[RING_2_OUTPUT].setVoltage(ringOut2 * 10.f);
-            outputs[RING_3_OUTPUT].setVoltage(ringOut3 * 10.f);
         }
+        outputs[RING_1_OUTPUT].setVoltage(ringTriggerPulse[0].process(dt) ? 10.f : 0.f);
+        outputs[RING_2_OUTPUT].setVoltage(ringTriggerPulse[1].process(dt) ? 10.f : 0.f);
+        outputs[RING_3_OUTPUT].setVoltage(ringTriggerPulse[2].process(dt) ? 10.f : 0.f);
         outputs[GATE_OUTPUT].setVoltage(anyGate ? 10.f : 0.f);
         outputs[ACCENT_OUTPUT].setVoltage(anyAccent ? 10.f : 0.f);
     }
@@ -742,6 +747,7 @@ struct Fatebinder : Module {
 
         if (shouldTrigger) {
             ringHitLevel[ring] = 1.f;
+            ringTriggerPulse[ring].trigger(1e-3f);
             // Find inactive envelope
             Envelope* env = nullptr;
             for (auto& e : envelopes) {
@@ -775,6 +781,7 @@ struct Fatebinder : Module {
         json_object_set_new(rootJ, "frozen", json_boolean(frozen));
         json_object_set_new(rootJ, "rhythmMode", json_integer(rhythmMode));
         json_object_set_new(rootJ, "bipolarOutputs", json_boolean(bipolarOutputs));
+        json_object_set_new(rootJ, "overlapMode", json_integer(overlapModeState));
         return rootJ;
     }
 
@@ -801,6 +808,10 @@ struct Fatebinder : Module {
         json_t* bipolarJ = json_object_get(rootJ, "bipolarOutputs");
         if (bipolarJ) {
             bipolarOutputs = json_boolean_value(bipolarJ);
+        }
+        json_t* overlapJ = json_object_get(rootJ, "overlapMode");
+        if (overlapJ) {
+            overlapModeState = rack::math::clamp((int)json_integer_value(overlapJ), 0, 2);
         }
     }
 };
@@ -912,7 +923,7 @@ struct UnifiedDisplayWidget : TransparentWidget {
         nvgFill(args.vg);
 
         // Inner bezel inset
-        float bezelWidth = 6.f;
+        float bezelWidth = 3.825f;
         nvgBeginPath(args.vg);
         nvgRoundedRect(args.vg, bezelWidth, bezelWidth, box.size.x - bezelWidth * 2, box.size.y - bezelWidth * 2, outerRadius - 2.5f);
         NVGpaint bezelInner = nvgLinearGradient(args.vg, bezelWidth, bezelWidth, box.size.x - bezelWidth, box.size.y - bezelWidth,
@@ -1094,30 +1105,7 @@ struct UnifiedDisplayWidget : TransparentWidget {
             }
         }
 
-        // Particles
-        for (const auto& p : module->particles) {
-            float px = cx + p.x * radius;
-            float py = cy + p.y * radius;
-            float brightness = p.brightness;
-
-            if (brightness > 0.01f && p.ringIndex >= 0 && p.ringIndex < 3) {
-                NVGcolor color = ringColors[p.ringIndex];
-                nvgBeginPath(vg);
-                nvgCircle(vg, px, py, 2.5f * brightness);
-                nvgFillColor(vg, nvgRGBAf(color.r * brightness, color.g * brightness, color.b * brightness, brightness));
-                nvgFill(vg);
-
-                NVGpaint glow = nvgRadialGradient(vg, px, py, 0, 10.f * brightness,
-                    nvgRGBAf(color.r * brightness * 0.8f, color.g * brightness * 0.8f, color.b * brightness * 0.8f, brightness * 0.6f),
-                    nvgRGBAf(0.f, 0.f, 0.f, 0.f));
-                nvgBeginPath(vg);
-                nvgCircle(vg, px, py, 10.f * brightness);
-                nvgFillPaint(vg, glow);
-                nvgFill(vg);
-            }
-        }
-
-        // Current step indicators - draw as rings to clearly show hits vs empty
+        // Current step indicators - hit-driven glow and cross at the active step location
         if (steps > 0) {
             for (int lay = 0; lay < 3; lay++) {
                 float ringRadius = ringRadii[lay];
@@ -1126,8 +1114,9 @@ struct UnifiedDisplayWidget : TransparentWidget {
                 float tipX = cx + std::cos(angle) * ringRadius;
                 float tipY = cy + std::sin(angle) * ringRadius;
                 NVGcolor color = ringColors[lay];
-
-                bool isHit = module->rings[lay].getStep(currentStep);
+                bool hasPatternStep = module->rings[lay].getStep(currentStep);
+                float hitLevel = rack::math::clamp(module->ringHitLevel[lay], 0.f, 1.f);
+                bool hitActive = hasPatternStep && hitLevel > 0.01f;
 
                 // Sweep line from center
                 nvgBeginPath(vg);
@@ -1137,19 +1126,28 @@ struct UnifiedDisplayWidget : TransparentWidget {
                 nvgStrokeWidth(vg, 1.5f);
                 nvgStroke(vg);
 
-                if (isHit) {
-                    // Hit: crosshair indicator
-                    float crossSize = 3.f;
+                if (hitActive) {
+                    // Hit: glow behind crosshair at the exact hit location.
+                    float glowRadius = 6.f + hitLevel * 7.f;
+                    NVGpaint glow = nvgRadialGradient(vg, tipX, tipY, 0.f, glowRadius,
+                        nvgRGBAf(color.r, color.g, color.b, 0.18f + hitLevel * 0.42f),
+                        nvgRGBAf(color.r, color.g, color.b, 0.f));
+                    nvgBeginPath(vg);
+                    nvgCircle(vg, tipX, tipY, glowRadius);
+                    nvgFillPaint(vg, glow);
+                    nvgFill(vg);
+
+                    float crossSize = 3.0f + hitLevel * 1.2f;
                     nvgBeginPath(vg);
                     nvgMoveTo(vg, tipX - crossSize, tipY);
                     nvgLineTo(vg, tipX + crossSize, tipY);
                     nvgMoveTo(vg, tipX, tipY - crossSize);
                     nvgLineTo(vg, tipX, tipY + crossSize);
                     nvgStrokeColor(vg, color);
-                    nvgStrokeWidth(vg, 0.9f);
+                    nvgStrokeWidth(vg, 0.9f + 0.4f * hitLevel);
                     nvgStroke(vg);
                 } else {
-                    // No hit: bright dot
+                    // No recent hit: idle cursor dot
                     nvgBeginPath(vg);
                     nvgCircle(vg, tipX, tipY, 2.f);
                     nvgFillColor(vg, color);
@@ -1158,30 +1156,6 @@ struct UnifiedDisplayWidget : TransparentWidget {
             }
         }
 
-        // ================================================================
-        // RING NUMBER LABELS
-        // ================================================================
-
-        std::shared_ptr<Font> labelFont = APP->window->loadFont(asset::system("res/fonts/ShareTechMono-Regular.ttf"));
-        if (labelFont) {
-            nvgFontFaceId(vg, labelFont->handle);
-            nvgFontSize(vg, 8.f);
-            nvgTextAlign(vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-
-            const char* ringLabels[] = {"1", "2", "3"};
-
-            for (int i = 0; i < 3; i++) {
-                float ringRadius = ringRadii[i];
-                // Position labels at the top of each ring
-                float labelX = cx;
-                float labelY = cy - ringRadius - 6.f;
-
-                // Draw label with ring color
-                NVGcolor labelColor = ringColors[i];
-                nvgFillColor(vg, labelColor);
-                nvgText(vg, labelX, labelY, ringLabels[i], NULL);
-            }
-        }
     }
 
     void drawTerminal(NVGcontext* vg, float x, float y, float w, float h) {
@@ -1189,10 +1163,10 @@ struct UnifiedDisplayWidget : TransparentWidget {
         if (!font) return;
 
         nvgFontFaceId(vg, font->handle);
-        nvgFontSize(vg, 7.0f);
+        nvgFontSize(vg, 8.0f);
         nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_TOP);
 
-        float lineHeight = 8.4f;
+        float lineHeight = 9.4f;
         char buf[64];
 
         // Header - title and subtitle
@@ -1210,10 +1184,10 @@ struct UnifiedDisplayWidget : TransparentWidget {
             std::shared_ptr<Font> futura = APP->window->loadFont(asset::system("res/fonts/FuturaLT-Bold.ttf"));
             if (futura) {
                 nvgFontFaceId(vg, futura->handle);
-                nvgFontSize(vg, 7.5f);
+                nvgFontSize(vg, 8.5f);
             } else {
                 nvgFontFaceId(vg, font->handle);
-                nvgFontSize(vg, 7.5f);
+                nvgFontSize(vg, 8.5f);
             }
             nvgTextAlign(vg, NVG_ALIGN_RIGHT | NVG_ALIGN_TOP);
             nvgFillColor(vg, nvgRGB(0x45, 0xec, 0xff));
@@ -1222,7 +1196,7 @@ struct UnifiedDisplayWidget : TransparentWidget {
             nvgText(vg, x + w - 1.5f, headerY + 6.5f, "taker", NULL);
 
             nvgFontFaceId(vg, font->handle);
-            nvgFontSize(vg, 7.0f);
+            nvgFontSize(vg, 8.0f);
             nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_TOP);
         }
 
@@ -1294,7 +1268,7 @@ struct UnifiedDisplayWidget : TransparentWidget {
         float attack = module->params[Fatebinder::ATTACK_PARAM].getValue();
         float decay = module->params[Fatebinder::DECAY_PARAM].getValue();
         float curve = module->params[Fatebinder::CURVE_PARAM].getValue();
-        int overlapMode = (int)module->params[Fatebinder::OVERLAP_MODE_PARAM].getValue();
+        int overlapMode = module->overlapModeState;
 
         auto drawLine = [&](float xPos, float& yPos, const char* text,
                             NVGcolor color = nvgRGB(0x00, 0xff, 0x41)) {
@@ -1338,19 +1312,12 @@ struct UnifiedDisplayWidget : TransparentWidget {
         snprintf(buf, sizeof(buf), "CUR:%+d%%", (int)std::round(curve * 100.f));
         drawLine(col2ParamsX, col2Y, buf, terminalPurple);
 
-        float shape = module->params[Fatebinder::SHAPE_PARAM].getValue();
-        const char* shapeNames[] = {"SINE", "TRI", "SAW", "SQR"};
-        int shapeIndex = rack::math::clamp((int)std::round(shape * 3.f), 0, 3);
-        snprintf(buf, sizeof(buf), "WAV:%s", shapeNames[shapeIndex]);
-        drawLine(col2ParamsX, col2Y, buf, terminalPurple);
-
-        col2Y += lineHeight * 0.2f;
-
         const char* modeNames[] = {"ADD", "MAX", "RING"};
         snprintf(buf, sizeof(buf), "BLD:%s", modeNames[overlapMode % 3]);
         drawLine(col2ParamsX, col2Y, buf, terminalPurple);
 
         // Activity indicators for each ring
+        col2Y += lineHeight * 1.2f;
         col2Y += lineHeight * 0.4f;
         nvgFillColor(vg, terminalDim);
         float activityLabelY = col2Y;
@@ -1362,7 +1329,7 @@ struct UnifiedDisplayWidget : TransparentWidget {
                 nvgRGB(0x58, 0x9c, 0xff)
             };
 
-            float dotX = col2ActivityX + 16.f;
+            float dotX = col2ActivityX + 20.f;
             float dotY = activityLabelY + 3.2f;
             for (int i = 0; i < Fatebinder::kNumRings; i++) {
                 float level = rack::math::clamp(module->ringHitLevel[i], 0.f, 1.f);
@@ -1773,18 +1740,23 @@ struct ParticleDisplayWidget : TransparentWidget {
 
                 NVGcolor color = ringColors[lay];
 
-                // Bright indicator
+                // Bright crosshair indicator
+                float cs = 5.f;
                 nvgBeginPath(args.vg);
-                nvgCircle(args.vg, x, y, 5.f);
-                nvgFillColor(args.vg, color);
-                nvgFill(args.vg);
+                nvgMoveTo(args.vg, x - cs, y);
+                nvgLineTo(args.vg, x + cs, y);
+                nvgMoveTo(args.vg, x, y - cs);
+                nvgLineTo(args.vg, x, y + cs);
+                nvgStrokeColor(args.vg, color);
+                nvgStrokeWidth(args.vg, 1.8f);
+                nvgStroke(args.vg);
 
                 // Strong glow
-                NVGpaint glow = nvgRadialGradient(args.vg, x, y, 0, 16.f,
-                    nvgRGBAf(color.r * 0.9f, color.g * 0.9f, color.b * 0.9f, 0.8f),
+                NVGpaint glow = nvgRadialGradient(args.vg, x, y, 0, 14.f,
+                    nvgRGBAf(color.r * 0.9f, color.g * 0.9f, color.b * 0.9f, 0.7f),
                     nvgRGBAf(0.f, 0.f, 0.f, 0.f));
                 nvgBeginPath(args.vg);
-                nvgCircle(args.vg, x, y, 16.f);
+                nvgCircle(args.vg, x, y, 14.f);
                 nvgFillPaint(args.vg, glow);
                 nvgFill(args.vg);
 
@@ -1922,15 +1894,6 @@ struct FatebinderWidget : ModuleWidget {
         auto svgPath = asset::plugin(pluginInstance, "res/panels/Fatebinder.svg");
         LayoutHelper::PanelSVGParser parser(svgPath);
         auto centerPx = LayoutHelper::createCenterPxHelper(parser);
-        auto resizeKnob = [&](app::ParamWidget* knob, float diameterMm) {
-            if (!knob) {
-                return;
-            }
-            Vec center = knob->box.pos.plus(knob->box.size.div(2.f));
-            Vec newSize = LayoutHelper::mm2px(Vec(diameterMm, diameterMm));
-            knob->box.size = newSize;
-            knob->box.pos = center.minus(newSize.div(2.f));
-        };
 
         // Add screws
         LayoutHelper::ScrewPositions::addStandardScrews<ScrewJetBlack>(this, box.size.x);
@@ -1945,75 +1908,57 @@ struct FatebinderWidget : ModuleWidget {
         Rect displayRect = parser.rectMm("unified-display", 10.08f, 12.f, 81.44f, 35.f);
         unifiedDisplay->box.pos = mm(displayRect.pos.x, displayRect.pos.y);
         unifiedDisplay->box.size = mm(displayRect.size.x, displayRect.size.y);  // Full width minus margins
+        constexpr float kDisplayScale = 1.10f;
+        Vec displayCenter = unifiedDisplay->box.pos.plus(unifiedDisplay->box.size.div(2.f));
+        unifiedDisplay->box.size = unifiedDisplay->box.size.mult(kDisplayScale);
+        unifiedDisplay->box.pos = displayCenter.minus(unifiedDisplay->box.size.div(2.f));
         addChild(unifiedDisplay);
 
         // ====================================================================
-        // CONTROLS - 4 columns with better spacing for 20HP
+        // CONTROLS - 4 columns, redistributed after panel simplification
         // ====================================================================
-        const float col1X = 18.08f;  // Rhythm
-        const float col2X = 37.08f;  // Probability
-        const float col3X = 64.58f;  // Mutation
-        const float col4X = 83.58f;  // Envelope
+        // Col 1: Rhythm (Steps 20mm, Hits 14mm, Rotation 14mm)
+        // Col 2: Probability + Ring dividers (Probability 16mm, Chaos 14mm, Ring2 14mm, Ring3 14mm)
+        // Col 3: Mutation (Tempo 16mm, Mutation 14mm, Freeze btn, Reset btn)
+        // Col 4: Envelope (Attack 14mm, Decay 14mm, Shape 14mm)
+        const float col1X = 16.f;
+        const float col2X = 38.f;
+        const float col3X = 65.f;
+        const float col4X = 86.f;
 
-        const float row1Y = 54.0f;
-        const float rowSpacing = 10.5f;
+        const float topY = 56.f;
 
-        // Column 1: Rhythm controls
-        auto* stepsKnob = createParamCentered<ShapetakerKnobVintageSmallMedium>(centerPx("steps-knob", col1X, row1Y), module, Fatebinder::STEPS_PARAM);
-        resizeKnob(stepsKnob, 14.f);
+        // Column 1: Rhythm - Steps is the hero knob (20mm), rest are 14mm
+        auto* stepsKnob = createParamCentered<ShapetakerKnobVintageMedium>(centerPx("steps-knob", col1X, topY), module, Fatebinder::STEPS_PARAM);
         addKnobWithShadow(this, stepsKnob);
-        auto* hitsKnob = createParamCentered<ShapetakerKnobVintageSmallMedium>(centerPx("hits-knob", col1X, row1Y + rowSpacing), module, Fatebinder::HITS_PARAM);
-        resizeKnob(hitsKnob, 14.f);
+        auto* hitsKnob = createParamCentered<ShapetakerKnobVintageSmallMedium>(centerPx("hits-knob", col1X, 73.f), module, Fatebinder::HITS_PARAM);
         addKnobWithShadow(this, hitsKnob);
-        auto* rotationKnob = createParamCentered<ShapetakerKnobVintageSmallMedium>(centerPx("rotation-knob", col1X, row1Y + rowSpacing * 2), module, Fatebinder::ROTATION_PARAM);
-        resizeKnob(rotationKnob, 14.f);
+        auto* rotationKnob = createParamCentered<ShapetakerKnobVintageSmallMedium>(centerPx("rotation-knob", col1X, 87.f), module, Fatebinder::ROTATION_PARAM);
         addKnobWithShadow(this, rotationKnob);
-        auto* ring2Knob = createParamCentered<ShapetakerKnobVintageSmallMedium>(centerPx("ring2-knob", col1X, row1Y + rowSpacing * 3), module, Fatebinder::RING_2_DIV_PARAM);
-        resizeKnob(ring2Knob, 14.f);
+
+        // Column 2: Probability + Ring dividers
+        auto* probabilityKnob = createParamCentered<ShapetakerKnobVintageSmallMedium>(centerPx("probability-knob", col2X, topY), module, Fatebinder::PROBABILITY_PARAM);
+        addKnobWithShadow(this, probabilityKnob);
+        auto* chaosKnob = createParamCentered<ShapetakerKnobVintageSmallMedium>(centerPx("chaos-knob", col2X, 71.f), module, Fatebinder::CHAOS_PARAM);
+        addKnobWithShadow(this, chaosKnob);
+        auto* ring2Knob = createParamCentered<ShapetakerKnobVintageSmallMedium>(centerPx("ring2-knob", col2X, 85.f), module, Fatebinder::RING_2_DIV_PARAM);
         addKnobWithShadow(this, ring2Knob);
-        auto* ring3Knob = createParamCentered<ShapetakerKnobVintageSmallMedium>(centerPx("ring3-knob", col1X, row1Y + rowSpacing * 4), module, Fatebinder::RING_3_DIV_PARAM);
-        resizeKnob(ring3Knob, 14.f);
+        auto* ring3Knob = createParamCentered<ShapetakerKnobVintageSmallMedium>(centerPx("ring3-knob", col2X, 99.f), module, Fatebinder::RING_3_DIV_PARAM);
         addKnobWithShadow(this, ring3Knob);
 
-        // Column 2: Probability controls
-        auto* probabilityKnob = createParamCentered<ShapetakerKnobVintageSmallMedium>(centerPx("probability-knob", col2X, row1Y + 2.f), module, Fatebinder::PROBABILITY_PARAM);
-        resizeKnob(probabilityKnob, 16.f);
-        addKnobWithShadow(this, probabilityKnob);
-        auto* chaosKnob = createParamCentered<ShapetakerKnobVintageMedium>(centerPx("chaos-knob", col2X, row1Y + rowSpacing + 7.f), module, Fatebinder::CHAOS_PARAM);
-        resizeKnob(chaosKnob, 20.f);
-        addKnobWithShadow(this, chaosKnob);
-        auto* densityKnob = createParamCentered<ShapetakerKnobVintageSmallMedium>(centerPx("density-knob", col2X, row1Y + rowSpacing * 2 + 12.f), module, Fatebinder::DENSITY_PARAM);
-        resizeKnob(densityKnob, 14.f);
-        addKnobWithShadow(this, densityKnob);
-
-        // Column 3: Mutation controls
-        auto* tempoKnob = createParamCentered<ShapetakerKnobVintageSmallMedium>(centerPx("tempo-knob", col3X, row1Y), module, Fatebinder::TEMPO_PARAM);
-        resizeKnob(tempoKnob, 16.f);
+        // Column 3: Mutation
+        auto* tempoKnob = createParamCentered<ShapetakerKnobVintageSmallMedium>(centerPx("tempo-knob", col3X, topY), module, Fatebinder::TEMPO_PARAM);
         addKnobWithShadow(this, tempoKnob);
-        auto* mutationKnob = createParamCentered<ShapetakerKnobVintageSmallMedium>(centerPx("mutation-knob", col3X, row1Y + rowSpacing), module, Fatebinder::MUTATION_RATE_PARAM);
-        resizeKnob(mutationKnob, 14.f);
+        auto* mutationKnob = createParamCentered<ShapetakerKnobVintageSmallMedium>(centerPx("mutation-knob", col3X, 71.f), module, Fatebinder::MUTATION_RATE_PARAM);
         addKnobWithShadow(this, mutationKnob);
+        addParam(createParamCentered<ShapetakerVintageMomentary>(centerPx("freeze-btn", col3X, 84.f), module, Fatebinder::FREEZE_PARAM));
+        addParam(createParamCentered<ShapetakerVintageMomentary>(centerPx("reset-btn", col3X, 95.f), module, Fatebinder::RESET_PARAM));
 
-        // Freeze/Reset buttons
-        addParam(createParamCentered<ShapetakerVintageMomentary>(centerPx("freeze-btn", col3X, row1Y + rowSpacing * 2), module, Fatebinder::FREEZE_PARAM));
-        addParam(createParamCentered<ShapetakerVintageMomentary>(centerPx("reset-btn", col3X, row1Y + rowSpacing * 3), module, Fatebinder::RESET_PARAM));
-
-        // Overlap mode switch
-        addParam(createParamCentered<ShapetakerVintageToggleSwitch>(centerPx("overlap-switch", col3X, row1Y + rowSpacing * 4), module, Fatebinder::OVERLAP_MODE_PARAM));
-
-        // Column 4: Envelope controls
-        auto* attackKnob = createParamCentered<ShapetakerKnobVintageSmallMedium>(centerPx("attack-knob", col4X, row1Y), module, Fatebinder::ATTACK_PARAM);
-        resizeKnob(attackKnob, 14.f);
+        // Column 4: Envelope
+        auto* attackKnob = createParamCentered<ShapetakerAttenuverterOscilloscope>(centerPx("attack-knob", col4X, topY), module, Fatebinder::ATTACK_PARAM);
         addKnobWithShadow(this, attackKnob);
-        auto* decayKnob = createParamCentered<ShapetakerKnobVintageSmallMedium>(centerPx("decay-knob", col4X, row1Y + rowSpacing), module, Fatebinder::DECAY_PARAM);
-        resizeKnob(decayKnob, 14.f);
+        auto* decayKnob = createParamCentered<ShapetakerAttenuverterOscilloscope>(centerPx("decay-knob", col4X, 70.f), module, Fatebinder::DECAY_PARAM);
         addKnobWithShadow(this, decayKnob);
-        auto* curveKnob = createParamCentered<ShapetakerKnobVintageSmallMedium>(centerPx("curve-knob", col4X, row1Y + rowSpacing * 2), module, Fatebinder::CURVE_PARAM);
-        resizeKnob(curveKnob, 14.f);
-        addKnobWithShadow(this, curveKnob);
-        auto* shapeKnob = createParamCentered<ShapetakerKnobVintageSmallMedium>(centerPx("shape-knob", col4X, row1Y + rowSpacing * 3), module, Fatebinder::SHAPE_PARAM);
-        resizeKnob(shapeKnob, 14.f);
-        addKnobWithShadow(this, shapeKnob);
 
         // ====================================================================
         // CV INPUTS - Spread across bottom
@@ -2026,14 +1971,14 @@ struct FatebinderWidget : ModuleWidget {
         addInput(createInputCentered<ShapetakerBNCPort>(centerPx("reset-input", ioStartX + ioSpacing, inputY), module, Fatebinder::RESET_INPUT));
         addInput(createInputCentered<ShapetakerBNCPort>(centerPx("chaos-cv-input", ioStartX + ioSpacing * 2, inputY), module, Fatebinder::CHAOS_CV_INPUT));
         addInput(createInputCentered<ShapetakerBNCPort>(centerPx("probability-cv-input", ioStartX + ioSpacing * 3, inputY), module, Fatebinder::PROBABILITY_CV_INPUT));
+        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("rotation-cv", ioStartX + ioSpacing * 4, inputY), module, Fatebinder::ROTATION_CV_INPUT));
 
         // ====================================================================
         // OUTPUTS - Bottom row
         // ====================================================================
         const float outputY = 119.5f;
 
-        // Bipolar/Unipolar toggle switch (above outputs)
-        addParam(createParamCentered<ShapetakerVintageRussianToggle>(centerPx("bipolar-toggle", ioStartX + ioSpacing * 5, outputY - 10.f), module, Fatebinder::BIPOLAR_PARAM));
+        // Bipolar toggle removed from panel - available in context menu
 
         // Ring outputs
         addOutput(createOutputCentered<ShapetakerBNCPort>(centerPx("ring1-output", ioStartX, outputY), module, Fatebinder::RING_1_OUTPUT));
@@ -2091,6 +2036,71 @@ struct FatebinderWidget : ModuleWidget {
             [=]() { return module->bipolarOutputs; },
             [=]() { module->bipolarOutputs = true; }
         ));
+
+        menu->addChild(new MenuSeparator);
+        menu->addChild(createMenuLabel("Overlap Mode"));
+
+        menu->addChild(createCheckMenuItem("Add", "",
+            [=]() { return module->overlapModeState == 0; },
+            [=]() { module->overlapModeState = 0; }
+        ));
+        menu->addChild(createCheckMenuItem("Max", "",
+            [=]() { return module->overlapModeState == 1; },
+            [=]() { module->overlapModeState = 1; }
+        ));
+        menu->addChild(createCheckMenuItem("Ring Mod", "",
+            [=]() { return module->overlapModeState == 2; },
+            [=]() { module->overlapModeState = 2; }
+        ));
+
+        menu->addChild(new MenuSeparator);
+        menu->addChild(createMenuLabel("Envelope Curve"));
+
+        struct CurveSlider : ui::Slider {
+            struct CurveQuantity : Quantity {
+                Fatebinder* module;
+                float getValue() override { return module->params[Fatebinder::CURVE_PARAM].getValue(); }
+                void setValue(float value) override { module->params[Fatebinder::CURVE_PARAM].setValue(rack::math::clamp(value, -1.f, 1.f)); }
+                float getDefaultValue() override { return 0.f; }
+                float getMinValue() override { return -1.f; }
+                float getMaxValue() override { return 1.f; }
+                std::string getLabel() override { return "Curve"; }
+                std::string getUnit() override { return ""; }
+                int getDisplayPrecision() override { return 2; }
+            };
+            CurveSlider(Fatebinder* module) {
+                box.size.x = 200.f;
+                quantity = new CurveQuantity();
+                static_cast<CurveQuantity*>(quantity)->module = module;
+            }
+            ~CurveSlider() { delete quantity; }
+        };
+        menu->addChild(new CurveSlider(module));
+
+        menu->addChild(new MenuSeparator);
+        menu->addChild(createMenuLabel("L-System Density"));
+
+        struct DensitySlider : ui::Slider {
+            struct DensityQuantity : Quantity {
+                Fatebinder* module;
+                float getValue() override { return module->params[Fatebinder::DENSITY_PARAM].getValue(); }
+                void setValue(float value) override { module->params[Fatebinder::DENSITY_PARAM].setValue(rack::math::clamp(value, 0.f, 1.f)); }
+                float getDefaultValue() override { return 0.5f; }
+                float getMinValue() override { return 0.f; }
+                float getMaxValue() override { return 1.f; }
+                std::string getLabel() override { return "Density"; }
+                std::string getUnit() override { return "%"; }
+                float getDisplayMultiplier() { return 100.f; }
+                int getDisplayPrecision() override { return 0; }
+            };
+            DensitySlider(Fatebinder* module) {
+                box.size.x = 200.f;
+                quantity = new DensityQuantity();
+                static_cast<DensityQuantity*>(quantity)->module = module;
+            }
+            ~DensitySlider() { delete quantity; }
+        };
+        menu->addChild(new DensitySlider(module));
     }
 };
 

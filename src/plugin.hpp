@@ -22,6 +22,7 @@ extern Model* modelChimera;
 extern Model* modelTorsion;
 extern Model* modelTessellation;
 extern Model* modelPatina;
+extern Model* modelReverie;
 
 /**
  * Base knob class with universal fallback indicator support.
@@ -3165,11 +3166,14 @@ struct JewelLEDSmall : ModuleLightWidget {
         // Draw SVG children first
         widget::Widget::draw(args);
 
-        // Overlay the colored light using additive blending
+        // Overlay the colored light using additive blending (dimmed to preserve facets)
+        nvgSave(args.vg);
+        nvgGlobalAlpha(args.vg, shapetaker::ui::kJewelMaxBrightness);
         nvgGlobalCompositeOperation(args.vg, NVG_LIGHTER);
         drawLight(args);
         nvgGlobalCompositeOperation(args.vg, NVG_SOURCE_OVER);
         drawHalo(args);
+        nvgRestore(args.vg);
     }
 };
 
@@ -3231,7 +3235,8 @@ struct JewelLEDCompact : ModuleLightWidget {
         // Draw SVG children first
         widget::Widget::draw(args);
 
-        // Overlay the colored light using additive blending
+        // Overlay the colored light using additive blending (dimmed to preserve facets)
+        nvgGlobalAlpha(args.vg, shapetaker::ui::kJewelMaxBrightness);
         nvgGlobalCompositeOperation(args.vg, NVG_LIGHTER);
         drawLight(args);
         nvgGlobalCompositeOperation(args.vg, NVG_SOURCE_OVER);
@@ -3298,11 +3303,22 @@ struct JewelLEDMedium : ModuleLightWidget {
         }
         // Draw SVG children first
         widget::Widget::draw(args);
+        nvgRestore(args.vg);
 
-        // Overlay the colored light using additive blending
+        // Draw illumination outside the scaled context and clip it to the lens area.
+        nvgSave(args.vg);
+        const float minSize = std::min(box.size.x, box.size.y);
+        const float cx = box.size.x * 0.5f;
+        const float cy = box.size.y * 0.5f;
+        const float lensRadius = 0.43f * minSize;
+        nvgScissor(args.vg, cx - lensRadius, cy - lensRadius, lensRadius * 2.f, lensRadius * 2.f);
+
+        nvgGlobalAlpha(args.vg, shapetaker::ui::kJewelMaxBrightness * 0.95f);
         nvgGlobalCompositeOperation(args.vg, NVG_LIGHTER);
         drawLight(args);
         nvgGlobalCompositeOperation(args.vg, NVG_SOURCE_OVER);
+
+        nvgGlobalAlpha(args.vg, shapetaker::ui::kJewelMaxBrightness * 0.25f);
         drawHalo(args);
         nvgRestore(args.vg);
     }
@@ -3444,13 +3460,14 @@ struct JewelLEDLarge : ModuleLightWidget {
         }
         widget::Widget::draw(args);
 
-        // Overlay the colored light using additive blending so it glows through the SVG facets
+        // Overlay the colored light using additive blending (dimmed to preserve facets)
+        nvgSave(args.vg);
+        nvgGlobalAlpha(args.vg, shapetaker::ui::kJewelMaxBrightness);
         nvgGlobalCompositeOperation(args.vg, NVG_LIGHTER);
         drawLight(args);
         nvgGlobalCompositeOperation(args.vg, NVG_SOURCE_OVER);
-
-        // Subtle external halo for visibility
         drawHalo(args);
+        nvgRestore(args.vg);
     }
 };
 
@@ -3584,13 +3601,14 @@ struct JewelLEDXLarge : ModuleLightWidget {
         }
         widget::Widget::draw(args);
 
-        // Overlay the colored light using additive blending so it glows through the SVG facets
+        // Overlay the colored light using additive blending (dimmed to preserve facets)
+        nvgSave(args.vg);
+        nvgGlobalAlpha(args.vg, shapetaker::ui::kJewelMaxBrightness);
         nvgGlobalCompositeOperation(args.vg, NVG_LIGHTER);
         drawLight(args);
         nvgGlobalCompositeOperation(args.vg, NVG_SOURCE_OVER);
-
-        // Subtle external halo for visibility
         drawHalo(args);
+        nvgRestore(args.vg);
     }
 };
 
@@ -3724,6 +3742,72 @@ struct VintageOscilloscopeWidget : widget::Widget {
                 bg_svg->draw(vg);
                 nvgRestore(vg);
             }
+
+            // Brass bezel overlay for Clairaudient's CRT screen (warmer vintage hardware look).
+            auto drawBrassBezel = [&]() {
+                float minDim = std::min(box.size.x, box.size.y);
+                float cx = box.size.x * 0.5f;
+                float cy = box.size.y * 0.5f;
+                float outerR = minDim * 0.475f;
+                // Reduced bezel ring thickness by 65%, then 20%, then 15%, then 20%, then another 15%.
+                float baseBezelThickness = minDim * 0.083f;
+                float bezelThickness = baseBezelThickness * 0.16184f;
+                float innerR = outerR - bezelThickness;
+                float lipR = innerR - bezelThickness * 0.35f;
+
+                auto drawRing = [&](float outer, float inner) {
+                    nvgBeginPath(vg);
+                    nvgCircle(vg, cx, cy, outer);
+                    nvgCircle(vg, cx, cy, inner);
+                    nvgPathWinding(vg, NVG_HOLE);
+                };
+
+                // Recess shadow where bezel meets the panel.
+                drawRing(outerR * 1.06f, outerR);
+                NVGpaint seatShadow = nvgRadialGradient(vg, cx, cy, outerR * 0.9f, outerR * 1.08f,
+                                                        nvgRGBA(0, 0, 0, 0), nvgRGBA(0, 0, 0, 92));
+                nvgFillPaint(vg, seatShadow);
+                nvgFill(vg);
+
+                // Main brass body.
+                drawRing(outerR, innerR);
+                NVGpaint brassBody = nvgLinearGradient(vg,
+                    cx - outerR, cy - outerR,
+                    cx + outerR * 0.35f, cy + outerR,
+                    nvgRGBA(164, 131, 86, 246), nvgRGBA(60, 40, 20, 250));
+                nvgFillPaint(vg, brassBody);
+                nvgFill(vg);
+
+                // Top catch light for curved metal.
+                drawRing(outerR * 0.998f, innerR * 1.01f);
+                NVGpaint catchLight = nvgLinearGradient(vg,
+                    cx, cy - outerR,
+                    cx, cy - outerR * 0.42f,
+                    nvgRGBA(245, 224, 188, 74), nvgRGBA(0, 0, 0, 0));
+                nvgFillPaint(vg, catchLight);
+                nvgFill(vg);
+
+                // Inner lip to seat the glass.
+                drawRing(innerR, lipR);
+                NVGpaint lipShade = nvgLinearGradient(vg,
+                    cx - innerR * 0.2f, cy - innerR,
+                    cx + innerR, cy + innerR,
+                    nvgRGBA(14, 14, 16, 220), nvgRGBA(108, 80, 48, 120));
+                nvgFillPaint(vg, lipShade);
+                nvgFill(vg);
+
+                nvgBeginPath(vg);
+                nvgCircle(vg, cx, cy, outerR - 0.45f);
+                nvgStrokeWidth(vg, 0.8f);
+                nvgStrokeColor(vg, nvgRGBA(225, 203, 168, 34));
+                nvgStroke(vg);
+
+                nvgBeginPath(vg);
+                nvgCircle(vg, cx, cy, innerR + 0.2f);
+                nvgStrokeWidth(vg, 0.9f);
+                nvgStrokeColor(vg, nvgRGBA(20, 14, 10, 145));
+                nvgStroke(vg);
+            };
             
             // --- Enhanced Spherical CRT Effect ---
             // Create a pronounced spherical bulging effect with multiple layers
@@ -3775,132 +3859,134 @@ struct VintageOscilloscopeWidget : widget::Widget {
             nvgFillPaint(vg, phosphorGlow);
             nvgFill(vg);
 
-            if (!source) return;
+            if (source) {
+                nvgSave(vg);
+                nvgScissor(vg, 0, 0, box.size.x, box.size.y);
 
-            nvgSave(vg);
-            nvgScissor(vg, 0, 0, box.size.x, box.size.y);
+                // Add margin to keep signal away from bezel edge (10% margin on each side)
+                float margin = box.size.x * 0.10f;
+                float screenLeft = margin;
+                float screenRight = box.size.x - margin;
+                float screenTop = margin;
+                float screenBottom = box.size.y - margin;
+                float screenWidth = screenRight - screenLeft;
+                float screenHeight = screenBottom - screenTop;
+                Vec screenCenter = Vec((screenLeft + screenRight) * 0.5f, (screenTop + screenBottom) * 0.5f);
+                float screenRadius = std::min(screenWidth, screenHeight) * 0.5f;
 
-            // Add margin to keep signal away from bezel edge (10% margin on each side)
-            float margin = box.size.x * 0.10f;
-            float screenLeft = margin;
-            float screenRight = box.size.x - margin;
-            float screenTop = margin;
-            float screenBottom = box.size.y - margin;
-            float screenWidth = screenRight - screenLeft;
-            float screenHeight = screenBottom - screenTop;
-            Vec screenCenter = Vec((screenLeft + screenRight) * 0.5f, (screenTop + screenBottom) * 0.5f);
-            float screenRadius = std::min(screenWidth, screenHeight) * 0.5f;
+                // Maximum voltage before hard clipping (prevents signal from reaching bezel)
+                const float MAX_DISPLAY_VOLTAGE = 6.0f;
 
-            // Maximum voltage before hard clipping (prevents signal from reaching bezel)
-            const float MAX_DISPLAY_VOLTAGE = 6.0f;
+                // Function to map voltage to screen coordinates
+                auto voltageToScreen = [&](Vec voltage) {
+                    // Hard clamp voltage to prevent exceeding screen bounds
+                    float clampedX = clamp(voltage.x, -MAX_DISPLAY_VOLTAGE, MAX_DISPLAY_VOLTAGE);
+                    float clampedY = clamp(voltage.y, -MAX_DISPLAY_VOLTAGE, MAX_DISPLAY_VOLTAGE);
 
-            // Function to map voltage to screen coordinates
-            auto voltageToScreen = [&](Vec voltage) {
-                // Hard clamp voltage to prevent exceeding screen bounds
-                float clampedX = clamp(voltage.x, -MAX_DISPLAY_VOLTAGE, MAX_DISPLAY_VOLTAGE);
-                float clampedY = clamp(voltage.y, -MAX_DISPLAY_VOLTAGE, MAX_DISPLAY_VOLTAGE);
+                    // Normalize voltage to -1..+1 range
+                    float x_norm = clampedX / MAX_DISPLAY_VOLTAGE;
+                    float y_norm = clampedY / MAX_DISPLAY_VOLTAGE;
 
-                // Normalize voltage to -1..+1 range
-                float x_norm = clampedX / MAX_DISPLAY_VOLTAGE;
-                float y_norm = clampedY / MAX_DISPLAY_VOLTAGE;
-
-                // Map normalized coordinates to a circular screen area
-                float normX = x_norm;
-                float normY = y_norm;
-                float r = std::sqrt(normX * normX + normY * normY);
-                if (r > 1.f) {
-                    normX /= r;
-                    normY /= r;
-                    r = 1.f;
-                }
-
-                // Slight barrel distortion to imply a spherical CRT surface
-                const float warp = 0.12f;
-                float rWarped = std::min(1.f, r * (1.f + warp * r * r));
-                if (r > 0.f) {
-                    float scale = rWarped / r;
-                    normX *= scale;
-                    normY *= scale;
-                }
-
-                float screenX = screenCenter.x + normX * screenRadius;
-                float screenY = screenCenter.y - normY * screenRadius;
-
-                // Add "dust" artifact for a less clean, more analog look
-                float fuzz_amount = 0.4f; // pixels of random noise
-                float fuzz_x = (random::uniform() - 0.5f) * fuzz_amount;
-                float fuzz_y = (random::uniform() - 0.5f) * fuzz_amount;
-
-                return Vec(screenX + fuzz_x, screenY + fuzz_y);
-            };
-            
-            // --- Vintage Persistence Drawing Logic ---
-            const Vec* buffer = source->getOscilloscopeBuffer();
-            const int bufferSize = source->getOscilloscopeBufferSize();
-            const int currentIndex = source->getOscilloscopeBufferIndex();
-
-            // Set line style for smooth corners
-            nvgLineJoin(vg, NVG_ROUND);
-            nvgLineCap(vg, NVG_ROUND);
-
-            // --- X-Y Lissajous Display ---
-            const int numChunks = 24;
-            const int chunkSize = bufferSize / numChunks;
-            const float DISCONTINUITY_THRESHOLD = 5.0f;
-
-            for (int c = 0; c < numChunks; c++) {
-                float age = (float)c / (numChunks - 1);
-                float alpha = powf(1.0f - age, 1.8f);
-                alpha = clamp(alpha, 0.f, 1.f);
-
-                    if (alpha < 0.01f) continue;
-
-                    nvgBeginPath(vg);
-                    bool firstPointInChunk = true;
-                    Vec lastVoltage = Vec(0, 0);
-
-                    for (int i = 0; i < chunkSize; i++) {
-                        int point_offset = c * chunkSize + i;
-                        if (point_offset >= bufferSize - 1) continue;
-
-                        int buffer_idx = (currentIndex - 1 - point_offset + bufferSize) % bufferSize;
-
-                        if (buffer_idx == currentIndex) {
-                            firstPointInChunk = true;
-                            continue;
-                        }
-
-                        Vec currentVoltage = buffer[buffer_idx];
-                        Vec p = voltageToScreen(currentVoltage);
-
-                        if (!firstPointInChunk) {
-                            float deltaX = std::abs(currentVoltage.x - lastVoltage.x);
-                            float deltaY = std::abs(currentVoltage.y - lastVoltage.y);
-                            if (deltaX > DISCONTINUITY_THRESHOLD || deltaY > DISCONTINUITY_THRESHOLD) {
-                                firstPointInChunk = true;
-                            }
-                        }
-
-                        if (firstPointInChunk) {
-                            nvgMoveTo(vg, p.x, p.y);
-                            firstPointInChunk = false;
-                        } else {
-                            nvgLineTo(vg, p.x, p.y);
-                        }
-
-                        lastVoltage = currentVoltage;
+                    // Map normalized coordinates to a circular screen area
+                    float normX = x_norm;
+                    float normY = y_norm;
+                    float r = std::sqrt(normX * normX + normY * normY);
+                    if (r > 1.f) {
+                        normX /= r;
+                        normY /= r;
+                        r = 1.f;
                     }
 
-                    nvgStrokeColor(vg, nvgRGBAf(traceDimR, traceDimG, traceDimB, alpha * 0.30f));
-                    nvgStrokeWidth(vg, 1.2f + alpha * 1.2f);
-                    nvgStroke(vg);
+                    // Slight barrel distortion to imply a spherical CRT surface
+                    const float warp = 0.12f;
+                    float rWarped = std::min(1.f, r * (1.f + warp * r * r));
+                    if (r > 0.f) {
+                        float scale = rWarped / r;
+                        normX *= scale;
+                        normY *= scale;
+                    }
 
-                    nvgStrokeColor(vg, nvgRGBAf(traceBrightR, traceBrightG, traceBrightB, alpha * 0.65f));
-                    nvgStrokeWidth(vg, 0.6f + alpha * 0.3f);
-                    nvgStroke(vg);
-                }
+                    float screenX = screenCenter.x + normX * screenRadius;
+                    float screenY = screenCenter.y - normY * screenRadius;
 
-            nvgRestore(vg);
+                    // Add "dust" artifact for a less clean, more analog look
+                    float fuzz_amount = 0.4f; // pixels of random noise
+                    float fuzz_x = (random::uniform() - 0.5f) * fuzz_amount;
+                    float fuzz_y = (random::uniform() - 0.5f) * fuzz_amount;
+
+                    return Vec(screenX + fuzz_x, screenY + fuzz_y);
+                };
+                
+                // --- Vintage Persistence Drawing Logic ---
+                const Vec* buffer = source->getOscilloscopeBuffer();
+                const int bufferSize = source->getOscilloscopeBufferSize();
+                const int currentIndex = source->getOscilloscopeBufferIndex();
+
+                // Set line style for smooth corners
+                nvgLineJoin(vg, NVG_ROUND);
+                nvgLineCap(vg, NVG_ROUND);
+
+                // --- X-Y Lissajous Display ---
+                const int numChunks = 24;
+                const int chunkSize = bufferSize / numChunks;
+                const float DISCONTINUITY_THRESHOLD = 5.0f;
+
+                for (int c = 0; c < numChunks; c++) {
+                    float age = (float)c / (numChunks - 1);
+                    float alpha = powf(1.0f - age, 1.8f);
+                    alpha = clamp(alpha, 0.f, 1.f);
+
+                        if (alpha < 0.01f) continue;
+
+                        nvgBeginPath(vg);
+                        bool firstPointInChunk = true;
+                        Vec lastVoltage = Vec(0, 0);
+
+                        for (int i = 0; i < chunkSize; i++) {
+                            int point_offset = c * chunkSize + i;
+                            if (point_offset >= bufferSize - 1) continue;
+
+                            int buffer_idx = (currentIndex - 1 - point_offset + bufferSize) % bufferSize;
+
+                            if (buffer_idx == currentIndex) {
+                                firstPointInChunk = true;
+                                continue;
+                            }
+
+                            Vec currentVoltage = buffer[buffer_idx];
+                            Vec p = voltageToScreen(currentVoltage);
+
+                            if (!firstPointInChunk) {
+                                float deltaX = std::abs(currentVoltage.x - lastVoltage.x);
+                                float deltaY = std::abs(currentVoltage.y - lastVoltage.y);
+                                if (deltaX > DISCONTINUITY_THRESHOLD || deltaY > DISCONTINUITY_THRESHOLD) {
+                                    firstPointInChunk = true;
+                                }
+                            }
+
+                            if (firstPointInChunk) {
+                                nvgMoveTo(vg, p.x, p.y);
+                                firstPointInChunk = false;
+                            } else {
+                                nvgLineTo(vg, p.x, p.y);
+                            }
+
+                            lastVoltage = currentVoltage;
+                        }
+
+                        nvgStrokeColor(vg, nvgRGBAf(traceDimR, traceDimG, traceDimB, alpha * 0.30f));
+                        nvgStrokeWidth(vg, 1.2f + alpha * 1.2f);
+                        nvgStroke(vg);
+
+                        nvgStrokeColor(vg, nvgRGBAf(traceBrightR, traceBrightG, traceBrightB, alpha * 0.65f));
+                        nvgStrokeWidth(vg, 0.6f + alpha * 0.3f);
+                        nvgStroke(vg);
+                    }
+
+                nvgRestore(vg);
+            }
+
+            drawBrassBezel();
         }
         Widget::drawLayer(args, layer);
     }

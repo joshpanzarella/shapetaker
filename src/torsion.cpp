@@ -1190,9 +1190,12 @@ struct Torsion : Module {
                 stereoRight = input * dryMix + delayOutR * wetMix + delayOutL * crossMix;
             }
 
-            outputs[MAIN_L_OUTPUT].setVoltage(stereoLeft * OUTPUT_SCALE, ch);
-            outputs[MAIN_R_OUTPUT].setVoltage(stereoRight * OUTPUT_SCALE, ch);
-            outputs[EDGE_OUTPUT].setVoltage(edgeOut * OUTPUT_SCALE, ch);
+            outputs[MAIN_L_OUTPUT].setVoltage(
+                shapetaker::AudioProcessor::softLimit(stereoLeft * OUTPUT_SCALE, 10.0f), ch);
+            outputs[MAIN_R_OUTPUT].setVoltage(
+                shapetaker::AudioProcessor::softLimit(stereoRight * OUTPUT_SCALE, 10.0f), ch);
+            outputs[EDGE_OUTPUT].setVoltage(
+                shapetaker::AudioProcessor::softLimit(edgeOut * OUTPUT_SCALE, 10.0f), ch);
         }
 
         // Update polyphonic stage LEDs with brightness stacking

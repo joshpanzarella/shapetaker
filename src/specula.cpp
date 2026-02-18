@@ -174,6 +174,14 @@ struct SpeculaWidget : ModuleWidget {
 
         Rect leftMeterRect = parser.rectMm("left_vu_meter", 6.367703f, 14.433204f, 38.064594f, 39.764595f);
         Rect rightMeterRect = parser.rectMm("right_vu_meter", 6.367703f, 62.969048f, 38.064594f, 39.764595f);
+        constexpr float kMeterScale = 1.10f;
+        auto scaleRectFromCenter = [](const Rect& rect, float scale) {
+            Vec center = rect.pos.plus(rect.size.div(2.f));
+            Vec scaledSize = rect.size.mult(scale);
+            return Rect(center.minus(scaledSize.div(2.f)), scaledSize);
+        };
+        leftMeterRect = scaleRectFromCenter(leftMeterRect, kMeterScale);
+        rightMeterRect = scaleRectFromCenter(rightMeterRect, kMeterScale);
 
         auto* leftMeter = new shapetaker::ui::VintageVUMeterWidget(
             module, Specula::LEFT_VU_LIGHT, asset::plugin(pluginInstance, "res/meters/vintage_vu.svg"));

@@ -111,11 +111,11 @@ inline void ChaosVisualizer::step() {
         chaosPhase += smoothedChaosRate * deltaTime;
 
         float smoothedFilterMorph = visualFilterMorphSmoother.process(
-            module->params[Involution::AURA_PARAM].getValue(), deltaTime);
+            module->params[Involution::CROSS_PARAM].getValue(), deltaTime);
         filterMorphPhase += (smoothedFilterMorph + 0.1f) * 0.5f * deltaTime;
 
-        visualOrbitSmoother.process(module->params[Involution::ORBIT_PARAM].getValue(), deltaTime);
-        visualTideSmoother.process(module->params[Involution::TIDE_PARAM].getValue(), deltaTime);
+        visualOrbitSmoother.process(module->params[Involution::MOD_PARAM].getValue(), deltaTime);
+        visualTideSmoother.process(module->params[Involution::SHIMMER_PARAM].getValue(), deltaTime);
 
         float smoothedCutoffA = visualCutoffASmoother.process(module->effectiveCutoffA, deltaTime);
         float smoothedCutoffB = visualCutoffBSmoother.process(module->effectiveCutoffB, deltaTime);
@@ -143,36 +143,87 @@ inline void ChaosVisualizer::drawLayer(const DrawArgs& args, int layer) {
     float centerX = width / 2.0f;
     float centerY = height / 2.0f;
     float diamondSize = std::min(width, height) * 0.9f;
+    float bezelOuterHalf = diamondSize * 0.5f;
+    float baseBezelThickness = bezelOuterHalf * 0.10f;
+    float bezelThickness = baseBezelThickness * 0.4624f; // previous thickness, reduced another 15%
+    float bezelInnerHalf = bezelOuterHalf - bezelThickness;
+    float baseLipThickness = bezelInnerHalf * 0.07f;
+    float lipThickness = baseLipThickness * 0.4624f; // previous thickness, reduced another 15%
+    float lipInnerHalf = bezelInnerHalf - lipThickness;
+    float screenHalf = lipInnerHalf * 0.985f;
+    float screenSize = screenHalf * 2.f;
 
-    // Draw diamond-shaped oscilloscope bezel
+    auto addDiamond = [&](float halfSize) {
+        nvgMoveTo(vg, centerX, centerY - halfSize);
+        nvgLineTo(vg, centerX + halfSize, centerY);
+        nvgLineTo(vg, centerX, centerY + halfSize);
+        nvgLineTo(vg, centerX - halfSize, centerY);
+        nvgClosePath(vg);
+    };
+
+    // Recess shadow where the bezel sits in the panel.
     nvgBeginPath(vg);
-    nvgMoveTo(vg, centerX, centerY - diamondSize/2);
-    nvgLineTo(vg, centerX + diamondSize/2, centerY);
-    nvgLineTo(vg, centerX, centerY + diamondSize/2);
-    nvgLineTo(vg, centerX - diamondSize/2, centerY);
-    nvgClosePath(vg);
-    nvgFillColor(vg, nvgRGB(40, 40, 45));
+    addDiamond(bezelOuterHalf * 1.065f);
+    addDiamond(bezelOuterHalf);
+    nvgPathWinding(vg, NVG_HOLE);
+    NVGpaint recessShadow = nvgRadialGradient(vg, centerX, centerY, bezelOuterHalf * 0.82f, bezelOuterHalf * 1.12f,
+                                              nvgRGBA(0, 0, 0, 0), nvgRGBA(0, 0, 0, 96));
+    nvgFillPaint(vg, recessShadow);
     nvgFill(vg);
 
-    // Inner diamond shadow
-    float innerSize = diamondSize * 0.97f;
+    // Main bezel ring: warm bakelite/brass blend inspired by the Specula VU housing.
     nvgBeginPath(vg);
-    nvgMoveTo(vg, centerX, centerY - innerSize/2);
-    nvgLineTo(vg, centerX + innerSize/2, centerY);
-    nvgLineTo(vg, centerX, centerY + innerSize/2);
-    nvgLineTo(vg, centerX - innerSize/2, centerY);
-    nvgClosePath(vg);
-    nvgFillColor(vg, nvgRGB(25, 25, 30));
+    addDiamond(bezelOuterHalf);
+    addDiamond(bezelInnerHalf);
+    nvgPathWinding(vg, NVG_HOLE);
+    NVGpaint bezelBody = nvgLinearGradient(vg,
+        centerX - bezelOuterHalf, centerY - bezelOuterHalf,
+        centerX + bezelOuterHalf * 0.35f, centerY + bezelOuterHalf,
+        nvgRGBA(134, 108, 82, 248), nvgRGBA(33, 25, 20, 252));
+    nvgFillPaint(vg, bezelBody);
+    nvgFill(vg);
+
+    // Fine top catch-light to push the bezel curvature.
+    nvgBeginPath(vg);
+    addDiamond(bezelOuterHalf * 0.995f);
+    addDiamond(bezelInnerHalf * 1.01f);
+    nvgPathWinding(vg, NVG_HOLE);
+    NVGpaint topCatch = nvgLinearGradient(vg,
+        centerX, centerY - bezelOuterHalf,
+        centerX, centerY - bezelOuterHalf * 0.45f,
+        nvgRGBA(236, 214, 186, 78), nvgRGBA(0, 0, 0, 0));
+    nvgFillPaint(vg, topCatch);
+    nvgFill(vg);
+
+    // Inner lip ring where the glass drops into the housing.
+    nvgBeginPath(vg);
+    addDiamond(bezelInnerHalf);
+    addDiamond(lipInnerHalf);
+    nvgPathWinding(vg, NVG_HOLE);
+    NVGpaint lipShade = nvgLinearGradient(vg,
+        centerX - bezelInnerHalf * 0.2f, centerY - bezelInnerHalf,
+        centerX + bezelInnerHalf, centerY + bezelInnerHalf,
+        nvgRGBA(14, 14, 16, 220), nvgRGBA(80, 64, 46, 140));
+    nvgFillPaint(vg, lipShade);
+    nvgFill(vg);
+
+    nvgBeginPath(vg);
+    addDiamond(bezelInnerHalf);
+    nvgStrokeWidth(vg, 1.0f);
+    nvgStrokeColor(vg, nvgRGBA(214, 190, 160, 32));
+    nvgStroke(vg);
+
+    // Inner gasket so panel texture never shows between bezel lip and screen.
+    nvgBeginPath(vg);
+    addDiamond(lipInnerHalf);
+    addDiamond(screenHalf);
+    nvgPathWinding(vg, NVG_HOLE);
+    nvgFillColor(vg, nvgRGBA(8, 8, 10, 240));
     nvgFill(vg);
 
     // Diamond screen background with backlit effect
-    float screenSize = innerSize * 0.85f;
     nvgBeginPath(vg);
-    nvgMoveTo(vg, centerX, centerY - screenSize/2);
-    nvgLineTo(vg, centerX + screenSize/2, centerY);
-    nvgLineTo(vg, centerX, centerY + screenSize/2);
-    nvgLineTo(vg, centerX - screenSize/2, centerY);
-    nvgClosePath(vg);
+    addDiamond(screenHalf);
 
     NVGpaint backlitPaint = nvgRadialGradient(vg, centerX, centerY, 0, screenSize * 0.6f,
                                              t.bgInner, t.bgOuter);
@@ -232,7 +283,7 @@ inline void ChaosVisualizer::drawLayer(const DrawArgs& args, int layer) {
             float deltaTime = 1.0f / APP->window->getMonitorRefreshRate();
 
             float chaosAmount = visualChaosAmountSmoother.process(
-                module->params[Involution::CHAOS_AMOUNT_PARAM].getValue(), deltaTime);
+                module->crossAmount, deltaTime);
             float filterMorph = visualFilterMorphSmoother.getValue();
             float orbitAmount = visualOrbitSmoother.getValue();
             float tideAmount = visualTideSmoother.getValue();
@@ -248,12 +299,13 @@ inline void ChaosVisualizer::drawLayer(const DrawArgs& args, int layer) {
         }
     }
 
-    // CRT Effects
+    // CRT effects (bounded to the screen aperture so they never exceed the bezel).
+    float effectOuterHalf = screenHalf * 0.995f;
+    float effectMidHalf = screenHalf * 0.965f;
+    float effectInnerHalf = screenHalf * 0.88f;
+
     nvgBeginPath(vg);
-    nvgMoveTo(vg, centerX, centerY - screenSize/2 * 1.2f);
-    nvgLineTo(vg, centerX + screenSize/2 * 1.2f, centerY);
-    nvgLineTo(vg, centerX, centerY + screenSize/2 * 1.2f);
-    nvgLineTo(vg, centerX - screenSize/2 * 1.2f, centerY);
+    addDiamond(effectOuterHalf);
     nvgClosePath(vg);
     NVGpaint outerGlow = nvgRadialGradient(vg, centerX, centerY, screenSize * 0.35f, screenSize * 0.55f,
                                           t.outerGlowInner, t.outerGlowOuter);
@@ -261,10 +313,7 @@ inline void ChaosVisualizer::drawLayer(const DrawArgs& args, int layer) {
     nvgFill(vg);
 
     nvgBeginPath(vg);
-    nvgMoveTo(vg, centerX, centerY - screenSize/2 * 1.05f);
-    nvgLineTo(vg, centerX + screenSize/2 * 1.05f, centerY);
-    nvgLineTo(vg, centerX, centerY + screenSize/2 * 1.05f);
-    nvgLineTo(vg, centerX - screenSize/2 * 1.05f, centerY);
+    addDiamond(effectMidHalf);
     nvgClosePath(vg);
     NVGpaint innerGlow = nvgRadialGradient(vg, centerX, centerY, screenSize * 0.25f, screenSize * 0.38f,
                                           t.innerGlowInner, t.innerGlowOuter);
@@ -272,10 +321,7 @@ inline void ChaosVisualizer::drawLayer(const DrawArgs& args, int layer) {
     nvgFill(vg);
 
     nvgBeginPath(vg);
-    nvgMoveTo(vg, centerX, centerY - screenSize/2 * 0.9f);
-    nvgLineTo(vg, centerX + screenSize/2 * 0.9f, centerY);
-    nvgLineTo(vg, centerX, centerY + screenSize/2 * 0.9f);
-    nvgLineTo(vg, centerX - screenSize/2 * 0.9f, centerY);
+    addDiamond(effectInnerHalf);
     nvgClosePath(vg);
     NVGpaint bulgeHighlight = nvgRadialGradient(vg,
         centerX - screenSize * 0.15f, centerY - screenSize * 0.15f,
@@ -308,6 +354,31 @@ inline void ChaosVisualizer::drawLayer(const DrawArgs& args, int layer) {
     NVGpaint vignette = nvgRadialGradient(vg, centerX, centerY, screenSize * 0.2f, screenSize * 0.5f,
                                          nvgRGBA(0, 0, 0, 0), nvgRGBA(0, 0, 0, 30));
     nvgFillPaint(vg, vignette);
+    nvgFill(vg);
+
+    // Final bezel cap: guarantees no screen/effect pixel can visually bleed onto bezel metal.
+    nvgBeginPath(vg);
+    addDiamond(bezelInnerHalf);
+    addDiamond(lipInnerHalf);
+    nvgPathWinding(vg, NVG_HOLE);
+    NVGpaint lipShadeCap = nvgLinearGradient(vg,
+        centerX - bezelInnerHalf * 0.2f, centerY - bezelInnerHalf,
+        centerX + bezelInnerHalf, centerY + bezelInnerHalf,
+        nvgRGBA(14, 14, 16, 220), nvgRGBA(80, 64, 46, 140));
+    nvgFillPaint(vg, lipShadeCap);
+    nvgFill(vg);
+
+    nvgBeginPath(vg);
+    addDiamond(bezelInnerHalf);
+    nvgStrokeWidth(vg, 1.0f);
+    nvgStrokeColor(vg, nvgRGBA(214, 190, 160, 32));
+    nvgStroke(vg);
+
+    nvgBeginPath(vg);
+    addDiamond(lipInnerHalf);
+    addDiamond(screenHalf);
+    nvgPathWinding(vg, NVG_HOLE);
+    nvgFillColor(vg, nvgRGBA(8, 8, 10, 240));
     nvgFill(vg);
 }
 

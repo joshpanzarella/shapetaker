@@ -121,6 +121,16 @@
         "Envelope follower",
         "Low-frequency oscillator"
       ]
+    },
+    {
+      "slug": "Reverie",
+      "name": "Reverie",
+      "description": "Multi-mode stereo reverb with 5 character modes: Field Blur (shoegaze), Afterimage (spectral), Reverse, Lo-Fi, and Modulated. Context-sensitive parameters per mode with full CV control.",
+      "tags": [
+        "Reverb",
+        "Effect",
+        "Stereo"
+      ]
     }
   ]
 }

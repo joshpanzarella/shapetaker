@@ -3005,14 +3005,14 @@ struct TransmutationWidget : ModuleWidget {
             };
             // Sequence A
             // Hardware-realistic sizes: Medium knobs for length and BPM, attenuverter for multiplier
-            addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltMedium>(pos("seq_a_length", 18.941f, 37.849998f), module, Transmutation::LENGTH_A_PARAM));
-            addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltMedium>(pos("main_bpm", 18.941f, 18.322521f), module, Transmutation::INTERNAL_CLOCK_PARAM));
+            addKnobWithShadow(this, createParamCentered<ShapetakerKnobVintageMedium>(pos("seq_a_length", 18.941f, 37.849998f), module, Transmutation::LENGTH_A_PARAM));
+            addKnobWithShadow(this, createParamCentered<ShapetakerKnobVintageMedium>(pos("main_bpm", 18.941f, 18.322521f), module, Transmutation::INTERNAL_CLOCK_PARAM));
             addParam(createParamCentered<ShapetakerAttenuverterOscilloscope>(pos("clk_mult_select", 40.779f, 18.322521f), module, Transmutation::BPM_MULTIPLIER_PARAM));
             addMomentaryScaled(pos("a_play_btn", 26.822f, 67.512939f), Transmutation::START_A_PARAM);
             addMomentaryScaled(pos("a_stop_btn", 27.057f, 75.573959f), Transmutation::STOP_A_PARAM);
             addMomentaryScaled(pos("a_reset_btn", 27.057f, 83.509323f), Transmutation::RESET_A_PARAM);
             // Sequence B
-            addKnobWithShadow(this, createParamCentered<ShapetakerKnobAltMedium>(pos("seq_b_length", 136.593f, 37.849998f), module, Transmutation::LENGTH_B_PARAM));
+            addKnobWithShadow(this, createParamCentered<ShapetakerKnobVintageMedium>(pos("seq_b_length", 136.593f, 37.849998f), module, Transmutation::LENGTH_B_PARAM));
             addMomentaryScaled(pos("b_play_btn", 128.769f, 67.450111f), Transmutation::START_B_PARAM);
             addMomentaryScaled(pos("b_stop_btn", 128.769f, 75.511131f), Transmutation::STOP_B_PARAM);
             addMomentaryScaled(pos("b_reset_btn", 128.769f, 83.446495f), Transmutation::RESET_B_PARAM);

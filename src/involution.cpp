@@ -4,8 +4,8 @@
 #include <limits>
 #include <array>
 #include <algorithm>
-#include <vector>
 #include "involution/liquid_filter.hpp"
+#include "involution/dsp.hpp"
 
 struct Involution : Module {
     enum ParamId {
@@ -13,16 +13,13 @@ struct Involution : Module {
         RESONANCE_A_PARAM,
         CUTOFF_B_PARAM,
         RESONANCE_B_PARAM,
-        // New magical parameters
-        CHAOS_AMOUNT_PARAM,
-        CHAOS_RATE_PARAM,
-        AURA_PARAM,
-        ORBIT_PARAM,
-        TIDE_PARAM,
-        // Link switches
+        MORPH_PARAM,           // LP→BP filter morph (replaces hidden Drive)
+        CROSS_PARAM,           // Cross-feedback A↔B amount
+        MOD_PARAM,             // Chaos LFO depth on cutoff
+        SHIMMER_PARAM,         // Shimmer reverb wet level
+        MOD_RATE_PARAM,        // ChaosGenerator rate
         LINK_CUTOFF_PARAM,
         LINK_RESONANCE_PARAM,
-        // Attenuverters for CV inputs
         CUTOFF_A_ATTEN_PARAM,
         RESONANCE_A_ATTEN_PARAM,
         CUTOFF_B_ATTEN_PARAM,
@@ -36,10 +33,10 @@ struct Involution : Module {
         RESONANCE_A_CV_INPUT,
         CUTOFF_B_CV_INPUT,
         RESONANCE_B_CV_INPUT,
-        CHAOS_RATE_CV_INPUT,
-        AURA_CV_INPUT,
-        ORBIT_CV_INPUT,
-        TIDE_CV_INPUT,
+        CROSS_CV_INPUT,
+        MOD_CV_INPUT,
+        SHIMMER_CV_INPUT,
+        MOD_RATE_CV_INPUT,
         INPUTS_LEN
     };
     enum OutputId {
@@ -54,98 +51,27 @@ struct Involution : Module {
         CHAOS_RATE_LIGHT,
         LIGHTS_LEN
     };
-    // Liquid 6th-order filters - one per voice per channel
+
+    // Per-voice 6th-order filters
     shapetaker::dsp::VoiceArray<LiquidFilter> filtersA;
     shapetaker::dsp::VoiceArray<LiquidFilter> filtersB;
+
+    // Per-voice cross-feedback (A←B, B←A with tanh soft limiting)
+    std::array<shapetaker::involution::CrossFeedback,
+               shapetaker::PolyphonicProcessor::MAX_VOICES> crossFeedbackVoices;
 
     // Per-voice cutoff smoothers to eliminate CV zipper noise
     shapetaker::dsp::VoiceArray<shapetaker::FastSmoother> cutoffASmoothers;
     shapetaker::dsp::VoiceArray<shapetaker::FastSmoother> cutoffBSmoothers;
 
-    static constexpr int ETHEREAL_STAGES = 4;
-    static constexpr float ETHEREAL_MAX_DELAY_SEC = 0.45f;
+    // Global chaos LFO (single instance — modulation is coherent across voices)
+    shapetaker::involution::ChaosGenerator chaosGen;
 
-    struct EtherealDelay {
-        std::vector<float> buffer;
-        int size = 0;
-        int writePos = 0;
-        float lastOutput = 0.f;
+    // Global shimmer — shared delay buffers so poly voices blend naturally into the tail
+    shapetaker::dsp::ShimmerDelay shimmerA;
+    shapetaker::dsp::ShimmerDelay shimmerB;
 
-        void configure(float sampleRate) {
-            size = std::max(16, static_cast<int>(std::ceil(sampleRate * ETHEREAL_MAX_DELAY_SEC)) + 4);
-            buffer.assign(size, 0.f);
-            writePos = 0;
-            lastOutput = 0.f;
-        }
-
-        float process(float input, float delaySamples, float feedback) {
-            if (size < 2) {
-                return input;
-            }
-            delaySamples = rack::math::clamp(delaySamples, 1.f, static_cast<float>(size - 2));
-            float readPos = static_cast<float>(writePos) - delaySamples;
-            while (readPos < 0.f) {
-                readPos += static_cast<float>(size);
-            }
-            int i0 = static_cast<int>(readPos);
-            int i1 = (i0 + 1) % size;
-            float frac = readPos - static_cast<float>(i0);
-            float s0 = buffer[i0];
-            float s1 = buffer[i1];
-            float output = s0 + (s1 - s0) * frac;
-            buffer[writePos] = input + output * rack::math::clamp(feedback, -0.95f, 0.95f);
-            writePos = (writePos + 1) % size;
-            lastOutput = output;
-            return output;
-        }
-
-        void reset() {
-            std::fill(buffer.begin(), buffer.end(), 0.f);
-            writePos = 0;
-            lastOutput = 0.f;
-        }
-
-        float maxDelaySamples() const {
-            return size > 2 ? static_cast<float>(size - 2) : 0.f;
-        }
-    };
-
-    struct EtherealVoiceState {
-        std::array<EtherealDelay, ETHEREAL_STAGES> delays;
-        std::array<float, ETHEREAL_STAGES> modPhase{};
-        std::array<float, ETHEREAL_STAGES> phaseOffset{};
-        std::array<float, ETHEREAL_STAGES> drift{};
-        std::array<float, ETHEREAL_STAGES> smoothedStageBlend{};
-        std::array<float, ETHEREAL_STAGES> smoothedDelay{};
-        std::array<float, ETHEREAL_STAGES> dcBlock{};
-        float smoothedDiffusion = 0.f;
-        float smoothedFeedback = 0.f;
-        float smoothedHaloMix = 0.f;
-        float smoothedShimmer = 0.f;
-        float smoothedModDepth = 0.f;
-        float smoothedStereoSkew = 0.f;
-
-        void reset() {
-            for (auto& d : delays) {
-                d.reset();
-            }
-            modPhase.fill(0.f);
-            smoothedStageBlend.fill(0.f);
-            smoothedDelay.fill(12.f);
-            dcBlock.fill(0.f);
-            smoothedDiffusion = 0.f;
-            smoothedFeedback = 0.f;
-            smoothedHaloMix = 0.f;
-            smoothedShimmer = 0.f;
-            smoothedModDepth = 0.f;
-            smoothedStereoSkew = 0.f;
-        }
-    };
-
-    // Sample-rate-aware DC blocker coefficient for ethereal delays
-    float etherealDcCoeff = 0.995f;
-
-    // Per-voice output DC blocker state
+    // Per-voice output DC blockers
     struct OutputDCBlock {
         float lastInputA = 0.f, lastOutputA = 0.f;
         float lastInputB = 0.f, lastOutputB = 0.f;
@@ -153,764 +79,416 @@ struct Involution : Module {
     };
     std::array<OutputDCBlock, shapetaker::PolyphonicProcessor::MAX_VOICES> outputDC{};
 
-    std::array<EtherealVoiceState, shapetaker::PolyphonicProcessor::MAX_VOICES> etherealVoicesA{};
-    std::array<EtherealVoiceState, shapetaker::PolyphonicProcessor::MAX_VOICES> etherealVoicesB{};
-    float etherealPhase = 0.f;
+    // Rate bounds (also used by ChaosVisualizer)
+    static constexpr float MOD_RATE_MIN_HZ = 0.01f;
+    static constexpr float MOD_RATE_MAX_HZ = 20.f;
+    // Backward-compat aliases for the visualizer
+    static constexpr float CHAOS_RATE_MIN_HZ = MOD_RATE_MIN_HZ;
+    static constexpr float CHAOS_RATE_MAX_HZ = MOD_RATE_MAX_HZ;
 
-    // Chaos rate configuration
-    static constexpr float CHAOS_RATE_MIN_HZ = 0.01f;
-    static constexpr float CHAOS_RATE_MAX_HZ = 20.f;
-    static constexpr float CHAOS_CLOCK_TIMEOUT = 2.f;
+    // Global parameter smoothers
+    shapetaker::FastSmoother cutoffASmooth, cutoffBSmooth;
+    shapetaker::FastSmoother resonanceASmooth, resonanceBSmooth;
+    shapetaker::FastSmoother morphSmooth;
+    shapetaker::FastSmoother crossSmooth, modSmooth, shimmerSmooth;
+    shapetaker::FastSmoother modRateSmooth;
 
-    rack::dsp::SchmittTrigger chaosClockTrigger;
-    float chaosClockElapsed = 0.f;
-    float chaosClockPeriod = 0.f;
-    float chaosTargetRate = 0.5f;
+    static constexpr float PARAM_SMOOTH_TC    = 0.015f;
+    static constexpr float CUTOFF_CV_SMOOTH_TC = 0.002f;
 
-    // Parameter smoothing
-    
-    shapetaker::FastSmoother cutoffASmooth, cutoffBSmooth, resonanceASmooth, resonanceBSmooth;
-    shapetaker::FastSmoother auraSmooth, orbitSmooth, tideSmooth;
-    shapetaker::FastSmoother chaosRateSmooth;
-    shapetaker::FastSmoother driveSmooth;
-    shapetaker::FastSmoother effectGateSmooth;
-
-    static constexpr float CHARACTER_SMOOTH_TC = 0.015f;
-    static constexpr float EFFECT_GATE_SMOOTH_TC = 0.04f;
-    static constexpr float ETHEREAL_PARAM_SMOOTH_TC = 0.05f;
-    static constexpr float CUTOFF_CV_SMOOTH_TC = 0.002f;  // Very fast smoothing to preserve modulation character while eliminating zipper noise
-    static constexpr float DRIVE_SMOOTH_TC = 0.012f;
-
-    // Character drama shaping - set mix to 0 to revert to legacy linear response
-    static constexpr float AURA_DRAMA_MIX = 1.f;
-    static constexpr float AURA_DRAMA_EXP = 0.55f;
-    static constexpr float ORBIT_DRAMA_MIX = 1.f;
-    static constexpr float ORBIT_DRAMA_EXP = 0.35f;
-    static constexpr float TIDE_DRAMA_MIX = 1.f;
-    static constexpr float TIDE_DRAMA_EXP = 0.7f;
-    
-    // Parameter change tracking for bidirectional linking
+    // Bidirectional linking state
     float lastCutoffA = -1.f, lastCutoffB = -1.f;
     float lastResonanceA = -1.f, lastResonanceB = -1.f;
     bool lastLinkCutoff = false, lastLinkResonance = false;
 
-    // Smoothed values for visualizer access
-    float smoothedChaosRate = 0.5f;
-    float smoothedDrive = 1.0f;
+    // Visualizer-readable data
+    float smoothedChaosRate = 0.5f;  // alias for visualizer compat
     float effectiveResonanceA = 0.707f;
     float effectiveResonanceB = 0.707f;
-    float effectiveCutoffA = 1.0f; // Store final modulated cutoff values
+    float effectiveCutoffA = 1.0f;
     float effectiveCutoffB = 1.0f;
-    float chaosRateBlinkPhase = 0.f;
+    float crossAmount  = 0.f;
+    float modAmount    = 0.f;
+    float shimmerAmount = 0.f;
 
-    // Chaos visualizer screen color theme - uses centralized DisplayTheme system
-    // 0=Phosphor (Green), 1=Ice (Cyan), 2=Solar (Yellow), 3=Amber (Orange)
+    // Screen color theme (0=Phosphor, 1=Ice, 2=Solar, 3=Amber)
     int chaosTheme = 0;
-
-    // Filter mode: 0=Lowpass, 1=Bandpass, 2=Morph (LP→BP)
-    int filterModeIndex = 0;
-
 
     Involution() {
         config(PARAMS_LEN, INPUTS_LEN, OUTPUTS_LEN, LIGHTS_LEN);
-        
-        configParam(CUTOFF_A_PARAM, 0.f, 1.f, 1.f, "Filter A Cutoff", " Hz", std::pow(2.f, 10.f), 20.f);
-        configParam(RESONANCE_A_PARAM, 0.707f, 2.5f, 0.707f, "Filter A Resonance");
-        configParam(CUTOFF_B_PARAM, 0.f, 1.f, 1.f, "Filter B Cutoff", " Hz", std::pow(2.f, 10.f), 20.f);
-        configParam(RESONANCE_B_PARAM, 0.707f, 2.5f, 0.707f, "Filter B Resonance");
-        
-        // Drive / character controls
-        configParam(CHAOS_AMOUNT_PARAM, 0.f, 1.f, 0.75f, "Drive", "%", 0.f, 100.f);
-        configParam(AURA_PARAM, 0.f, 1.f, 0.35f, "Aura", "%", 0.f, 100.f);
-        configParam(ORBIT_PARAM, 0.f, 1.f, 0.4f, "Orbit", "%", 0.f, 100.f);
-        configParam(TIDE_PARAM, 0.f, 1.f, 0.5f, "Tide", "%", 0.f, 100.f);
-        configParam(CHAOS_RATE_PARAM, 0.01f, 20.f, 0.5f, "Chaos LFO Rate", " Hz", 0.f, 0.f);
 
-        chaosTargetRate = clamp(params[CHAOS_RATE_PARAM].getValue(), CHAOS_RATE_MIN_HZ, CHAOS_RATE_MAX_HZ);
-        smoothedChaosRate = chaosTargetRate;
-        chaosRateSmooth.reset(chaosTargetRate);
-        smoothedDrive = params[CHAOS_AMOUNT_PARAM].getValue();
-        driveSmooth.reset(smoothedDrive);
-        smoothedDrive = params[CHAOS_AMOUNT_PARAM].getValue();
-        driveSmooth.reset(smoothedDrive);
+        configParam(CUTOFF_A_PARAM,     0.f,  1.f,  1.f,   "Filter A Cutoff",    " Hz", std::pow(2.f, 10.f), 20.f);
+        configParam(RESONANCE_A_PARAM,  0.707f, 2.8f, 0.707f, "Filter A Resonance");
+        configParam(CUTOFF_B_PARAM,     0.f,  1.f,  1.f,   "Filter B Cutoff",    " Hz", std::pow(2.f, 10.f), 20.f);
+        configParam(RESONANCE_B_PARAM,  0.707f, 2.8f, 0.707f, "Filter B Resonance");
+        configParam(MORPH_PARAM,        0.f,  1.f,  0.f,   "Filter Morph",       "", 0.f, 0.f);
+        configParam(CROSS_PARAM,        0.f,  1.f,  0.f,   "Cross-feedback",     "%", 0.f, 100.f);
+        configParam(MOD_PARAM,          0.f,  1.f,  0.f,   "Mod Depth",          "%", 0.f, 100.f);
+        configParam(SHIMMER_PARAM,      0.f,  1.f,  0.f,   "Shimmer",            "%", 0.f, 100.f);
+        configParam(MOD_RATE_PARAM, MOD_RATE_MIN_HZ, MOD_RATE_MAX_HZ, 0.5f, "Mod Rate", " Hz");
 
-        std::mt19937 etherealRng(rack::random::u32());
-        std::uniform_real_distribution<float> phaseDistrib(0.f, 2.f * static_cast<float>(M_PI));
-        std::uniform_real_distribution<float> driftDistrib(0.65f, 1.45f);
-        for (int v = 0; v < shapetaker::PolyphonicProcessor::MAX_VOICES; ++v) {
-            for (int s = 0; s < ETHEREAL_STAGES; ++s) {
-                etherealVoicesA[v].phaseOffset[s] = phaseDistrib(etherealRng);
-                etherealVoicesB[v].phaseOffset[s] = phaseDistrib(etherealRng);
-                etherealVoicesA[v].drift[s] = driftDistrib(etherealRng);
-                etherealVoicesB[v].drift[s] = driftDistrib(etherealRng);
-            }
-        }
+        configSwitch(LINK_CUTOFF_PARAM,    0.f, 1.f, 0.f, "Link Cutoff Frequencies", {"Independent", "Linked"});
+        configSwitch(LINK_RESONANCE_PARAM, 0.f, 1.f, 0.f, "Link Resonance Amounts",  {"Independent", "Linked"});
 
-        // Custom parameter quantity to show real-time chaos rate including CV modulation
-        struct ChaosRateQuantity : engine::ParamQuantity {
-            float getDisplayValue() override {
-                if (!module) return ParamQuantity::getDisplayValue();
-
-                Involution* inv = static_cast<Involution*>(module);
-                float currentRate = inv->smoothedChaosRate;
-                if (!std::isfinite(currentRate) || currentRate <= 0.f) {
-                    currentRate = getValue();
-                }
-                return clamp(currentRate, Involution::CHAOS_RATE_MIN_HZ, Involution::CHAOS_RATE_MAX_HZ);
-            }
-        };
-
-        // Replace the default param quantity with our custom one
-        paramQuantities[CHAOS_RATE_PARAM] = new ChaosRateQuantity;
-        paramQuantities[CHAOS_RATE_PARAM]->module = this;
-        paramQuantities[CHAOS_RATE_PARAM]->paramId = CHAOS_RATE_PARAM;
-        paramQuantities[CHAOS_RATE_PARAM]->minValue = 0.01f;
-        paramQuantities[CHAOS_RATE_PARAM]->maxValue = 20.f;
-        paramQuantities[CHAOS_RATE_PARAM]->defaultValue = 0.5f;
-        paramQuantities[CHAOS_RATE_PARAM]->name = "Chaos LFO Rate";
-        paramQuantities[CHAOS_RATE_PARAM]->unit = " Hz";
-
-        // Link switches
-        configSwitch(LINK_CUTOFF_PARAM, 0.f, 1.f, 0.f, "Link Cutoff Frequencies", {"Independent", "Linked"});
-        configSwitch(LINK_RESONANCE_PARAM, 0.f, 1.f, 0.f, "Link Resonance Amounts", {"Independent", "Linked"});
-
-        // Attenuverters for CV inputs
-        configParam(CUTOFF_A_ATTEN_PARAM, -1.f, 1.f, 0.f, "Cutoff A CV Attenuverter", "%", 0.f, 100.f);
+        configParam(CUTOFF_A_ATTEN_PARAM,    -1.f, 1.f, 0.f, "Cutoff A CV Attenuverter",    "%", 0.f, 100.f);
         configParam(RESONANCE_A_ATTEN_PARAM, -1.f, 1.f, 0.f, "Resonance A CV Attenuverter", "%", 0.f, 100.f);
-        configParam(CUTOFF_B_ATTEN_PARAM, -1.f, 1.f, 0.f, "Cutoff B CV Attenuverter", "%", 0.f, 100.f);
+        configParam(CUTOFF_B_ATTEN_PARAM,    -1.f, 1.f, 0.f, "Cutoff B CV Attenuverter",    "%", 0.f, 100.f);
         configParam(RESONANCE_B_ATTEN_PARAM, -1.f, 1.f, 0.f, "Resonance B CV Attenuverter", "%", 0.f, 100.f);
 
-        configInput(AUDIO_A_INPUT, "Audio A");
-        configInput(AUDIO_B_INPUT, "Audio B");
-        configInput(CUTOFF_A_CV_INPUT, "Filter A Cutoff CV");
-        configInput(RESONANCE_A_CV_INPUT, "Filter A Resonance CV");
-        configInput(CUTOFF_B_CV_INPUT, "Filter B Cutoff CV");
-        configInput(RESONANCE_B_CV_INPUT, "Filter B Resonance CV");
-        configInput(CHAOS_RATE_CV_INPUT, "Chaos Rate CV");
-        configInput(AURA_CV_INPUT, "Aura CV");
-        configInput(ORBIT_CV_INPUT, "Orbit CV");
-        configInput(TIDE_CV_INPUT, "Tide CV");
+        configInput(AUDIO_A_INPUT,       "Audio A");
+        configInput(AUDIO_B_INPUT,       "Audio B");
+        configInput(CUTOFF_A_CV_INPUT,   "Filter A Cutoff CV");
+        configInput(RESONANCE_A_CV_INPUT,"Filter A Resonance CV");
+        configInput(CUTOFF_B_CV_INPUT,   "Filter B Cutoff CV");
+        configInput(RESONANCE_B_CV_INPUT,"Filter B Resonance CV");
+        configInput(CROSS_CV_INPUT,      "Cross-feedback CV");
+        configInput(MOD_CV_INPUT,        "Mod Depth CV");
+        configInput(SHIMMER_CV_INPUT,    "Shimmer CV");
+        configInput(MOD_RATE_CV_INPUT,   "Mod Rate CV");
 
         configOutput(AUDIO_A_OUTPUT, "Audio A");
         configOutput(AUDIO_B_OUTPUT, "Audio B");
 
-        configLight(CHAOS_LIGHT, "Drive Activity");
-        configLight(CHAOS_RATE_LIGHT, "Chaos Rate");
+        configLight(CHAOS_LIGHT,      "Cross/Mod/Shimmer Activity");
+        configLight(CHAOS_RATE_LIGHT, "Mod Rate");
 
-        // Initialize filters with default sample rate
         onSampleRateChange();
-
-        auraSmooth.reset(params[AURA_PARAM].getValue());
-        orbitSmooth.reset(params[ORBIT_PARAM].getValue());
-        tideSmooth.reset(params[TIDE_PARAM].getValue());
-        effectGateSmooth.reset(0.f);
-
         shapetaker::ui::LabelFormatter::normalizeModuleControls(this);
     }
 
     json_t* dataToJson() override {
         json_t* rootJ = json_object();
         json_object_set_new(rootJ, "chaosTheme", json_integer(chaosTheme));
-        json_object_set_new(rootJ, "filterMode", json_integer(filterModeIndex));
         return rootJ;
     }
 
     void dataFromJson(json_t* rootJ) override {
-        json_t* chaosThemeJ = json_object_get(rootJ, "chaosTheme");
-        if (chaosThemeJ) {
-            chaosTheme = clamp((int)json_integer_value(chaosThemeJ), 0, 3);
-        }
-        json_t* filterModeJ = json_object_get(rootJ, "filterMode");
-        if (filterModeJ) {
-            filterModeIndex = clamp((int)json_integer_value(filterModeJ), 0, 2);
-            applyFilterMode();
-        }
+        json_t* j = json_object_get(rootJ, "chaosTheme");
+        if (j) chaosTheme = clamp((int)json_integer_value(j), 0, 3);
     }
 
     void onSampleRateChange() override {
         float sr = APP->engine->getSampleRate();
-
-        // Compute sample-rate-aware DC blocker coefficient (~10Hz cutoff)
-        const float dcCutoffHz = 10.f;
-        etherealDcCoeff = rack::math::clamp(1.f - (2.f * (float)M_PI * dcCutoffHz / sr), 0.9f, 0.9999f);
-
-        // Update all liquid filters with new sample rate
         for (int v = 0; v < shapetaker::PolyphonicProcessor::MAX_VOICES; v++) {
             filtersA[v].setSampleRate(sr);
             filtersB[v].setSampleRate(sr);
-            for (int s = 0; s < ETHEREAL_STAGES; ++s) {
-                etherealVoicesA[v].delays[s].configure(sr);
-                etherealVoicesB[v].delays[s].configure(sr);
-            }
-            etherealVoicesA[v].reset();
-            etherealVoicesB[v].reset();
-            outputDC[v].reset();
+            filtersA[v].setFilterMode(LiquidFilter::MORPH);
+            filtersB[v].setFilterMode(LiquidFilter::MORPH);
         }
+        shimmerA.reset();
+        shimmerB.reset();
     }
 
     void onReset() override {
-        etherealPhase = 0.f;
-        onSampleRateChange();
-        chaosClockTrigger.reset();
-        chaosClockElapsed = 0.f;
-        chaosClockPeriod = 0.f;
-        chaosTargetRate = clamp(params[CHAOS_RATE_PARAM].getValue(), CHAOS_RATE_MIN_HZ, CHAOS_RATE_MAX_HZ);
-        smoothedChaosRate = chaosTargetRate;
-        chaosRateSmooth.reset(chaosTargetRate);
-        effectGateSmooth.reset(0.f);
-        for (int v = 0; v < shapetaker::PolyphonicProcessor::MAX_VOICES; ++v) {
-            etherealVoicesA[v].reset();
-            etherealVoicesB[v].reset();
-        }
-    }
-
-    void applyFilterMode() {
-        LiquidFilter::FilterMode mode = static_cast<LiquidFilter::FilterMode>(
-            clamp(filterModeIndex, 0, 2));
+        chaosGen.reset();
+        shimmerA.reset();
+        shimmerB.reset();
         for (int v = 0; v < shapetaker::PolyphonicProcessor::MAX_VOICES; v++) {
-            filtersA[v].setFilterMode(mode);
-            filtersB[v].setFilterMode(mode);
+            crossFeedbackVoices[v].reset();
+            outputDC[v].reset();
+            filtersA[v].reset();
+            filtersB[v].reset();
         }
+        onSampleRateChange();
     }
 
     void process(const ProcessArgs& args) override {
-        // Read link switch states
-        bool linkCutoff = params[LINK_CUTOFF_PARAM].getValue() > 0.5f;
+        // ====================================================================
+        // PARAMETER READ + BIDIRECTIONAL LINKING
+        // ====================================================================
+        bool linkCutoff    = params[LINK_CUTOFF_PARAM].getValue()    > 0.5f;
         bool linkResonance = params[LINK_RESONANCE_PARAM].getValue() > 0.5f;
-        
-        // Get current raw parameter values
-        float currentCutoffA = params[CUTOFF_A_PARAM].getValue();
-        float currentCutoffB = params[CUTOFF_B_PARAM].getValue();
+
+        float currentCutoffA    = params[CUTOFF_A_PARAM].getValue();
+        float currentCutoffB    = params[CUTOFF_B_PARAM].getValue();
         float currentResonanceA = params[RESONANCE_A_PARAM].getValue();
         float currentResonanceB = params[RESONANCE_B_PARAM].getValue();
-        
-        // Handle bidirectional cutoff linking
+
         if (linkCutoff) {
-            // Check if linking was just enabled
             if (!lastLinkCutoff) {
-                // Sync B to A when linking is first enabled
                 params[CUTOFF_B_PARAM].setValue(currentCutoffA);
                 currentCutoffB = currentCutoffA;
             } else {
-                // Check which parameter changed and sync the other
-                const float epsilon = 1e-6f;
-                bool aChanged = std::abs(currentCutoffA - lastCutoffA) > epsilon;
-                bool bChanged = std::abs(currentCutoffB - lastCutoffB) > epsilon;
-                
-                if (aChanged && !bChanged) {
-                    // A changed, sync B to A
+                const float eps = 1e-6f;
+                bool aChg = std::abs(currentCutoffA - lastCutoffA) > eps;
+                bool bChg = std::abs(currentCutoffB - lastCutoffB) > eps;
+                if (aChg && !bChg) {
                     params[CUTOFF_B_PARAM].setValue(currentCutoffA);
                     currentCutoffB = currentCutoffA;
-                } else if (bChanged && !aChanged) {
-                    // B changed, sync A to B
+                } else if (bChg && !aChg) {
                     params[CUTOFF_A_PARAM].setValue(currentCutoffB);
                     currentCutoffA = currentCutoffB;
-                } else if (aChanged && bChanged) {
-                    // Both changed (shouldn't happen normally), prefer A
+                } else if (aChg && bChg) {
                     params[CUTOFF_B_PARAM].setValue(currentCutoffA);
                     currentCutoffB = currentCutoffA;
                 }
             }
         }
-        
-        // Handle bidirectional resonance linking
         if (linkResonance) {
-            // Check if linking was just enabled
             if (!lastLinkResonance) {
-                // Sync B to A when linking is first enabled
                 params[RESONANCE_B_PARAM].setValue(currentResonanceA);
                 currentResonanceB = currentResonanceA;
             } else {
-                // Check which parameter changed and sync the other
-                const float epsilon = 1e-6f;
-                bool aChanged = std::abs(currentResonanceA - lastResonanceA) > epsilon;
-                bool bChanged = std::abs(currentResonanceB - lastResonanceB) > epsilon;
-                
-                if (aChanged && !bChanged) {
-                    // A changed, sync B to A
+                const float eps = 1e-6f;
+                bool aChg = std::abs(currentResonanceA - lastResonanceA) > eps;
+                bool bChg = std::abs(currentResonanceB - lastResonanceB) > eps;
+                if (aChg && !bChg) {
                     params[RESONANCE_B_PARAM].setValue(currentResonanceA);
                     currentResonanceB = currentResonanceA;
-                } else if (bChanged && !aChanged) {
-                    // B changed, sync A to B
+                } else if (bChg && !aChg) {
                     params[RESONANCE_A_PARAM].setValue(currentResonanceB);
                     currentResonanceA = currentResonanceB;
-                } else if (aChanged && bChanged) {
-                    // Both changed (shouldn't happen normally), prefer A
+                } else if (aChg && bChg) {
                     params[RESONANCE_B_PARAM].setValue(currentResonanceA);
                     currentResonanceB = currentResonanceA;
                 }
             }
         }
-        
-        // Store current values for next frame comparison
-        lastCutoffA = currentCutoffA;
-        lastCutoffB = currentCutoffB;
+        lastCutoffA    = currentCutoffA;
+        lastCutoffB    = currentCutoffB;
         lastResonanceA = currentResonanceA;
         lastResonanceB = currentResonanceB;
-        lastLinkCutoff = linkCutoff;
+        lastLinkCutoff    = linkCutoff;
         lastLinkResonance = linkResonance;
-        
-        // Apply smoothing to the synchronized values
-        float cutoffA = cutoffASmooth.process(currentCutoffA, args.sampleTime);
-        float cutoffB = cutoffBSmooth.process(currentCutoffB, args.sampleTime);
+
+        // ====================================================================
+        // SMOOTH GLOBAL PARAMETERS
+        // ====================================================================
+        float cutoffA    = cutoffASmooth.process(currentCutoffA,    args.sampleTime);
+        float cutoffB    = cutoffBSmooth.process(currentCutoffB,    args.sampleTime);
         float resonanceA = resonanceASmooth.process(currentResonanceA, args.sampleTime);
         float resonanceB = resonanceBSmooth.process(currentResonanceB, args.sampleTime);
-        
-        // Magical parameters - smoothed for immediate response
-        // Drive is locked at maximum; Aura/Orbit/Tide sculpt the ethereal diffusion.
 
-        float auraAmount = auraSmooth.process(params[AURA_PARAM].getValue(), args.sampleTime, CHARACTER_SMOOTH_TC);
-        float orbitAmount = orbitSmooth.process(params[ORBIT_PARAM].getValue(), args.sampleTime, CHARACTER_SMOOTH_TC);
-        float tideAmount = tideSmooth.process(params[TIDE_PARAM].getValue(), args.sampleTime, CHARACTER_SMOOTH_TC);
+        float morphAmt = morphSmooth.process(params[MORPH_PARAM].getValue(), args.sampleTime, PARAM_SMOOTH_TC);
 
-        if (inputs[AURA_CV_INPUT].isConnected()) {
-            auraAmount += inputs[AURA_CV_INPUT].getVoltage(0) / 10.f;
-        }
-        if (inputs[ORBIT_CV_INPUT].isConnected()) {
-            orbitAmount += inputs[ORBIT_CV_INPUT].getVoltage(0) / 10.f;
-        }
-        if (inputs[TIDE_CV_INPUT].isConnected()) {
-            tideAmount += inputs[TIDE_CV_INPUT].getVoltage(0) / 10.f;
-        }
-        auraAmount = clamp(auraAmount, 0.f, 1.f);
-        orbitAmount = clamp(orbitAmount, 0.f, 1.f);
-        tideAmount = clamp(tideAmount, 0.f, 1.f);
+        float crossTarget = params[CROSS_PARAM].getValue();
+        if (inputs[CROSS_CV_INPUT].isConnected())
+            crossTarget = clamp(crossTarget + inputs[CROSS_CV_INPUT].getVoltage() / 10.f, 0.f, 1.f);
+        crossAmount = crossSmooth.process(crossTarget, args.sampleTime, PARAM_SMOOTH_TC);
 
-        float auraRaw = auraAmount;
-        float orbitRaw = orbitAmount;
-        float tideRaw = tideAmount;
+        float modTarget = params[MOD_PARAM].getValue();
+        if (inputs[MOD_CV_INPUT].isConnected())
+            modTarget = clamp(modTarget + inputs[MOD_CV_INPUT].getVoltage() / 10.f, 0.f, 1.f);
+        modAmount = modSmooth.process(modTarget, args.sampleTime, PARAM_SMOOTH_TC);
 
-        auto applyCharacterDrama = [](float value, float mix, float exponent) {
-            float valueClamped = rack::math::clamp(value, 0.f, 1.f);
-            float mixClamped = rack::math::clamp(mix, 0.f, 1.f);
-            float exponentClamped = rack::math::clamp(exponent, 0.125f, 8.f);
-            float shaped = std::pow(valueClamped, exponentClamped);
-            return rack::math::crossfade(valueClamped, shaped, mixClamped);
-        };
+        float shimTarget = params[SHIMMER_PARAM].getValue();
+        if (inputs[SHIMMER_CV_INPUT].isConnected())
+            shimTarget = clamp(shimTarget + inputs[SHIMMER_CV_INPUT].getVoltage() / 10.f, 0.f, 1.f);
+        shimmerAmount = shimmerSmooth.process(shimTarget, args.sampleTime, PARAM_SMOOTH_TC);
 
-        auraAmount = applyCharacterDrama(auraRaw, AURA_DRAMA_MIX, AURA_DRAMA_EXP);
-        orbitAmount = applyCharacterDrama(orbitRaw, ORBIT_DRAMA_MIX, ORBIT_DRAMA_EXP);
-        tideAmount = applyCharacterDrama(tideRaw, TIDE_DRAMA_MIX, TIDE_DRAMA_EXP);
+        float modRateTarget = clamp(params[MOD_RATE_PARAM].getValue(), MOD_RATE_MIN_HZ, MOD_RATE_MAX_HZ);
+        if (inputs[MOD_RATE_CV_INPUT].isConnected())
+            modRateTarget = clamp(modRateTarget + inputs[MOD_RATE_CV_INPUT].getVoltage() * 0.5f,
+                                  MOD_RATE_MIN_HZ, MOD_RATE_MAX_HZ);
+        float modRate = modRateSmooth.process(modRateTarget, args.sampleTime);
+        smoothedChaosRate = modRate; // visualizer compat alias
 
-        // Drive amount now follows knob/CV (chaos amount)
-        float driveTarget = clamp(params[CHAOS_AMOUNT_PARAM].getValue(), 0.f, 1.f);
-        // Let the chaos CV add some drive excitement too
-        if (inputs[CHAOS_RATE_CV_INPUT].isConnected()) {
-            driveTarget += clamp(inputs[CHAOS_RATE_CV_INPUT].getVoltage(0) / 10.f, -1.f, 1.f) * 0.25f; // small CV influence
-        }
-        driveTarget = clamp(driveTarget, 0.f, 1.25f);
-        smoothedDrive = driveSmooth.process(driveTarget, args.sampleTime, DRIVE_SMOOTH_TC);
+        // ====================================================================
+        // CHAOS LFO — single global source, output scaled by mod depth
+        // ====================================================================
+        float chaosOut = chaosGen.process(modRate, modAmount, args.sampleTime);
+        // chaosOut is approximately ±modAmount
 
-        float rawEffectIntensity = std::max(auraAmount, std::max(orbitAmount, tideAmount));
-        rawEffectIntensity = rack::math::clamp(rawEffectIntensity + smoothedDrive * 0.35f, 0.f, 1.35f);
-        float effectGateTarget = rack::math::clamp(rawEffectIntensity, 0.f, 1.f);
-        float effectBlend = effectGateSmooth.process(effectGateTarget, args.sampleTime, EFFECT_GATE_SMOOTH_TC);
-
-        float driveLight = smoothedDrive;
-        float auraLight = auraRaw;
-        float orbitLight = orbitRaw;
-        float tideLight = tideRaw;
-
-        float knobChaosRate = clamp(params[CHAOS_RATE_PARAM].getValue(), CHAOS_RATE_MIN_HZ, CHAOS_RATE_MAX_HZ);
-        float chaosTarget = knobChaosRate;
-
-        // Treat CHAOS_RATE_CV_INPUT as bipolar CV (continuous) instead of clock-only
-        if (inputs[CHAOS_RATE_CV_INPUT].isConnected()) {
-            float cvRate = inputs[CHAOS_RATE_CV_INPUT].getVoltage(0); // allow poly but use first channel as global rate mod
-            // 10V moves full range; small bias for negative voltages
-            chaosTarget += cvRate * 0.5f; // 2 V/Oct-ish scaling
+        // ====================================================================
+        // SET FILTER MORPH FOR ALL VOICES
+        // ====================================================================
+        for (int v = 0; v < shapetaker::PolyphonicProcessor::MAX_VOICES; v++) {
+            filtersA[v].setFilterMorph(morphAmt);
+            filtersB[v].setFilterMorph(morphAmt);
         }
 
-        chaosTarget = clamp(chaosTarget, CHAOS_RATE_MIN_HZ, CHAOS_RATE_MAX_HZ);
-        chaosTargetRate = chaosTarget;
-        float chaosRate = chaosRateSmooth.process(chaosTargetRate, args.sampleTime);
-        chaosRate = clamp(chaosRate, CHAOS_RATE_MIN_HZ, CHAOS_RATE_MAX_HZ);
-
-        // Store smoothed chaos rate for visualizer access
-        smoothedChaosRate = chaosRate;
-
-        float tideRateHz = 0.4f + tideAmount * 6.5f + chaosRate * 0.25f;
-        tideRateHz = clamp(tideRateHz, 0.01f, 25.f);
-        etherealPhase += tideRateHz * args.sampleTime * 2.f * M_PI;
-        if (etherealPhase > 2.f * M_PI) {
-            etherealPhase = std::fmod(etherealPhase, 2.f * M_PI);
+        // ====================================================================
+        // VISUALIZER DATA (sampled from voice 0 / global smoothers)
+        // ====================================================================
+        {
+            float dCutoffA = cutoffA, dCutoffB = cutoffB;
+            float dResA = resonanceA, dResB = resonanceB;
+            if (inputs[CUTOFF_A_CV_INPUT].isConnected())
+                dCutoffA = clamp(dCutoffA + inputs[CUTOFF_A_CV_INPUT].getPolyVoltage(0)
+                                 * params[CUTOFF_A_ATTEN_PARAM].getValue() / 10.f, 0.f, 1.f);
+            if (inputs[CUTOFF_B_CV_INPUT].isConnected())
+                dCutoffB = clamp(dCutoffB + inputs[CUTOFF_B_CV_INPUT].getPolyVoltage(0)
+                                 * params[CUTOFF_B_ATTEN_PARAM].getValue() / 10.f, 0.f, 1.f);
+            if (inputs[RESONANCE_A_CV_INPUT].isConnected())
+                dResA = clamp(dResA + inputs[RESONANCE_A_CV_INPUT].getPolyVoltage(0)
+                              * params[RESONANCE_A_ATTEN_PARAM].getValue() / 10.f, 0.707f, 2.8f);
+            if (inputs[RESONANCE_B_CV_INPUT].isConnected())
+                dResB = clamp(dResB + inputs[RESONANCE_B_CV_INPUT].getPolyVoltage(0)
+                              * params[RESONANCE_B_ATTEN_PARAM].getValue() / 10.f, 0.707f, 2.8f);
+            effectiveCutoffA    = dCutoffA;
+            effectiveCutoffB    = dCutoffB;
+            effectiveResonanceA = dResA;
+            effectiveResonanceB = dResB;
         }
-        float swirlSeed = etherealPhase;
 
-        // Store effective resonance values for visualizer (always calculate, even without inputs)
-        float displayResonanceA = resonanceA;
-        float displayResonanceB = resonanceB;
-
-        if (inputs[RESONANCE_A_CV_INPUT].isConnected()) {
-            float attenA = params[RESONANCE_A_ATTEN_PARAM].getValue();
-            displayResonanceA += inputs[RESONANCE_A_CV_INPUT].getPolyVoltage(0) * attenA / 10.f;
-        }
-        displayResonanceA = clamp(displayResonanceA, 0.707f, 2.5f);
-
-        if (inputs[RESONANCE_B_CV_INPUT].isConnected()) {
-            float attenB = params[RESONANCE_B_ATTEN_PARAM].getValue();
-            displayResonanceB += inputs[RESONANCE_B_CV_INPUT].getPolyVoltage(0) * attenB / 10.f;
-        }
-        displayResonanceB = clamp(displayResonanceB, 0.707f, 2.5f);
-
-        effectiveResonanceA = displayResonanceA;
-        effectiveResonanceB = displayResonanceB;
-
-        // Store effective cutoff values for visualizer (always calculate, even without inputs)
-        float displayCutoffA = cutoffA;
-        float displayCutoffB = cutoffB;
-
-        if (inputs[CUTOFF_A_CV_INPUT].isConnected()) {
-            float attenA = params[CUTOFF_A_ATTEN_PARAM].getValue();
-            displayCutoffA += inputs[CUTOFF_A_CV_INPUT].getPolyVoltage(0) * attenA / 10.f;
-        }
-        displayCutoffA = clamp(displayCutoffA, 0.f, 1.f);
-
-        if (inputs[CUTOFF_B_CV_INPUT].isConnected()) {
-            float attenB = params[CUTOFF_B_ATTEN_PARAM].getValue();
-            displayCutoffB += inputs[CUTOFF_B_CV_INPUT].getPolyVoltage(0) * attenB / 10.f;
-        }
-        displayCutoffB = clamp(displayCutoffB, 0.f, 1.f);
-
-        effectiveCutoffA = displayCutoffA;
-        effectiveCutoffB = displayCutoffB;
-
-        // Determine number of polyphonic channels (up to 8)
+        // ====================================================================
+        // POLYPHONIC AUDIO PROCESSING
+        // ====================================================================
         int channelsA = inputs[AUDIO_A_INPUT].getChannels();
         int channelsB = inputs[AUDIO_B_INPUT].getChannels();
-        int channels = std::max(channelsA, channelsB);
-        channels = std::min(channels, shapetaker::PolyphonicProcessor::MAX_VOICES); // Limit to max voices
-        
-        // If no inputs connected, set no output channels
+        int channels  = std::min(std::max(channelsA, channelsB),
+                                 shapetaker::PolyphonicProcessor::MAX_VOICES);
+
         if (!inputs[AUDIO_A_INPUT].isConnected() && !inputs[AUDIO_B_INPUT].isConnected()) {
             outputs[AUDIO_A_OUTPUT].setChannels(0);
             outputs[AUDIO_B_OUTPUT].setChannels(0);
         } else {
-            // Set output channel count
             outputs[AUDIO_A_OUTPUT].setChannels(channels);
             outputs[AUDIO_B_OUTPUT].setChannels(channels);
 
-            // Process each voice
             for (int c = 0; c < channels; c++) {
-                // Get audio inputs for this voice
+                // --- Input ---
                 float audioA = 0.f, audioB = 0.f;
-                bool hasInputA = inputs[AUDIO_A_INPUT].isConnected();
-                bool hasInputB = inputs[AUDIO_B_INPUT].isConnected();
-                
-                if (hasInputA && hasInputB) {
+                bool hasA = inputs[AUDIO_A_INPUT].isConnected();
+                bool hasB = inputs[AUDIO_B_INPUT].isConnected();
+                if (hasA && hasB) {
                     audioA = inputs[AUDIO_A_INPUT].getVoltage(c);
                     audioB = inputs[AUDIO_B_INPUT].getVoltage(c);
-                } else if (hasInputA) {
+                } else if (hasA) {
                     audioA = audioB = inputs[AUDIO_A_INPUT].getVoltage(c);
-                } else if (hasInputB) {
+                } else {
                     audioA = audioB = inputs[AUDIO_B_INPUT].getVoltage(c);
                 }
-                
-                // ============================================================================
-                // LIQUID 6TH-ORDER FILTER PROCESSING
-                // ============================================================================
-                float processedA = audioA;
-                float processedB = audioB;
+                if (!std::isfinite(audioA)) audioA = 0.f;
+                if (!std::isfinite(audioB)) audioB = 0.f;
 
-                // Only process if we have valid, finite audio input
-                if (std::isfinite(audioA) && std::isfinite(audioB)) {
-                    float voiceCutoffA = cutoffA;
-                    float voiceCutoffB = cutoffB;
-                    float voiceResonanceA = resonanceA;
-                    float voiceResonanceB = resonanceB;
-
-                    if (inputs[CUTOFF_A_CV_INPUT].isConnected()) {
-                        float attenA = params[CUTOFF_A_ATTEN_PARAM].getValue();
-                        voiceCutoffA += inputs[CUTOFF_A_CV_INPUT].getPolyVoltage(c) * attenA / 10.f;
-                    }
-                    voiceCutoffA = clamp(voiceCutoffA, 0.f, 1.f);
-                    // Apply per-voice smoothing to eliminate CV zipper noise
-                    voiceCutoffA = cutoffASmoothers[c].process(voiceCutoffA, args.sampleTime, CUTOFF_CV_SMOOTH_TC);
-
-                    if (inputs[CUTOFF_B_CV_INPUT].isConnected()) {
-                        float attenB = params[CUTOFF_B_ATTEN_PARAM].getValue();
-                        voiceCutoffB += inputs[CUTOFF_B_CV_INPUT].getPolyVoltage(c) * attenB / 10.f;
-                    }
-                    voiceCutoffB = clamp(voiceCutoffB, 0.f, 1.f);
-                    // Apply per-voice smoothing to eliminate CV zipper noise
-                    voiceCutoffB = cutoffBSmoothers[c].process(voiceCutoffB, args.sampleTime, CUTOFF_CV_SMOOTH_TC);
-
-                    if (inputs[RESONANCE_A_CV_INPUT].isConnected()) {
-                        float attenA = params[RESONANCE_A_ATTEN_PARAM].getValue();
-                        voiceResonanceA += inputs[RESONANCE_A_CV_INPUT].getPolyVoltage(c) * attenA / 10.f;
-                    }
-                    voiceResonanceA = clamp(voiceResonanceA, 0.707f, 2.5f);
-
-                    if (inputs[RESONANCE_B_CV_INPUT].isConnected()) {
-                        float attenB = params[RESONANCE_B_ATTEN_PARAM].getValue();
-                        voiceResonanceB += inputs[RESONANCE_B_CV_INPUT].getPolyVoltage(c) * attenB / 10.f;
-                    }
-                    voiceResonanceB = clamp(voiceResonanceB, 0.707f, 2.5f);
-
-                    // Convert cutoff from normalized (0-1) to Hz (20Hz - 20480Hz)
-                    float cutoffAHz = 20.f * std::pow(2.f, voiceCutoffA * 10.f);
-                    float cutoffBHz = 20.f * std::pow(2.f, voiceCutoffB * 10.f);
-
-                    // Process through liquid filters with drive tied to Chaos Amount
-                    float driveScaled = 1.f + smoothedDrive * 7.f;
-                    processedA = filtersA[c].process(audioA, cutoffAHz, voiceResonanceA, driveScaled);
-                    processedB = filtersB[c].process(audioB, cutoffBHz, voiceResonanceB, driveScaled);
-
-                    float resonanceNormA = clamp((voiceResonanceA - 0.707f) / (2.5f - 0.707f), 0.f, 1.f);
-                    float resonanceNormB = clamp((voiceResonanceB - 0.707f) / (2.5f - 0.707f), 0.f, 1.f);
-
-                    constexpr float baseDelaySeconds[ETHEREAL_STAGES] = {0.018f, 0.031f, 0.047f, 0.085f};
-                    constexpr float stageWeights[ETHEREAL_STAGES] = {0.55f, 0.38f, 0.26f, 0.19f};
-
-                    auto processEthereal = [&](float input, float cutoffNorm, float resonanceNorm,
-                                                EtherealVoiceState& state, float stereoSkew) {
-                        float cutoffDrama = clamp(cutoffNorm, 0.f, 1.f);
-                        float resonanceInfluence = clamp(resonanceNorm, 0.f, 1.f);
-                        const float paramAlpha = args.sampleTime / (ETHEREAL_PARAM_SMOOTH_TC + args.sampleTime);
-                        auto smoothScalar = [&](float& slot, float target, float minVal, float maxVal) -> float {
-                            slot += paramAlpha * (target - slot);
-                            slot = rack::math::clamp(slot, minVal, maxVal);
-                            return slot;
-                        };
-
-                        float effectAmount = effectBlend;
-                        float lowFreqBlend = rack::math::clamp((cutoffDrama - 0.18f) / 0.22f, 0.f, 1.f);
-                        lowFreqBlend = lowFreqBlend * lowFreqBlend * (3.f - 2.f * lowFreqBlend);
-
-                        float diffusionTarget = effectAmount * (0.32f
-                            + auraAmount * 1.05f
-                            + tideAmount * 0.28f
-                            + resonanceInfluence * 0.25f
-                            + smoothedDrive * 0.18f);
-                        diffusionTarget = clamp(diffusionTarget, 0.f, 0.97f);
-                        float diffusion = smoothScalar(state.smoothedDiffusion, diffusionTarget, 0.f, 0.97f);
-
-                        float feedbackTarget = effectAmount * (0.18f
-                            + orbitAmount * 0.9f
-                            + auraAmount * 0.22f
-                            + smoothedDrive * 0.25f);
-                        // Higher ceiling but still clamped for stability
-                        feedbackTarget = clamp(feedbackTarget, 0.f, 0.82f);
-                        float feedback = smoothScalar(state.smoothedFeedback, feedbackTarget, 0.f, 0.82f);
-
-                        float shimmerTarget = effectAmount * (tideAmount * 0.9f + auraAmount * 0.55f + smoothedDrive * 0.25f);
-                        float shimmerLift = smoothScalar(state.smoothedShimmer, shimmerTarget, 0.f, 1.0f);
-
-                        float haloBlendTarget = effectAmount * (0.4f
-                            + auraAmount * 0.7f
-                            + orbitAmount * 0.28f
-                            + smoothedDrive * 0.22f);
-                        haloBlendTarget = clamp(haloBlendTarget, 0.f, 0.95f);
-                        float haloBlend = smoothScalar(state.smoothedHaloMix, haloBlendTarget, 0.f, 0.95f);
-
-                        float modulationDepthTarget = effectAmount * (
-                            0.0025f
-                            + tideAmount * 0.006f
-                            + auraAmount * 0.0035f
-                            + smoothedDrive * 0.002f
-                        ) * args.sampleRate;
-                        float modDepth = smoothScalar(state.smoothedModDepth, modulationDepthTarget, 0.f, args.sampleRate * 0.065f);
-
-                        float stereoWidthTarget = stereoSkew * (0.35f + orbitAmount * 0.55f);
-                        stereoWidthTarget += (orbitAmount - 0.5f) * 0.2f;
-                        stereoWidthTarget = rack::math::clamp(stereoWidthTarget, -1.f, 1.f);
-                        float effectiveStereoSkew = smoothScalar(state.smoothedStereoSkew, stereoWidthTarget, -1.f, 1.f);
-
-                        float driftRate = clamp(0.15f + chaosRate * (0.25f + tideAmount * 0.2f) + 0.05f * cutoffDrama, 0.05f, 5.f);
-                        float phaseIncrement = driftRate * args.sampleTime * 2.f * static_cast<float>(M_PI);
-
-                        float feed = input;
-                        float cloud = 0.f;
-
-                        for (int s = 0; s < ETHEREAL_STAGES; ++s) {
-                            state.modPhase[s] += phaseIncrement * (state.drift[s] + 0.15f * s);
-                            if (state.modPhase[s] > 2.f * static_cast<float>(M_PI)) {
-                                state.modPhase[s] -= 2.f * static_cast<float>(M_PI);
-                            }
-
-                            float baseDelay = baseDelaySeconds[s] * args.sampleRate;
-                            float sizeScale = 1.05f + auraAmount * 0.5f + tideAmount * 0.35f;
-                            float stereoBias = 1.f + effectiveStereoSkew * 0.08f * (s + 1);
-                            float tonalBias = 0.85f + 0.3f * cutoffDrama + 0.12f * resonanceNorm;
-                            float modulation = std::sin(state.modPhase[s] + state.phaseOffset[s] + swirlSeed * (0.28f + 0.18f * s));
-                            float delayTarget = baseDelay * sizeScale * tonalBias * stereoBias + modulation * modDepth * (1.2f + 0.25f * s);
-                            float maxDelaySamples = std::max(state.delays[s].maxDelaySamples(), 16.f);
-                            float smoothedDelay = smoothScalar(state.smoothedDelay[s], delayTarget, 12.f, maxDelaySamples);
-
-                            float stageBlendBase =
-                                effectAmount * (0.3f + 0.12f * s)
-                                + auraAmount * 0.24f
-                                + orbitAmount * 0.18f
-                                + smoothedDrive * 0.18f;
-                            float stageBlendTarget = clamp(stageBlendBase, 0.f, 0.82f);
-                            stageBlendTarget = smoothScalar(state.smoothedStageBlend[s], stageBlendTarget, 0.f, 0.8f);
-                            float stageBlend = stageBlendTarget;
-
-                            float stageInputDry = rack::math::crossfade(feed, cloud, stageBlend);
-                            float stageInput = stageInputDry + shimmerLift * cloud * 0.25f;
-                            float stageOutputRaw = state.delays[s].process(stageInput, smoothedDelay, feedback);
-                            // DC block and soft saturation to prevent long-tail runaway
-                            state.dcBlock[s] = etherealDcCoeff * state.dcBlock[s] + (1.f - etherealDcCoeff) * stageOutputRaw;
-                            float stageOutput = stageOutputRaw - state.dcBlock[s];
-                            stageOutput = std::tanh(stageOutput * 0.85f) * 1.05f;
-                            cloud += stageOutput * stageWeights[s];
-                            feed = rack::math::crossfade(feed, stageOutput, diffusion);
-                        }
-
-                        float halo = cloud * (1.f + shimmerLift * 0.6f);
-                        halo = rack::math::clamp(halo, -14.f, 14.f);
-                        float haloMix = clamp(haloBlend, 0.f, 0.95f);
-
-                        // Treat halo as an additive ambience but allow wetter blends for "juicy" tone.
-                        float wetGain = haloMix * (0.75f + 0.32f * effectAmount + 0.18f * smoothedDrive);
-                        float blended = input * (1.f - haloMix * 0.25f) + wetGain * halo;
-
-                        // Subtle makeup gain tied to Aura keeps perceived loudness closer to the dry tone
-                        constexpr float MAKEUP_MAX_DB = 3.6f;
-                        float makeupLinear = std::pow(10.f, (auraAmount * MAKEUP_MAX_DB) / 20.f);
-                        blended *= makeupLinear;
-                        return rack::math::clamp(blended, -14.f, 14.f);
-                    };
-
-                    processedA = processEthereal(processedA, voiceCutoffA, resonanceNormA, etherealVoicesA[c], -0.6f);
-                    processedB = processEthereal(processedB, voiceCutoffB, resonanceNormB, etherealVoicesB[c], 0.6f);
+                // --- Cross-feedback (pre-filter, soft-limited) ---
+                if (crossAmount > 0.001f) {
+                    auto cf = crossFeedbackVoices[c].process(audioA, audioB, crossAmount);
+                    audioA = cf.outputA;
+                    audioB = cf.outputB;
                 }
-                
-                
-                // Output DC blocking to remove offset from saturation and delay feedback
+
+                // --- Per-voice cutoff with CV and chaos modulation ---
+                float voiceCutoffA = cutoffA;
+                float voiceCutoffB = cutoffB;
+                float voiceResA    = resonanceA;
+                float voiceResB    = resonanceB;
+
+                if (inputs[CUTOFF_A_CV_INPUT].isConnected()) {
+                    float att = params[CUTOFF_A_ATTEN_PARAM].getValue();
+                    voiceCutoffA += inputs[CUTOFF_A_CV_INPUT].getPolyVoltage(c) * att / 10.f;
+                }
+                // Add chaos LFO — ±0.15 normalized octave range
+                voiceCutoffA = clamp(voiceCutoffA + chaosOut * 0.15f, 0.f, 1.f);
+                voiceCutoffA = cutoffASmoothers[c].process(voiceCutoffA, args.sampleTime, CUTOFF_CV_SMOOTH_TC);
+
+                if (inputs[CUTOFF_B_CV_INPUT].isConnected()) {
+                    float att = params[CUTOFF_B_ATTEN_PARAM].getValue();
+                    voiceCutoffB += inputs[CUTOFF_B_CV_INPUT].getPolyVoltage(c) * att / 10.f;
+                }
+                voiceCutoffB = clamp(voiceCutoffB + chaosOut * 0.15f, 0.f, 1.f);
+                voiceCutoffB = cutoffBSmoothers[c].process(voiceCutoffB, args.sampleTime, CUTOFF_CV_SMOOTH_TC);
+
+                if (inputs[RESONANCE_A_CV_INPUT].isConnected()) {
+                    float att = params[RESONANCE_A_ATTEN_PARAM].getValue();
+                    voiceResA = clamp(voiceResA + inputs[RESONANCE_A_CV_INPUT].getPolyVoltage(c) * att / 10.f,
+                                      0.707f, 2.8f);
+                }
+                if (inputs[RESONANCE_B_CV_INPUT].isConnected()) {
+                    float att = params[RESONANCE_B_ATTEN_PARAM].getValue();
+                    voiceResB = clamp(voiceResB + inputs[RESONANCE_B_CV_INPUT].getPolyVoltage(c) * att / 10.f,
+                                      0.707f, 2.8f);
+                }
+
+                // --- Liquid filter (drive = 1.0 — no pre-gain) ---
+                // x^1.5 slows the sweep through the musical sweet spot (200Hz–3kHz),
+                // which occupies roughly 55–80% of knob travel. Gives a deliberate,
+                // elastic feel — the filter "breathes" through harmonics rather than
+                // shooting past them.
+                float shapedA = std::pow(voiceCutoffA, 1.5f);
+                float shapedB = std::pow(voiceCutoffB, 1.5f);
+                float cutoffAHz = 20.f * std::pow(2.f, shapedA * 10.f);
+                float cutoffBHz = 20.f * std::pow(2.f, shapedB * 10.f);
+
+                float processedA = filtersA[c].process(audioA, cutoffAHz, voiceResA, 1.0f);
+                float processedB = filtersB[c].process(audioB, cutoffBHz, voiceResB, 1.0f);
+
+                // --- Global shimmer (shared buffer — poly voices blend into one reverb tail) ---
+                if (shimmerAmount > 0.001f) {
+                    // delayTime args are in seconds (ShimmerDelay uses 48000 internally)
+                    // Slightly different times for A and B give natural stereo width
+                    float shimOutA = shimmerA.process(processedA, 0.075f, 0.30f, shimmerAmount * 0.5f);
+                    float shimOutB = shimmerB.process(processedB, 0.083f, 0.30f, shimmerAmount * 0.5f);
+                    processedA = rack::math::crossfade(processedA, shimOutA, shimmerAmount * 0.55f);
+                    processedB = rack::math::crossfade(processedB, shimOutB, shimmerAmount * 0.55f);
+                }
+
+                // --- Output DC blocking ---
                 processedA = shapetaker::dsp::AudioProcessor::processDCBlock(
                     processedA, outputDC[c].lastInputA, outputDC[c].lastOutputA);
                 processedB = shapetaker::dsp::AudioProcessor::processDCBlock(
                     processedB, outputDC[c].lastInputB, outputDC[c].lastOutputB);
 
-                // Set output voltages for this voice
                 outputs[AUDIO_A_OUTPUT].setVoltage(processedA, c);
                 outputs[AUDIO_B_OUTPUT].setVoltage(processedB, c);
             }
+        }
 
-        }
-        
-        // Chaos rate indicator: slower blink at low rates, capped brightness.
-        // Nonlinear mapping: make low rates slower and keep fast rates readable.
-        float blinkHz = std::pow(chaosRate, 1.1f);
-        blinkHz = clamp(blinkHz, 0.02f, 6.f);
-        chaosRateBlinkPhase += blinkHz * args.sampleTime;
-        if (chaosRateBlinkPhase >= 1.f) {
-            chaosRateBlinkPhase -= std::floor(chaosRateBlinkPhase);
-        }
-        float blinkScale = 1.f;
-        float chaosRateBrightness = 0.f;
-        lights[CHAOS_RATE_LIGHT].setBrightness(chaosRateBrightness);
-
-        // Mix aura/orbit/tide into the jewel RGB.
-        // Use Chiaroscuro distortion-style intensity response for brightness/glow behavior.
-        float auraValue = clamp(auraLight, 0.f, 1.f);
-        float orbitValue = clamp(orbitLight, 0.f, 1.f);
-        float tideValue = clamp(tideLight, 0.f, 1.f);
-        float total = auraValue + orbitValue + tideValue;
-        constexpr float LED_OFF_EPS = 1e-3f;
-        float auraRed = 0.f;
-        float orbitGreen = 0.f;
-        float tideBlue = 0.f;
-        if (total > LED_OFF_EPS) {
-            float hueAura = auraValue / total;
-            float hueOrbit = orbitValue / total;
-            float hueTide = tideValue / total;
-            float product = auraValue * orbitValue * tideValue;
-            float peak = std::max(auraValue, std::max(orbitValue, tideValue));
-            float mixIntensity = clamp(product + peak * peak * 0.1f, 0.f, 1.f);
-            float ledBrightness = std::pow(mixIntensity, 0.55f) * 1.8f * blinkScale;
-            auraRed = clamp(hueAura * ledBrightness, 0.f, 1.f);
-            orbitGreen = clamp(hueOrbit * ledBrightness, 0.f, 1.f);
-            tideBlue = clamp(hueTide * ledBrightness, 0.f, 1.f);
-        }
-        lights[CHAOS_LIGHT].setBrightness(auraRed);
-        lights[CHAOS_LIGHT + 1].setBrightness(orbitGreen);
-        lights[CHAOS_LIGHT + 2].setBrightness(tideBlue);
-        (void)driveLight;
+        // ====================================================================
+        // LIGHTS — Cross=Red, Mod=Green, Shimmer=Blue
+        // ====================================================================
+        lights[CHAOS_LIGHT    ].setBrightness(clamp(crossAmount,   0.f, 1.f));
+        lights[CHAOS_LIGHT + 1].setBrightness(clamp(modAmount,     0.f, 1.f));
+        lights[CHAOS_LIGHT + 2].setBrightness(clamp(shimmerAmount, 0.f, 1.f));
+        lights[CHAOS_RATE_LIGHT].setBrightness(0.f);
     }
-    
-    // Integrate with Rack's default "Randomize" menu item
+
     void onRandomize() override {
-        // Randomize filter parameters with musical ranges
         std::mt19937 rng(rack::random::u32());
-        
-        // Cutoff frequencies - keep in musical range (100Hz to 8kHz)
         std::uniform_real_distribution<float> cutoffDist(0.2f, 0.9f);
+        std::uniform_real_distribution<float> resDist(0.1f, 0.6f);
+        std::uniform_real_distribution<float> charDist(0.f, 0.7f);
+        std::uniform_real_distribution<float> rateDist(0.2f, 0.8f);
+        std::uniform_int_distribution<int>    linkDist(0, 1);
+
         params[CUTOFF_A_PARAM].setValue(cutoffDist(rng));
         params[CUTOFF_B_PARAM].setValue(cutoffDist(rng));
-        
-        // Resonance - moderate range to avoid harsh sounds
-        std::uniform_real_distribution<float> resDist(0.1f, 0.7f);
         params[RESONANCE_A_PARAM].setValue(resDist(rng));
         params[RESONANCE_B_PARAM].setValue(resDist(rng));
-        
-        // Highpass is now static at 12Hz - no randomization needed
-        
-        // Drive is fixed at maximum saturation; keep the stored parameter at 1.0
-        params[CHAOS_AMOUNT_PARAM].setValue(1.f);
-        std::uniform_real_distribution<float> auraDist(0.2f, 0.8f);
-        std::uniform_real_distribution<float> orbitDist(0.1f, 0.7f);
-        std::uniform_real_distribution<float> tideDist(0.2f, 0.9f);
-        params[AURA_PARAM].setValue(auraDist(rng));
-        params[ORBIT_PARAM].setValue(orbitDist(rng));
-        params[TIDE_PARAM].setValue(tideDist(rng));
-        
-        // Rate parameters - varied but not too extreme
-        std::uniform_real_distribution<float> rateDist(0.2f, 0.8f);
-        params[CHAOS_RATE_PARAM].setValue(rateDist(rng));
-        chaosTargetRate = clamp(params[CHAOS_RATE_PARAM].getValue(), CHAOS_RATE_MIN_HZ, CHAOS_RATE_MAX_HZ);
-        smoothedChaosRate = chaosTargetRate;
-        chaosRateSmooth.reset(chaosTargetRate);
-
-        // Filter morph - full range for variety
-        // Link switches - randomly enable/disable
-        std::uniform_int_distribution<int> linkDist(0, 1);
+        params[MORPH_PARAM].setValue(charDist(rng));
+        params[CROSS_PARAM].setValue(charDist(rng));
+        params[MOD_PARAM].setValue(charDist(rng));
+        params[SHIMMER_PARAM].setValue(charDist(rng));
+        params[MOD_RATE_PARAM].setValue(rateDist(rng));
         params[LINK_CUTOFF_PARAM].setValue((float)linkDist(rng));
         params[LINK_RESONANCE_PARAM].setValue((float)linkDist(rng));
     }
-
 };
 
-// Chaos visualizer widget - extracted to separate files
+// Chaos visualizer widget — extracted to separate files
 #include "involution/chaos_visualizer.hpp"
 #include "involution/chaos_visualizer_impl.hpp"
 
-// Custom SVG-based JewelLED for chaos light
+// Custom SVG-based JewelLED for the activity light
 struct ChaosJewelLED : ModuleLightWidget {
     ChaosJewelLED() {
-        box.size = Vec(20, 20);  // Medium size
+        box.size = Vec(20, 20);
 
-        // Try to load the medium jewel SVG
         widget::SvgWidget* sw = new widget::SvgWidget;
-        std::shared_ptr<Svg> svg = APP->window->loadSvg(asset::plugin(pluginInstance, "res/leds/jewel_led_medium.svg"));
-
+        std::shared_ptr<Svg> svg = APP->window->loadSvg(
+            asset::plugin(pluginInstance, "res/leds/jewel_led_medium.svg"));
         if (svg) {
             sw->setSvg(svg);
             addChild(sw);
         }
 
-        // Default base colors (Cyan theme) - updated dynamically in step()
-        addBaseColor(nvgRGB(186, 92, 220));  // Violet
-        addBaseColor(nvgRGB(148, 124, 255)); // Periwinkle
-        addBaseColor(nvgRGB(255, 118, 214)); // Rose
+        addBaseColor(nvgRGB(186, 92, 220));
+        addBaseColor(nvgRGB(148, 124, 255));
+        addBaseColor(nvgRGB(255, 118, 214));
     }
 
     void step() override {
-        // Update base colors from theme before ModuleLightWidget blends them
         if (module) {
             Involution* inv = dynamic_cast<Involution*>(module);
             if (inv) {
                 int themeIdx = clamp(inv->chaosTheme, 0, NUM_CHAOS_THEMES - 1);
                 const ChaosThemePalette& t = CHAOS_THEMES[themeIdx];
-                for (int i = 0; i < 3; i++) {
-                    baseColors[i] = t.ledBaseColors[i];
-                }
+                for (int i = 0; i < 3; i++) baseColors[i] = t.ledBaseColors[i];
             }
         }
         ModuleLightWidget::step();
 
-        // Match Chiaroscuro jewel behavior: derive drawable color directly from RGB light channels.
         if (module) {
             float r = module->lights[firstLightId + 0].getBrightness();
             float g = module->lights[firstLightId + 1].getBrightness();
@@ -922,52 +500,40 @@ struct ChaosJewelLED : ModuleLightWidget {
     }
 
     void drawLight(const DrawArgs& args) override {
-        // Match Chiaroscuro gain jewel light profile for comparable perceived brightness.
         float brightness = color.a;
         brightness = std::max(brightness, color.r);
         brightness = std::max(brightness, color.g);
         brightness = std::max(brightness, color.b);
-        if (brightness <= 1e-3f) {
-            return;
-        }
+        if (brightness <= 1e-3f) return;
 
-        const float minSize = std::min(box.size.x, box.size.y);
-        const float cx = box.size.x * 0.5f;
-        const float cy = box.size.y * 0.5f;
+        const float minSize  = std::min(box.size.x, box.size.y);
+        const float cx       = box.size.x * 0.5f;
+        const float cy       = box.size.y * 0.5f;
         const float lensRadius = 0.42f * minSize;
-        float glow = clamp(brightness * 2.0f, 0.f, 1.f);
+        float glow = clamp(brightness * 2.0f, 0.f, 1.f) * shapetaker::ui::kJewelMaxBrightness;
 
         nvgSave(args.vg);
         nvgScissor(args.vg, cx - lensRadius, cy - lensRadius, lensRadius * 2.f, lensRadius * 2.f);
 
-        NVGcolor washInner = color;
-        washInner.a = 0.85f * glow;
-        NVGcolor washOuter = color;
-        washOuter.a = 0.45f * glow;
+        NVGcolor washInner = color; washInner.a = 0.85f * glow;
+        NVGcolor washOuter = color; washOuter.a = 0.45f * glow;
         NVGpaint wash = nvgRadialGradient(args.vg, cx, cy, 0.f, lensRadius, washInner, washOuter);
-        nvgBeginPath(args.vg);
-        nvgCircle(args.vg, cx, cy, lensRadius);
-        nvgFillPaint(args.vg, wash);
-        nvgFill(args.vg);
+        nvgBeginPath(args.vg); nvgCircle(args.vg, cx, cy, lensRadius);
+        nvgFillPaint(args.vg, wash); nvgFill(args.vg);
 
         NVGcolor coreInner = nvgRGBAf(
             std::min(color.r * 1.5f + 0.3f, 1.f),
             std::min(color.g * 1.5f + 0.3f, 1.f),
-            std::min(color.b * 1.5f + 0.3f, 1.f),
-            0.9f * glow);
-        NVGcolor coreOuter = color;
-        coreOuter.a = 0.2f * glow;
+            std::min(color.b * 1.5f + 0.3f, 1.f), 0.9f * glow);
+        NVGcolor coreOuter = color; coreOuter.a = 0.2f * glow;
         NVGpaint core = nvgRadialGradient(args.vg, cx, cy, 0.f, lensRadius * 0.5f, coreInner, coreOuter);
-        nvgBeginPath(args.vg);
-        nvgCircle(args.vg, cx, cy, lensRadius * 0.5f);
-        nvgFillPaint(args.vg, core);
-        nvgFill(args.vg);
+        nvgBeginPath(args.vg); nvgCircle(args.vg, cx, cy, lensRadius * 0.5f);
+        nvgFillPaint(args.vg, core); nvgFill(args.vg);
 
         NVGcolor spec = nvgRGBAf(1.f, 1.f, 1.f, 0.35f * glow);
         nvgBeginPath(args.vg);
         nvgCircle(args.vg, cx - lensRadius * 0.15f, cy - lensRadius * 0.15f, lensRadius * 0.18f);
-        nvgFillColor(args.vg, spec);
-        nvgFill(args.vg);
+        nvgFillColor(args.vg, spec); nvgFill(args.vg);
 
         nvgResetScissor(args.vg);
         nvgRestore(args.vg);
@@ -978,67 +544,48 @@ struct ChaosJewelLED : ModuleLightWidget {
         brightness = std::max(brightness, color.r);
         brightness = std::max(brightness, color.g);
         brightness = std::max(brightness, color.b);
-        if (brightness <= 1e-3f) {
-            return;
-        }
+        if (brightness <= 1e-3f) return;
 
-        float cx = box.size.x * 0.5f;
-        float cy = box.size.y * 0.5f;
-        float radius = std::min(box.size.x, box.size.y) * 0.5f;
+        float cx = box.size.x * 0.5f, cy = box.size.y * 0.5f;
+        float radius  = std::min(box.size.x, box.size.y) * 0.5f;
         float oradius = radius * 1.5f;
 
-        NVGcolor icol = color;
-        icol.a = 0.25f * brightness;
-        NVGcolor ocol = color;
-        ocol.a = 0.0f;
-
+        NVGcolor icol = color; icol.a = 0.25f * brightness;
+        NVGcolor ocol = color; ocol.a = 0.0f;
         NVGpaint paint = nvgRadialGradient(args.vg, cx, cy, radius * 0.15f, oradius, icol, ocol);
         nvgBeginPath(args.vg);
         nvgRect(args.vg, cx - oradius, cy - oradius, oradius * 2.f, oradius * 2.f);
-        nvgFillPaint(args.vg, paint);
-        nvgFill(args.vg);
+        nvgFillPaint(args.vg, paint); nvgFill(args.vg);
     }
 
     void draw(const DrawArgs& args) override {
         if (children.empty()) {
-            // Fallback drawing if SVG doesn't load (medium size)
-            nvgBeginPath(args.vg);
-            nvgCircle(args.vg, 10, 10, 9.5);
-            nvgFillColor(args.vg, nvgRGB(0xc0, 0xc0, 0xc0));
-            nvgFill(args.vg);
-
-            nvgBeginPath(args.vg);
-            nvgCircle(args.vg, 10, 10, 6.5);
-            nvgFillColor(args.vg, nvgRGB(0x33, 0x33, 0x33));
-            nvgFill(args.vg);
+            nvgBeginPath(args.vg); nvgCircle(args.vg, 10, 10, 9.5);
+            nvgFillColor(args.vg, nvgRGB(0xc0, 0xc0, 0xc0)); nvgFill(args.vg);
+            nvgBeginPath(args.vg); nvgCircle(args.vg, 10, 10, 6.5);
+            nvgFillColor(args.vg, nvgRGB(0x33, 0x33, 0x33)); nvgFill(args.vg);
         }
-        // Draw SVG children first
         widget::Widget::draw(args);
-
-        // Overlay the colored light using additive blending so it glows through the SVG facets
+        nvgSave(args.vg);
+        nvgGlobalAlpha(args.vg, shapetaker::ui::kJewelMaxBrightness);
         nvgGlobalCompositeOperation(args.vg, NVG_LIGHTER);
         drawLight(args);
         nvgGlobalCompositeOperation(args.vg, NVG_SOURCE_OVER);
         drawHalo(args);
+        nvgRestore(args.vg);
     }
 };
 
-// Glow-only halo for chaos rate (drawn behind the jewel lens)
+// Glow halo drawn behind the jewel lens
 struct ChaosRateGlow : ModuleLightWidget {
-    ChaosRateGlow() {
-        // Match the chaos jewel footprint so the glow stays concentric.
-        box.size = Vec(20.f, 20.f);
-    }
+    ChaosRateGlow() { box.size = Vec(20.f, 20.f); }
 
     void draw(const DrawArgs& args) override {
         float brightness = module ? module->lights[firstLightId].getBrightness() : 0.f;
         brightness = clamp(brightness, 0.f, 1.f);
-        if (brightness <= 0.f) {
-            return;
-        }
+        if (brightness <= 0.f) return;
 
-        // Resolve glow color from theme
-        NVGcolor glowBase = nvgRGB(255, 0, 255); // default
+        NVGcolor glowBase = nvgRGB(255, 0, 255);
         if (module) {
             Involution* inv = dynamic_cast<Involution*>(module);
             if (inv) {
@@ -1048,32 +595,19 @@ struct ChaosRateGlow : ModuleLightWidget {
         }
 
         NVGcontext* vg = args.vg;
-        float cx = box.size.x * 0.5f;
-        float cy = box.size.y * 0.5f;
+        float cx = box.size.x * 0.5f, cy = box.size.y * 0.5f;
         float radius = std::min(box.size.x, box.size.y) * 0.5f;
 
         nvgSave(vg);
+        NVGcolor haloInner = glowBase; haloInner.a = brightness * (90.f / 255.f);
+        NVGcolor haloOuter = glowBase; haloOuter.a = 0.f;
+        NVGpaint glow = nvgRadialGradient(vg, cx, cy, radius * 0.2f, radius * 1.2f, haloInner, haloOuter);
+        nvgBeginPath(vg); nvgCircle(vg, cx, cy, radius * 1.15f);
+        nvgFillPaint(vg, glow); nvgFill(vg);
 
-        // Soft halo behind the jewel
-        NVGcolor haloInner = glowBase;
-        haloInner.a = brightness * (90.f / 255.f);
-        NVGcolor haloOuter = glowBase;
-        haloOuter.a = 0.f;
-        NVGpaint glow = nvgRadialGradient(vg, cx, cy, radius * 0.2f, radius * 1.2f,
-            haloInner, haloOuter);
-        nvgBeginPath(vg);
-        nvgCircle(vg, cx, cy, radius * 1.15f);
-        nvgFillPaint(vg, glow);
-        nvgFill(vg);
-
-        // Inner emitter core
-        NVGcolor coreColor = glowBase;
-        coreColor.a = brightness * (140.f / 255.f);
-        nvgBeginPath(vg);
-        nvgCircle(vg, cx, cy, radius * 0.45f);
-        nvgFillColor(vg, coreColor);
-        nvgFill(vg);
-
+        NVGcolor coreColor = glowBase; coreColor.a = brightness * (140.f / 255.f);
+        nvgBeginPath(vg); nvgCircle(vg, cx, cy, radius * 0.45f);
+        nvgFillColor(vg, coreColor); nvgFill(vg);
         nvgRestore(vg);
     }
 };
@@ -1084,129 +618,141 @@ struct InvolutionWidget : ModuleWidget {
         setPanel(APP->window->loadSvg(asset::plugin(pluginInstance, "res/panels/Involution.svg")));
 
         using LayoutHelper = shapetaker::ui::LayoutHelper;
-
         LayoutHelper::ScrewPositions::addStandardScrews<ScrewJetBlack>(this, box.size.x);
 
-        // Create positioning helper from SVG panel
         auto centerPx = LayoutHelper::createCenterPxHelper(
-            asset::plugin(pluginInstance, "res/panels/Involution.svg")
-        );
+            asset::plugin(pluginInstance, "res/panels/Involution.svg"));
 
-        // Use global shadow helper from plugin.hpp
         auto addKnobWithShadow = [this](app::ParamWidget* knob) {
             ::addKnobWithShadow(this, knob);
         };
 
-        // Main Filter Section - vintage knobs with shadows (hardware-realistic sizing)
-        // Cutoff knobs: Extra large vintage (22mm) for main frequency controls
+        // ---- Filter A/B cutoff (extra large vintage) ----
         addKnobWithShadow(createParamCentered<ShapetakerKnobVintageXLarge>(
-            centerPx("cutoff_v", 24.026f, 24.174f),
-            module, Involution::CUTOFF_A_PARAM));
+            centerPx("cutoff_v", 24.026f, 24.174f), module, Involution::CUTOFF_A_PARAM));
         addKnobWithShadow(createParamCentered<ShapetakerKnobVintageXLarge>(
-            centerPx("cutoff_z", 66.305f, 24.174f),
-            module, Involution::CUTOFF_B_PARAM));
+            centerPx("cutoff_z", 66.305f, 24.174f), module, Involution::CUTOFF_B_PARAM));
 
-        // Resonance knobs: Medium vintage (18mm) for secondary controls
+        // ---- Filter A/B resonance (medium vintage) ----
         addKnobWithShadow(createParamCentered<ShapetakerKnobVintageMedium>(
-            centerPx("resonance_v", 11.935f, 57.750f),
-            module, Involution::RESONANCE_A_PARAM));
+            centerPx("resonance_v", 11.935f, 57.750f), module, Involution::RESONANCE_A_PARAM));
         addKnobWithShadow(createParamCentered<ShapetakerKnobVintageMedium>(
-            centerPx("resonance_z", 78.397f, 57.750f),
-            module, Involution::RESONANCE_B_PARAM));
-        
-        // Link switches - using SVG parser with fallbacks
-        addParam(createParamCentered<ShapetakerDarkToggle>(
-            centerPx("link_cutoff", 45.166f, 29.894f),
-            module, Involution::LINK_CUTOFF_PARAM));
-        addParam(createParamCentered<ShapetakerDarkToggle>(
-            centerPx("link_resonance", 45.166f, 84.630f),
-            module, Involution::LINK_RESONANCE_PARAM));
+            centerPx("resonance_z", 78.397f, 57.750f), module, Involution::RESONANCE_B_PARAM));
 
-        // Attenuverters for CV inputs - small vintage attenuverters with shadows (10mm)
-        addKnobWithShadow(createParamCentered<ShapetakerAttenuverterOscilloscope>(
-            centerPx("cutoff_v_atten", 9.027f, 41.042f),
-            module, Involution::CUTOFF_A_ATTEN_PARAM));
-        addKnobWithShadow(createParamCentered<ShapetakerAttenuverterOscilloscope>(
-            centerPx("resonance_v_atten", 11.935f, 76.931f),
-            module, Involution::RESONANCE_A_ATTEN_PARAM));
-        addKnobWithShadow(createParamCentered<ShapetakerAttenuverterOscilloscope>(
-            centerPx("cutoff_z_atten", 81.305f, 41.042f),
-            module, Involution::CUTOFF_B_ATTEN_PARAM));
-        addKnobWithShadow(createParamCentered<ShapetakerAttenuverterOscilloscope>(
-            centerPx("resonance_z_atten", 78.397f, 76.931f),
-            module, Involution::RESONANCE_B_ATTEN_PARAM));
+        // ---- Link switches ----
+        addParam(createParamCentered<ShapetakerDarkToggle>(
+            centerPx("link_cutoff", 45.166f, 29.894f), module, Involution::LINK_CUTOFF_PARAM));
+        addParam(createParamCentered<ShapetakerDarkToggle>(
+            centerPx("link_resonance", 45.166f, 84.630f), module, Involution::LINK_RESONANCE_PARAM));
 
-        // Character Controls - small-medium vintage knobs with shadows (15mm)
-        // Highpass is now static at 12Hz - no control needed
-        // Drive knob is fixed; reuse area for Aura/Orbit/Tide controls
-        addKnobWithShadow(createParamCentered<ShapetakerKnobVintageSmallMedium>(
-            centerPx("aura_knob", 15.910f, 94.088f),
-            module, Involution::AURA_PARAM));
-        addKnobWithShadow(createParamCentered<ShapetakerKnobVintageSmallMedium>(
-            centerPx("orbit_knob", 45.166f, 94.088f),
-            module, Involution::ORBIT_PARAM));
-        addKnobWithShadow(createParamCentered<ShapetakerKnobVintageSmallMedium>(
-            centerPx("tide_knob", 74.422f, 94.088f),
-            module, Involution::TIDE_PARAM));
+        // ---- Attenuverters ----
         addKnobWithShadow(createParamCentered<ShapetakerAttenuverterOscilloscope>(
-            centerPx("chaos_rate_knob", 60.922f, 108.088f),
-            module, Involution::CHAOS_RATE_PARAM));
-        
-        // Chaos Visualizer - using SVG parser for automatic positioning
+            centerPx("cutoff_v_atten", 9.027f, 41.042f), module, Involution::CUTOFF_A_ATTEN_PARAM));
+        addKnobWithShadow(createParamCentered<ShapetakerAttenuverterOscilloscope>(
+            centerPx("resonance_v_atten", 11.935f, 76.931f), module, Involution::RESONANCE_A_ATTEN_PARAM));
+        addKnobWithShadow(createParamCentered<ShapetakerAttenuverterOscilloscope>(
+            centerPx("cutoff_z_atten", 81.305f, 41.042f), module, Involution::CUTOFF_B_ATTEN_PARAM));
+        addKnobWithShadow(createParamCentered<ShapetakerAttenuverterOscilloscope>(
+            centerPx("resonance_z_atten", 78.397f, 76.931f), module, Involution::RESONANCE_B_ATTEN_PARAM));
+
+        // ---- Character controls: Cross / Mod / Shimmer ----
+        addKnobWithShadow(createParamCentered<ShapetakerKnobVintageSmallMedium>(
+            centerPx("aura_knob", 15.910f, 94.088f), module, Involution::CROSS_PARAM));
+        addKnobWithShadow(createParamCentered<ShapetakerKnobVintageSmallMedium>(
+            centerPx("orbit_knob", 45.166f, 94.088f), module, Involution::MOD_PARAM));
+        addKnobWithShadow(createParamCentered<ShapetakerKnobVintageSmallMedium>(
+            centerPx("tide_knob", 74.422f, 94.088f), module, Involution::SHIMMER_PARAM));
+
+        // ---- Mod Rate (attenuverter-style small knob) ----
+        addKnobWithShadow(createParamCentered<ShapetakerAttenuverterOscilloscope>(
+            centerPx("chaos_rate_knob", 60.922f, 108.088f), module, Involution::MOD_RATE_PARAM));
+
+        // ---- Filter Morph (center, between rate and audio I/O) ----
+        addKnobWithShadow(createParamCentered<ShapetakerKnobVintageSmallMedium>(
+            centerPx("filter_morph", 45.166f, 108.088f), module, Involution::MORPH_PARAM));
+
+        // ---- Chaos visualizer ----
         ChaosVisualizer* chaosViz = new ChaosVisualizer(module);
         Vec screenCenter = centerPx("oscope_screen",
                                     std::numeric_limits<float>::quiet_NaN(),
                                     std::numeric_limits<float>::quiet_NaN());
-        if (!std::isfinite(screenCenter.x) || !std::isfinite(screenCenter.y)) {
+        if (!std::isfinite(screenCenter.x) || !std::isfinite(screenCenter.y))
             screenCenter = centerPx("resonance_a_cv-1", 45.166f, 57.750f);
-        }
-        chaosViz->box.pos = Vec(screenCenter.x - 86.5, screenCenter.y - 69); // Center the 173x138 screen
+        chaosViz->box.pos = Vec(screenCenter.x - 86.5f, screenCenter.y - 69.f);
         addChild(chaosViz);
-        
-        // Chaos light - using SVG parser and custom JewelLED
+
+        // ---- Activity jewel LED ----
         Vec chaosCenter = centerPx("chaos_rate_light", 29.559f, 103.546f);
-        // Rate glow behind the jewel lens.
         addChild(createLightCentered<ChaosRateGlow>(chaosCenter, module, Involution::CHAOS_RATE_LIGHT));
-        // Jewel lens for drive activity.
         addChild(createLightCentered<ChaosJewelLED>(chaosCenter, module, Involution::CHAOS_LIGHT));
 
-        // CV inputs - using SVG parser with updated coordinates
-        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("cutoff_v_cv", 24.027f, 44.322f), module, Involution::CUTOFF_A_CV_INPUT));
-        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("resonance_v_cv", 24.027f, 68.931f), module, Involution::RESONANCE_A_CV_INPUT));
-        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("cutoff_z_cv", 66.305f, 44.322f), module, Involution::CUTOFF_B_CV_INPUT));
-        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("resonance_z_cv", 66.305f, 68.931f), module, Involution::RESONANCE_B_CV_INPUT));
-        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("aura_cv", 15.910f, 84.630f), module, Involution::AURA_CV_INPUT));
-        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("orbit_cv", 45.166f, 84.630f), module, Involution::ORBIT_CV_INPUT));
-        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("tide_cv", 74.422f, 84.630f), module, Involution::TIDE_CV_INPUT));
-        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("chaos_cv", 60.922f, 84.630f), module, Involution::CHAOS_RATE_CV_INPUT));
-        // Audio I/O - direct millimeter coordinates
-        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("audio_l_input", 10.276f, 118.977f), module, Involution::AUDIO_A_INPUT));
-        addInput(createInputCentered<ShapetakerBNCPort>(centerPx("audio_r_input", 27.721f, 119.245f), module, Involution::AUDIO_B_INPUT));
-        addOutput(createOutputCentered<ShapetakerBNCPort>(centerPx("audio_l_output", 63.436f, 119.347f), module, Involution::AUDIO_A_OUTPUT));
-        addOutput(createOutputCentered<ShapetakerBNCPort>(centerPx("audio_r_output", 81.706f, 119.347f), module, Involution::AUDIO_B_OUTPUT));
+        // ---- CV inputs ----
+        addInput(createInputCentered<ShapetakerBNCPort>(
+            centerPx("cutoff_v_cv",    24.027f, 44.322f), module, Involution::CUTOFF_A_CV_INPUT));
+        addInput(createInputCentered<ShapetakerBNCPort>(
+            centerPx("resonance_v_cv", 24.027f, 68.931f), module, Involution::RESONANCE_A_CV_INPUT));
+        addInput(createInputCentered<ShapetakerBNCPort>(
+            centerPx("cutoff_z_cv",    66.305f, 44.322f), module, Involution::CUTOFF_B_CV_INPUT));
+        addInput(createInputCentered<ShapetakerBNCPort>(
+            centerPx("resonance_z_cv", 66.305f, 68.931f), module, Involution::RESONANCE_B_CV_INPUT));
+        addInput(createInputCentered<ShapetakerBNCPort>(
+            centerPx("aura_cv",  15.910f, 84.630f), module, Involution::CROSS_CV_INPUT));
+        addInput(createInputCentered<ShapetakerBNCPort>(
+            centerPx("orbit_cv", 45.166f, 84.630f), module, Involution::MOD_CV_INPUT));
+        addInput(createInputCentered<ShapetakerBNCPort>(
+            centerPx("tide_cv",  74.422f, 84.630f), module, Involution::SHIMMER_CV_INPUT));
+        addInput(createInputCentered<ShapetakerBNCPort>(
+            centerPx("chaos_cv", 60.922f, 84.630f), module, Involution::MOD_RATE_CV_INPUT));
+
+        // ---- Audio I/O ----
+        addInput(createInputCentered<ShapetakerBNCPort>(
+            centerPx("audio_l_input",  10.276f, 118.977f), module, Involution::AUDIO_A_INPUT));
+        addInput(createInputCentered<ShapetakerBNCPort>(
+            centerPx("audio_r_input",  27.721f, 119.245f), module, Involution::AUDIO_B_INPUT));
+        addOutput(createOutputCentered<ShapetakerBNCPort>(
+            centerPx("audio_l_output", 63.436f, 119.347f), module, Involution::AUDIO_A_OUTPUT));
+        addOutput(createOutputCentered<ShapetakerBNCPort>(
+            centerPx("audio_r_output", 81.706f, 119.347f), module, Involution::AUDIO_B_OUTPUT));
     }
 
-    // Draw panel background image (exported from Inkscape at exact panel size)
     void draw(const DrawArgs& args) override {
-        std::shared_ptr<Image> bg = APP->window->loadImage(asset::plugin(pluginInstance, "res/panels/panel_background.png"));
+        std::shared_ptr<Image> bg = APP->window->loadImage(
+            asset::plugin(pluginInstance, "res/panels/panel_background.png"));
         if (bg) {
-            // Draw image slightly overscanned to avoid edge tinting inside the panel border
             constexpr float inset = 2.0f;
+            constexpr float textureAspect = 2880.f / 4553.f;  // panel_background.png
+            float tileH = box.size.y + inset * 2.f;
+            float tileW = tileH * textureAspect;
             float x = -inset;
             float y = -inset;
-            float w = box.size.x + inset * 2.f;
-            float h = box.size.y + inset * 2.f;
+
             nvgSave(args.vg);
+
+            // Base tile pass
             nvgBeginPath(args.vg);
             nvgRect(args.vg, 0.f, 0.f, box.size.x, box.size.y);
-            NVGpaint paint = nvgImagePattern(args.vg, x, y, w, h, 0.f, bg->handle, 1.0f);
-            nvgFillPaint(args.vg, paint);
+            NVGpaint paintA = nvgImagePattern(args.vg, x, y, tileW, tileH, 0.f, bg->handle, 1.0f);
+            nvgFillPaint(args.vg, paintA);
             nvgFill(args.vg);
+
+            // Offset low-opacity pass to soften seam visibility
+            nvgBeginPath(args.vg);
+            nvgRect(args.vg, 0.f, 0.f, box.size.x, box.size.y);
+            NVGpaint paintB = nvgImagePattern(args.vg, x + tileW * 0.5f, y, tileW, tileH, 0.f, bg->handle, 0.35f);
+            nvgFillPaint(args.vg, paintB);
+            nvgFill(args.vg);
+
+            // Slight darkening to match existing module tone
+            nvgBeginPath(args.vg);
+            nvgRect(args.vg, 0.f, 0.f, box.size.x, box.size.y);
+            nvgFillColor(args.vg, nvgRGBA(0, 0, 0, 18));
+            nvgFill(args.vg);
+
             nvgRestore(args.vg);
         }
         ModuleWidget::draw(args);
 
-        // Draw a black inner frame to fully mask any edge tinting
+        // Inner frame to mask any edge tinting
         constexpr float frame = 1.0f;
         nvgBeginPath(args.vg);
         nvgRect(args.vg, 0.f, 0.f, box.size.x, box.size.y);
@@ -1218,34 +764,20 @@ struct InvolutionWidget : ModuleWidget {
 
     void appendContextMenu(Menu* menu) override {
         ModuleWidget::appendContextMenu(menu);
-        auto* involution = dynamic_cast<Involution*>(module);
-        if (!involution)
-            return;
+        auto* inv = dynamic_cast<Involution*>(module);
+        if (!inv) return;
 
         menu->addChild(new MenuSeparator);
-        menu->addChild(createSubmenuItem("Screen Theme", CHAOS_THEME_NAMES[clamp(involution->chaosTheme, 0, NUM_CHAOS_THEMES - 1)], [=](Menu* childMenu) {
-            for (int i = 0; i < NUM_CHAOS_THEMES; i++) {
-                childMenu->addChild(createCheckMenuItem(CHAOS_THEME_NAMES[i], "", [=] {
-                    return involution->chaosTheme == i;
-                }, [=] {
-                    involution->chaosTheme = i;
-                }));
-            }
-        }));
-
-        static const char* filterModeNames[] = {"Lowpass", "Bandpass", ("Morph (LP\xe2\x86\x92" "BP)")};
-        int currentMode = clamp(involution->filterModeIndex, 0, 2);
-        menu->addChild(createSubmenuItem("Filter Mode", filterModeNames[currentMode], [=](Menu* childMenu) {
-            for (int i = 0; i < 3; i++) {
-                childMenu->addChild(createCheckMenuItem(filterModeNames[i], "", [=] {
-                    return involution->filterModeIndex == i;
-                }, [=] {
-                    involution->filterModeIndex = i;
-                    involution->applyFilterMode();
-                }));
-            }
-        }));
-
+        menu->addChild(createSubmenuItem(
+            "Screen Theme",
+            CHAOS_THEME_NAMES[clamp(inv->chaosTheme, 0, NUM_CHAOS_THEMES - 1)],
+            [=](Menu* childMenu) {
+                for (int i = 0; i < NUM_CHAOS_THEMES; i++) {
+                    childMenu->addChild(createCheckMenuItem(CHAOS_THEME_NAMES[i], "",
+                        [=] { return inv->chaosTheme == i; },
+                        [=] { inv->chaosTheme = i; }));
+                }
+            }));
     }
 };
 

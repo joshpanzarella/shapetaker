@@ -764,13 +764,13 @@ struct IncantationWidget : ModuleWidget {
         auto centerPx = LayoutHelper::createCenterPxHelper(parser);
 
         // Controls currently present on the panel SVG.
-        addKnobWithShadow(this, createParamCentered<ShapetakerDavies1900hLargeDot>(centerPx("drive_knob", 13.208855f, 19.975176f), module, Incantation::DRIVE_PARAM));
-        addKnobWithShadow(this, createParamCentered<ShapetakerDavies1900hLargeDot>(centerPx("mix_knob", 46.762012f, 19.582415f), module, Incantation::MIX_PARAM));
-        addKnobWithShadow(this, createParamCentered<ShapetakerDavies1900hLargeDot>(centerPx("output_knob", 80.315178f, 19.2085f), module, Incantation::OUTPUT_PARAM));
+        addKnobWithShadow(this, createParamCentered<ShapetakerKnobVintageMedium>(centerPx("drive_knob", 13.208855f, 19.975176f), module, Incantation::DRIVE_PARAM));
+        addKnobWithShadow(this, createParamCentered<ShapetakerKnobVintageMedium>(centerPx("mix_knob", 46.762012f, 19.582415f), module, Incantation::MIX_PARAM));
+        addKnobWithShadow(this, createParamCentered<ShapetakerKnobVintageMedium>(centerPx("output_knob", 80.315178f, 19.2085f), module, Incantation::OUTPUT_PARAM));
 
-        addKnobWithShadow(this, createParamCentered<ShapetakerDavies1900hSmallDot>(centerPx("pattern_knob", 28.202541f, 36.118465f), module, Incantation::PATTERN_PARAM));
-        addKnobWithShadow(this, createParamCentered<ShapetakerDavies1900hSmallDot>(centerPx("env_knob", 64.797302f, 36.118465f), module, Incantation::ENVELOPE_PARAM));
-        addKnobWithShadow(this, createParamCentered<ShapetakerDavies1900hSmallDot>(centerPx("rate_knob", 48.417404f, 54.276268f), module, Incantation::RATE_PARAM));
+        addKnobWithShadow(this, createParamCentered<ShapetakerKnobVintageSmallMedium>(centerPx("pattern_knob", 28.202541f, 36.118465f), module, Incantation::PATTERN_PARAM));
+        addKnobWithShadow(this, createParamCentered<ShapetakerKnobVintageSmallMedium>(centerPx("env_knob", 64.797302f, 36.118465f), module, Incantation::ENVELOPE_PARAM));
+        addKnobWithShadow(this, createParamCentered<ShapetakerKnobVintageSmallMedium>(centerPx("rate_knob", 48.417404f, 54.276268f), module, Incantation::RATE_PARAM));
 
         for (int i = 0; i < 8; i++) {
             std::string id = "fader_" + std::to_string(i + 1);

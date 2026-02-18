@@ -35,11 +35,14 @@ void TealJewelLEDSmall::draw(const DrawArgs& args) {
     // Draw SVG children first
     widget::Widget::draw(args);
 
-    // Overlay the colored light using additive blending so it glows through the SVG facets
+    // Overlay the colored light using additive blending (dimmed to preserve facets)
+    nvgSave(args.vg);
+    nvgGlobalAlpha(args.vg, shapetaker::ui::kJewelMaxBrightness);
     nvgGlobalCompositeOperation(args.vg, NVG_LIGHTER);
     drawLight(args);
     nvgGlobalCompositeOperation(args.vg, NVG_SOURCE_OVER);
     drawHalo(args);
+    nvgRestore(args.vg);
 }
 
 // PurpleJewelLEDSmall Implementation
@@ -74,11 +77,14 @@ void PurpleJewelLEDSmall::draw(const DrawArgs& args) {
     // Draw SVG children first
     widget::Widget::draw(args);
 
-    // Overlay the colored light using additive blending so it glows through the SVG facets
+    // Overlay the colored light using additive blending (dimmed to preserve facets)
+    nvgSave(args.vg);
+    nvgGlobalAlpha(args.vg, shapetaker::ui::kJewelMaxBrightness);
     nvgGlobalCompositeOperation(args.vg, NVG_LIGHTER);
     drawLight(args);
     nvgGlobalCompositeOperation(args.vg, NVG_SOURCE_OVER);
     drawHalo(args);
+    nvgRestore(args.vg);
 }
 
 // TealJewelLEDMedium Implementation
@@ -113,11 +119,14 @@ void TealJewelLEDMedium::draw(const DrawArgs& args) {
     // Draw SVG children first
     widget::Widget::draw(args);
 
-    // Overlay the colored light using additive blending so it glows through the SVG facets
+    // Overlay the colored light using additive blending (dimmed to preserve facets)
+    nvgSave(args.vg);
+    nvgGlobalAlpha(args.vg, shapetaker::ui::kJewelMaxBrightness);
     nvgGlobalCompositeOperation(args.vg, NVG_LIGHTER);
     drawLight(args);
     nvgGlobalCompositeOperation(args.vg, NVG_SOURCE_OVER);
     drawHalo(args);
+    nvgRestore(args.vg);
 }
 
 // PurpleJewelLEDMedium Implementation
@@ -152,11 +161,14 @@ void PurpleJewelLEDMedium::draw(const DrawArgs& args) {
     // Draw SVG children first
     widget::Widget::draw(args);
 
-    // Overlay the colored light using additive blending so it glows through the SVG facets
+    // Overlay the colored light using additive blending (dimmed to preserve facets)
+    nvgSave(args.vg);
+    nvgGlobalAlpha(args.vg, shapetaker::ui::kJewelMaxBrightness);
     nvgGlobalCompositeOperation(args.vg, NVG_LIGHTER);
     drawLight(args);
     nvgGlobalCompositeOperation(args.vg, NVG_SOURCE_OVER);
     drawHalo(args);
+    nvgRestore(args.vg);
 }
 
 } // namespace transmutation

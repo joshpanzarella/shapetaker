@@ -17,4 +17,5 @@ void init(Plugin* p) {
     p->addModel(modelTorsion);
     p->addModel(modelTessellation);
     p->addModel(modelPatina);
+    p->addModel(modelReverie);
 }

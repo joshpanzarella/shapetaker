@@ -6,13 +6,19 @@
 /**
  * LiquidFilter - 6th-order filter with liquid, resonant character
  *
- * Three cascaded 2-pole SVF stages with global feedback topology:
- * - Global feedback from stage 3 output to stage 1 input (like a ladder filter)
- * - Individual stages run clean (no per-stage resonance) preserving bass
- * - Resonance emerges from the feedback loop, not from individual stage peaking
- * - Transistor-style saturation: linear for small signals, shaped for peaks
- * - 2x oversampling for stability
- * - Inter-stage saturation for analog character
+ * Three cascaded 2-pole SVF stages (k=2.0) with global ladder-style feedback:
+ * - k=2.0 is held constant — reducing it shifts the -180° phase crossing to a
+ *   higher-gain frequency, cutting the max stable feedbackAmount below 2 and
+ *   causing pumping oscillation.  Resonance comes entirely from global feedback.
+ * - Feedback is 2nd-order HP'd at 20% of the filter cutoff (-12dB/oct), so
+ *   bass below the resonant region is strongly protected; clamped 30–160Hz.
+ * - lastFeedback is tanh-limited to ±2.5V — prevents integrator runaway and
+ *   gives the feedback loop extra "spring" for an elastic, liquid character.
+ * - resonanceNormalized capped at 0.88 → feedbackAmount ceiling 1.76: loop
+ *   gain at -180° ≈ 0.74, near-oscillating elastic ring, provably stable.
+ * - Tighter inter-stage saturation prevents amplitude buildup through the cascade
+ *   and adds organic harmonic compression.
+ * - 2x oversampling for alias suppression.
  */
 class LiquidFilter {
 public:
@@ -66,10 +72,15 @@ private:
     // Global feedback state (ladder-style resonance)
     float lastFeedback = 0.f;
 
+    // 2nd-order HP on the feedback path: two cascaded 1-pole LP states.
+    // Subtracting only the HP'd feedback from the input preserves bass.
+    // Two poles give -12dB/oct below the HP cutoff (vs -6dB/oct with one pole),
+    // strongly protecting bass even at very high resonance settings.
+    float hpFeedbackLP1 = 0.f;
+    float hpFeedbackLP2 = 0.f;
+
     // Transistor-style saturation curve
     // Linear for small signals (< 0.5), smooth transition, hard clip above 1.0
-    // This is what gives the filter its "liquid" character:
-    // bass and detail pass through clean, only resonant peaks get shaped
     float saturate(float input, float drive) {
         drive = rack::math::clamp(drive, 0.1f, 12.f);
 
@@ -139,6 +150,8 @@ public:
         decimator.reset();
         upsampler.reset();
         lastFeedback = 0.f;
+        hpFeedbackLP1 = 0.f;
+        hpFeedbackLP2 = 0.f;
     }
 
     float process(float input, float cutoff, float resonance, float drive = 1.f) {
@@ -151,22 +164,22 @@ public:
         resonance = rack::math::clamp(resonance, 0.1f, 10.f);
         drive = rack::math::clamp(drive, 0.1f, 10.f);
 
-        // Map resonance to global feedback amount
-        constexpr float resonanceMin = 0.707f;
+        // Map resonance to normalized 0..1
+        constexpr float resonanceMin    = 0.707f;
         constexpr float resonanceSoftMax = 2.8f;
         const float resonanceRange = std::max(resonanceSoftMax - resonanceMin, 0.001f);
-        float resonanceClamped = rack::math::clamp(resonance, resonanceMin, resonanceSoftMax);
-        float resonanceNormalized = rack::math::clamp((resonanceClamped - resonanceMin) / resonanceRange, 0.f, 1.f);
+        float resonanceClamped     = rack::math::clamp(resonance, resonanceMin, resonanceSoftMax);
+        // Cap at 0.88 so feedbackAmount never exceeds 1.76 — keeps loop gain
+        // comfortably below 1 (0.74 at ceiling) and prevents instability above
+        // resonance ~2.6 while still delivering near-self-oscillating elasticity.
+        float resonanceNormalized  = rack::math::clamp((resonanceClamped - resonanceMin) / resonanceRange, 0.f, 0.88f);
 
-        // Exponential feedback curve: subtle at low settings, aggressive at top
-        float feedbackAmount = std::pow(resonanceNormalized, 1.6f) * 4.0f;
-
-        // Gentle low-frequency feedback reduction
-        float cutoffNormalized = rack::math::clamp(cutoff / 900.f, 0.f, 1.f);
-        float lowFreqPenalty = 1.f - cutoffNormalized;
-        float feedbackScale = 1.f - 0.2f * lowFreqPenalty * resonanceNormalized;
-        feedbackScale = rack::math::clamp(feedbackScale, 0.8f, 1.05f);
-        feedbackAmount *= feedbackScale;
+        // Global feedback amount.
+        // With k=2.0 per stage, the -180° phase crossing is at ω=0.577·ωc where
+        // the three-stage LP gain is 0.422.  Max stable feedbackAmount ≈ 2.37.
+        // Ceiling at 1.76 (resonanceNormalized capped 0.88) keeps loop gain ≈ 0.74,
+        // well inside stability while delivering an elastic, near-oscillating ring.
+        float feedbackAmount = std::pow(resonanceNormalized, 1.1f) * 2.0f;
 
         // Upsample
         float upsampledBuffer[OVERSAMPLE_FACTOR];
@@ -187,39 +200,55 @@ public:
             // ================================================================
             // GLOBAL FEEDBACK TOPOLOGY (ladder-style)
             // ================================================================
-            // Subtract feedback from input — resonance emerges from the loop,
-            // not from individual stages. Bass flows through clean stages.
-            x = x - lastFeedback * feedbackAmount;
+            // 2nd-order HP on feedback at 20% of filter cutoff (-12dB/oct).
+            // e.g. cutoff=400Hz → HP at 80Hz; 40Hz is then -24dB down in
+            // the feedback signal.  Clamped 30–160Hz to stay well below the
+            // musical midrange and protect more of the bass spectrum.
+            {
+                float HP_CUTOFF_HZ = rack::math::clamp(cutoff * 0.20f, 30.f, 160.f);
+                float hpAlpha = rack::math::clamp(
+                    (2.f * static_cast<float>(M_PI) * HP_CUTOFF_HZ) / oversampledRate,
+                    0.f, 0.99f);
+                // Cascade two 1-pole LPs to form a 2nd-order HP
+                hpFeedbackLP1 += hpAlpha * (lastFeedback - hpFeedbackLP1);
+                float hp1 = lastFeedback - hpFeedbackLP1;
+                hpFeedbackLP2 += hpAlpha * (hp1 - hpFeedbackLP2);
+                float feedbackHPed = hp1 - hpFeedbackLP2;
+                x = x - feedbackHPed * feedbackAmount;
+            }
 
-            // Transistor saturation in the feedback path is what makes it
-            // "liquid" — small signals stay clean, only peaks get shaped
-            x = saturate(x, 1.f + feedbackAmount * 0.15f);
+            // Post-injection saturation: base=1.0 so normal audio passes cleanly;
+            // drive grows with feedbackAmount, shaping peaks at high resonance.
+            x = saturate(x, 1.0f + feedbackAmount * 0.15f);
 
             // Compute bandpass mix from filter mode
             float bpMix = 0.f;
             if (filterMode == BANDPASS) bpMix = 1.f;
             else if (filterMode == MORPH) bpMix = filterMorph;
 
-            // Cascade three clean 2-pole stages (k=2.0 = critically damped)
-            // No individual resonance — bass passes through unimpeded
+            // Cascade three critically-damped 2-pole stages (k=2.0).
+            // Keeping k=2.0 is mandatory for stability: reducing k shifts the
+            // -180° phase crossing to a higher-gain frequency, dropping the max
+            // stable feedbackAmount well below 2 (causes the pumping distortion).
             x = stage1.process(x, g, 2.f, bpMix);
 
-            // Inter-stage saturation adds analog warmth
-            x = saturate(x, 1.f + feedbackAmount * 0.12f);
+            // Inter-stage saturation: drive scaled up so peaks are compressed
+            // between stages, preventing amplitude buildup through the cascade.
+            x = saturate(x, 1.0f + feedbackAmount * 0.2f);
 
             x = stage2.process(x, g, 2.f, bpMix);
-            x = saturate(x, 1.f + feedbackAmount * 0.12f);
+            x = saturate(x, 1.0f + feedbackAmount * 0.2f);
 
             x = stage3.process(x, g, 2.f, bpMix);
 
-            // Store lowpass output for feedback (always LP for loop stability)
-            lastFeedback = stage3.lastV2;
+            // Store LP integrator state for feedback.
+            // tanh soft-limits to ±2.5V — prevents integrator runaway while
+            // allowing slightly more resonant swing than a tighter limit.
+            // The wider ±2.5V range gives the feedback loop more "spring",
+            // producing the elastic ring characteristic of liquid filter sweeps.
+            lastFeedback = std::tanh(stage3.lastV2 * 0.4f) * 2.5f;
 
-            if (!std::isfinite(lastFeedback)) {
-                lastFeedback = 0.f;
-            }
-
-            // Post-cascade saturation (subtle)
+            // Post-cascade saturation (subtle rounding)
             x = saturate(x, 1.f + feedbackAmount * 0.08f);
 
             oversampledOutputs[i] = x;
@@ -228,15 +257,17 @@ public:
         // Downsample back to base rate
         float output = decimator.process(oversampledOutputs);
 
-        // Gentle resonance-dependent gain compensation
-        float resonanceGainComp = 1.f - 0.1f * resonanceNormalized;
-        resonanceGainComp = rack::math::clamp(resonanceGainComp, 0.85f, 1.05f);
+        // Resonance gain compensation: the resonant peak adds significant level.
+        // Roll back gain progressively so it never hard-clips the output stage.
+        float resonanceGainComp = 1.f - 0.18f * resonanceNormalized;
+        resonanceGainComp = rack::math::clamp(resonanceGainComp, 0.78f, 1.05f);
         output *= resonanceGainComp;
 
-        // Final safety shaping
-        output = saturate(output, 1.0f);
+        // Soft output limiter: tanh never hard-clips, so resonant peaks are
+        // shaped smoothly rather than with the harsh transistor knee.
+        // ±12V headroom — normal audio (±5V) gets only ~5% compression.
+        output = std::tanh(output * (1.0f / 12.0f)) * 12.0f;
 
-        // Final safety check
         if (!std::isfinite(output)) {
             reset();
             return 0.f;
