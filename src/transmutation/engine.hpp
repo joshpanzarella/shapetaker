@@ -33,7 +33,7 @@ struct Sequence {
 
 namespace stx { namespace transmutation {
 // Default polyphony for Transmutation
-constexpr int MAX_VOICES = 8;
+constexpr int MAX_VOICES = 6;
 // Compare steps for re-trigger decisions
 bool isStepChanged(const SequenceStep* prev, const SequenceStep* curr);
 

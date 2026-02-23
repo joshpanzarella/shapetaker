@@ -13,7 +13,6 @@ struct Involution : Module {
         RESONANCE_A_PARAM,
         CUTOFF_B_PARAM,
         RESONANCE_B_PARAM,
-        MORPH_PARAM,           // LP→BP filter morph (replaces hidden Drive)
         CROSS_PARAM,           // Cross-feedback A↔B amount
         MOD_PARAM,             // Chaos LFO depth on cutoff
         SHIMMER_PARAM,         // Shimmer reverb wet level
@@ -24,6 +23,7 @@ struct Involution : Module {
         RESONANCE_A_ATTEN_PARAM,
         CUTOFF_B_ATTEN_PARAM,
         RESONANCE_B_ATTEN_PARAM,
+        SHIFT_DEPTH_PARAM,      // Max Hz range for frequency shifter
         PARAMS_LEN
     };
     enum InputId {
@@ -56,9 +56,11 @@ struct Involution : Module {
     shapetaker::dsp::VoiceArray<LiquidFilter> filtersA;
     shapetaker::dsp::VoiceArray<LiquidFilter> filtersB;
 
-    // Per-voice cross-feedback (A←B, B←A with tanh soft limiting)
-    std::array<shapetaker::involution::CrossFeedback,
-               shapetaker::PolyphonicProcessor::MAX_VOICES> crossFeedbackVoices;
+    // Per-voice frequency shifters — A shifts up, B shifts down (counter-rotating stereo)
+    std::array<shapetaker::involution::FrequencyShifter,
+               shapetaker::PolyphonicProcessor::MAX_VOICES> freqShiftersA{};
+    std::array<shapetaker::involution::FrequencyShifter,
+               shapetaker::PolyphonicProcessor::MAX_VOICES> freqShiftersB{};
 
     // Per-voice cutoff smoothers to eliminate CV zipper noise
     shapetaker::dsp::VoiceArray<shapetaker::FastSmoother> cutoffASmoothers;
@@ -67,9 +69,11 @@ struct Involution : Module {
     // Global chaos LFO (single instance — modulation is coherent across voices)
     shapetaker::involution::ChaosGenerator chaosGen;
 
-    // Global shimmer — shared delay buffers so poly voices blend naturally into the tail
-    shapetaker::dsp::ShimmerDelay shimmerA;
-    shapetaker::dsp::ShimmerDelay shimmerB;
+    // Per-voice resonant APF phasers — run post-filter, swept by the chaos LFO
+    std::array<shapetaker::involution::AllpassPhaser,
+               shapetaker::PolyphonicProcessor::MAX_VOICES> phasersA{};
+    std::array<shapetaker::involution::AllpassPhaser,
+               shapetaker::PolyphonicProcessor::MAX_VOICES> phasersB{};
 
     // Per-voice output DC blockers
     struct OutputDCBlock {
@@ -80,8 +84,10 @@ struct Involution : Module {
     std::array<OutputDCBlock, shapetaker::PolyphonicProcessor::MAX_VOICES> outputDC{};
 
     // Rate bounds (also used by ChaosVisualizer)
+    static constexpr float DEFAULT_SAMPLE_RATE = 44100.f;
     static constexpr float MOD_RATE_MIN_HZ = 0.01f;
-    static constexpr float MOD_RATE_MAX_HZ = 20.f;
+    static constexpr float MOD_RATE_MAX_HZ = 2.f;
+    static constexpr float MOD_RATE_DEFAULT_HZ = 0.5f;
     // Backward-compat aliases for the visualizer
     static constexpr float CHAOS_RATE_MIN_HZ = MOD_RATE_MIN_HZ;
     static constexpr float CHAOS_RATE_MAX_HZ = MOD_RATE_MAX_HZ;
@@ -89,23 +95,27 @@ struct Involution : Module {
     // Global parameter smoothers
     shapetaker::FastSmoother cutoffASmooth, cutoffBSmooth;
     shapetaker::FastSmoother resonanceASmooth, resonanceBSmooth;
-    shapetaker::FastSmoother morphSmooth;
-    shapetaker::FastSmoother crossSmooth, modSmooth, shimmerSmooth;
+    shapetaker::FastSmoother crossSmooth, modSmooth, shimmerSmooth, shiftDepthSmooth;
     shapetaker::FastSmoother modRateSmooth;
 
     static constexpr float PARAM_SMOOTH_TC     = 0.015f;
     static constexpr float CUTOFF_CV_SMOOTH_TC = 0.002f;
+    static constexpr float CV_NORMALIZED_SCALE = 0.1f;    // 10V -> 1.0
+    static constexpr float LINK_SWITCH_THRESHOLD = 0.5f;
+    static constexpr float LINK_PARAM_EPSILON = 1e-6f;
     static constexpr float CUTOFF_CURVE_EXP    = 1.5f;    // x^1.5 knob shaping — tighter near cutoff
     static constexpr float CUTOFF_HZ_BASE      = 20.f;    // lowest cutoff frequency in Hz
     static constexpr float CUTOFF_HZ_OCTAVES   = 10.f;    // number of octaves across knob travel
     static constexpr float CHAOS_CUTOFF_RANGE  = 0.15f;   // ±normalized range for chaos LFO on cutoff
     static constexpr float MOD_RATE_CV_SCALE   = 0.5f;    // V/oct-ish scale for mod rate CV
-    static constexpr float EFFECT_THRESHOLD    = 0.001f;  // min amount before cross/shimmer is applied
-    static constexpr float SHIMMER_DELAY_A_S   = 0.075f;  // shimmer delay time channel A (seconds)
-    static constexpr float SHIMMER_DELAY_B_S   = 0.083f;  // shimmer delay time channel B (seconds)
-    static constexpr float SHIMMER_FEEDBACK    = 0.30f;   // shimmer internal feedback
-    static constexpr float SHIMMER_SEND        = 0.5f;    // shimmer wet send level
-    static constexpr float SHIMMER_BLEND       = 0.55f;   // shimmer dry/wet crossfade amount
+    static constexpr float EFFECT_THRESHOLD    = 0.001f;  // min amount before cross/phaser is applied
+    static constexpr float PHASER_CENTER_HZ    = 400.f;   // base phaser sweep frequency
+    static constexpr float PHASER_MIN_CENTER_HZ = 20.f;
+    static constexpr float NYQUIST_HEADROOM_RATIO = 0.45f;
+    static constexpr float PHASER_CHAOS_SPREAD = 3.5f;    // LFO modulation depth in octaves (±3.5 oct at full mod)
+    static constexpr float PHASER_MAX_FEEDBACK = 0.65f;   // max APF feedback (sharpens notches)
+    static constexpr float PHASER_LEVEL_COMP   = 1.414f;  // ~+3dB makeup for notch-induced level loss
+    static constexpr float FREQ_SHIFT_MAX_HZ   = 100.f;  // absolute ceiling for shift depth knob
 
     // Bidirectional linking state
     float lastCutoffA = -1.f, lastCutoffB = -1.f;
@@ -113,7 +123,7 @@ struct Involution : Module {
     bool lastLinkCutoff = false, lastLinkResonance = false;
 
     // Visualizer-readable data
-    float smoothedChaosRate = 0.5f;  // alias for visualizer compat
+    float smoothedChaosRate = MOD_RATE_DEFAULT_HZ;  // alias for visualizer compat
     float effectiveResonanceA = 0.707f;
     float effectiveResonanceB = 0.707f;
     float effectiveCutoffA = 1.0f;
@@ -132,11 +142,10 @@ struct Involution : Module {
         configParam(RESONANCE_A_PARAM,  LiquidFilter::RESONANCE_MIN, LiquidFilter::RESONANCE_MAX, LiquidFilter::RESONANCE_MIN, "Filter A Resonance");
         configParam(CUTOFF_B_PARAM,     0.f,  1.f,  1.f,   "Filter B Cutoff",    " Hz", std::pow(2.f, CUTOFF_HZ_OCTAVES), CUTOFF_HZ_BASE);
         configParam(RESONANCE_B_PARAM,  LiquidFilter::RESONANCE_MIN, LiquidFilter::RESONANCE_MAX, LiquidFilter::RESONANCE_MIN, "Filter B Resonance");
-        configParam(MORPH_PARAM,        0.f,  1.f,  0.f,   "Filter Morph",       "", 0.f, 0.f);
-        configParam(CROSS_PARAM,        0.f,  1.f,  0.f,   "Cross-feedback",     "%", 0.f, 100.f);
+        configParam(CROSS_PARAM,        0.f,  1.f,  0.f,   "Freq Shift",         "%", 0.f, 100.f);
         configParam(MOD_PARAM,          0.f,  1.f,  0.f,   "Mod Depth",          "%", 0.f, 100.f);
-        configParam(SHIMMER_PARAM,      0.f,  1.f,  0.f,   "Shimmer",            "%", 0.f, 100.f);
-        configParam(MOD_RATE_PARAM, MOD_RATE_MIN_HZ, MOD_RATE_MAX_HZ, 0.5f, "Mod Rate", " Hz");
+        configParam(SHIMMER_PARAM,      0.f,  1.f,  0.f,   "Phaser",             "%", 0.f, 100.f);
+        configParam(MOD_RATE_PARAM, MOD_RATE_MIN_HZ, MOD_RATE_MAX_HZ, MOD_RATE_DEFAULT_HZ, "Mod Rate", " Hz");
 
         configSwitch(LINK_CUTOFF_PARAM,    0.f, 1.f, 0.f, "Link Cutoff Frequencies", {"Independent", "Linked"});
         configSwitch(LINK_RESONANCE_PARAM, 0.f, 1.f, 0.f, "Link Resonance Amounts",  {"Independent", "Linked"});
@@ -145,6 +154,7 @@ struct Involution : Module {
         configParam(RESONANCE_A_ATTEN_PARAM, -1.f, 1.f, 0.f, "Resonance A CV Attenuverter", "%", 0.f, 100.f);
         configParam(CUTOFF_B_ATTEN_PARAM,    -1.f, 1.f, 0.f, "Cutoff B CV Attenuverter",    "%", 0.f, 100.f);
         configParam(RESONANCE_B_ATTEN_PARAM, -1.f, 1.f, 0.f, "Resonance B CV Attenuverter", "%", 0.f, 100.f);
+        configParam(SHIFT_DEPTH_PARAM, 0.f, FREQ_SHIFT_MAX_HZ, 20.f, "Shift Depth", " Hz");
 
         configInput(AUDIO_A_INPUT,       "Audio A");
         configInput(AUDIO_B_INPUT,       "Audio B");
@@ -152,15 +162,17 @@ struct Involution : Module {
         configInput(RESONANCE_A_CV_INPUT,"Filter A Resonance CV");
         configInput(CUTOFF_B_CV_INPUT,   "Filter B Cutoff CV");
         configInput(RESONANCE_B_CV_INPUT,"Filter B Resonance CV");
-        configInput(CROSS_CV_INPUT,      "Cross-feedback CV");
+        configInput(CROSS_CV_INPUT,      "Freq Shift CV");
         configInput(MOD_CV_INPUT,        "Mod Depth CV");
-        configInput(SHIMMER_CV_INPUT,    "Shimmer CV");
+        configInput(SHIMMER_CV_INPUT,    "Phaser CV");
         configInput(MOD_RATE_CV_INPUT,   "Mod Rate CV");
 
         configOutput(AUDIO_A_OUTPUT, "Audio A");
         configOutput(AUDIO_B_OUTPUT, "Audio B");
 
-        configLight(CHAOS_LIGHT,      "Cross/Mod/Shimmer Activity");
+        configLight(CHAOS_LIGHT,      "Cross Amount");
+        configLight(CHAOS_LIGHT_GREEN,"Mod Amount");
+        configLight(CHAOS_LIGHT_BLUE, "Phaser Amount");
         configLight(CHAOS_RATE_LIGHT, "Mod Rate");
 
         onSampleRateChange();
@@ -179,26 +191,67 @@ struct Involution : Module {
     }
 
     void onSampleRateChange() override {
-        float sr = APP->engine->getSampleRate();
+        float sr = DEFAULT_SAMPLE_RATE;
+        if (APP && APP->engine) {
+            sr = APP->engine->getSampleRate();
+        }
         for (int v = 0; v < shapetaker::PolyphonicProcessor::MAX_VOICES; v++) {
             filtersA[v].setSampleRate(sr);
             filtersB[v].setSampleRate(sr);
-            filtersA[v].setFilterMode(LiquidFilter::MORPH);
-            filtersB[v].setFilterMode(LiquidFilter::MORPH);
         }
-        shimmerA.reset();
-        shimmerB.reset();
+    }
+
+    static inline float cvToNormalized(float cv) {
+        return cv * CV_NORMALIZED_SCALE;
+    }
+
+    static inline float applyUnitCv(float base, float cv) {
+        return base + cvToNormalized(cv);
+    }
+
+    static inline float applyAttenuvertedCv(float base, float cv, float attenuverter) {
+        return base + cvToNormalized(cv) * attenuverter;
+    }
+
+    static inline void syncLinkedParamPair(
+        bool linked, bool& wasLinked,
+        float& currentA, float& currentB,
+        float& lastA, float& lastB,
+        Param& paramA, Param& paramB) {
+
+        if (!linked) {
+            return;
+        }
+        if (!wasLinked) {
+            paramB.setValue(currentA);
+            currentB = currentA;
+            return;
+        }
+
+        bool aChanged = std::abs(currentA - lastA) > LINK_PARAM_EPSILON;
+        bool bChanged = std::abs(currentB - lastB) > LINK_PARAM_EPSILON;
+        if (aChanged && !bChanged) {
+            paramB.setValue(currentA);
+            currentB = currentA;
+        } else if (bChanged && !aChanged) {
+            paramA.setValue(currentB);
+            currentA = currentB;
+        } else if (aChanged && bChanged) {
+            paramB.setValue(currentA);
+            currentB = currentA;
+        }
     }
 
     void onReset() override {
         chaosGen.reset();
-        shimmerA.reset();
-        shimmerB.reset();
         for (int v = 0; v < shapetaker::PolyphonicProcessor::MAX_VOICES; v++) {
-            crossFeedbackVoices[v].reset();
+            freqShiftersA[v].reset();
+            freqShiftersB[v].reset();
             outputDC[v].reset();
             filtersA[v].reset();
             filtersB[v].reset();
+            phasersA[v].reset();
+            phasersB[v].reset();
         }
         onSampleRateChange();
     }
@@ -207,54 +260,24 @@ struct Involution : Module {
         // ====================================================================
         // PARAMETER READ + BIDIRECTIONAL LINKING
         // ====================================================================
-        bool linkCutoff    = params[LINK_CUTOFF_PARAM].getValue()    > 0.5f;
-        bool linkResonance = params[LINK_RESONANCE_PARAM].getValue() > 0.5f;
+        bool linkCutoff    = params[LINK_CUTOFF_PARAM].getValue()    > LINK_SWITCH_THRESHOLD;
+        bool linkResonance = params[LINK_RESONANCE_PARAM].getValue() > LINK_SWITCH_THRESHOLD;
 
         float currentCutoffA    = params[CUTOFF_A_PARAM].getValue();
         float currentCutoffB    = params[CUTOFF_B_PARAM].getValue();
         float currentResonanceA = params[RESONANCE_A_PARAM].getValue();
         float currentResonanceB = params[RESONANCE_B_PARAM].getValue();
 
-        if (linkCutoff) {
-            if (!lastLinkCutoff) {
-                params[CUTOFF_B_PARAM].setValue(currentCutoffA);
-                currentCutoffB = currentCutoffA;
-            } else {
-                const float eps = 1e-6f;
-                bool aChg = std::abs(currentCutoffA - lastCutoffA) > eps;
-                bool bChg = std::abs(currentCutoffB - lastCutoffB) > eps;
-                if (aChg && !bChg) {
-                    params[CUTOFF_B_PARAM].setValue(currentCutoffA);
-                    currentCutoffB = currentCutoffA;
-                } else if (bChg && !aChg) {
-                    params[CUTOFF_A_PARAM].setValue(currentCutoffB);
-                    currentCutoffA = currentCutoffB;
-                } else if (aChg && bChg) {
-                    params[CUTOFF_B_PARAM].setValue(currentCutoffA);
-                    currentCutoffB = currentCutoffA;
-                }
-            }
-        }
-        if (linkResonance) {
-            if (!lastLinkResonance) {
-                params[RESONANCE_B_PARAM].setValue(currentResonanceA);
-                currentResonanceB = currentResonanceA;
-            } else {
-                const float eps = 1e-6f;
-                bool aChg = std::abs(currentResonanceA - lastResonanceA) > eps;
-                bool bChg = std::abs(currentResonanceB - lastResonanceB) > eps;
-                if (aChg && !bChg) {
-                    params[RESONANCE_B_PARAM].setValue(currentResonanceA);
-                    currentResonanceB = currentResonanceA;
-                } else if (bChg && !aChg) {
-                    params[RESONANCE_A_PARAM].setValue(currentResonanceB);
-                    currentResonanceA = currentResonanceB;
-                } else if (aChg && bChg) {
-                    params[RESONANCE_B_PARAM].setValue(currentResonanceA);
-                    currentResonanceB = currentResonanceA;
-                }
-            }
-        }
+        syncLinkedParamPair(
+            linkCutoff, lastLinkCutoff,
+            currentCutoffA, currentCutoffB,
+            lastCutoffA, lastCutoffB,
+            params[CUTOFF_A_PARAM], params[CUTOFF_B_PARAM]);
+        syncLinkedParamPair(
+            linkResonance, lastLinkResonance,
+            currentResonanceA, currentResonanceB,
+            lastResonanceA, lastResonanceB,
+            params[RESONANCE_A_PARAM], params[RESONANCE_B_PARAM]);
         lastCutoffA    = currentCutoffA;
         lastCutoffB    = currentCutoffB;
         lastResonanceA = currentResonanceA;
@@ -270,25 +293,39 @@ struct Involution : Module {
         float resonanceA = resonanceASmooth.process(currentResonanceA, args.sampleTime);
         float resonanceB = resonanceBSmooth.process(currentResonanceB, args.sampleTime);
 
-        float morphAmt = morphSmooth.process(params[MORPH_PARAM].getValue(), args.sampleTime, PARAM_SMOOTH_TC);
+        bool hasCrossCv = inputs[CROSS_CV_INPUT].isConnected();
+        bool hasModCv = inputs[MOD_CV_INPUT].isConnected();
+        bool hasShimmerCv = inputs[SHIMMER_CV_INPUT].isConnected();
+        bool hasModRateCv = inputs[MOD_RATE_CV_INPUT].isConnected();
+        bool hasCutoffACv = inputs[CUTOFF_A_CV_INPUT].isConnected();
+        bool hasCutoffBCv = inputs[CUTOFF_B_CV_INPUT].isConnected();
+        bool hasResonanceACv = inputs[RESONANCE_A_CV_INPUT].isConnected();
+        bool hasResonanceBCv = inputs[RESONANCE_B_CV_INPUT].isConnected();
+
+        float cutoffAAtten = params[CUTOFF_A_ATTEN_PARAM].getValue();
+        float cutoffBAtten = params[CUTOFF_B_ATTEN_PARAM].getValue();
+        float resonanceAAtten = params[RESONANCE_A_ATTEN_PARAM].getValue();
+        float resonanceBAtten = params[RESONANCE_B_ATTEN_PARAM].getValue();
 
         float crossTarget = params[CROSS_PARAM].getValue();
-        if (inputs[CROSS_CV_INPUT].isConnected())
-            crossTarget = clamp(crossTarget + inputs[CROSS_CV_INPUT].getVoltage() / 10.f, 0.f, 1.f);
+        if (hasCrossCv)
+            crossTarget = clamp(applyUnitCv(crossTarget, inputs[CROSS_CV_INPUT].getVoltage()), 0.f, 1.f);
         crossAmount = crossSmooth.process(crossTarget, args.sampleTime, PARAM_SMOOTH_TC);
 
         float modTarget = params[MOD_PARAM].getValue();
-        if (inputs[MOD_CV_INPUT].isConnected())
-            modTarget = clamp(modTarget + inputs[MOD_CV_INPUT].getVoltage() / 10.f, 0.f, 1.f);
+        if (hasModCv)
+            modTarget = clamp(applyUnitCv(modTarget, inputs[MOD_CV_INPUT].getVoltage()), 0.f, 1.f);
         modAmount = modSmooth.process(modTarget, args.sampleTime, PARAM_SMOOTH_TC);
 
         float shimTarget = params[SHIMMER_PARAM].getValue();
-        if (inputs[SHIMMER_CV_INPUT].isConnected())
-            shimTarget = clamp(shimTarget + inputs[SHIMMER_CV_INPUT].getVoltage() / 10.f, 0.f, 1.f);
+        if (hasShimmerCv)
+            shimTarget = clamp(applyUnitCv(shimTarget, inputs[SHIMMER_CV_INPUT].getVoltage()), 0.f, 1.f);
         shimmerAmount = shimmerSmooth.process(shimTarget, args.sampleTime, PARAM_SMOOTH_TC);
 
+        float shiftDepth = shiftDepthSmooth.process(params[SHIFT_DEPTH_PARAM].getValue(), args.sampleTime, PARAM_SMOOTH_TC);
+
         float modRateTarget = clamp(params[MOD_RATE_PARAM].getValue(), MOD_RATE_MIN_HZ, MOD_RATE_MAX_HZ);
-        if (inputs[MOD_RATE_CV_INPUT].isConnected())
+        if (hasModRateCv)
             modRateTarget = clamp(modRateTarget + inputs[MOD_RATE_CV_INPUT].getVoltage() * MOD_RATE_CV_SCALE,
                                   MOD_RATE_MIN_HZ, MOD_RATE_MAX_HZ);
         float modRate = modRateSmooth.process(modRateTarget, args.sampleTime);
@@ -301,31 +338,21 @@ struct Involution : Module {
         // chaosOut is approximately ±modAmount
 
         // ====================================================================
-        // SET FILTER MORPH FOR ALL VOICES
-        // ====================================================================
-        for (int v = 0; v < shapetaker::PolyphonicProcessor::MAX_VOICES; v++) {
-            filtersA[v].setFilterMorph(morphAmt);
-            filtersB[v].setFilterMorph(morphAmt);
-        }
-
-        // ====================================================================
         // VISUALIZER DATA (sampled from voice 0 / global smoothers)
         // ====================================================================
         {
             float dCutoffA = cutoffA, dCutoffB = cutoffB;
             float dResA = resonanceA, dResB = resonanceB;
-            if (inputs[CUTOFF_A_CV_INPUT].isConnected())
-                dCutoffA = clamp(dCutoffA + inputs[CUTOFF_A_CV_INPUT].getPolyVoltage(0)
-                                 * params[CUTOFF_A_ATTEN_PARAM].getValue() / 10.f, 0.f, 1.f);
-            if (inputs[CUTOFF_B_CV_INPUT].isConnected())
-                dCutoffB = clamp(dCutoffB + inputs[CUTOFF_B_CV_INPUT].getPolyVoltage(0)
-                                 * params[CUTOFF_B_ATTEN_PARAM].getValue() / 10.f, 0.f, 1.f);
-            if (inputs[RESONANCE_A_CV_INPUT].isConnected())
-                dResA = clamp(dResA + inputs[RESONANCE_A_CV_INPUT].getPolyVoltage(0)
-                              * params[RESONANCE_A_ATTEN_PARAM].getValue() / 10.f, LiquidFilter::RESONANCE_MIN, LiquidFilter::RESONANCE_MAX);
-            if (inputs[RESONANCE_B_CV_INPUT].isConnected())
-                dResB = clamp(dResB + inputs[RESONANCE_B_CV_INPUT].getPolyVoltage(0)
-                              * params[RESONANCE_B_ATTEN_PARAM].getValue() / 10.f, LiquidFilter::RESONANCE_MIN, LiquidFilter::RESONANCE_MAX);
+            if (hasCutoffACv)
+                dCutoffA = clamp(applyAttenuvertedCv(dCutoffA, inputs[CUTOFF_A_CV_INPUT].getPolyVoltage(0), cutoffAAtten), 0.f, 1.f);
+            if (hasCutoffBCv)
+                dCutoffB = clamp(applyAttenuvertedCv(dCutoffB, inputs[CUTOFF_B_CV_INPUT].getPolyVoltage(0), cutoffBAtten), 0.f, 1.f);
+            if (hasResonanceACv)
+                dResA = clamp(applyAttenuvertedCv(dResA, inputs[RESONANCE_A_CV_INPUT].getPolyVoltage(0), resonanceAAtten),
+                              LiquidFilter::RESONANCE_MIN, LiquidFilter::RESONANCE_MAX);
+            if (hasResonanceBCv)
+                dResB = clamp(applyAttenuvertedCv(dResB, inputs[RESONANCE_B_CV_INPUT].getPolyVoltage(0), resonanceBAtten),
+                              LiquidFilter::RESONANCE_MIN, LiquidFilter::RESONANCE_MAX);
             effectiveCutoffA    = dCutoffA;
             effectiveCutoffB    = dCutoffB;
             effectiveResonanceA = dResA;
@@ -335,12 +362,14 @@ struct Involution : Module {
         // ====================================================================
         // POLYPHONIC AUDIO PROCESSING
         // ====================================================================
+        bool hasAudioA = inputs[AUDIO_A_INPUT].isConnected();
+        bool hasAudioB = inputs[AUDIO_B_INPUT].isConnected();
         int channelsA = inputs[AUDIO_A_INPUT].getChannels();
         int channelsB = inputs[AUDIO_B_INPUT].getChannels();
         int channels  = std::min(std::max(channelsA, channelsB),
                                  shapetaker::PolyphonicProcessor::MAX_VOICES);
 
-        if (!inputs[AUDIO_A_INPUT].isConnected() && !inputs[AUDIO_B_INPUT].isConnected()) {
+        if (!hasAudioA && !hasAudioB) {
             outputs[AUDIO_A_OUTPUT].setChannels(0);
             outputs[AUDIO_B_OUTPUT].setChannels(0);
         } else {
@@ -350,12 +379,10 @@ struct Involution : Module {
             for (int c = 0; c < channels; c++) {
                 // --- Input ---
                 float audioA = 0.f, audioB = 0.f;
-                bool hasA = inputs[AUDIO_A_INPUT].isConnected();
-                bool hasB = inputs[AUDIO_B_INPUT].isConnected();
-                if (hasA && hasB) {
+                if (hasAudioA && hasAudioB) {
                     audioA = inputs[AUDIO_A_INPUT].getVoltage(c);
                     audioB = inputs[AUDIO_B_INPUT].getVoltage(c);
-                } else if (hasA) {
+                } else if (hasAudioA) {
                     audioA = audioB = inputs[AUDIO_A_INPUT].getVoltage(c);
                 } else {
                     audioA = audioB = inputs[AUDIO_B_INPUT].getVoltage(c);
@@ -363,12 +390,6 @@ struct Involution : Module {
                 if (!std::isfinite(audioA)) audioA = 0.f;
                 if (!std::isfinite(audioB)) audioB = 0.f;
 
-                // --- Cross-feedback (pre-filter, soft-limited) ---
-                if (crossAmount > EFFECT_THRESHOLD) {
-                    auto cf = crossFeedbackVoices[c].process(audioA, audioB, crossAmount);
-                    audioA = cf.outputA;
-                    audioB = cf.outputB;
-                }
 
                 // --- Per-voice cutoff with CV and chaos modulation ---
                 float voiceCutoffA = cutoffA;
@@ -376,28 +397,24 @@ struct Involution : Module {
                 float voiceResA    = resonanceA;
                 float voiceResB    = resonanceB;
 
-                if (inputs[CUTOFF_A_CV_INPUT].isConnected()) {
-                    float att = params[CUTOFF_A_ATTEN_PARAM].getValue();
-                    voiceCutoffA += inputs[CUTOFF_A_CV_INPUT].getPolyVoltage(c) * att / 10.f;
+                if (hasCutoffACv) {
+                    voiceCutoffA = applyAttenuvertedCv(voiceCutoffA, inputs[CUTOFF_A_CV_INPUT].getPolyVoltage(c), cutoffAAtten);
                 }
                 voiceCutoffA = clamp(voiceCutoffA + chaosOut * CHAOS_CUTOFF_RANGE, 0.f, 1.f);
                 voiceCutoffA = cutoffASmoothers[c].process(voiceCutoffA, args.sampleTime, CUTOFF_CV_SMOOTH_TC);
 
-                if (inputs[CUTOFF_B_CV_INPUT].isConnected()) {
-                    float att = params[CUTOFF_B_ATTEN_PARAM].getValue();
-                    voiceCutoffB += inputs[CUTOFF_B_CV_INPUT].getPolyVoltage(c) * att / 10.f;
+                if (hasCutoffBCv) {
+                    voiceCutoffB = applyAttenuvertedCv(voiceCutoffB, inputs[CUTOFF_B_CV_INPUT].getPolyVoltage(c), cutoffBAtten);
                 }
                 voiceCutoffB = clamp(voiceCutoffB + chaosOut * CHAOS_CUTOFF_RANGE, 0.f, 1.f);
                 voiceCutoffB = cutoffBSmoothers[c].process(voiceCutoffB, args.sampleTime, CUTOFF_CV_SMOOTH_TC);
 
-                if (inputs[RESONANCE_A_CV_INPUT].isConnected()) {
-                    float att = params[RESONANCE_A_ATTEN_PARAM].getValue();
-                    voiceResA = clamp(voiceResA + inputs[RESONANCE_A_CV_INPUT].getPolyVoltage(c) * att / 10.f,
+                if (hasResonanceACv) {
+                    voiceResA = clamp(applyAttenuvertedCv(voiceResA, inputs[RESONANCE_A_CV_INPUT].getPolyVoltage(c), resonanceAAtten),
                                       LiquidFilter::RESONANCE_MIN, LiquidFilter::RESONANCE_MAX);
                 }
-                if (inputs[RESONANCE_B_CV_INPUT].isConnected()) {
-                    float att = params[RESONANCE_B_ATTEN_PARAM].getValue();
-                    voiceResB = clamp(voiceResB + inputs[RESONANCE_B_CV_INPUT].getPolyVoltage(c) * att / 10.f,
+                if (hasResonanceBCv) {
+                    voiceResB = clamp(applyAttenuvertedCv(voiceResB, inputs[RESONANCE_B_CV_INPUT].getPolyVoltage(c), resonanceBAtten),
                                       LiquidFilter::RESONANCE_MIN, LiquidFilter::RESONANCE_MAX);
                 }
 
@@ -414,18 +431,33 @@ struct Involution : Module {
                 float processedA = filtersA[c].process(audioA, cutoffAHz, voiceResA, 1.0f);
                 float processedB = filtersB[c].process(audioB, cutoffBHz, voiceResB, 1.0f);
 
-                // Store filter outputs so CrossFeedback can inject them into the
-                // other channel's input on the next cycle.
-                if (crossAmount > EFFECT_THRESHOLD)
-                    crossFeedbackVoices[c].storeOutputs(processedA, processedB);
+                // --- Stereo frequency shifter (post-filter, pre-phaser) ---
+                // A shifts up, B shifts down — spectral content counter-rotates across
+                // the stereo field. Slow beating at low amounts; inharmonic shimmer at high.
+                if (crossAmount > EFFECT_THRESHOLD) {
+                    float shiftHz  = crossAmount * shiftDepth;
+                    float shiftedA = freqShiftersA[c].process(processedA,  shiftHz, args.sampleRate);
+                    float shiftedB = freqShiftersB[c].process(processedB, -shiftHz, args.sampleRate);
+                    processedA = rack::math::crossfade(processedA, shiftedA, crossAmount);
+                    processedB = rack::math::crossfade(processedB, shiftedB, crossAmount);
+                }
 
-                // --- Global shimmer (shared buffer — poly voices blend into one reverb tail) ---
+                // --- Stereo resonant APF phaser (post-filter, swept by chaos LFO) ---
+                // Channels A and B sweep in opposite directions so the phase notches
+                // whirl across the stereo field — notches rising in A while falling in B.
                 if (shimmerAmount > EFFECT_THRESHOLD) {
-                    // Slightly different delay times for A and B give natural stereo width
-                    float shimOutA = shimmerA.process(processedA, SHIMMER_DELAY_A_S, SHIMMER_FEEDBACK, shimmerAmount * SHIMMER_SEND);
-                    float shimOutB = shimmerB.process(processedB, SHIMMER_DELAY_B_S, SHIMMER_FEEDBACK, shimmerAmount * SHIMMER_SEND);
-                    processedA = rack::math::crossfade(processedA, shimOutA, shimmerAmount * SHIMMER_BLEND);
-                    processedB = rack::math::crossfade(processedB, shimOutB, shimmerAmount * SHIMMER_BLEND);
+                    float spread   = chaosOut * PHASER_CHAOS_SPREAD;
+                    float centerA  = clamp(PHASER_CENTER_HZ * std::pow(2.f,  spread),
+                                          PHASER_MIN_CENTER_HZ, args.sampleRate * NYQUIST_HEADROOM_RATIO);
+                    float centerB  = clamp(PHASER_CENTER_HZ * std::pow(2.f, -spread),
+                                          PHASER_MIN_CENTER_HZ, args.sampleRate * NYQUIST_HEADROOM_RATIO);
+                    float fb       = shimmerAmount * PHASER_MAX_FEEDBACK;
+                    float apfCA    = shapetaker::involution::AllpassPhaser::apfCoeff(centerA, args.sampleRate);
+                    float apfCB    = shapetaker::involution::AllpassPhaser::apfCoeff(centerB, args.sampleRate);
+                    float phasedA  = phasersA[c].process(processedA, apfCA, fb) * PHASER_LEVEL_COMP;
+                    float phasedB  = phasersB[c].process(processedB, apfCB, fb) * PHASER_LEVEL_COMP;
+                    processedA = rack::math::crossfade(processedA, phasedA, shimmerAmount);
+                    processedB = rack::math::crossfade(processedB, phasedB, shimmerAmount);
                 }
 
                 // --- Output DC blocking ---
@@ -442,10 +474,11 @@ struct Involution : Module {
         // ====================================================================
         // LIGHTS — Cross=Red, Mod=Green, Shimmer=Blue
         // ====================================================================
-        lights[CHAOS_LIGHT    ].setBrightness(clamp(crossAmount,   0.f, 1.f));
-        lights[CHAOS_LIGHT + 1].setBrightness(clamp(modAmount,     0.f, 1.f));
-        lights[CHAOS_LIGHT + 2].setBrightness(clamp(shimmerAmount, 0.f, 1.f));
-        lights[CHAOS_RATE_LIGHT].setBrightness(0.f);
+        lights[CHAOS_LIGHT].setBrightness(clamp(crossAmount, 0.f, 1.f));
+        lights[CHAOS_LIGHT_GREEN].setBrightness(clamp(modAmount, 0.f, 1.f));
+        lights[CHAOS_LIGHT_BLUE].setBrightness(clamp(shimmerAmount, 0.f, 1.f));
+        lights[CHAOS_RATE_LIGHT].setBrightness(clamp(
+            rack::math::rescale(modRate, MOD_RATE_MIN_HZ, MOD_RATE_MAX_HZ, 0.f, 1.f), 0.f, 1.f));
     }
 
     void onRandomize() override {
@@ -460,13 +493,13 @@ struct Involution : Module {
         params[CUTOFF_B_PARAM].setValue(cutoffDist(rng));
         params[RESONANCE_A_PARAM].setValue(resDist(rng));
         params[RESONANCE_B_PARAM].setValue(resDist(rng));
-        params[MORPH_PARAM].setValue(charDist(rng));
         params[CROSS_PARAM].setValue(charDist(rng));
         params[MOD_PARAM].setValue(charDist(rng));
         params[SHIMMER_PARAM].setValue(charDist(rng));
         params[MOD_RATE_PARAM].setValue(rateDist(rng));
         params[LINK_CUTOFF_PARAM].setValue((float)linkDist(rng));
         params[LINK_RESONANCE_PARAM].setValue((float)linkDist(rng));
+        params[SHIFT_DEPTH_PARAM].setValue(charDist(rng) * FREQ_SHIFT_MAX_HZ);
     }
 };
 
@@ -677,13 +710,13 @@ struct InvolutionWidget : ModuleWidget {
         addKnobWithShadow(createParamCentered<ShapetakerKnobVintageSmallMedium>(
             centerPx("tide_knob", 74.422f, 94.088f), module, Involution::SHIMMER_PARAM));
 
+        // ---- Shift Depth (max Hz for frequency shifter) ----
+        addKnobWithShadow(createParamCentered<ShapetakerKnobVintageSmallMedium>(
+            centerPx("filter_morph", 45.166f, 108.088f), module, Involution::SHIFT_DEPTH_PARAM));
+
         // ---- Mod Rate (attenuverter-style small knob) ----
         addKnobWithShadow(createParamCentered<ShapetakerAttenuverterOscilloscope>(
             centerPx("chaos_rate_knob", 60.922f, 108.088f), module, Involution::MOD_RATE_PARAM));
-
-        // ---- Filter Morph (center, between rate and audio I/O) ----
-        addKnobWithShadow(createParamCentered<ShapetakerKnobVintageSmallMedium>(
-            centerPx("filter_morph", 45.166f, 108.088f), module, Involution::MORPH_PARAM));
 
         // ---- Chaos visualizer ----
         ChaosVisualizer* chaosViz = new ChaosVisualizer(module);

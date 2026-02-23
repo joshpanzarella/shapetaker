@@ -37,6 +37,7 @@ const SequenceStep* resolveEffectiveStep(const Sequence& seq, int idx,
 }
 
 void stableClearOutputs(rack::engine::Output* outputs, int cvOutputId, int gateOutputId, int chCount) {
+    chCount = rack::math::clamp(chCount, 1, MAX_VOICES);
     outputs[cvOutputId].setChannels(chCount);
     outputs[gateOutputId].setChannels(chCount);
     for (int v = 0; v < chCount; ++v) {

@@ -1,6 +1,7 @@
 #include "plugin.hpp"
 #include "random.hpp"
 #include <vector>
+#include <array>
 #include <cmath>
 #include <string>
 #include <algorithm>
@@ -10,6 +11,13 @@
 #endif
 
 namespace {
+constexpr int kOverlapModes = 3;
+constexpr float kSmallValueEpsilon = 0.01f;
+constexpr float kCvToUnitScale = 0.1f;
+constexpr float kRotationCvScale = 3.1f;
+constexpr float kRingModLinearBlend = 0.5f;
+constexpr float kRingModProductBlend = 0.3f;
+constexpr float kTriggerPulseSeconds = 1e-3f;
 
 // ============================================================================
 // RHYTHM GENERATION MODES
@@ -31,22 +39,6 @@ inline void generateEuclideanPattern(int steps, int hits, int rotation, std::vec
 
     if (hits <= 0 || steps <= 0) return;
     hits = rack::math::clamp(hits, 0, steps);
-
-    // Bjorklund algorithm
-    std::vector<int> counts(steps, 0);
-    std::vector<int> remainders(steps, 0);
-
-    int divisor = steps - hits;
-    remainders[0] = hits;
-
-    int level = 0;
-    while (remainders[level] > 1) {
-        counts[level] = divisor / remainders[level];
-        remainders[level + 1] = divisor % remainders[level];
-        divisor = remainders[level];
-        level++;
-    }
-    counts[level] = divisor;
 
     // Build pattern using iteration instead of recursion for C++11 compatibility
     std::vector<bool> temp;
@@ -206,7 +198,7 @@ struct Envelope {
         ringIndex = ring;
 
         // Vary parameters based on chaos
-        if (chaos > 0.01f) {
+        if (chaos > kSmallValueEpsilon) {
             float variation = chaos * 0.5f;
             attack = atk * (1.f + (rack::random::uniform() - 0.5f) * variation);
             decay = dec * (1.f + (rack::random::uniform() - 0.5f) * variation);
@@ -329,7 +321,7 @@ struct Particle {
         vy -= y * centerPull * dt;
 
         // Chaos creates turbulence
-        if (chaos > 0.01f) {
+        if (chaos > kSmallValueEpsilon) {
             vx += (rack::random::uniform() - 0.5f) * chaos * 0.5f * dt;
             vy += (rack::random::uniform() - 0.5f) * chaos * 0.5f * dt;
         }
@@ -401,6 +393,7 @@ struct Fatebinder : Module {
 
     // Ring system
     static constexpr int kNumRings = 3;
+    static constexpr int kClockSettleTicks = 3;
     MutatingPattern rings[kNumRings];
     int currentStep[kNumRings] = {0, 0, 0};
     int clockDivCounter[kNumRings] = {0, 0, 0};
@@ -435,6 +428,9 @@ struct Fatebinder : Module {
     float bpm = 120.f;
     int clockTicksSinceChange = 0; // Track settling time
     float displayTime = 0.f; // For blinking display
+    int lastSteps = -1;
+    int lastHits = -1;
+    int lastRotation = -1;
 
     Fatebinder() {
         config(PARAMS_LEN, INPUTS_LEN, PARAMS_LEN_OUTPUT, LIGHTS_LEN);
@@ -492,22 +488,35 @@ struct Fatebinder : Module {
         shapetaker::ui::LabelFormatter::normalizeModuleControls(this);
     }
 
-    void onReset() override {
+    void resetSequencerState() {
         for (int i = 0; i < kNumRings; i++) {
             currentStep[i] = 0;
             clockDivCounter[i] = 0;
             ringHitLevel[i] = 0.f;
         }
-        internalClock = 0.f;
-        frozen = false;
+    }
 
-        int steps = (int)params[STEPS_PARAM].getValue();
-        int hits = (int)params[HITS_PARAM].getValue();
-        int rotation = (int)params[ROTATION_PARAM].getValue();
-
+    void initializeRings(int steps, int hits, int rotation) {
         for (int i = 0; i < kNumRings; i++) {
             rings[i].initialize(steps, hits, rotation, rhythmMode);
         }
+    }
+
+    void reinitializeRingsFromCurrentParams() {
+        int steps = (int)params[STEPS_PARAM].getValue();
+        int hits = (int)params[HITS_PARAM].getValue();
+        int rotation = (int)params[ROTATION_PARAM].getValue();
+        initializeRings(steps, hits, rotation);
+    }
+
+    void onReset() override {
+        resetSequencerState();
+        internalClock = 0.f;
+        frozen = false;
+        lastSteps = -1;
+        lastHits = -1;
+        lastRotation = -1;
+        reinitializeRingsFromCurrentParams();
 
         for (auto& env : envelopes) {
             env.active = false;
@@ -523,7 +532,7 @@ struct Fatebinder : Module {
         int hits = (int)params[HITS_PARAM].getValue();
         int rotation = (int)params[ROTATION_PARAM].getValue();
         if (inputs[ROTATION_CV_INPUT].isConnected()) {
-            rotation += (int)(inputs[ROTATION_CV_INPUT].getVoltage() * 3.1f);
+            rotation += (int)(inputs[ROTATION_CV_INPUT].getVoltage() * kRotationCvScale);
             rotation = ((rotation % steps) + steps) % steps; // wrap to valid range
         }
         int ring2Div = (int)params[RING_2_DIV_PARAM].getValue();
@@ -531,13 +540,13 @@ struct Fatebinder : Module {
 
         float probability = params[PROBABILITY_PARAM].getValue();
         if (inputs[PROBABILITY_CV_INPUT].isConnected()) {
-            probability += inputs[PROBABILITY_CV_INPUT].getVoltage() * 0.1f;
+            probability += inputs[PROBABILITY_CV_INPUT].getVoltage() * kCvToUnitScale;
         }
         probability = rack::math::clamp(probability, 0.f, 1.f);
 
         float chaos = params[CHAOS_PARAM].getValue();
         if (inputs[CHAOS_CV_INPUT].isConnected()) {
-            chaos += inputs[CHAOS_CV_INPUT].getVoltage() * 0.1f;
+            chaos += inputs[CHAOS_CV_INPUT].getVoltage() * kCvToUnitScale;
         }
         chaos = rack::math::clamp(chaos, 0.f, 1.f);
 
@@ -562,14 +571,8 @@ struct Fatebinder : Module {
         }
 
         // Regenerate patterns if parameters changed
-        static int lastSteps = steps;
-        static int lastHits = hits;
-        static int lastRotation = rotation;
-
         if (steps != lastSteps || hits != lastHits || rotation != lastRotation) {
-            for (int i = 0; i < kNumRings; i++) {
-                rings[i].initialize(steps, hits, rotation, rhythmMode);
-            }
+            initializeRings(steps, hits, rotation);
             lastSteps = steps;
             lastHits = hits;
             lastRotation = rotation;
@@ -599,7 +602,7 @@ struct Fatebinder : Module {
             }
             // Calculate BPM from internal clock
             bpm = tempoBpm;
-            clockTicksSinceChange = 3;
+            clockTicksSinceChange = kClockSettleTicks;
         } else {
             // Accumulate time for BPM calculation
             clockTimer += dt;
@@ -628,47 +631,28 @@ struct Fatebinder : Module {
 
         // Reset handling
         if (inputs[RESET_INPUT].isConnected() && resetTrigger.process(inputs[RESET_INPUT].getVoltage())) {
-            for (int i = 0; i < kNumRings; i++) {
-                currentStep[i] = 0;
-                clockDivCounter[i] = 0;
-            }
+            resetSequencerState();
         }
 
         // Process clock tick for each ring
         bool anyGate = false;
         bool anyAccent = false;
-        float ringCV[kNumRings] = {0.f, 0.f, 0.f};
+        std::array<float, kNumRings> ringCV = {{0.f, 0.f, 0.f}};
 
         if (clockTick) {
-            // Ring 1: Every clock
-            clockDivCounter[0]++;
-            if (clockDivCounter[0] >= 1) {
-                clockDivCounter[0] = 0;
-                processRingStep(0, steps, probability, density, chaos, attack, decay, curve, shape, anyGate, anyAccent, ringCV[0]);
-            }
-
-            // Ring 2: Divided clock
-            clockDivCounter[1]++;
-            if (clockDivCounter[1] >= ring2Div) {
-                clockDivCounter[1] = 0;
-                processRingStep(1, steps, probability, density, chaos, attack, decay, curve, shape, anyGate, anyAccent, ringCV[1]);
-            }
-
-            // Ring 3: Divided clock
-            clockDivCounter[2]++;
-            if (clockDivCounter[2] >= ring3Div) {
-                clockDivCounter[2] = 0;
-                processRingStep(2, steps, probability, density, chaos, attack, decay, curve, shape, anyGate, anyAccent, ringCV[2]);
+            std::array<int, kNumRings> ringDivisions = {{1, ring2Div, ring3Div}};
+            for (int ring = 0; ring < kNumRings; ++ring) {
+                clockDivCounter[ring]++;
+                if (clockDivCounter[ring] >= ringDivisions[ring]) {
+                    clockDivCounter[ring] = 0;
+                    processRingStep(ring, steps, probability, density, chaos, attack, decay, curve, shape, anyGate, anyAccent);
+                }
             }
         }
 
         // Process all envelopes
         float mainCV = 0.f;
-        int overlapMode = overlapModeState;
-
-        for (int ring = 0; ring < kNumRings; ring++) {
-            ringCV[ring] = 0.f;
-        }
+        int overlapMode = rack::math::clamp(overlapModeState, 0, kOverlapModes - 1);
 
         for (auto& env : envelopes) {
             if (!env.active) continue;
@@ -689,7 +673,7 @@ struct Fatebinder : Module {
                     mainCV = std::max(mainCV, value);
                     break;
                 case 2: // Ring mod
-                    mainCV = mainCV * 0.5f + value * 0.5f + (mainCV * value) * 0.3f;
+                    mainCV = mainCV * kRingModLinearBlend + value * kRingModLinearBlend + (mainCV * value) * kRingModProductBlend;
                     break;
             }
         }
@@ -720,23 +704,23 @@ struct Fatebinder : Module {
             // Unipolar mode: 0V to +10V
             outputs[MAIN_CV_OUTPUT].setVoltage(mainOut * 10.f);
         }
-        outputs[RING_1_OUTPUT].setVoltage(ringTriggerPulse[0].process(dt) ? 10.f : 0.f);
-        outputs[RING_2_OUTPUT].setVoltage(ringTriggerPulse[1].process(dt) ? 10.f : 0.f);
-        outputs[RING_3_OUTPUT].setVoltage(ringTriggerPulse[2].process(dt) ? 10.f : 0.f);
+        for (int ring = 0; ring < kNumRings; ++ring) {
+            outputs[RING_1_OUTPUT + ring].setVoltage(ringTriggerPulse[ring].process(dt) ? 10.f : 0.f);
+        }
         outputs[GATE_OUTPUT].setVoltage(anyGate ? 10.f : 0.f);
         outputs[ACCENT_OUTPUT].setVoltage(anyAccent ? 10.f : 0.f);
     }
 
     void processRingStep(int ring, int steps, float probability, float density, float chaos,
                          float attack, float decay, float curve, float shape,
-                         bool& anyGate, bool& anyAccent, float& ringCV) {
+                         bool& anyGate, bool& anyAccent) {
         currentStep[ring] = (currentStep[ring] + 1) % steps;
 
         bool isPatternHit = rings[ring].getStep(currentStep[ring]);
 
         // Probability check
         bool shouldTrigger = false;
-        if (chaos < 0.01f) {
+        if (chaos < kSmallValueEpsilon) {
             // Deterministic probability
             shouldTrigger = isPatternHit && (rack::random::uniform() < probability);
         } else {
@@ -747,7 +731,7 @@ struct Fatebinder : Module {
 
         if (shouldTrigger) {
             ringHitLevel[ring] = 1.f;
-            ringTriggerPulse[ring].trigger(1e-3f);
+            ringTriggerPulse[ring].trigger(kTriggerPulseSeconds);
             // Find inactive envelope
             Envelope* env = nullptr;
             for (auto& e : envelopes) {
@@ -796,13 +780,7 @@ struct Fatebinder : Module {
         json_t* modeJ = json_object_get(rootJ, "rhythmMode");
         if (modeJ) {
             rhythmMode = (RhythmMode)json_integer_value(modeJ);
-            // Re-initialize patterns with new mode
-            int steps = (int)params[STEPS_PARAM].getValue();
-            int hits = (int)params[HITS_PARAM].getValue();
-            int rotation = (int)params[ROTATION_PARAM].getValue();
-            for (int i = 0; i < kNumRings; i++) {
-                rings[i].initialize(steps, hits, rotation, rhythmMode);
-            }
+            reinitializeRingsFromCurrentParams();
         }
 
         json_t* bipolarJ = json_object_get(rootJ, "bipolarOutputs");
@@ -811,7 +789,7 @@ struct Fatebinder : Module {
         }
         json_t* overlapJ = json_object_get(rootJ, "overlapMode");
         if (overlapJ) {
-            overlapModeState = rack::math::clamp((int)json_integer_value(overlapJ), 0, 2);
+            overlapModeState = rack::math::clamp((int)json_integer_value(overlapJ), 0, kOverlapModes - 1);
         }
     }
 };
@@ -824,13 +802,13 @@ struct UnifiedDisplayWidget : TransparentWidget {
     Fatebinder* module = nullptr;
 
     // Radar colors
-    NVGcolor ringColors[3] = {
+    NVGcolor ringColors[Fatebinder::kNumRings] = {
         nvgRGB(0x45, 0xec, 0xff),  // Teal
         nvgRGB(0xb0, 0x6b, 0xff),  // Violet
         nvgRGB(0x58, 0x9c, 0xff)   // Azure
     };
 
-    NVGcolor ringDim[3] = {
+    NVGcolor ringDim[Fatebinder::kNumRings] = {
         nvgRGB(0x1d, 0x84, 0x9a),
         nvgRGB(0x5e, 0x3a, 0x8f),
         nvgRGB(0x2c, 0x59, 0x92)
@@ -849,123 +827,109 @@ struct UnifiedDisplayWidget : TransparentWidget {
         nvgSave(args.vg);
 
         // ================================================================
-        // BEZEL - Vintage CRT monitor frame
+        // BEZEL - slimmer treatment to match Clairaudient/Involution style
         // ================================================================
+        constexpr float outerRadius = 7.f;
+        constexpr float bezelWidth = 1.85f;
+        constexpr float lipWidth = 0.9f;
+        constexpr float screenInset = 0.1f;
+        float innerRadius = std::max(1.2f, outerRadius - bezelWidth);
+        float lipRadius = std::max(0.9f, innerRadius - lipWidth);
 
-        // Outer bezel (raised edge)
+        // Recess shadow where the bezel sits in the panel.
         nvgBeginPath(args.vg);
-        nvgRect(args.vg, 0, 0, box.size.x, box.size.y);
-        NVGcolor bezelLight = nvgRGB(0x6b, 0x42, 0x28);
-        NVGcolor bezelDark = nvgRGB(0x1c, 0x11, 0x08);
-
-        // Outer bezel with gentle curvature
-        float outerRadius = 8.f;
-
-        // Panel recess shading to seat the bezel flush with the panel
-        nvgBeginPath(args.vg);
-        nvgRoundedRect(args.vg, -2.0f, -2.0f, box.size.x + 4.0f, box.size.y + 4.0f, outerRadius + 2.0f);
+        nvgRoundedRect(args.vg, -1.2f, -1.2f, box.size.x + 2.4f, box.size.y + 2.4f, outerRadius + 1.2f);
         nvgRoundedRect(args.vg, 0.f, 0.f, box.size.x, box.size.y, outerRadius);
         nvgPathWinding(args.vg, NVG_HOLE);
-        NVGpaint topInsetShadow = nvgLinearGradient(args.vg,
-            0.f, -2.0f, 0.f, 6.0f,
-            nvgRGBA(0, 0, 0, 90), nvgRGBA(0, 0, 0, 0));
-        nvgFillPaint(args.vg, topInsetShadow);
+        NVGpaint recessShadow = nvgBoxGradient(args.vg,
+            -1.2f, -1.2f, box.size.x + 2.4f, box.size.y + 2.4f,
+            outerRadius + 1.2f, 3.2f,
+            nvgRGBA(0, 0, 0, 74), nvgRGBA(0, 0, 0, 0));
+        nvgFillPaint(args.vg, recessShadow);
         nvgFill(args.vg);
 
-        nvgBeginPath(args.vg);
-        nvgRoundedRect(args.vg, -2.0f, -2.0f, box.size.x + 4.0f, box.size.y + 4.0f, outerRadius + 2.0f);
-        nvgRoundedRect(args.vg, 0.f, 0.f, box.size.x, box.size.y, outerRadius);
-        nvgPathWinding(args.vg, NVG_HOLE);
-        NVGpaint panelGlow = nvgLinearGradient(args.vg,
-            0.f, box.size.y - 6.0f, 0.f, box.size.y + 2.0f,
-            nvgRGBA(0, 0, 0, 0), nvgRGBA(0xc8, 0x8f, 0x55, 60));
-        nvgFillPaint(args.vg, panelGlow);
-        nvgFill(args.vg);
-
-        nvgBeginPath(args.vg);
-        nvgRoundedRect(args.vg, -0.5f, -0.5f, box.size.x + 1.0f, box.size.y + 1.0f, outerRadius + 0.5f);
-        nvgRoundedRect(args.vg, 0.f, 0.f, box.size.x, box.size.y, outerRadius);
-        nvgPathWinding(args.vg, NVG_HOLE);
-        NVGpaint bezelShadow = nvgBoxGradient(args.vg,
-            -0.5f, -0.5f, box.size.x + 1.0f, box.size.y + 1.0f,
-            outerRadius + 0.5f, 4.0f,
-            nvgRGBA(0, 0, 0, 70), nvgRGBA(0, 0, 0, 0));
-        nvgFillPaint(args.vg, bezelShadow);
-        nvgFill(args.vg);
-
-        // Bezel body with warm metallic gradient
+        // Main bezel ring.
         nvgBeginPath(args.vg);
         nvgRoundedRect(args.vg, 0.f, 0.f, box.size.x, box.size.y, outerRadius);
-        NVGpaint bezelOuter = nvgLinearGradient(args.vg, 0.f, 0.f, box.size.x * 0.25f, box.size.y * 1.05f,
-            bezelDark, bezelLight);
-        nvgFillPaint(args.vg, bezelOuter);
-        nvgFill(args.vg);
-
-        // Polished edge rendered as gradient chamfer
-        nvgBeginPath(args.vg);
-        nvgRoundedRect(args.vg, 0.9f, 0.9f, box.size.x - 1.8f, box.size.y - 1.8f, outerRadius - 0.9f);
-        nvgRoundedRect(args.vg, 2.8f, 2.8f, box.size.x - 5.6f, box.size.y - 5.6f, outerRadius - 2.8f);
+        nvgRoundedRect(args.vg, bezelWidth, bezelWidth, box.size.x - 2.f * bezelWidth, box.size.y - 2.f * bezelWidth, innerRadius);
         nvgPathWinding(args.vg, NVG_HOLE);
-        NVGpaint bezelEdgePaint = nvgLinearGradient(args.vg, 0.f, 0.f, box.size.x, box.size.y,
-            nvgRGBA(0xe0, 0xb0, 0x6a, 200), nvgRGBA(0x18, 0x0d, 0x06, 230));
-        nvgFillPaint(args.vg, bezelEdgePaint);
+        NVGpaint bezelBody = nvgLinearGradient(args.vg,
+            0.f, 0.f, box.size.x * 0.35f, box.size.y,
+            nvgRGBA(0x82, 0x62, 0x45, 240), nvgRGBA(0x1a, 0x12, 0x0d, 246));
+        nvgFillPaint(args.vg, bezelBody);
         nvgFill(args.vg);
 
-        // Subtle top highlight to catch ambient light
+        // Thin catch-light across upper bezel edge.
         nvgBeginPath(args.vg);
-        nvgRoundedRect(args.vg, 1.8f, 1.8f, box.size.x - 3.6f, box.size.y - 3.6f, outerRadius - 1.8f);
-        nvgRoundedRect(args.vg, 4.4f, 4.4f, box.size.x - 8.8f, box.size.y - 8.8f, outerRadius - 4.4f);
+        nvgRoundedRect(args.vg, 0.5f, 0.5f, box.size.x - 1.f, box.size.y - 1.f, outerRadius - 0.5f);
+        nvgRoundedRect(args.vg, bezelWidth + 0.15f, bezelWidth + 0.15f,
+            box.size.x - 2.f * (bezelWidth + 0.15f), box.size.y - 2.f * (bezelWidth + 0.15f), innerRadius - 0.15f);
         nvgPathWinding(args.vg, NVG_HOLE);
-        NVGpaint bezelSheen = nvgLinearGradient(args.vg,
-            0.f, box.size.y * 0.35f, 0.f, box.size.y,
-            nvgRGBA(0, 0, 0, 0), nvgRGBA(255, 220, 150, 35));
-        nvgFillPaint(args.vg, bezelSheen);
+        NVGpaint bezelHighlight = nvgLinearGradient(args.vg,
+            0.f, 0.f, 0.f, box.size.y * 0.45f,
+            nvgRGBA(255, 226, 182, 56), nvgRGBA(0, 0, 0, 0));
+        nvgFillPaint(args.vg, bezelHighlight);
         nvgFill(args.vg);
 
-        // Inner bezel inset
-        float bezelWidth = 3.825f;
+        // Inner lip ring.
+        float lipInset = bezelWidth + lipWidth;
         nvgBeginPath(args.vg);
-        nvgRoundedRect(args.vg, bezelWidth, bezelWidth, box.size.x - bezelWidth * 2, box.size.y - bezelWidth * 2, outerRadius - 2.5f);
-        NVGpaint bezelInner = nvgLinearGradient(args.vg, bezelWidth, bezelWidth, box.size.x - bezelWidth, box.size.y - bezelWidth,
-            nvgRGB(0x15, 0x0d, 0x08), nvgRGB(0x04, 0x02, 0x01));
-        nvgFillPaint(args.vg, bezelInner);
+        nvgRoundedRect(args.vg, bezelWidth, bezelWidth,
+            box.size.x - 2.f * bezelWidth, box.size.y - 2.f * bezelWidth, innerRadius);
+        nvgRoundedRect(args.vg, lipInset, lipInset,
+            box.size.x - 2.f * lipInset, box.size.y - 2.f * lipInset, lipRadius);
+        nvgPathWinding(args.vg, NVG_HOLE);
+        NVGpaint lipShade = nvgLinearGradient(args.vg,
+            0.f, bezelWidth, box.size.x, box.size.y - bezelWidth,
+            nvgRGBA(10, 10, 12, 225), nvgRGBA(76, 58, 42, 136));
+        nvgFillPaint(args.vg, lipShade);
         nvgFill(args.vg);
 
-        // Screen area with slight inset
-        float screenMargin = bezelWidth + 2.2f;
+        // Tight gasket so panel leather never peeks through.
+        float screenMargin = lipInset + screenInset;
+        nvgBeginPath(args.vg);
+        nvgRoundedRect(args.vg, lipInset, lipInset,
+            box.size.x - 2.f * lipInset, box.size.y - 2.f * lipInset, lipRadius);
+        nvgRoundedRect(args.vg, screenMargin, screenMargin,
+            box.size.x - 2.f * screenMargin, box.size.y - 2.f * screenMargin, std::max(0.75f, lipRadius - screenInset));
+        nvgPathWinding(args.vg, NVG_HOLE);
+        nvgFillColor(args.vg, nvgRGBA(8, 8, 10, 240));
+        nvgFill(args.vg);
+
+        // Screen area with subtle inset.
         float screenX = screenMargin;
         float screenY = screenMargin;
         float screenW = box.size.x - screenMargin * 2;
         float screenH = box.size.y - screenMargin * 2;
 
-        // Embedded screen appearance - inset shadow for depth
-        float insetSize = 3.f;
+        // Embedded screen appearance - shallow inset for a sleeker profile.
+        float insetSize = 1.4f;
 
-        // Dark shadow on top and left edges (recessed look)
+        // Top-left inset shadow.
         nvgBeginPath(args.vg);
         nvgRoundedRect(args.vg, screenX - insetSize, screenY - insetSize,
-                       screenW + insetSize * 2, screenH + insetSize * 2, 6.f);
+                       screenW + insetSize * 2, screenH + insetSize * 2, 5.2f);
         NVGpaint topShadow = nvgLinearGradient(args.vg,
             screenX - insetSize, screenY - insetSize,
             screenX + insetSize * 2, screenY + insetSize * 2,
-            nvgRGBA(0, 0, 0, 140), nvgRGBA(0, 0, 0, 0));
+            nvgRGBA(0, 0, 0, 118), nvgRGBA(0, 0, 0, 0));
         nvgFillPaint(args.vg, topShadow);
         nvgFill(args.vg);
 
-        // Light highlight on bottom and right edges (depth)
+        // Bottom-right highlight.
         nvgBeginPath(args.vg);
         nvgRoundedRect(args.vg, screenX - insetSize, screenY - insetSize,
-                       screenW + insetSize * 2, screenH + insetSize * 2, 6.f);
+                       screenW + insetSize * 2, screenH + insetSize * 2, 5.2f);
         NVGpaint bottomHighlight = nvgLinearGradient(args.vg,
             screenX + screenW - insetSize * 2, screenY + screenH - insetSize * 2,
             screenX + screenW + insetSize, screenY + screenH + insetSize,
-            nvgRGBA(0, 0, 0, 0), nvgRGBA(90, 70, 50, 50));
+            nvgRGBA(0, 0, 0, 0), nvgRGBA(115, 92, 67, 42));
         nvgFillPaint(args.vg, bottomHighlight);
         nvgFill(args.vg);
 
         // Dark screen background with amber tint
         nvgBeginPath(args.vg);
-        nvgRoundedRect(args.vg, screenX, screenY, screenW, screenH, 6.f);
+        nvgRoundedRect(args.vg, screenX, screenY, screenW, screenH, 5.2f);
         NVGpaint glassFill = nvgLinearGradient(args.vg, screenX, screenY, screenX + screenW, screenY + screenH,
             nvgRGB(0x05, 0x02, 0x01), nvgRGB(0x12, 0x08, 0x03));
         nvgFillPaint(args.vg, glassFill);
@@ -977,7 +941,7 @@ struct UnifiedDisplayWidget : TransparentWidget {
             screenX + screenW * 0.5f, screenY + screenH * 0.15f, 5.f, screenW * 0.8f,
             nvgRGBA(0x22, 0x44, 0x55, 18), nvgRGBA(0, 0, 0, 0));
         nvgBeginPath(args.vg);
-        nvgRoundedRect(args.vg, screenX, screenY, screenW, screenH, 6.f);
+        nvgRoundedRect(args.vg, screenX, screenY, screenW, screenH, 5.2f);
         nvgFillPaint(args.vg, glassHighlight);
         nvgFill(args.vg);
 
@@ -990,7 +954,7 @@ struct UnifiedDisplayWidget : TransparentWidget {
         float radarY = screenY + screenH * 0.5f;
         float radius = radarSize * 0.45f;
 
-        // Draw radar (simplified from ParticleDisplayWidget)
+        // Draw radar
         drawRadar(args.vg, radarX, radarY, radius);
 
         // ================================================================
@@ -1080,13 +1044,13 @@ struct UnifiedDisplayWidget : TransparentWidget {
         }
 
         // Pattern rings - spread out with more spacing
-        float ringRadii[3] = {
+        std::array<float, Fatebinder::kNumRings> ringRadii = {{
             radius * 0.35f,  // Ring 1 (innermost)
             radius * 0.60f,  // Ring 2 (middle)
             radius * 0.85f   // Ring 3 (outermost)
-        };
+        }};
 
-        for (int lay = 0; lay < 3; lay++) {
+        for (int lay = 0; lay < Fatebinder::kNumRings; lay++) {
             float ringRadius = ringRadii[lay];
             NVGcolor dimColor = ringDim[lay];
 
@@ -1107,7 +1071,7 @@ struct UnifiedDisplayWidget : TransparentWidget {
 
         // Current step indicators - hit-driven glow and cross at the active step location
         if (steps > 0) {
-            for (int lay = 0; lay < 3; lay++) {
+            for (int lay = 0; lay < Fatebinder::kNumRings; lay++) {
                 float ringRadius = ringRadii[lay];
                 int currentStep = module->currentStep[lay];
                 float angle = (float)currentStep / (float)steps * 2.f * M_PI - M_PI * 0.5f;
@@ -1116,7 +1080,7 @@ struct UnifiedDisplayWidget : TransparentWidget {
                 NVGcolor color = ringColors[lay];
                 bool hasPatternStep = module->rings[lay].getStep(currentStep);
                 float hitLevel = rack::math::clamp(module->ringHitLevel[lay], 0.f, 1.f);
-                bool hitActive = hasPatternStep && hitLevel > 0.01f;
+                bool hitActive = hasPatternStep && hitLevel > kSmallValueEpsilon;
 
                 // Sweep line from center
                 nvgBeginPath(vg);
@@ -1312,8 +1276,8 @@ struct UnifiedDisplayWidget : TransparentWidget {
         snprintf(buf, sizeof(buf), "CUR:%+d%%", (int)std::round(curve * 100.f));
         drawLine(col2ParamsX, col2Y, buf, terminalPurple);
 
-        const char* modeNames[] = {"ADD", "MAX", "RING"};
-        snprintf(buf, sizeof(buf), "BLD:%s", modeNames[overlapMode % 3]);
+        const char* modeNames[kOverlapModes] = {"ADD", "MAX", "RING"};
+        snprintf(buf, sizeof(buf), "BLD:%s", modeNames[overlapMode % kOverlapModes]);
         drawLine(col2ParamsX, col2Y, buf, terminalPurple);
 
         // Activity indicators for each ring
@@ -1323,7 +1287,7 @@ struct UnifiedDisplayWidget : TransparentWidget {
         float activityLabelY = col2Y;
         nvgText(vg, col2ActivityX, activityLabelY, "ACT", NULL);
         if (module) {
-            NVGcolor activityColors[3] = {
+            NVGcolor activityColors[Fatebinder::kNumRings] = {
                 nvgRGB(0x45, 0xec, 0xff),
                 nvgRGB(0xb0, 0x6b, 0xff),
                 nvgRGB(0x58, 0x9c, 0xff)
@@ -1361,7 +1325,7 @@ struct UnifiedDisplayWidget : TransparentWidget {
         // Tracking indicator placeholder in column 2
         col2Y += lineHeight * 0.4f;
         float trackingRowY = col2Y;
-        if (module && module->clockTicksSinceChange < 3 && !module->useInternalClock) {
+        if (module && module->clockTicksSinceChange < Fatebinder::kClockSettleTicks && !module->useInternalClock) {
             float timeBlink = std::fmod(module->displayTime, 1.0f);
             if (timeBlink < 0.5f) {
                 nvgFillColor(vg, nvgRGB(0xff, 0xa0, 0x40));
@@ -1407,434 +1371,6 @@ struct UnifiedDisplayWidget : TransparentWidget {
         col3Y += lineHeight * 0.2f;
 
         // Column 2 tracking indicator handled above
-    }
-};
-
-// ============================================================================
-// OLD TERMINAL INFO DISPLAY WIDGET (kept for reference, can be removed)
-// ============================================================================
-
-struct TerminalDisplayWidget : TransparentWidget {
-    Fatebinder* module = nullptr;
-
-    NVGcolor terminalGreen = nvgRGB(0x45, 0xec, 0xff);
-    NVGcolor terminalDim = nvgRGB(0x60, 0xc5, 0xd8);
-    NVGcolor terminalPurple = nvgRGB(0xc8, 0x84, 0xff);
-    NVGcolor bgColor = nvgRGBA(0x00, 0x00, 0x00, 0xff);
-
-    void drawLayer(const DrawArgs& args, int layer) override {
-        if (layer != 1) return;
-
-        nvgSave(args.vg);
-
-        // Dark terminal background
-        nvgBeginPath(args.vg);
-        nvgRect(args.vg, 0, 0, box.size.x, box.size.y);
-        nvgFillColor(args.vg, bgColor);
-        nvgFill(args.vg);
-
-        // Get monospace font
-        std::shared_ptr<Font> font = APP->window->loadFont(asset::system("res/fonts/ShareTechMono-Regular.ttf"));
-        if (!font) {
-            nvgRestore(args.vg);
-            return;
-        }
-
-        nvgFontFaceId(args.vg, font->handle);
-        nvgFontSize(args.vg, 8.f);
-        nvgFillColor(args.vg, terminalGreen);
-        nvgTextAlign(args.vg, NVG_ALIGN_LEFT | NVG_ALIGN_TOP);
-
-        float lineHeight = 9.5f;
-        char buf[64];
-
-        // Column 1 (left side)
-        float col1X = 4.f;
-        float col1Y = 3.f;
-
-        // Terminal header (spans both columns)
-        nvgFillColor(args.vg, terminalGreen);
-        nvgText(args.vg, col1X, col1Y, "FATEBINDER v1.0", NULL);
-        col1Y += lineHeight;
-        nvgFillColor(args.vg, terminalDim);
-        nvgText(args.vg, col1X, col1Y, "RHYTHM COMPUTER", NULL);
-        col1Y += lineHeight * 1.3f;
-
-        if (!module) {
-            nvgFillColor(args.vg, terminalGreen);
-            nvgText(args.vg, col1X, col1Y, "> STANDBY", NULL);
-            nvgRestore(args.vg);
-            return;
-        }
-
-        // Column 1 content
-        nvgFillColor(args.vg, terminalDim);
-        nvgText(args.vg, col1X, col1Y, "STATUS:", NULL);
-        col1Y += lineHeight;
-
-        int steps = (int)module->params[Fatebinder::STEPS_PARAM].getValue();
-        int hits = (int)module->params[Fatebinder::HITS_PARAM].getValue();
-
-        nvgFillColor(args.vg, terminalGreen);
-        snprintf(buf, sizeof(buf), "STEPS: %02d", steps);
-        nvgText(args.vg, col1X, col1Y, buf, NULL);
-        col1Y += lineHeight;
-
-        snprintf(buf, sizeof(buf), "HITS:  %02d", hits);
-        nvgText(args.vg, col1X, col1Y, buf, NULL);
-        col1Y += lineHeight * 1.3f;
-
-        nvgFillColor(args.vg, terminalDim);
-        nvgText(args.vg, col1X, col1Y, "RINGS:", NULL);
-        col1Y += lineHeight;
-
-        int div2 = (int)module->params[Fatebinder::RING_2_DIV_PARAM].getValue();
-        int div3 = (int)module->params[Fatebinder::RING_3_DIV_PARAM].getValue();
-
-        nvgFillColor(args.vg, nvgRGB(0xff, 0x55, 0x00));
-        snprintf(buf, sizeof(buf), "L1: 1/%d", 1);
-        nvgText(args.vg, col1X, col1Y, buf, NULL);
-        col1Y += lineHeight;
-
-        nvgFillColor(args.vg, nvgRGB(0xff, 0xaa, 0x00));
-        snprintf(buf, sizeof(buf), "L2: 1/%d", div2);
-        nvgText(args.vg, col1X, col1Y, buf, NULL);
-        col1Y += lineHeight;
-
-        nvgFillColor(args.vg, nvgRGB(0xff, 0x11, 0x00));
-        snprintf(buf, sizeof(buf), "L3: 1/%d", div3);
-        nvgText(args.vg, col1X, col1Y, buf, NULL);
-
-        // Column 2 (right side)
-        float col2X = box.size.x * 0.52f;  // Start halfway across
-        float col2Y = 3.f + lineHeight * 2.3f;  // Align with STATUS
-
-        nvgFillColor(args.vg, terminalDim);
-        nvgText(args.vg, col2X, col2Y, "MUTATION:", NULL);
-        col2Y += lineHeight;
-
-        float chaos = module->params[Fatebinder::CHAOS_PARAM].getValue();
-        float mutation = module->params[Fatebinder::MUTATION_RATE_PARAM].getValue();
-
-        nvgFillColor(args.vg, chaos > 0.7f ? nvgRGB(0xff, 0x22, 0x00) : terminalGreen);
-        snprintf(buf, sizeof(buf), "CHAOS: %3d%%", (int)(chaos * 100));
-        nvgText(args.vg, col2X, col2Y, buf, NULL);
-        col2Y += lineHeight;
-
-        nvgFillColor(args.vg, terminalGreen);
-        snprintf(buf, sizeof(buf), "RATE:  %3d%%", (int)(mutation * 100));
-        nvgText(args.vg, col2X, col2Y, buf, NULL);
-        col2Y += lineHeight * 1.3f;
-
-        // Status at bottom of column 2
-        if (module->frozen) {
-            nvgFillColor(args.vg, nvgRGB(0x00, 0xcc, 0xff));
-            nvgText(args.vg, col2X, col2Y, "> FROZEN", NULL);
-        } else {
-            nvgFillColor(args.vg, terminalDim);
-            nvgText(args.vg, col2X, col2Y, "> ACTIVE", NULL);
-        }
-
-        // Scanlines
-        for (float sy = 0; sy < box.size.y; sy += 2.f) {
-            nvgBeginPath(args.vg);
-            nvgRect(args.vg, 0, sy, box.size.x, 1.f);
-            nvgFillColor(args.vg, nvgRGBA(0, 0, 0, 60));
-            nvgFill(args.vg);
-        }
-
-        nvgRestore(args.vg);
-    }
-};
-
-// ============================================================================
-// PARTICLE DISPLAY WIDGET
-// ============================================================================
-
-struct ParticleDisplayWidget : TransparentWidget {
-    Fatebinder* module = nullptr;
-
-    // Military radar CRT phosphor colors - Orange/Amber/Red spectrum
-    NVGcolor ringColors[3] = {
-        nvgRGB(0xff, 0x55, 0x00),  // Ring 1: Orange - Primary targets
-        nvgRGB(0xff, 0xaa, 0x00),  // Ring 2: Amber - Harmonic signals
-        nvgRGB(0xff, 0x11, 0x00)   // Ring 3: Deep Red - Counter rhythm
-    };
-
-    NVGcolor ringDim[3] = {
-        nvgRGB(0x99, 0x33, 0x00),  // Dim orange
-        nvgRGB(0x99, 0x66, 0x00),  // Dim amber
-        nvgRGB(0x88, 0x0a, 0x00)   // Dim red
-    };
-
-    NVGcolor gridColor = nvgRGBA(0x66, 0x33, 0x00, 0x40);  // Dark orange grid
-    NVGcolor bgGlowColor = nvgRGBA(0x22, 0x11, 0x00, 0xff); // Dark military green/black
-
-    float scanlinePhase = -1.f;
-    float sweepAngle = 0.f;
-
-    void drawLayer(const DrawArgs& args, int layer) override {
-        if (layer != 1) return;
-        if (!module) return;
-
-        nvgSave(args.vg);
-
-        // Center coordinates
-        float cx = box.size.x * 0.5f;
-        float cy = box.size.y * 0.5f;
-        float radius = std::min(cx, cy) * 0.85f;
-
-        // ================================================================
-        // MILITARY RADAR SCREEN BACKGROUND
-        // ================================================================
-
-        // Dark background with subtle radial gradient (like a CRT tube)
-        nvgBeginPath(args.vg);
-        NVGpaint bgPaint = nvgRadialGradient(args.vg, cx, cy, 0, radius * 1.1f,
-            nvgRGBA(0x18, 0x0c, 0x00, 0xff),  // Dark center
-            nvgRGBA(0x00, 0x00, 0x00, 0xff)); // Black edges
-        nvgRect(args.vg, 0, 0, box.size.x, box.size.y);
-        nvgFillPaint(args.vg, bgPaint);
-        nvgFill(args.vg);
-
-        // Subtle phosphor glow around screen
-        nvgBeginPath(args.vg);
-        NVGpaint screenGlow = nvgRadialGradient(args.vg, cx, cy, radius * 0.95f, radius * 1.05f,
-            nvgRGBA(0x66, 0x22, 0x00, 0x30),
-            nvgRGBA(0x00, 0x00, 0x00, 0x00));
-        nvgCircle(args.vg, cx, cy, radius * 1.05f);
-        nvgFillPaint(args.vg, screenGlow);
-        nvgFill(args.vg);
-
-        // ================================================================
-        // RANGE RINGS (like radar concentric circles)
-        // ================================================================
-
-        int steps = (int)module->params[Fatebinder::STEPS_PARAM].getValue();
-
-        // Draw 4 concentric range rings
-        for (int ring = 1; ring <= 4; ring++) {
-            float ringRadius = radius * (ring / 4.0f);
-            nvgBeginPath(args.vg);
-            nvgCircle(args.vg, cx, cy, ringRadius);
-            nvgStrokeColor(args.vg, nvgRGBA(0x44, 0x22, 0x00, 0x60));
-            nvgStrokeWidth(args.vg, 0.75f);
-            nvgStroke(args.vg);
-        }
-
-        // Draw radial spokes (like compass bearings)
-        for (int i = 0; i < steps; i++) {
-            float angle = (float)i / (float)steps * 2.f * M_PI - M_PI * 0.5f;
-            float x1 = cx;
-            float y1 = cy;
-            float x2 = cx + std::cos(angle) * radius;
-            float y2 = cy + std::sin(angle) * radius;
-
-            nvgBeginPath(args.vg);
-            nvgMoveTo(args.vg, x1, y1);
-            nvgLineTo(args.vg, x2, y2);
-            nvgStrokeColor(args.vg, nvgRGBA(0x33, 0x18, 0x00, 0x30));
-            nvgStrokeWidth(args.vg, 0.5f);
-            nvgStroke(args.vg);
-        }
-
-        // ================================================================
-        // EUCLIDEAN PATTERN VISUALIZATION (3 concentric rings)
-        // ================================================================
-
-        // Draw each ring's euclidean pattern as a colored ring
-        for (int lay = 0; lay < 3; lay++) {
-            float ringRadius = radius * (0.65f + lay * 0.15f); // Ring 1: 65%, Ring 2: 80%, Ring 3: 95%
-            NVGcolor ringColor = ringColors[lay];
-            NVGcolor dimColor = ringDim[lay];
-
-            for (int i = 0; i < steps; i++) {
-                float angle = (float)i / (float)steps * 2.f * M_PI - M_PI * 0.5f;
-                float x = cx + std::cos(angle) * ringRadius;
-                float y = cy + std::sin(angle) * ringRadius;
-
-                if (module->rings[lay].getStep(i)) {
-                    // Hit - bright dot
-                    nvgBeginPath(args.vg);
-                    nvgCircle(args.vg, x, y, 3.5f);
-                    nvgFillColor(args.vg, nvgRGBA(dimColor.r * 255, dimColor.g * 255, dimColor.b * 255, 220));
-                    nvgFill(args.vg);
-
-                    // Inner glow
-                    nvgBeginPath(args.vg);
-                    nvgCircle(args.vg, x, y, 2.f);
-                    nvgFillColor(args.vg, ringColor);
-                    nvgFill(args.vg);
-                } else {
-                    // No hit - very dim dot
-                    nvgBeginPath(args.vg);
-                    nvgCircle(args.vg, x, y, 1.5f);
-                    nvgFillColor(args.vg, nvgRGBA(dimColor.r * 255, dimColor.g * 255, dimColor.b * 255, 60));
-                    nvgFill(args.vg);
-                }
-            }
-
-            // Draw connecting arc between hits for visual clarity
-            nvgBeginPath(args.vg);
-            for (int i = 0; i < steps; i++) {
-                float angle = (float)i / (float)steps * 2.f * M_PI - M_PI * 0.5f;
-                float x = cx + std::cos(angle) * ringRadius;
-                float y = cy + std::sin(angle) * ringRadius;
-
-                if (i == 0) {
-                    nvgMoveTo(args.vg, x, y);
-                } else {
-                    nvgLineTo(args.vg, x, y);
-                }
-            }
-            nvgClosePath(args.vg);
-            nvgStrokeColor(args.vg, nvgRGBA(dimColor.r * 255, dimColor.g * 255, dimColor.b * 255, 40));
-            nvgStrokeWidth(args.vg, 0.75f);
-            nvgStroke(args.vg);
-        }
-
-        // ================================================================
-        // PARTICLES - Military radar "blips"
-        // ================================================================
-
-        for (const auto& p : module->particles) {
-            float px = cx + p.x * radius;
-            float py = cy + p.y * radius;
-            float brightness = p.brightness;
-
-            if (brightness > 0.01f && p.ringIndex >= 0 && p.ringIndex < 3) {
-                NVGcolor color = ringColors[p.ringIndex];
-
-                // Strong particle core (radar blip)
-                nvgBeginPath(args.vg);
-                nvgCircle(args.vg, px, py, 2.5f * brightness);
-                nvgFillColor(args.vg, nvgRGBAf(
-                    color.r * brightness,
-                    color.g * brightness,
-                    color.b * brightness,
-                    brightness));
-                nvgFill(args.vg);
-
-                // Wide phosphor bloom (CRT glow)
-                NVGpaint particleGlow = nvgRadialGradient(args.vg, px, py, 0, 12.f * brightness,
-                    nvgRGBAf(color.r * brightness * 0.8f, color.g * brightness * 0.8f,
-                            color.b * brightness * 0.8f, brightness * 0.6f),
-                    nvgRGBAf(0.f, 0.f, 0.f, 0.f));
-                nvgBeginPath(args.vg);
-                nvgCircle(args.vg, px, py, 12.f * brightness);
-                nvgFillPaint(args.vg, particleGlow);
-                nvgFill(args.vg);
-            }
-        }
-
-        // ================================================================
-        // CURRENT STEP INDICATORS (bright sweeping dots on each ring)
-        // ================================================================
-
-        if (steps > 0) {
-            for (int lay = 0; lay < 3; lay++) {
-                float ringRadius = radius * (0.65f + lay * 0.15f); // Match pattern ring positions
-                float angle = (float)module->currentStep[lay] / (float)steps * 2.f * M_PI - M_PI * 0.5f;
-                float x = cx + std::cos(angle) * ringRadius;
-                float y = cy + std::sin(angle) * ringRadius;
-
-                NVGcolor color = ringColors[lay];
-
-                // Bright crosshair indicator
-                float cs = 5.f;
-                nvgBeginPath(args.vg);
-                nvgMoveTo(args.vg, x - cs, y);
-                nvgLineTo(args.vg, x + cs, y);
-                nvgMoveTo(args.vg, x, y - cs);
-                nvgLineTo(args.vg, x, y + cs);
-                nvgStrokeColor(args.vg, color);
-                nvgStrokeWidth(args.vg, 1.8f);
-                nvgStroke(args.vg);
-
-                // Strong glow
-                NVGpaint glow = nvgRadialGradient(args.vg, x, y, 0, 14.f,
-                    nvgRGBAf(color.r * 0.9f, color.g * 0.9f, color.b * 0.9f, 0.7f),
-                    nvgRGBAf(0.f, 0.f, 0.f, 0.f));
-                nvgBeginPath(args.vg);
-                nvgCircle(args.vg, x, y, 14.f);
-                nvgFillPaint(args.vg, glow);
-                nvgFill(args.vg);
-
-                // Radial line from center to current position (sweep line)
-                nvgBeginPath(args.vg);
-                nvgMoveTo(args.vg, cx, cy);
-                nvgLineTo(args.vg, x, y);
-                nvgStrokeColor(args.vg, nvgRGBAf(color.r * 0.5f, color.g * 0.5f, color.b * 0.5f, 0.3f));
-                nvgStrokeWidth(args.vg, 1.5f);
-                nvgStroke(args.vg);
-            }
-        }
-
-        // ================================================================
-        // RING NUMBER LABELS
-        // ================================================================
-
-        // Position labels at the right side of the display
-        float labelX = cx + radius * 1.05f;
-        const char* ringLabels[] = {"1", "2", "3"};
-
-        nvgFontSize(args.vg, 10.f);
-        nvgFontFaceId(args.vg, APP->window->uiFont->handle);
-        nvgTextAlign(args.vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
-
-        for (int i = 0; i < 3; i++) {
-            float ringRadius = radius * (0.65f + i * 0.15f);
-            float labelY = cy - ringRadius;
-
-            // Draw label background for better visibility
-            nvgBeginPath(args.vg);
-            float textBounds[4];
-            nvgTextBounds(args.vg, labelX, labelY, ringLabels[i], NULL, textBounds);
-            float padding = 2.f;
-            nvgRect(args.vg, textBounds[0] - padding, textBounds[1] - padding,
-                    textBounds[2] - textBounds[0] + padding * 2,
-                    textBounds[3] - textBounds[1] + padding * 2);
-            nvgFillColor(args.vg, nvgRGBA(0, 0, 0, 180));
-            nvgFill(args.vg);
-
-            // Draw label text with ring color
-            nvgFillColor(args.vg, ringColors[i]);
-            nvgText(args.vg, labelX, labelY, ringLabels[i], NULL);
-        }
-
-        // ================================================================
-        // CRT SCANLINES
-        // ================================================================
-
-        const float scanSpacing = 1.5f;
-        const float scanThickness = 0.45f;
-        if (scanlinePhase < 0.f) {
-            scanlinePhase = rack::random::uniform() * scanSpacing;
-        }
-        float localStart = scanlinePhase;
-        while (localStart > 0.f) {
-            localStart -= scanSpacing;
-        }
-        for (float y = localStart; y < box.size.y; y += scanSpacing) {
-            if (y + scanThickness < 0.f) {
-                continue;
-            }
-            nvgBeginPath(args.vg);
-            nvgRect(args.vg, 0, y, box.size.x, scanThickness);
-            nvgFillColor(args.vg, nvgRGBA(0, 0, 0, 22));
-            nvgFill(args.vg);
-        }
-
-        // Screen vignette (darker edges)
-        nvgBeginPath(args.vg);
-        NVGpaint vignette = nvgRadialGradient(args.vg, cx, cy, radius * 0.5f, radius * 1.1f,
-            nvgRGBA(0, 0, 0, 0),
-            nvgRGBA(0, 0, 0, 100));
-        nvgRect(args.vg, 0, 0, box.size.x, box.size.y);
-        nvgFillPaint(args.vg, vignette);
-        nvgFill(args.vg);
-
-        nvgRestore(args.vg);
     }
 };
 
@@ -2000,13 +1536,7 @@ struct FatebinderWidget : ModuleWidget {
             [=]() { return module->rhythmMode == EUCLIDEAN_MODE; },
             [=]() {
                 module->rhythmMode = EUCLIDEAN_MODE;
-                // Re-initialize patterns with new mode
-                int steps = (int)module->params[Fatebinder::STEPS_PARAM].getValue();
-                int hits = (int)module->params[Fatebinder::HITS_PARAM].getValue();
-                int rotation = (int)module->params[Fatebinder::ROTATION_PARAM].getValue();
-                for (int i = 0; i < module->kNumRings; i++) {
-                    module->rings[i].initialize(steps, hits, rotation, module->rhythmMode);
-                }
+                module->reinitializeRingsFromCurrentParams();
             }
         ));
 
@@ -2014,13 +1544,7 @@ struct FatebinderWidget : ModuleWidget {
             [=]() { return module->rhythmMode == LSYSTEM_MODE; },
             [=]() {
                 module->rhythmMode = LSYSTEM_MODE;
-                // Re-initialize patterns with new mode
-                int steps = (int)module->params[Fatebinder::STEPS_PARAM].getValue();
-                int hits = (int)module->params[Fatebinder::HITS_PARAM].getValue();
-                int rotation = (int)module->params[Fatebinder::ROTATION_PARAM].getValue();
-                for (int i = 0; i < module->kNumRings; i++) {
-                    module->rings[i].initialize(steps, hits, rotation, module->rhythmMode);
-                }
+                module->reinitializeRingsFromCurrentParams();
             }
         ));
 

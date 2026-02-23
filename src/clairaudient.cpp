@@ -87,8 +87,8 @@ struct ClairaudientModule : Module, IOscilloscopeSource {
         WAVEFORM_PWM = 1
     };
 
-    // Polyphonic oscillator state (up to 8 voices for Clairaudient)
-    static constexpr int MAX_POLY_VOICES = 8;
+    // Polyphonic oscillator state (up to 6 voices for Clairaudient)
+    static constexpr int MAX_POLY_VOICES = 6;
     shapetaker::dsp::VoiceArray<float, MAX_POLY_VOICES> phase1A;  // Independent phase for osc 1A per voice
     shapetaker::dsp::VoiceArray<float, MAX_POLY_VOICES> phase1B;  // Independent phase for osc 1B per voice
     shapetaker::dsp::VoiceArray<float, MAX_POLY_VOICES> phase2A;  // Independent phase for osc 2A per voice
@@ -119,7 +119,7 @@ struct ClairaudientModule : Module, IOscilloscopeSource {
     std::atomic<int> oscilloscopeBufferIndex = {0};
     int oscilloscopeFrameCounter = 0;
 
-    // Anti-aliasing filters per voice (8 voices)
+    // Anti-aliasing filters per voice (6 voices)
     shapetaker::dsp::VoiceArray<shapetaker::dsp::OnePoleLowpass, MAX_POLY_VOICES> antiAliasFilterLeft;
     shapetaker::dsp::VoiceArray<shapetaker::dsp::OnePoleLowpass, MAX_POLY_VOICES> antiAliasFilterRight;
     shapetaker::dsp::VoiceArray<shapetaker::dsp::OnePoleLowpass, MAX_POLY_VOICES> antiAliasFilterLeftStage2;
@@ -425,7 +425,7 @@ struct ClairaudientModule : Module, IOscilloscopeSource {
             resetFilters();
         }
 
-        // Determine number of polyphonic voices (max 8 for Clairaudient)
+        // Determine number of polyphonic voices (max 6 for Clairaudient)
         int channels = std::min(
             polyProcessor.updateChannels(
                 {inputs[VOCT1_INPUT], inputs[VOCT2_INPUT]},
@@ -780,59 +780,7 @@ private:
 
 // KnobShadowWidget is now defined in plugin.hpp and shared across all modules
 
-struct ClairaudientWidget : ModuleWidget {
-    // Panel background rendering constants
-    static constexpr float BG_TEXTURE_ASPECT = 2880.f / 4553.f; // panel_background.png dimensions
-    static constexpr float BG_OFFSET_OPACITY = 0.35f;            // opacity of the seam-softening pass
-    static constexpr int   BG_DARKEN_ALPHA   = 18;               // panel darkening overlay alpha
-
-    // Match the uniform Clairaudient/Tessellation/Transmutation/Torsion leather treatment
-    void draw(const DrawArgs& args) override {
-        std::shared_ptr<Image> bg = APP->window->loadImage(asset::plugin(pluginInstance, "res/panels/panel_background.png"));
-        if (bg) {
-            // Keep leather grain density consistent across panel widths via fixed-height tiling.
-            constexpr float inset = 2.0f;
-            constexpr float textureAspect = BG_TEXTURE_ASPECT;
-            float tileH = box.size.y + inset * 2.f;
-            float tileW = tileH * textureAspect;
-            float x = -inset;
-            float y = -inset;
-
-            nvgSave(args.vg);
-
-            // Base tile pass
-            nvgBeginPath(args.vg);
-            nvgRect(args.vg, 0.f, 0.f, box.size.x, box.size.y);
-            NVGpaint paintA = nvgImagePattern(args.vg, x, y, tileW, tileH, 0.f, bg->handle, 1.0f);
-            nvgFillPaint(args.vg, paintA);
-            nvgFill(args.vg);
-
-            // Offset low-opacity pass to soften seam visibility
-            nvgBeginPath(args.vg);
-            nvgRect(args.vg, 0.f, 0.f, box.size.x, box.size.y);
-            NVGpaint paintB = nvgImagePattern(args.vg, x + tileW * 0.5f, y, tileW, tileH, 0.f, bg->handle, BG_OFFSET_OPACITY);
-            nvgFillPaint(args.vg, paintB);
-            nvgFill(args.vg);
-
-            // Slight darkening to match existing module tone
-            nvgBeginPath(args.vg);
-            nvgRect(args.vg, 0.f, 0.f, box.size.x, box.size.y);
-            nvgFillColor(args.vg, nvgRGBA(0, 0, 0, BG_DARKEN_ALPHA));
-            nvgFill(args.vg);
-
-            nvgRestore(args.vg);
-        }
-        ModuleWidget::draw(args);
-
-        // Draw a black inner frame to fully mask any edge tinting
-        constexpr float frame = 1.0f;
-        nvgBeginPath(args.vg);
-        nvgRect(args.vg, 0.f, 0.f, box.size.x, box.size.y);
-        nvgRect(args.vg, frame, frame, box.size.x - 2.f * frame, box.size.y - 2.f * frame);
-        nvgPathWinding(args.vg, NVG_HOLE);
-        nvgFillColor(args.vg, nvgRGB(0, 0, 0));
-        nvgFill(args.vg);
-    }
+struct ClairaudientWidget : ShapetakerModuleWidget {
 
     ClairaudientWidget(ClairaudientModule* module) {
         setModule(module);

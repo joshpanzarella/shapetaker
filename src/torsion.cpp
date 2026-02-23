@@ -10,6 +10,18 @@ namespace {
         return a + (b - a) * t;
     }
 
+    // 1-pole high-pass DC blocker: y[n] = x[n] - x[n-1] + coeff * y[n-1]
+    // coeff = 1 - 2π * fc * T, cached per sample rate for a fixed ~20 Hz cutoff
+    struct DcBlocker {
+        float x1 = 0.f, y1 = 0.f;
+        float process(float x, float coeff) {
+            float y = x - x1 + coeff * y1;
+            x1 = x; y1 = y;
+            return y;
+        }
+        void reset() { x1 = y1 = 0.f; }
+    };
+
     float softWarpAmount(float amount) {
         // Gentle knee near zero to avoid audible "kick" when torsion leaves 0%
         constexpr float knee = 0.04f;  // 4% knee
@@ -173,32 +185,6 @@ namespace {
         return phase;
     }
 
-    float generateSine(float phase) {
-        // Sine wave is naturally bandlimited
-        return std::sin(2.f * M_PI * phase);
-    }
-
-    // Curve shaping for stage transitions
-    // curve: -1 = exponential (fast start), 0 = linear, +1 = logarithmic (slow start)
-    float applyCurve(float t, float curve) {
-        t = rack::math::clamp(t, 0.f, 1.f);
-        curve = rack::math::clamp(curve, -1.f, 1.f);
-
-        if (curve < -0.01f) {
-            float amount = -curve;
-            float exponent = lerp(1.f, 5.f, amount);
-            float shaped = 1.f - fastPowLookup(1.f - t, exponent);
-            float mix = lerp(0.6f, 0.9f, amount);
-            return rack::math::crossfade(t, shaped, mix);
-        } else if (curve > 0.01f) {
-            float amount = curve;
-            float exponent = lerp(1.f, 5.f, amount);
-            float shaped = fastPowLookup(t, exponent);
-            float mix = lerp(0.6f, 0.9f, amount);
-            return rack::math::crossfade(t, shaped, mix);
-        }
-        return t; // Linear
-    }
 }
 
 struct Torsion : Module {
@@ -225,12 +211,6 @@ struct Torsion : Module {
         STAGE4_PARAM,
         STAGE5_PARAM,
         STAGE6_PARAM,
-        CURVE1_PARAM,
-        CURVE2_PARAM,
-        CURVE3_PARAM,
-        CURVE4_PARAM,
-        CURVE5_PARAM,
-        CURVE6_PARAM,
         FEEDBACK_PARAM,
         FEEDBACK_ATTEN_PARAM,
         SAW_WAVE_PARAM,
@@ -238,7 +218,6 @@ struct Torsion : Module {
         SQUARE_WAVE_PARAM,
         DIRTY_MODE_PARAM,
         SUB_LEVEL_PARAM,
-        SUB_WARP_PARAM,
         SUB_SYNC_PARAM,
         CHORUS_PARAM,
         PARAMS_LEN
@@ -306,8 +285,7 @@ struct Torsion : Module {
     shapetaker::dsp::VoiceArray<ChorusVoiceState> chorusVoices;
 
     // DC blocking filters for clean output (prevents clicks/pops)
-    shapetaker::dsp::VoiceArray<float> dcBlockerX1;  // Previous input
-    shapetaker::dsp::VoiceArray<float> dcBlockerY1;  // Previous output
+    shapetaker::dsp::VoiceArray<DcBlocker> dcBlockers;
 
     // Click suppression fade-out ramp for smooth envelope endings
     shapetaker::dsp::VoiceArray<float> clickSuppressor;  // 1.0 = normal, 0.0 = fully faded
@@ -322,15 +300,16 @@ struct Torsion : Module {
     static constexpr float kStageRateBase = 10.f;
     float vintageClockPhase = 0.f;
 
-    static constexpr float kVintageHissLevel = 0.0012f;
-    static constexpr float kVintageClockLevel = 0.0008f;
+    static constexpr float kVintageHissLevel = 0.00075f;
+    static constexpr float kVintageClockLevel = 0.0005f;
     static constexpr float kVintageClockFreq = 9000.f;  // Hz
     static constexpr float kVintageDriftRange = 0.0045f; // +/- range in octaves (~5.5 cents)
     static constexpr float kVintageDriftHoldMin = 0.18f;
     static constexpr float kVintageDriftHoldMax = 0.45f;
-    static constexpr float kVintageIdleHissLevel = 0.00055f;
+    static constexpr float kVintageIdleHissLevel = 0.00035f;
 
     // Cached exponential coefficients (computed once per sample rate change)
+    float cachedDcBlockCoeff = 0.f;
     float cachedSlewCoeff = 0.f;
     float cachedSuppressorDecay = 0.f;
     float cachedSuppressorRise = 0.f;
@@ -355,7 +334,7 @@ struct Torsion : Module {
     float chorusModBLast = 0.f;
 
     // Vintage mode noise optimization - pre-generated noise samples
-    static constexpr int kVintageNoiseBufferSize = 512;
+    static constexpr int kVintageNoiseBufferSize = 8192;
     float vintageNoiseBuffer[kVintageNoiseBufferSize] = {};
     int vintageNoiseIndex = 0;
 
@@ -396,14 +375,6 @@ struct Torsion : Module {
         shapetaker::ParameterHelper::configGain(this, STAGE5_PARAM, "stage 5 level", 0.0f);
         shapetaker::ParameterHelper::configGain(this, STAGE6_PARAM, "stage 6 level", 0.0f);
 
-        // Curve shapers (-1 = exp, 0 = linear, +1 = log)
-        configParam(CURVE1_PARAM, -1.f, 1.f, 0.f, "stage 1 curve");
-        configParam(CURVE2_PARAM, -1.f, 1.f, 0.f, "stage 2 curve");
-        configParam(CURVE3_PARAM, -1.f, 1.f, 0.f, "stage 3 curve");
-        configParam(CURVE4_PARAM, -1.f, 1.f, 0.f, "stage 4 curve");
-        configParam(CURVE5_PARAM, -1.f, 1.f, 0.f, "stage 5 curve");
-        configParam(CURVE6_PARAM, -1.f, 1.f, 0.f, "stage 6 curve");
-
         shapetaker::ParameterHelper::configGain(this, FEEDBACK_PARAM, "feedback amount", 0.0f);
         shapetaker::ParameterHelper::configAttenuverter(this, FEEDBACK_ATTEN_PARAM, "feedback cv");
 
@@ -423,8 +394,8 @@ struct Torsion : Module {
 
         // Sub oscillator with extended range for powerful bass
         configParam(SUB_LEVEL_PARAM, 0.f, 2.0f, 0.0f, "sub osc level", "%", 0.f, 100.f);
-        configParam(SUB_WARP_PARAM, 0.f, 1.f, 0.f, "sub dcw depth");
-        configSwitch(SUB_SYNC_PARAM, 0.f, 1.f, 0.f, "sub sync mode", {"free-run", "hard sync"});
+        configSwitch(SUB_SYNC_PARAM, 0.f, 3.f, 0.f, "oscillator interaction",
+            {"independent", "sync B to A resets", "B DCW follows A", "ring mod mix"});
         if (auto* quantity = paramQuantities[SUB_SYNC_PARAM]) {
             quantity->snapEnabled = true;
             quantity->smoothEnabled = false;
@@ -458,6 +429,8 @@ struct Torsion : Module {
     }
 
     void updateCachedCoefficients(float sampleTime) {
+        // DC blocker: fixed 20 Hz cutoff regardless of sample rate
+        cachedDcBlockCoeff = 1.f - (2.f * float(M_PI) * 20.f * sampleTime);
         // Cache exponential coefficients to avoid recomputing every sample
         cachedSlewCoeff = std::exp(-sampleTime * 500.f);   // ~2 ms attack smoothing
         cachedSuppressorDecay = std::exp(-sampleTime * 100.f);
@@ -484,8 +457,7 @@ struct Torsion : Module {
         stagePositions.reset();
         stageActive.reset();
         stageEnvelope.reset();
-        dcBlockerX1.reset();
-        dcBlockerY1.reset();
+        dcBlockers.forEach([](DcBlocker& db) { db.reset(); });
         clickSuppressor.reset();
         for (int i = 0; i < 16; i++) {
             clickSuppressor[i] = 1.0f;  // Start fully active
@@ -511,9 +483,16 @@ struct Torsion : Module {
         }
     }
 
+    void onSampleRateChange(const SampleRateChangeEvent& e) override {
+        updateCachedCoefficients(e.sampleTime);
+    }
+
     json_t* dataToJson() override {
         json_t* rootJ = json_object();
-        json_object_set_new(rootJ, "interactionMode", json_integer((int)interactionMode));
+        int modeFromSwitch = rack::math::clamp(
+            (int)std::round(params[SUB_SYNC_PARAM].getValue()), 0, INTERACTION_MODES_LEN - 1);
+        interactionMode = (InteractionMode)modeFromSwitch;
+        json_object_set_new(rootJ, "interactionMode", json_integer(modeFromSwitch));
         json_object_set_new(rootJ, "vintageMode", json_boolean(vintageMode));
         json_object_set_new(rootJ, "dcwKeyTrackEnabled", json_boolean(dcwKeyTrackEnabled));
         json_object_set_new(rootJ, "dcwVelocityEnabled", json_boolean(dcwVelocityEnabled));
@@ -550,6 +529,7 @@ struct Torsion : Module {
             interactionMode = (InteractionMode)json_integer_value(modeJ);
             interactionMode = (InteractionMode)rack::math::clamp(
                 (int)interactionMode, 0, INTERACTION_MODES_LEN - 1);
+            params[SUB_SYNC_PARAM].setValue((float)interactionMode);
         }
         json_t* vintageJ = json_object_get(rootJ, "vintageMode");
         if (vintageJ) {
@@ -587,13 +567,6 @@ struct Torsion : Module {
             resetChorusState();
         }
 
-        // Update cached exponential coefficients if sample rate changed
-        static float lastSampleTime = 0.f;
-        if (args.sampleTime != lastSampleTime) {
-            updateCachedCoefficients(args.sampleTime);
-            lastSampleTime = args.sampleTime;
-        }
-
         float coarse = params[COARSE_PARAM].getValue();
         float detuneCents = params[DETUNE_PARAM].getValue();
         float detuneOct = detuneCents / 1200.f;
@@ -612,14 +585,6 @@ struct Torsion : Module {
             params[STAGE5_PARAM].getValue(),
             params[STAGE6_PARAM].getValue()
         };
-        float stageCurves[kNumStages] = {
-            params[CURVE1_PARAM].getValue(),
-            params[CURVE2_PARAM].getValue(),
-            params[CURVE3_PARAM].getValue(),
-            params[CURVE4_PARAM].getValue(),
-            params[CURVE5_PARAM].getValue(),
-            params[CURVE6_PARAM].getValue()
-        };
         CZWarpShape warpShape = (CZWarpShape)rack::math::clamp(
             (int)params[WARP_SHAPE_PARAM].getValue(), 0, (int)CZWarpShape::Count - 1);
         bool useSaw = params[SAW_WAVE_PARAM].getValue() > 0.5f;
@@ -634,8 +599,9 @@ struct Torsion : Module {
         bool voctConnected = inputs[VOCT_INPUT].isConnected();
         bool torsionCvConnected = inputs[TORSION_CV_INPUT].isConnected();
         float subLevel = params[SUB_LEVEL_PARAM].getValue();
-        float subWarpParam = params[SUB_WARP_PARAM].getValue();
-        bool subHardSync = params[SUB_SYNC_PARAM].getValue() > 0.5f;
+        InteractionMode activeInteraction = (InteractionMode)rack::math::clamp(
+            (int)std::round(params[SUB_SYNC_PARAM].getValue()), 0, INTERACTION_MODES_LEN - 1);
+        interactionMode = activeInteraction;
 
         // Check if any waveforms are enabled for conditional generation (optimization #1)
         bool anyWaveformEnabled = useSaw || useTriangle || useSquare;
@@ -648,10 +614,10 @@ struct Torsion : Module {
         auto buildWarpedVoice = [&](float warpedPhase, float amount) -> float {
             // Early exit if no waveforms enabled - just return sine wave
             if (!anyWaveformEnabled) {
-                float theta = 2.f * float(M_PI) * warpedPhase;
-                float sin1 = std::sinf(theta);
+                float s, c;
+                fastSinCos2Pi(warpedPhase, s, c);
                 float loudness = 1.f + amount * 1.2f;
-                return rack::math::clamp(sin1 * loudness, -3.f, 3.f);
+                return rack::math::clamp(s * loudness, -3.f, 3.f);
             }
 
             // Calculate sin/cos together to reduce trig calls
@@ -667,31 +633,34 @@ struct Torsion : Module {
             float sin3 = 0.f;
             float sin5 = 0.f;
 
-            if (useSaw || useSquare) {
+            if (useSaw || useSquare || useTriangle) {
                 sin2 = 2.f * sin1 * cos1;
                 cos2 = cos1 * cos1 - sin1 * sin1;
+            }
+
+            if (useSquare || useTriangle) {
+                sin3 = sin2 * cos1 + cos2 * sin1;
             }
 
             if (useSquare) {
                 float sin4 = 2.f * sin2 * cos2;
                 float cos4 = cos2 * cos2 - sin2 * sin2;
-                sin3 = sin2 * cos1 + cos2 * sin1;
                 sin5 = sin4 * cos1 + cos4 * sin1;
             }
 
             if (useSaw) {
-                float sawHybrid = sin1 + 0.5f * sin2;
-                voice += sawHybrid;
+                voice += sin1 + 0.5f * sin2;
                 layers++;
             }
             if (useTriangle) {
-                float triangleHybrid = 1.f - 4.f * std::fabs(warpedPhase - 0.5f);
-                voice += triangleHybrid;
+                // Bandlimited triangle: (8/π²)(sin1 - sin3/9)
+                // Matches the aliasing character of the other waveforms
+                constexpr float kTriScale = 8.f / (float(M_PI) * float(M_PI));
+                voice += kTriScale * (sin1 - sin3 * kHarmonic3Inv * kHarmonic3Inv);
                 layers++;
             }
             if (useSquare) {
-                float squareHybrid = sin1 + kHarmonic3Inv * sin3 + kHarmonic5Inv * sin5;
-                voice += squareHybrid;
+                voice += sin1 + kHarmonic3Inv * sin3 + kHarmonic5Inv * sin5;
                 layers++;
             }
 
@@ -711,7 +680,9 @@ struct Torsion : Module {
             if (vintageClockPhase >= 1.f) {
                 vintageClockPhase -= std::floor(vintageClockPhase);
             }
-            clockSignal = std::sin(2.f * float(M_PI) * vintageClockPhase) * kVintageClockLevel;
+            float clockSin, clockCos;
+            fastSinCos2Pi(vintageClockPhase, clockSin, clockCos);
+            clockSignal = clockSin * kVintageClockLevel;
         }
 
         // Cache polyphony compensation - only recalculate when channel count changes
@@ -732,10 +703,9 @@ struct Torsion : Module {
         float chorusWetMix = 0.f;
         float chorusCrossMix = 0.f;
         if (chorusEnabled) {
-            float sampleRate = args.sampleRate;
             chorusPhaseInc = 2.f * float(M_PI) * kChorusRateHz * args.sampleTime;
-            chorusBaseSamples = (int)std::round(kChorusBaseDelayMs * 0.001f * sampleRate);
-            chorusDepthSamples = (int)std::round(kChorusDepthMs * 0.001f * sampleRate);
+            chorusBaseSamples = (int)std::round(kChorusBaseDelayMs * 0.001f * args.sampleRate);
+            chorusDepthSamples = (int)std::round(kChorusDepthMs * 0.001f * args.sampleRate);
             chorusDepthSamples = std::max(1, chorusDepthSamples);
             chorusDryMix = std::cos(kChorusMix * float(M_PI) * 0.5f);
             chorusWetMix = std::sin(kChorusMix * float(M_PI) * 0.5f);
@@ -808,9 +778,9 @@ struct Torsion : Module {
             }
 
             float freqA = rack::dsp::FREQ_C4 *
-                          std::pow(2.f, rack::math::clamp(pitch, -8.f, 8.f));
+                          rack::dsp::exp2_taylor5(rack::math::clamp(pitch, -8.f, 8.f));
             float freqB = rack::dsp::FREQ_C4 *
-                          std::pow(2.f, rack::math::clamp(pitch + detuneOct, -8.f, 8.f));
+                          rack::dsp::exp2_taylor5(rack::math::clamp(pitch + detuneOct, -8.f, 8.f));
 
             // Phase reset on retrigger for consistent starts (user-toggleable)
             if (phaseResetEnabled && retriggered) {
@@ -831,7 +801,7 @@ struct Torsion : Module {
             }
 
             float phaseB = secondaryPhase[ch] + freqB * args.sampleTime;
-            if (interactionMode == INTERACTION_RESET_SYNC && wrappedA) {
+            if (activeInteraction == INTERACTION_RESET_SYNC && wrappedA) {
                 phaseB = phaseA;
             }
             if (phaseB >= 1.f) {
@@ -846,13 +816,9 @@ struct Torsion : Module {
             primaryPhase[ch] = phaseA;
             secondaryPhase[ch] = phaseB;
 
-            // Sub-oscillator at -1 octave with optional sync
+            // Sub-oscillator at -1 octave (free-running)
             float freqSub = freqA * 0.5f;
             float phaseSub = subPhase[ch] + freqSub * args.sampleTime;
-            // Use cached param read (optimization #2)
-            if (wrappedA && subHardSync) {
-                phaseSub = 0.f;  // Hard sync to primary oscillator
-            }
             if (phaseSub >= 1.f) {
                 // Simple subtraction is faster than floor when phase is expected to be < 2.0
                 phaseSub -= 1.f;
@@ -978,12 +944,9 @@ struct Torsion : Module {
                 int nextStage = rack::math::clamp(stageIndex + 1, 0, kNumStages - 1);
                 float stagePhase = stagePos - stageIndex;
 
-                // Apply curve shaping to the transition
-                float curvedPhase = applyCurve(stagePhase, stageCurves[stageIndex]);
-
                 // Crossfade between current and next stage
                 // When at last stage, nextStage == stageIndex, so it just holds the value
-                targetStageValue = rack::math::crossfade(stageLevels[stageIndex], stageLevels[nextStage], curvedPhase);
+                targetStageValue = rack::math::crossfade(stageLevels[stageIndex], stageLevels[nextStage], stagePhase);
             }
 
             // Envelope smoothing: ~2ms time constant for smooth but responsive transitions
@@ -1048,7 +1011,7 @@ struct Torsion : Module {
             float dcwA = softWarpAmount(dcwEnv);
             float dcwB = softWarpAmount(dcwEnv);
 
-            if (interactionMode == INTERACTION_DCW_FOLLOW) {
+            if (activeInteraction == INTERACTION_DCW_FOLLOW) {
                 float influence = std::fabs(std::sin(2.f * M_PI * phaseA));
                 dcwB = rack::math::clamp(dcwEnv * influence, 0.f, 1.f);
             }
@@ -1081,21 +1044,18 @@ struct Torsion : Module {
             shapedB = rack::math::crossfade(baseB, shapedB, dcwB);
 
             float interactionGain = 1.f;
-            if (interactionMode == INTERACTION_DCW_FOLLOW) {
+            if (activeInteraction == INTERACTION_DCW_FOLLOW) {
                 shapedB = rack::math::crossfade(shapedB, baseB, 0.25f);
                 interactionGain = 1.15f;
-            } else if (interactionMode == INTERACTION_RING_MOD) {
+            } else if (activeInteraction == INTERACTION_RING_MOD) {
                 shapedB = shapedA * shapedB;
                 interactionGain = 1.7f;
             }
 
-            // Generate sub-oscillator (pure sine wave, -1 octave) with optional DCW warp
-            // Use cached param reads (optimization #2)
-            float subWarpDepth = softWarpAmount(rack::math::clamp(env * subWarpParam, 0.f, 1.f));
-            float subBias = shapeBias(symmetry, subWarpDepth);
-            float subPhaseWarped = applyCZWarp(phaseSub, subWarpDepth, subBias, warpShape);
-            float subLoudness = 1.f + subWarpDepth * 0.8f;
-            float subSignal = generateSine(subPhaseWarped) * subLevel * subLoudness;
+            // Generate sub-oscillator (pure sine wave, -1 octave)
+            float subSin, subCos;
+            fastSinCos2Pi(phaseSub, subSin, subCos);
+            float subSignal = subSin * subLevel;
             float primaryActivity = 0.5f * (std::fabs(shapedA) + std::fabs(shapedB));
             float subTrim = 1.f / (1.f + primaryActivity * 0.9f);
             subSignal *= subTrim;
@@ -1181,12 +1141,8 @@ struct Torsion : Module {
                 edgeOut += idleHiss * 0.6f;
             }
 
-            // DC blocking filter to remove DC offset and reduce clicks/pops
-            // Uses a 1-pole high-pass filter with very low cutoff (~20Hz at 44.1kHz)
-            const float dcBlockCoeff = 0.999f;  // Very low cutoff for sub-bass preservation
-            float dcBlockedMain = mainOut - dcBlockerX1[ch] + dcBlockCoeff * dcBlockerY1[ch];
-            dcBlockerX1[ch] = mainOut;
-            dcBlockerY1[ch] = dcBlockedMain;
+            // DC blocking filter — 20 Hz cutoff, sample-rate-adaptive coefficient
+            float dcBlockedMain = dcBlockers[ch].process(mainOut, cachedDcBlockCoeff);
 
             // Store feedback signal for next sample (before DC blocking for stability)
             feedbackSignal[ch] = mainOut;
@@ -1195,16 +1151,14 @@ struct Torsion : Module {
             float stereoRight = dcBlockedMain;
             if (chorusEnabled) {
                 ChorusVoiceState& chorusState = chorusVoices[ch];
-                // Optimization #3: Use cached/decimated LFO values
+                // Use cached/decimated LFO values — fractional delay for smooth sweep
                 float modA = chorusModALast;
                 float modB = chorusModBLast;
-                int delayA = chorusBaseSamples + (int)std::round(chorusDepthSamples * ((modA + 1.f) * 0.5f));
-                int delayB = chorusBaseSamples + (int)std::round(chorusDepthSamples * ((modB + 1.f) * 0.5f));
-                delayA = rack::math::clamp(delayA, 0, kChorusMaxDelaySamples - 1);
-                delayB = rack::math::clamp(delayB, 0, kChorusMaxDelaySamples - 1);
                 float input = dcBlockedMain;
-                float delayOutL = chorusState.delayL.process(input, delayA);
-                float delayOutR = chorusState.delayR.process(input, delayB);
+                float fracDelayA = (float)chorusBaseSamples + (float)chorusDepthSamples * ((modA + 1.f) * 0.5f);
+                float fracDelayB = (float)chorusBaseSamples + (float)chorusDepthSamples * ((modB + 1.f) * 0.5f);
+                float delayOutL = chorusState.delayL.processInterpolated(input, fracDelayA);
+                float delayOutR = chorusState.delayR.processInterpolated(input, fracDelayB);
                 stereoLeft = input * chorusDryMix + delayOutL * chorusWetMix + delayOutR * chorusCrossMix;
                 stereoRight = input * chorusDryMix + delayOutR * chorusWetMix + delayOutL * chorusCrossMix;
             }
@@ -1250,30 +1204,24 @@ struct VintageSliderLED : app::SvgSlider {
     // LED parameters - warm tube glow color
     static constexpr float LED_RADIUS = 4.0f;
     static constexpr float LED_GLOW_RADIUS = 10.0f;
-    static constexpr float TRACK_CENTER_OFFSET_X = 2.0f;  // Track is 8px inside 12px widget
-    // Warm orange/amber tube glow color
+    // Track is 12px wide; handle (12px) aligns exactly — no offset needed.
+    static constexpr float TRACK_CENTER_OFFSET_X = 0.0f;
     NVGcolor ledColor = nvgRGBf(1.0f, 0.6f, 0.2f);
 
     VintageSliderLED() {
-        // Set the background (track) SVG - 8x60px (small compact version)
         setBackgroundSvg(
             Svg::load(asset::plugin(pluginInstance,
             "res/sliders/vintage_slider_track_small.svg"))
         );
-
-        // Set the handle SVG - 12x18px (small compact version)
         setHandleSvg(
             Svg::load(asset::plugin(pluginInstance,
             "res/sliders/vintage_slider_handle_small.svg"))
         );
 
-        // SVG dimensions: track is 8x60px, handle is 12x18px
-        // Widget box size matches track width and height
+        // Track 12x60px. Travel: 60 - 18 = 42px.
         box.size = Vec(12.f, 60.f);
-
-        // Configure the slider travel range
-        maxHandlePos = Vec(-2.f, 0.f);      // Top position (param minimum = 0), offset left 2px to center
-        minHandlePos = Vec(-2.f, 42.f);     // Bottom position (param maximum = 1)
+        maxHandlePos = Vec(0.f, 0.f);
+        minHandlePos = Vec(0.f, 42.f);
     }
 
     void draw(const DrawArgs& args) override {
@@ -1291,6 +1239,110 @@ struct VintageSliderLED : app::SvgSlider {
         }
 
         drawLED(args, ledPos, value);
+        drawSlotRim(args);
+    }
+
+    void drawSlotRim(const DrawArgs& args) {
+        const float slotX = 1.5f;
+        const float slotW = 9.0f;
+        const float slotR = 2.5f;
+        const float slotY = (box.size.y > 90.f) ? 2.0f : 1.0f;
+        const float slotH = box.size.y - slotY * 2.0f;
+
+        // Outer definition stroke
+        nvgBeginPath(args.vg);
+        nvgRoundedRect(args.vg, slotX - 0.3f, slotY - 0.3f,
+                       slotW + 0.6f, slotH + 0.6f, slotR + 0.3f);
+        nvgStrokeWidth(args.vg, 0.6f);
+        nvgStrokeColor(args.vg, nvgRGBA(0, 0, 0, 100));
+        nvgStroke(args.vg);
+
+        // Top rim highlight
+        nvgBeginPath(args.vg);
+        nvgMoveTo(args.vg, slotX + slotR * 0.4f, slotY);
+        nvgLineTo(args.vg, slotX + slotW - slotR * 0.4f, slotY);
+        nvgStrokeWidth(args.vg, 1.0f);
+        nvgStrokeColor(args.vg, nvgRGBA(220, 220, 220, 90));
+        nvgStroke(args.vg);
+
+        // Bottom rim shadow
+        nvgBeginPath(args.vg);
+        nvgMoveTo(args.vg, slotX + slotR * 0.4f, slotY + slotH);
+        nvgLineTo(args.vg, slotX + slotW - slotR * 0.4f, slotY + slotH);
+        nvgStrokeWidth(args.vg, 1.0f);
+        nvgStrokeColor(args.vg, nvgRGBA(0, 0, 0, 100));
+        nvgStroke(args.vg);
+
+        // Left wall highlight
+        nvgBeginPath(args.vg);
+        nvgMoveTo(args.vg, slotX, slotY + slotR * 0.6f);
+        nvgLineTo(args.vg, slotX, slotY + slotH - slotR * 0.6f);
+        nvgStrokeWidth(args.vg, 1.0f);
+        nvgStrokeColor(args.vg, nvgRGBA(190, 190, 190, 55));
+        nvgStroke(args.vg);
+
+        // Right wall shadow
+        nvgBeginPath(args.vg);
+        nvgMoveTo(args.vg, slotX + slotW, slotY + slotR * 0.6f);
+        nvgLineTo(args.vg, slotX + slotW, slotY + slotH - slotR * 0.6f);
+        nvgStrokeWidth(args.vg, 1.0f);
+        nvgStrokeColor(args.vg, nvgRGBA(0, 0, 0, 70));
+        nvgStroke(args.vg);
+
+        // Inner depth shadow — top fades out as handle approaches top so LED glow is unobstructed
+        float topFade = 1.0f;
+        if (handle) {
+            topFade = rack::math::clamp(handle->box.pos.y / 18.0f, 0.0f, 1.0f);
+        }
+        NVGpaint topDepth = nvgLinearGradient(args.vg,
+            0.f, slotY + 0.5f, 0.f, slotY + 13.0f,
+            nvgRGBA(0, 0, 0, (int)(165.f * topFade)), nvgRGBA(0, 0, 0, 0));
+        nvgBeginPath(args.vg);
+        nvgRoundedRect(args.vg, slotX + 0.3f, slotY + 0.5f,
+                       slotW - 0.6f, 13.0f, slotR * 0.3f);
+        nvgFillPaint(args.vg, topDepth);
+        nvgFill(args.vg);
+
+        // Inner depth shadow — bottom
+        const float botY = slotY + slotH - 13.5f;
+        NVGpaint botDepth = nvgLinearGradient(args.vg,
+            0.f, botY, 0.f, botY + 13.0f,
+            nvgRGBA(0, 0, 0, 0), nvgRGBA(0, 0, 0, 130));
+        nvgBeginPath(args.vg);
+        nvgRoundedRect(args.vg, slotX + 0.3f, botY,
+                       slotW - 0.6f, 13.0f, slotR * 0.3f);
+        nvgFillPaint(args.vg, botDepth);
+        nvgFill(args.vg);
+
+        // Handle contact shadows
+        if (handle) {
+            const float hTop = handle->box.pos.y;
+            const float hBot = handle->box.pos.y + handle->box.size.y;
+            const float contactH = 6.0f;
+            const float slotEnd = slotY + slotH;
+            if (hTop > slotY + 1.0f) {
+                float shadowTop = std::max(slotY + 0.5f, hTop - contactH);
+                NVGpaint topContact = nvgLinearGradient(args.vg,
+                    0.f, shadowTop, 0.f, hTop,
+                    nvgRGBA(0, 0, 0, 0), nvgRGBA(0, 0, 0, 120));
+                nvgBeginPath(args.vg);
+                nvgRoundedRect(args.vg, slotX + 0.5f, shadowTop,
+                               slotW - 1.0f, hTop - shadowTop, slotR * 0.2f);
+                nvgFillPaint(args.vg, topContact);
+                nvgFill(args.vg);
+            }
+            if (hBot < slotEnd - 1.0f) {
+                float shadowBot = std::min(slotEnd - 0.5f, hBot + contactH);
+                NVGpaint botContact = nvgLinearGradient(args.vg,
+                    0.f, hBot, 0.f, shadowBot,
+                    nvgRGBA(0, 0, 0, 120), nvgRGBA(0, 0, 0, 0));
+                nvgBeginPath(args.vg);
+                nvgRoundedRect(args.vg, slotX + 0.5f, hBot,
+                               slotW - 1.0f, shadowBot - hBot, slotR * 0.2f);
+                nvgFillPaint(args.vg, botContact);
+                nvgFill(args.vg);
+            }
+        }
     }
 
     void drawLED(const DrawArgs& args, Vec pos, float brightness) {
@@ -1346,6 +1398,172 @@ struct VintageSliderLED : app::SvgSlider {
         nvgFillPaint(args.vg, corePaint);
         nvgFill(args.vg);
 
+        nvgRestore(args.vg);
+    }
+};
+
+// Larger variant of VintageSliderLED for the full-height stage sliders
+struct VintageSliderLEDLarge : app::SvgSlider {
+    static constexpr float LED_RADIUS = 4.0f;
+    static constexpr float LED_GLOW_RADIUS = 10.0f;
+    // Track is 12px wide; handle (12px) aligns exactly — no offset needed.
+    static constexpr float TRACK_CENTER_OFFSET_X = 0.0f;
+    NVGcolor ledColor = nvgRGBf(1.0f, 0.6f, 0.2f);
+
+    VintageSliderLEDLarge() {
+        setBackgroundSvg(
+            Svg::load(asset::plugin(pluginInstance,
+            "res/sliders/vintage_slider_track_large.svg"))
+        );
+        setHandleSvg(
+            Svg::load(asset::plugin(pluginInstance,
+            "res/sliders/vintage_slider_handle_small.svg"))
+        );
+        // Track 12x120px. Travel: 120 - 18 = 102px.
+        box.size = Vec(12.f, 120.f);
+        maxHandlePos = Vec(0.f, 0.f);
+        minHandlePos = Vec(0.f, 102.f);
+    }
+
+    void draw(const DrawArgs& args) override {
+        app::SvgSlider::draw(args);
+        float value = 0.5f;
+        if (auto* pq = getParamQuantity()) {
+            value = pq->getScaledValue();
+        }
+        Vec ledPos = Vec(box.size.x * 0.5f, box.size.y * 0.5f);
+        if (handle) {
+            ledPos = Vec(handle->box.pos.x + handle->box.size.x * 0.5f,
+                         handle->box.pos.y + handle->box.size.y * 0.5f);
+        }
+        drawLED(args, ledPos, value);
+        drawSlotRim(args);
+    }
+
+    void drawSlotRim(const DrawArgs& args) {
+        const float slotX = 1.5f;
+        const float slotW = 9.0f;
+        const float slotR = 2.5f;
+        const float slotY = (box.size.y > 90.f) ? 2.0f : 1.0f;
+        const float slotH = box.size.y - slotY * 2.0f;
+
+        // Outer definition stroke
+        nvgBeginPath(args.vg);
+        nvgRoundedRect(args.vg, slotX - 0.3f, slotY - 0.3f,
+                       slotW + 0.6f, slotH + 0.6f, slotR + 0.3f);
+        nvgStrokeWidth(args.vg, 0.6f);
+        nvgStrokeColor(args.vg, nvgRGBA(0, 0, 0, 100));
+        nvgStroke(args.vg);
+
+        // Top rim highlight
+        nvgBeginPath(args.vg);
+        nvgMoveTo(args.vg, slotX + slotR * 0.4f, slotY);
+        nvgLineTo(args.vg, slotX + slotW - slotR * 0.4f, slotY);
+        nvgStrokeWidth(args.vg, 1.0f);
+        nvgStrokeColor(args.vg, nvgRGBA(220, 220, 220, 90));
+        nvgStroke(args.vg);
+
+        // Bottom rim shadow
+        nvgBeginPath(args.vg);
+        nvgMoveTo(args.vg, slotX + slotR * 0.4f, slotY + slotH);
+        nvgLineTo(args.vg, slotX + slotW - slotR * 0.4f, slotY + slotH);
+        nvgStrokeWidth(args.vg, 1.0f);
+        nvgStrokeColor(args.vg, nvgRGBA(0, 0, 0, 100));
+        nvgStroke(args.vg);
+
+        // Left wall highlight
+        nvgBeginPath(args.vg);
+        nvgMoveTo(args.vg, slotX, slotY + slotR * 0.6f);
+        nvgLineTo(args.vg, slotX, slotY + slotH - slotR * 0.6f);
+        nvgStrokeWidth(args.vg, 1.0f);
+        nvgStrokeColor(args.vg, nvgRGBA(190, 190, 190, 55));
+        nvgStroke(args.vg);
+
+        // Right wall shadow
+        nvgBeginPath(args.vg);
+        nvgMoveTo(args.vg, slotX + slotW, slotY + slotR * 0.6f);
+        nvgLineTo(args.vg, slotX + slotW, slotY + slotH - slotR * 0.6f);
+        nvgStrokeWidth(args.vg, 1.0f);
+        nvgStrokeColor(args.vg, nvgRGBA(0, 0, 0, 70));
+        nvgStroke(args.vg);
+
+        // Inner depth — top
+        NVGpaint topDepth = nvgLinearGradient(args.vg,
+            0.f, slotY + 0.5f, 0.f, slotY + 13.0f,
+            nvgRGBA(0, 0, 0, 165), nvgRGBA(0, 0, 0, 0));
+        nvgBeginPath(args.vg);
+        nvgRoundedRect(args.vg, slotX + 0.3f, slotY + 0.5f,
+                       slotW - 0.6f, 13.0f, slotR * 0.3f);
+        nvgFillPaint(args.vg, topDepth);
+        nvgFill(args.vg);
+
+        // Inner depth — bottom
+        const float botY = slotY + slotH - 13.5f;
+        NVGpaint botDepth = nvgLinearGradient(args.vg,
+            0.f, botY, 0.f, botY + 13.0f,
+            nvgRGBA(0, 0, 0, 0), nvgRGBA(0, 0, 0, 130));
+        nvgBeginPath(args.vg);
+        nvgRoundedRect(args.vg, slotX + 0.3f, botY,
+                       slotW - 0.6f, 13.0f, slotR * 0.3f);
+        nvgFillPaint(args.vg, botDepth);
+        nvgFill(args.vg);
+
+        // Handle contact shadows
+        if (handle) {
+            const float hTop = handle->box.pos.y;
+            const float hBot = handle->box.pos.y + handle->box.size.y;
+            const float contactH = 6.0f;
+            const float slotEnd = slotY + slotH;
+            if (hTop > slotY + 1.0f) {
+                float shadowTop = std::max(slotY + 0.5f, hTop - contactH);
+                NVGpaint topContact = nvgLinearGradient(args.vg,
+                    0.f, shadowTop, 0.f, hTop,
+                    nvgRGBA(0, 0, 0, 0), nvgRGBA(0, 0, 0, 120));
+                nvgBeginPath(args.vg);
+                nvgRoundedRect(args.vg, slotX + 0.5f, shadowTop,
+                               slotW - 1.0f, hTop - shadowTop, slotR * 0.2f);
+                nvgFillPaint(args.vg, topContact);
+                nvgFill(args.vg);
+            }
+            if (hBot < slotEnd - 1.0f) {
+                float shadowBot = std::min(slotEnd - 0.5f, hBot + contactH);
+                NVGpaint botContact = nvgLinearGradient(args.vg,
+                    0.f, hBot, 0.f, shadowBot,
+                    nvgRGBA(0, 0, 0, 120), nvgRGBA(0, 0, 0, 0));
+                nvgBeginPath(args.vg);
+                nvgRoundedRect(args.vg, slotX + 0.5f, hBot,
+                               slotW - 1.0f, shadowBot - hBot, slotR * 0.2f);
+                nvgFillPaint(args.vg, botContact);
+                nvgFill(args.vg);
+            }
+        }
+    }
+
+    void drawLED(const DrawArgs& args, Vec pos, float brightness) {
+        brightness = rack::math::clamp(brightness, 0.f, 1.f);
+        if (brightness <= 0.f) return;
+        nvgSave(args.vg);
+        nvgGlobalCompositeOperation(args.vg, NVG_LIGHTER);
+        float glowAlpha = brightness * 0.55f;
+        NVGcolor glowColor = nvgRGBAf(ledColor.r, ledColor.g, ledColor.b, glowAlpha);
+        nvgBeginPath(args.vg);
+        nvgCircle(args.vg, pos.x, pos.y, LED_GLOW_RADIUS);
+        NVGpaint glowPaint = nvgRadialGradient(args.vg, pos.x, pos.y, 0.f, LED_GLOW_RADIUS,
+            glowColor, nvgRGBAf(ledColor.r, ledColor.g, ledColor.b, 0.f));
+        nvgFillPaint(args.vg, glowPaint);
+        nvgFill(args.vg);
+        float coreAlpha = brightness * 0.95f;
+        NVGcolor coreColor = nvgRGBAf(
+            rack::math::clamp(ledColor.r * 1.1f, 0.f, 1.f),
+            rack::math::clamp(ledColor.g * 1.1f, 0.f, 1.f),
+            rack::math::clamp(ledColor.b * 0.95f, 0.f, 1.f),
+            coreAlpha);
+        nvgBeginPath(args.vg);
+        nvgCircle(args.vg, pos.x, pos.y, LED_RADIUS);
+        NVGpaint corePaint = nvgRadialGradient(args.vg, pos.x, pos.y - LED_RADIUS * 0.3f, 0.f,
+            LED_RADIUS, nvgRGBAf(1.f, 0.92f, 0.6f, coreAlpha), coreColor);
+        nvgFillPaint(args.vg, corePaint);
+        nvgFill(args.vg);
         nvgRestore(args.vg);
     }
 };
@@ -1426,11 +1644,11 @@ struct TorsionWidget : ModuleWidget {
 
         // Second row knobs
         addKnobWithShadow(this, createParamCentered<ShapetakerKnobVintageSmallMedium>(
-            centerPx("detune_knob", 71.004387f, 18.983347f), module, Torsion::DETUNE_PARAM));
+            centerPx("detune_knob", 81.164387f, 18.983347f), module, Torsion::DETUNE_PARAM));
         addKnobWithShadow(this, createParamCentered<ShapetakerKnobVintageSmallMedium>(
             centerPx("symmetry_knob", 49.012959f, 39.152843f), module, Torsion::SYMMETRY_PARAM));
         addKnobWithShadow(this, createParamCentered<ShapetakerKnobVintageSmallMedium>(
-            centerPx("stage_rate_knob", 71.004387f, 39.421593f), module, Torsion::STAGE_RATE_PARAM));
+            centerPx("stage_rate_knob", 81.164387f, 39.421593f), module, Torsion::STAGE_RATE_PARAM));
 
         // Chorus on/off
         addParam(createParamCentered<ShapetakerDarkToggle>(
@@ -1440,13 +1658,11 @@ struct TorsionWidget : ModuleWidget {
         addParam(createParamCentered<ShapetakerAttenuverterOscilloscope>(
             centerPx("torsion_atten", 9.9738617f, 76.715012f), module, Torsion::TORSION_ATTEN_PARAM));
         addParam(createParamCentered<ShapetakerAttenuverterOscilloscope>(
-            centerPx("feedback_atten", 71.52639f, 76.681564f), module, Torsion::FEEDBACK_ATTEN_PARAM));
+            centerPx("feedback_atten", 81.68639f, 76.681564f), module, Torsion::FEEDBACK_ATTEN_PARAM));
 
         // Middle section knobs
         addKnobWithShadow(this, createParamCentered<ShapetakerKnobVintageSmallMedium>(
-            centerPx("sub_dcw_depth_knob", 51.151119f, 18.983347f), module, Torsion::SUB_WARP_PARAM));
-        addKnobWithShadow(this, createParamCentered<ShapetakerKnobVintageSmallMedium>(
-            centerPx("feedback_knob", 71.52639f, 58.848732f), module, Torsion::FEEDBACK_PARAM));
+            centerPx("feedback_knob", 81.68639f, 58.848732f), module, Torsion::FEEDBACK_PARAM));
 
         // Toggle switches (bottom row)
         addParam(createParamCentered<ShapetakerDarkToggle>(
@@ -1457,8 +1673,8 @@ struct TorsionWidget : ModuleWidget {
             centerPx("dirty_mode_switch", 56.13826f, 101.65123f), module, Torsion::DIRTY_MODE_PARAM));
         addParam(createParamCentered<ShapetakerDarkToggle>(
             centerPx("square_wave_switch", 40.750126f, 101.65123f), module, Torsion::SQUARE_WAVE_PARAM));
-        addParam(createParamCentered<ShapetakerDarkToggle>(
-            centerPx("sub_sync_switch", 71.52639f, 101.65123f), module, Torsion::SUB_SYNC_PARAM));
+        addParam(createParamCentered<ShapetakerDarkToggleFourPos>(
+            centerPx("sub_sync_switch", 81.68639f, 101.65123f), module, Torsion::SUB_SYNC_PARAM));
 
         // Helper lambda to position sliders by their top-left corner from SVG rect coords
         auto parseTranslate = [](const std::string& transformAttr) -> Vec {
@@ -1501,13 +1717,13 @@ struct TorsionWidget : ModuleWidget {
         auto createSlider = [&](const char* id, float fallbackX, float fallbackY, int paramId,
                                 const char* anchorCenterId = nullptr,
                                 float fallbackCenterX = 0.f, float fallbackCenterY = 0.f) {
-            auto* slider = createParam<VintageSliderLED>(Vec(0, 0), module, paramId);
+            auto* slider = createParam<VintageSliderLEDLarge>(Vec(0, 0), module, paramId);
 
             if (anchorCenterId) {
                 Vec centerPxValue = centerPx(anchorCenterId, fallbackCenterX, fallbackCenterY);
                 slider->box.pos = Vec(centerPxValue.x - slider->box.size.x * 0.5f,
                                       centerPxValue.y - slider->box.size.y * 0.5f);
-                slider->box.pos.x += VintageSliderLED::TRACK_CENTER_OFFSET_X;
+                slider->box.pos.x += VintageSliderLEDLarge::TRACK_CENTER_OFFSET_X;
             } else {
                 // Get rect position from SVG
                 std::string tag = parser.findTagForId(id);
@@ -1547,40 +1763,13 @@ struct TorsionWidget : ModuleWidget {
         };
         constexpr float stageSliderFallbackY = 64.25f;
         constexpr float sliderFallbackWidth = 2.1166666f;
-        constexpr float sliderFallbackHeight = 15.875f;
+        constexpr float sliderFallbackHeight = 42.f;
         for (int i = 0; i < Torsion::kNumStages; ++i) {
             float fallbackCenterX = stageSliderFallbackX[i] + sliderGroupOffset.x + sliderFallbackWidth * 0.5f;
             float fallbackCenterY = stageSliderFallbackY + sliderGroupOffset.y + sliderFallbackHeight * 0.5f;
             createSlider(stageSliderIds[i], stageSliderFallbackX[i], stageSliderFallbackY,
                         Torsion::STAGE1_PARAM + i,
                         stageSliderDotIds[i],
-                        fallbackCenterX,
-                        fallbackCenterY);
-        }
-
-        const char* curveSliderIds[Torsion::kNumStages] = {
-            "curve_1_slider",
-            "curve_2_slider",
-            "curve_3_slider",
-            "curve_4_slider",
-            "curve_5_slider",
-            "curve_6_slider"
-        };
-        constexpr float curveSliderFallbackY = 89.587418f;
-        const char* curveSliderDotIds[Torsion::kNumStages] = {
-            "curve_1_dot",
-            "curve_2_dot",
-            "curve_3_dot",
-            "curve_4_dot",
-            "curve_5_dot",
-            "curve_6_dot"
-        };
-        for (int i = 0; i < Torsion::kNumStages; ++i) {
-            float fallbackCenterX = stageSliderFallbackX[i] + sliderGroupOffset.x + sliderFallbackWidth * 0.5f;
-            float fallbackCenterY = curveSliderFallbackY + sliderGroupOffset.y + sliderFallbackHeight * 0.5f;
-            createSlider(curveSliderIds[i], stageSliderFallbackX[i], curveSliderFallbackY,
-                        Torsion::CURVE1_PARAM + i,
-                        curveSliderDotIds[i],
                         fallbackCenterX,
                         fallbackCenterY);
         }
@@ -1599,7 +1788,7 @@ struct TorsionWidget : ModuleWidget {
         constexpr float stageLightFallbackX[Torsion::kNumStages] = {
             22.755007f, 30.176956f, 37.598907f, 45.020859f, 52.44281f, 59.864761f
         };
-        constexpr float stageLightFallbackY = 72.12986f;
+        constexpr float stageLightFallbackY = 47.5f;
 
         for (int i = 0; i < Torsion::kNumStages; ++i) {
             Vec lightPos = centerPx(stageLightIds[i], stageLightFallbackX[i], stageLightFallbackY);
@@ -1625,7 +1814,7 @@ struct TorsionWidget : ModuleWidget {
         addInput(createInputCentered<ShapetakerBNCPort>(
             centerPx("torsion_cv", 9.9738617f, 89.714966f), module, Torsion::TORSION_CV_INPUT));
         addInput(createInputCentered<ShapetakerBNCPort>(
-            centerPx("feedback_cv", 71.52639f, 89.714966f), module, Torsion::FEEDBACK_CV_INPUT));
+            centerPx("feedback_cv", 81.68639f, 89.714966f), module, Torsion::FEEDBACK_CV_INPUT));
         addInput(createInputCentered<ShapetakerBNCPort>(
             centerPx("stage_trig_cv", 34.594872f, 114.70013f), module, Torsion::STAGE_TRIG_INPUT));
 
@@ -1634,7 +1823,7 @@ struct TorsionWidget : ModuleWidget {
         addOutput(createOutputCentered<ShapetakerBNCPort>(
             centerPx("main_output_r", 59.194309f, 114.70013f), module, Torsion::MAIN_R_OUTPUT));
         addOutput(createOutputCentered<ShapetakerBNCPort>(
-            centerPx("edge_output", 71.52639f, 114.70013f), module, Torsion::EDGE_OUTPUT));
+            centerPx("edge_output", 81.68639f, 114.70013f), module, Torsion::EDGE_OUTPUT));
     }
 
     void appendContextMenu(ui::Menu* menu) override {
@@ -1646,38 +1835,16 @@ struct TorsionWidget : ModuleWidget {
         }
 
         menu->addChild(new ui::MenuSeparator());
-
-        struct InteractionItem : ui::MenuItem {
-            Torsion* module;
-            Torsion::InteractionMode mode;
-            void onAction(const event::Action& e) override {
-                module->interactionMode = mode;
-            }
-            void step() override {
-                rightText = (module->interactionMode == mode) ? "✔" : "";
-                ui::MenuItem::step();
-            }
-        };
-
         auto* heading = new ui::MenuLabel;
         heading->text = "Oscillator interaction";
         menu->addChild(heading);
-
-        const char* labels[] = {
-            "Independent",
-            "Sync B to A resets",
-            "B DCW follows A",
-            "Ring mod mix"
-        };
-
-        for (int i = 0; i < Torsion::INTERACTION_MODES_LEN; ++i) {
-            auto* item = new InteractionItem;
-            item->module = module;
-            item->mode = (Torsion::InteractionMode)i;
-            item->text = labels[i];
-            menu->addChild(item);
-        }
-
+        auto* panelMapped = new ui::MenuLabel;
+        panelMapped->text = "Controlled by SUBSYNC switch";
+        menu->addChild(panelMapped);
+        auto* m0 = new ui::MenuLabel; m0->text = "OFF: Independent"; menu->addChild(m0);
+        auto* m1 = new ui::MenuLabel; m1->text = "POS1: Sync B to A resets"; menu->addChild(m1);
+        auto* m2 = new ui::MenuLabel; m2->text = "ON: B DCW follows A"; menu->addChild(m2);
+        auto* m3 = new ui::MenuLabel; m3->text = "POS4: Ring mod mix"; menu->addChild(m3);
         menu->addChild(new ui::MenuSeparator());
 
         auto* dcwHeading = new ui::MenuLabel;

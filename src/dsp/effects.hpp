@@ -396,7 +396,7 @@ private:
             x = x + extraFold * smoothFold(x * 2.0f) * 0.3f;
         }
 
-        return rack::math::clamp(x * 1.4f, -1.0f, 1.0f); // Boosted to hit near 0 dB
+        return rack::math::clamp(x * 0.7f, -1.0f, 1.0f); // ~0.5 peak, matches hardClip level
     }
     
     /**
@@ -458,10 +458,10 @@ private:
         prev_input = crushed + (feedback * prev_input) + modulation;
 
         // Soft limiting to prevent runaway
-        prev_input = tubeCurve(prev_input * 0.7f) * 1.4f;
+        prev_input = tubeCurve(prev_input * 0.7f) * 1.0f;
         prev_input = rack::math::clamp(prev_input, -2.0f, 2.0f);
 
-        return rack::math::clamp(prev_input * 1.2f, -1.0f, 1.0f); // Boosted for unity gain
+        return rack::math::clamp(prev_input * 0.7f, -1.0f, 1.0f); // Reduced to match hardClip level
     }
     
     /**

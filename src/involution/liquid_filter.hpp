@@ -31,12 +31,6 @@
  */
 class LiquidFilter {
 public:
-    enum FilterMode {
-        LOWPASS,        // Classic 6th-order lowpass
-        BANDPASS,       // 6th-order bandpass (nasal, vocal)
-        MORPH           // Continuous LP→BP blend via filterMorph parameter
-    };
-
     // Parameter bounds — referenced by the host module's configParam/clamp calls
     static constexpr float RESONANCE_MIN = 0.707f;
     static constexpr float RESONANCE_MAX = 2.05f;
@@ -74,7 +68,7 @@ private:
         float lastV1 = 0.f;  // Bandpass output
         float lastV2 = 0.f;  // Lowpass output
 
-        float process(float input, float g, float k, float bpMix) {
+        float process(float input, float g, float k) {
             float v1 = (ic1eq + g * (input - ic2eq)) / (1.f + g * (g + k));
             float v2 = ic2eq + g * v1;
 
@@ -84,8 +78,7 @@ private:
             lastV1 = v1;
             lastV2 = v2;
 
-            // Crossfade between lowpass (v2) and bandpass (v1)
-            return v2 + (v1 - v2) * bpMix;
+            return v2;
         }
 
         void reset() {
@@ -104,8 +97,6 @@ private:
 
     float baseSampleRate = 48000.f;
     float oversampledRate = 48000.f * OVERSAMPLE_FACTOR;
-    FilterMode filterMode = LOWPASS;
-    float filterMorph = 0.f;  // 0 = LP, 1 = BP (used in MORPH mode)
 
     // Global feedback state (ladder-style resonance)
     float lastFeedback = 0.f;
@@ -202,14 +193,6 @@ public:
         envReleaseCoeff    = std::exp(-1.f / (sr * ENV_RELEASE_TC));
         outEnvAttackCoeff  = std::exp(-1.f / (sr * OUT_ENV_ATTACK_TC));
         outEnvReleaseCoeff = std::exp(-1.f / (sr * OUT_ENV_RELEASE_TC));
-    }
-
-    void setFilterMode(FilterMode mode) {
-        filterMode = mode;
-    }
-
-    void setFilterMorph(float morph) {
-        filterMorph = rack::math::clamp(morph, 0.f, 1.f);
     }
 
     void reset() {
@@ -318,25 +301,20 @@ public:
             // resonance are rounded rather than hard-clipped.
             x = filterSaturate(x, 1.0f + feedbackAmount * SAT_DRIVE_PRE);
 
-            // Compute bandpass mix from filter mode
-            float bpMix = 0.f;
-            if (filterMode == BANDPASS) bpMix = 1.f;
-            else if (filterMode == MORPH) bpMix = filterMorph;
-
             // Cascade three critically-damped 2-pole stages (k=SVF_K).
             // Keeping SVF_K=2.0 is mandatory for stability: reducing k shifts the
             // -180° phase crossing to a higher-gain frequency, dropping the max
             // stable feedbackAmount well below 2 (causes the pumping distortion).
-            x = stage1.process(x, g, SVF_K, bpMix);
+            x = stage1.process(x, g, SVF_K);
 
             // Inter-stage saturation: smooth tanh prevents amplitude buildup through
             // the cascade without adding hard-clip artefacts to the resonant ring.
             x = filterSaturate(x, 1.0f + feedbackAmount * SAT_DRIVE_INTER);
 
-            x = stage2.process(x, g, SVF_K, bpMix);
+            x = stage2.process(x, g, SVF_K);
             x = filterSaturate(x, 1.0f + feedbackAmount * SAT_DRIVE_INTER);
 
-            x = stage3.process(x, g, SVF_K, bpMix);
+            x = stage3.process(x, g, SVF_K);
 
             // Store LP integrator state for feedback.
             // tanh soft-limits to ±FEEDBACK_TANH_SWING — prevents integrator runaway

@@ -413,12 +413,29 @@ public:
     }
 
     void draw(const DrawArgs& args) override {
-        // Draw the vintage VU meter SVG (always, including module browser)
+        // Draw the vintage VU meter SVG face (always, including module browser).
+        // Clip to the inner aperture so the baked-in thick SVG housing does not
+        // visually override our custom slim bezel treatment.
         std::shared_ptr<window::Svg> svg = APP->window->loadSvg(svgPath);
         if (svg && svg->handle) {
+            constexpr float kViewBoxW = 259.0896f;
+            constexpr float kViewBoxH = 271.0356f;
+            constexpr float kInnerX = 7.37f;
+            constexpr float kInnerY = 7.07f;
+            constexpr float kInnerW = 244.35f;
+            constexpr float kInnerH = 256.97f;
+
             nvgSave(args.vg);
-            nvgScale(args.vg, box.size.x / svg->handle->width, box.size.y / svg->handle->height);
+            float sx = box.size.x / svg->handle->width;
+            float sy = box.size.y / svg->handle->height;
+            nvgScale(args.vg, sx, sy);
+            nvgScissor(args.vg,
+                kInnerX * (svg->handle->width / kViewBoxW),
+                kInnerY * (svg->handle->height / kViewBoxH),
+                kInnerW * (svg->handle->width / kViewBoxW),
+                kInnerH * (svg->handle->height / kViewBoxH));
             svgDraw(args.vg, svg->handle);
+            nvgResetScissor(args.vg);
             nvgRestore(args.vg);
         }
 
@@ -436,13 +453,11 @@ public:
             drawVUNeedle(args, value);
         }
     }
-
 private:
+
     void drawHousingFinish(const DrawArgs& args) {
         float w = box.size.x;
         float h = box.size.y;
-        float cx = w * 0.5f;
-        float cy = h * 0.5f;
 
         // --- Geometry matching the SVG housing rects (viewBox 259 x 271) ---
         // Outer housing ("housing main")
@@ -452,21 +467,30 @@ private:
         float oh = h * (265.31f / 271.04f);
         float ocr = std::min(w, h) * 0.099f;
 
-        // Inner housing — pushed outward from the SVG original to thin the bezel.
-        // Original SVG inner: x=7.37 y=7.07 w=244.35 h=256.97
-        // We expand the inner rect ~40% closer to the outer to narrow the frame.
-        float ix = w * (5.79f / 259.09f);
-        float iy = h * (5.36f / 271.04f);
-        float iw = w * (247.51f / 259.09f);
-        float ih = h * (260.31f / 271.04f);
-        float icr = std::min(w, h) * 0.097f;
-
         // Original SVG inner rect (the boundary we're shrinking from)
         float svgIx = w * (7.37f / 259.09f);
         float svgIy = h * (7.07f / 271.04f);
         float svgIw = w * (244.35f / 259.09f);
         float svgIh = h * (256.97f / 271.04f);
         float svgIcr = std::min(w, h) * 0.096f;
+
+        // Pull the inner boundary aggressively toward the outer frame for a
+        // slimmer, sleeker bezel treatment.
+        auto mix = [](float a, float b, float t) { return a + (b - a) * t; };
+        constexpr float kThinLerp = 0.88f;
+        float ix = mix(svgIx, ox, kThinLerp);
+        float iy = mix(svgIy, oy, kThinLerp);
+        float iw = mix(svgIw, ow, kThinLerp);
+        float ih = mix(svgIh, oh, kThinLerp);
+        float icr = mix(svgIcr, ocr, kThinLerp);
+
+        float bezelWidth = std::max(0.75f, std::min(ix - ox, iy - oy));
+        float lipInset = std::max(0.4f, bezelWidth * 0.42f);
+        float gx = ix + lipInset;
+        float gy = iy + lipInset;
+        float gw = std::max(1.f, iw - lipInset * 2.f);
+        float gh = std::max(1.f, ih - lipInset * 2.f);
+        float gcr = std::max(0.75f, icr - lipInset * 0.45f);
 
         // 0) Cover only the strip of SVG gray frame between the old and new
         //    inner boundaries so no gray peeks through, without hiding the face.
@@ -477,13 +501,11 @@ private:
         nvgFillColor(args.vg, nvgRGB(0, 0, 0));
         nvgFill(args.vg);
 
-        // 1) Bakelite frame gradient — replaces the flat #2f2f2f with a warm,
-        //    directional gradient that simulates molded Bakelite lit from above.
-        //    Uses an outer-minus-inner "donut" path so only the frame is filled.
+        // 1) Main bezel ring.
         NVGpaint frameGrad = nvgLinearGradient(args.vg,
-            0, oy, 0, oy + oh,
-            nvgRGBA(72, 58, 48, 220),   // warm brown highlight at top
-            nvgRGBA(28, 22, 18, 220));   // dark brown shadow at bottom
+            0.f, oy, 0.f, oy + oh,
+            nvgRGBA(148, 122, 94, 238),
+            nvgRGBA(16, 12, 9, 246));
         nvgBeginPath(args.vg);
         nvgRoundedRect(args.vg, ox, oy, ow, oh, ocr);
         nvgRoundedRect(args.vg, ix, iy, iw, ih, icr);
@@ -491,64 +513,61 @@ private:
         nvgFillPaint(args.vg, frameGrad);
         nvgFill(args.vg);
 
-        // 2) Top-edge catch light — bright highlight along the top rim where
-        //    overhead light hits the curved Bakelite surface.
-        {
-            float insetX = ow * 0.22f;   // pull sides inward
-            float insetY = oh * 0.015f;  // nudge down from top edge
-            NVGpaint topCatch = nvgLinearGradient(args.vg,
-                0, oy + insetY, 0, oy + insetY + oh * 0.035f,
-                nvgRGBA(200, 185, 165, 70), nvgRGBA(0, 0, 0, 0));
-            nvgBeginPath(args.vg);
-            nvgRoundedRect(args.vg, ox + insetX, oy + insetY, ow - insetX * 2.f, oh * 0.05f, ocr * 0.4f);
-            nvgRoundedRect(args.vg, ix + insetX, iy + insetY, iw - insetX * 2.f, ih * 0.025f, icr * 0.4f);
-            nvgPathWinding(args.vg, NVG_HOLE);
-            nvgFillPaint(args.vg, topCatch);
-            nvgFill(args.vg);
-        }
-
-        // 3) Bottom-edge shadow — darker along the bottom to enhance the 3D shape.
-        NVGpaint botShadow = nvgLinearGradient(args.vg,
-            0, oy + oh * 0.92f, 0, oy + oh,
-            nvgRGBA(0, 0, 0, 0), nvgRGBA(0, 0, 0, 80));
+        // Strong outer edge definition so the thin bezel reads clearly at small sizes.
         nvgBeginPath(args.vg);
-        nvgRoundedRect(args.vg, ox, oy + oh * 0.88f, ow, oh * 0.12f, ocr);
-        nvgFillPaint(args.vg, botShadow);
-        nvgFill(args.vg);
-
-        // 4) Inner bevel shadow — a dark inset line where the frame meets the
-        //    recessed inner panel, like a mold parting line.
-        nvgBeginPath(args.vg);
-        nvgRoundedRect(args.vg, ix, iy, iw, ih, icr);
-        nvgStrokeWidth(args.vg, 1.2f);
-        nvgStrokeColor(args.vg, nvgRGBA(0, 0, 0, 100));
+        nvgRoundedRect(args.vg, ox + 0.2f, oy + 0.2f, ow - 0.4f, oh - 0.4f, std::max(0.8f, ocr - 0.2f));
+        nvgStrokeWidth(args.vg, 0.95f);
+        nvgStrokeColor(args.vg, nvgRGBA(186, 162, 132, 68));
         nvgStroke(args.vg);
 
-        // 5) Outer edge highlight — a faint light stroke on the outside edge
-        //    simulating the slight sheen where Bakelite meets the panel.
+        // 2) Thin top catch-light for a polished edge.
+        NVGpaint topCatch = nvgLinearGradient(args.vg,
+            0.f, oy + oh * 0.02f, 0.f, oy + oh * 0.15f,
+            nvgRGBA(236, 214, 186, 52), nvgRGBA(0, 0, 0, 0));
         nvgBeginPath(args.vg);
-        nvgRoundedRect(args.vg, ox + 0.5f, oy + 0.5f, ow - 1.f, oh - 1.f, ocr);
+        nvgRoundedRect(args.vg, ox + 0.35f, oy + 0.35f, ow - 0.7f, oh - 0.7f, ocr - 0.35f);
+        nvgRoundedRect(args.vg, ix + 0.2f, iy + 0.2f, iw - 0.4f, ih - 0.4f, icr - 0.2f);
+        nvgPathWinding(args.vg, NVG_HOLE);
+        nvgFillPaint(args.vg, topCatch);
+        nvgFill(args.vg);
+
+        // 3) Inner lip ring.
+        nvgBeginPath(args.vg);
+        nvgRoundedRect(args.vg, ix, iy, iw, ih, icr);
+        nvgRoundedRect(args.vg, gx, gy, gw, gh, gcr);
+        nvgPathWinding(args.vg, NVG_HOLE);
+        NVGpaint lipShade = nvgLinearGradient(args.vg,
+            0.f, iy, 0.f, iy + ih,
+            nvgRGBA(8, 8, 10, 220), nvgRGBA(74, 60, 44, 118));
+        nvgFillPaint(args.vg, lipShade);
+        nvgFill(args.vg);
+
+        // Crisp inner edge line to emphasize the reduced bezel thickness.
+        nvgBeginPath(args.vg);
+        nvgRoundedRect(args.vg, gx + 0.08f, gy + 0.08f, gw - 0.16f, gh - 0.16f, std::max(0.7f, gcr - 0.08f));
+        nvgStrokeWidth(args.vg, 0.85f);
+        nvgStrokeColor(args.vg, nvgRGBA(220, 192, 154, 38));
+        nvgStroke(args.vg);
+
+        // 4) Tight gasket so no legacy frame color can leak next to the face.
+        nvgBeginPath(args.vg);
+        nvgRoundedRect(args.vg, gx, gy, gw, gh, gcr);
+        float fx = gx + 0.35f;
+        float fy = gy + 0.35f;
+        float fw = std::max(1.f, gw - 0.7f);
+        float fh = std::max(1.f, gh - 0.7f);
+        float fcr = std::max(0.65f, gcr - 0.15f);
+        nvgRoundedRect(args.vg, fx, fy, fw, fh, fcr);
+        nvgPathWinding(args.vg, NVG_HOLE);
+        nvgFillColor(args.vg, nvgRGBA(8, 8, 10, 230));
+        nvgFill(args.vg);
+
+        // 5) Subtle inner boundary stroke.
+        nvgBeginPath(args.vg);
+        nvgRoundedRect(args.vg, ix, iy, iw, ih, icr);
         nvgStrokeWidth(args.vg, 0.8f);
-        nvgStrokeColor(args.vg, nvgRGBA(120, 105, 88, 50));
+        nvgStrokeColor(args.vg, nvgRGBA(0, 0, 0, 92));
         nvgStroke(args.vg);
-
-        // 6) Matte surface texture — two offset radial gradients across the inner
-        //    panel area to break up the flat black and suggest fine grain.
-        NVGpaint grainA = nvgRadialGradient(args.vg,
-            cx * 0.65f, cy * 0.55f, 0, std::max(w, h) * 0.42f,
-            nvgRGBA(55, 45, 38, 18), nvgRGBA(0, 0, 0, 0));
-        nvgBeginPath(args.vg);
-        nvgRoundedRect(args.vg, ix, iy, iw, ih, icr);
-        nvgFillPaint(args.vg, grainA);
-        nvgFill(args.vg);
-
-        NVGpaint grainB = nvgRadialGradient(args.vg,
-            cx * 1.35f, cy * 1.4f, 0, std::max(w, h) * 0.38f,
-            nvgRGBA(40, 32, 26, 14), nvgRGBA(0, 0, 0, 0));
-        nvgBeginPath(args.vg);
-        nvgRoundedRect(args.vg, ix, iy, iw, ih, icr);
-        nvgFillPaint(args.vg, grainB);
-        nvgFill(args.vg);
     }
 
     void drawBacklightGlow(const DrawArgs& args) {

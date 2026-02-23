@@ -100,9 +100,35 @@ static const ChaosThemePalette CHAOS_THEMES[] = {
 static const int NUM_CHAOS_THEMES = 4;
 static const char* const CHAOS_THEME_NAMES[] = {"Phosphor", "Ice", "Solar", "Amber"};
 
+namespace {
+constexpr float kFallbackRefreshHz = 60.f;
+constexpr float kBezelThinScale = 0.4624f;
+constexpr float kScanlineThickness = 0.5f;
+constexpr int kScanlineCount = 20;
+constexpr float kResonanceBaseline = 0.707f;
+constexpr float kResonanceActivityScale = 2.0f;
+constexpr float kMinTotalActivity = 0.35f;
+constexpr int kMinSquares = 45;
+constexpr int kMaxSquares = 220;
+constexpr float kDiamondBoundary = 0.9f;
+constexpr float kAngleOrbitScale = 3.4f;
+constexpr float kAngleOrbitDepth = 0.6f;
+constexpr float kTimeSpinRate = 0.3f;
+constexpr float kChaosSpinA = 1.0f;
+constexpr float kChaosSpinB = 0.8f;
+}
+
+inline float getVisualizerDeltaTime() {
+    float refreshHz = (APP && APP->window) ? APP->window->getMonitorRefreshRate() : kFallbackRefreshHz;
+    if (refreshHz <= 0.f) {
+        refreshHz = kFallbackRefreshHz;
+    }
+    return 1.f / refreshHz;
+}
+
 inline void ChaosVisualizer::step() {
     Widget::step();
-    float deltaTime = 1.0f / APP->window->getMonitorRefreshRate();
+    float deltaTime = getVisualizerDeltaTime();
     time += deltaTime;
 
     if (module) {
@@ -124,7 +150,7 @@ inline void ChaosVisualizer::step() {
         float smoothedResonanceA = visualResonanceASmoother.process(module->effectiveResonanceA, deltaTime);
         float smoothedResonanceB = visualResonanceBSmoother.process(module->effectiveResonanceB, deltaTime);
         float avgResonance = (smoothedResonanceA + smoothedResonanceB) * 0.5f;
-        float resonanceActivity = (avgResonance - 0.707f) * 2.0f;
+        float resonanceActivity = (avgResonance - kResonanceBaseline) * kResonanceActivityScale;
         resonanceActivity = std::max(resonanceActivity, 0.0f);
         resonancePhase += resonanceActivity * 0.4f * deltaTime;
     }
@@ -145,10 +171,10 @@ inline void ChaosVisualizer::drawLayer(const DrawArgs& args, int layer) {
     float diamondSize = std::min(width, height) * 0.9f;
     float bezelOuterHalf = diamondSize * 0.5f;
     float baseBezelThickness = bezelOuterHalf * 0.10f;
-    float bezelThickness = baseBezelThickness * 0.4624f; // previous thickness, reduced another 15%
+    float bezelThickness = baseBezelThickness * kBezelThinScale;
     float bezelInnerHalf = bezelOuterHalf - bezelThickness;
     float baseLipThickness = bezelInnerHalf * 0.07f;
-    float lipThickness = baseLipThickness * 0.4624f; // previous thickness, reduced another 15%
+    float lipThickness = baseLipThickness * kBezelThinScale;
     float lipInnerHalf = bezelInnerHalf - lipThickness;
     float screenHalf = lipInnerHalf * 0.985f;
     float screenSize = screenHalf * 2.f;
@@ -254,7 +280,7 @@ inline void ChaosVisualizer::drawLayer(const DrawArgs& args, int layer) {
     for (int i = -2; i <= 2; i++) {
         if (i == 0) continue;
         float y = centerY + i * screenSize * 0.15f;
-        float width = halfSize * (1.0f - abs(y - centerY) / halfSize);
+        float width = halfSize * (1.0f - std::fabs(y - centerY) / halfSize);
 
         nvgBeginPath(vg);
         nvgMoveTo(vg, centerX - width, y);
@@ -266,7 +292,7 @@ inline void ChaosVisualizer::drawLayer(const DrawArgs& args, int layer) {
     for (int i = -2; i <= 2; i++) {
         if (i == 0) continue;
         float x = centerX + i * screenSize * 0.15f;
-        float height = halfSize * (1.0f - abs(x - centerX) / halfSize);
+        float height = halfSize * (1.0f - std::fabs(x - centerX) / halfSize);
 
         nvgBeginPath(vg);
         nvgMoveTo(vg, x, centerY - height);
@@ -280,9 +306,9 @@ inline void ChaosVisualizer::drawLayer(const DrawArgs& args, int layer) {
                                module->outputs[Involution::AUDIO_B_OUTPUT].isConnected();
 
         if (outputsConnected) {
-            float deltaTime = 1.0f / APP->window->getMonitorRefreshRate();
+            float deltaTime = getVisualizerDeltaTime();
 
-            float chaosAmount = visualChaosAmountSmoother.process(
+            float rawChaosAmount = visualChaosAmountSmoother.process(
                 module->crossAmount, deltaTime);
             float filterMorph = visualFilterMorphSmoother.getValue();
             float orbitAmount = visualOrbitSmoother.getValue();
@@ -291,6 +317,16 @@ inline void ChaosVisualizer::drawLayer(const DrawArgs& args, int layer) {
             float cutoffB = visualCutoffBSmoother.process(module->effectiveCutoffB, deltaTime);
             float resonanceA = visualResonanceASmoother.process(module->effectiveResonanceA, deltaTime);
             float resonanceB = visualResonanceBSmoother.process(module->effectiveResonanceB, deltaTime);
+
+            // Visual density is driven by resonance and mod depth so the screen looks
+            // active without requiring the cross feedback knob to be turned up.
+            // Cross feedback still contributes as an additive bonus.
+            float avgResVis = (resonanceA + resonanceB) * 0.5f;
+            float resNorm = clamp((avgResVis - LiquidFilter::RESONANCE_MIN) /
+                                  (LiquidFilter::RESONANCE_MAX - LiquidFilter::RESONANCE_MIN),
+                                  0.f, 1.f);
+            float chaosAmount = clamp(rawChaosAmount * 0.4f + resNorm * 0.8f + orbitAmount * 0.3f,
+                                      0.f, 1.f);
 
             drawSquareChaos(vg, centerX, centerY, screenSize * 0.4f, chaosAmount, chaosPhase,
                           filterMorph, orbitAmount, tideAmount,
@@ -332,10 +368,10 @@ inline void ChaosVisualizer::drawLayer(const DrawArgs& args, int layer) {
 
     // Scanlines
     nvgStrokeColor(vg, nvgRGBA(0, 0, 0, 40));
-    nvgStrokeWidth(vg, 0.5f);
-    for (int i = 0; i < 20; i++) {
-        float y = centerY - screenSize/2 + (i / 19.0f) * screenSize;
-        float lineWidth = screenSize * (1.0f - 2.0f * abs(y - centerY) / screenSize);
+    nvgStrokeWidth(vg, kScanlineThickness);
+    for (int i = 0; i < kScanlineCount; i++) {
+        float y = centerY - screenSize/2 + (i / static_cast<float>(kScanlineCount - 1)) * screenSize;
+        float lineWidth = screenSize * (1.0f - 2.0f * std::fabs(y - centerY) / screenSize);
         if (lineWidth > 0) {
             nvgBeginPath(vg);
             nvgMoveTo(vg, centerX - lineWidth/2, y);
@@ -386,29 +422,32 @@ inline void ChaosVisualizer::drawSquareChaos(NVGcontext* vg, float cx, float cy,
                     float chaosAmount, float chaosPhase, float auraAmount,
                     float orbitAmount, float tideAmount,
                     float cutoffA, float cutoffB, float resonanceA, float resonanceB,
-                    float auraPhase, float cutoffPhase, float resonancePhase) {
+                    float filterMorphPhase, float cutoffPhase, float resonancePhase) {
 
     float totalActivity = chaosAmount + (cutoffA + cutoffB) * 0.2f;
 
     float avgResonance = (resonanceA + resonanceB) * 0.5f;
-    float resonanceActivity = (avgResonance - 0.707f) * 2.0f;
+    float resonanceActivity = (avgResonance - kResonanceBaseline) * kResonanceActivityScale;
     resonanceActivity = std::max(resonanceActivity, 0.0f);
     totalActivity += resonanceActivity * 0.3f;
 
-    totalActivity = std::max(totalActivity, 0.35f);
+    totalActivity = std::max(totalActivity, kMinTotalActivity);
 
-    int baseSquares = 45 + (int)(auraAmount * 20);
+    int baseSquares = kMinSquares + (int)(auraAmount * 20);
     int resonanceSquares = (int)(resonanceActivity * 80);
     int activitySquares = (int)(totalActivity * 120);
     int numSquares = baseSquares + activitySquares + resonanceSquares;
-    numSquares = clamp(numSquares, 45, 220);
+    numSquares = clamp(numSquares, kMinSquares, kMaxSquares);
+
+    int themeIdx = module ? clamp(module->chaosTheme, 0, NUM_CHAOS_THEMES - 1) : 0;
+    const ChaosParticleRange* ranges = CHAOS_THEMES[themeIdx].hueRanges;
 
     for (int i = 0; i < numSquares; i++) {
-        float angle = (i / (float)numSquares) * 2.0f * M_PI * (3.4f + orbitAmount * 0.6f);
+        float angle = (i / (float)numSquares) * 2.0f * M_PI * (kAngleOrbitScale + orbitAmount * kAngleOrbitDepth);
 
-        angle += time * 0.3f;
-        angle += chaosPhase * 1.0f;
-        angle += chaosPhase * 0.8f;
+        angle += time * kTimeSpinRate;
+        angle += chaosPhase * kChaosSpinA;
+        angle += chaosPhase * kChaosSpinB;
         angle += filterMorphPhase;
         angle += cutoffPhase;
         angle += resonancePhase;
@@ -422,18 +461,18 @@ inline void ChaosVisualizer::drawSquareChaos(NVGcontext* vg, float cx, float cy,
         float x = cx + cosf(angle) * radius;
         float y = cy + sinf(angle) * radius;
 
-        float distanceFromCenterX = abs(x - cx);
-        float distanceFromCenterY = abs(y - cy);
+        float distanceFromCenterX = std::fabs(x - cx);
+        float distanceFromCenterY = std::fabs(y - cy);
         float diamondDistance = distanceFromCenterX / maxRadius + distanceFromCenterY / maxRadius;
 
-        if (diamondDistance > 0.9f) {
-            float scale = 0.9f / diamondDistance;
+        if (diamondDistance > kDiamondBoundary) {
+            float scale = kDiamondBoundary / diamondDistance;
             x = cx + (x - cx) * scale;
             y = cy + (y - cy) * scale;
         }
 
         float baseSize = 0.35f + chaosAmount * 0.6f + orbitAmount * 0.2f;
-        float sizeVar = sinf(time * (4.0f + tideAmount * 1.5f) + i * 0.32f + auraPhase * 0.5f) * (0.18f + orbitAmount * 0.1f);
+        float sizeVar = sinf(time * (4.0f + tideAmount * 1.5f) + i * 0.32f + filterMorphPhase * 0.5f) * (0.18f + orbitAmount * 0.1f);
         float resonanceScale = 0.2f + 0.4f * resonanceActivity;
         float resonanceSize = resonanceScale * 0.45f + sinf(time * 5.5f + i * 0.3f) * resonanceScale * 0.32f;
         float dotRadius = clamp(baseSize + sizeVar + resonanceSize, 0.18f, 1.4f);
@@ -457,10 +496,6 @@ inline void ChaosVisualizer::drawSquareChaos(NVGcontext* vg, float cx, float cy,
             dotRadius += boost * 0.9f;
         }
         brightness = clamp(brightness, 0.75f, 2.3f);
-
-        // Resolve particle color from theme hue ranges
-        int themeIdx = module ? clamp(module->chaosTheme, 0, NUM_CHAOS_THEMES - 1) : 0;
-        const ChaosParticleRange* ranges = CHAOS_THEMES[themeIdx].hueRanges;
 
         NVGcolor color;
         int rangeIdx;

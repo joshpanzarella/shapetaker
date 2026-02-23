@@ -786,8 +786,8 @@ struct Transmutation : Module,
         return stx::transmutation::isStepChanged(prev, curr);
     }
 
-    float lastCvA[stx::transmutation::MAX_VOICES] = {0.f,0.f,0.f,0.f,0.f,0.f,0.f,0.f};
-    float lastCvB[stx::transmutation::MAX_VOICES] = {0.f,0.f,0.f,0.f,0.f,0.f,0.f,0.f};
+    float lastCvA[stx::transmutation::MAX_VOICES] = {};
+    float lastCvB[stx::transmutation::MAX_VOICES] = {};
 
     // Helper: resolve a step to an effective chord step (follow TIEs backward).
     // Returns nullptr if no playable chord is found.
@@ -800,7 +800,7 @@ struct Transmutation : Module,
         // Keep current channel count (or fall back to MAX_VOICES) so downstream modules
         // see a stable number of channels during envelope release tails.
         int ch = outputs[cvOutputId].getChannels();
-        if (ch <= 0) ch = 1; // minimal safe fallback
+        ch = rack::math::clamp(ch, 1, stx::transmutation::MAX_VOICES); // enforce global polyphony cap
         outputs[cvOutputId].setChannels(ch);
         outputs[gateOutputId].setChannels(ch);
 

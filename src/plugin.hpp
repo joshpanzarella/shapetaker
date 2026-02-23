@@ -23,6 +23,8 @@ extern Model* modelTorsion;
 extern Model* modelTessellation;
 extern Model* modelPatina;
 extern Model* modelReverie;
+extern Model* modelUtilityPanel;
+extern Model* modelNocturneTV;
 
 /**
  * Base knob class with universal fallback indicator support.
@@ -1400,6 +1402,52 @@ struct ShapetakerDarkToggle : app::SvgSwitch {
     ShapetakerDarkToggle() {
         addFrame(Svg::load(asset::plugin(pluginInstance, "res/switches/dark_toggle_off.svg")));
         addFrame(Svg::load(asset::plugin(pluginInstance, "res/switches/dark_toggle_on.svg")));
+        shadow->opacity = 0.0;
+    }
+};
+
+// Two-position dark toggle variant:
+// off -> pos4
+struct ShapetakerDarkToggleOffPos4 : app::SvgSwitch {
+    ShapetakerDarkToggleOffPos4() {
+        addFrame(Svg::load(asset::plugin(pluginInstance, "res/switches/dark_toggle_off.svg")));
+        addFrame(Svg::load(asset::plugin(pluginInstance, "res/switches/dark_toggle_pos4.svg")));
+        shadow->opacity = 0.0;
+    }
+};
+
+// Five-position variant for vertical dark toggle travel:
+// off -> pos1 -> on -> pos3 -> pos4
+struct ShapetakerDarkToggleFivePos : app::SvgSwitch {
+    ShapetakerDarkToggleFivePos() {
+        addFrame(Svg::load(asset::plugin(pluginInstance, "res/switches/dark_toggle_off.svg")));
+        addFrame(Svg::load(asset::plugin(pluginInstance, "res/switches/dark_toggle_pos1.svg")));
+        addFrame(Svg::load(asset::plugin(pluginInstance, "res/switches/dark_toggle_on.svg")));
+        addFrame(Svg::load(asset::plugin(pluginInstance, "res/switches/dark_toggle_pos3.svg")));
+        addFrame(Svg::load(asset::plugin(pluginInstance, "res/switches/dark_toggle_pos4.svg")));
+        shadow->opacity = 0.0;
+    }
+};
+
+// Four-position variant for mode selection:
+// off -> pos1 -> on -> pos4
+struct ShapetakerDarkToggleFourPos : app::SvgSwitch {
+    ShapetakerDarkToggleFourPos() {
+        addFrame(Svg::load(asset::plugin(pluginInstance, "res/switches/dark_toggle_off.svg")));
+        addFrame(Svg::load(asset::plugin(pluginInstance, "res/switches/dark_toggle_pos1.svg")));
+        addFrame(Svg::load(asset::plugin(pluginInstance, "res/switches/dark_toggle_on.svg")));
+        addFrame(Svg::load(asset::plugin(pluginInstance, "res/switches/dark_toggle_pos4.svg")));
+        shadow->opacity = 0.0;
+    }
+};
+
+// Three-position variant for panel mode switches:
+// off -> on -> pos4
+struct ShapetakerDarkToggleThreePos : app::SvgSwitch {
+    ShapetakerDarkToggleThreePos() {
+        addFrame(Svg::load(asset::plugin(pluginInstance, "res/switches/dark_toggle_off.svg")));
+        addFrame(Svg::load(asset::plugin(pluginInstance, "res/switches/dark_toggle_on.svg")));
+        addFrame(Svg::load(asset::plugin(pluginInstance, "res/switches/dark_toggle_pos4.svg")));
         shadow->opacity = 0.0;
     }
 };
@@ -4049,32 +4097,292 @@ struct CapacitiveTouchSwitch : app::SvgSwitch {
     }
 };
 
-// Vintage slider widget using the new slider SVGs
+// Vintage slider widget matching Torsion's illuminated style
 struct VintageSlider : app::SvgSlider {
+    static constexpr float LED_RADIUS = 4.0f;
+    static constexpr float LED_GLOW_RADIUS = 10.0f;
+    // Track SVG is 12px wide; handle (12px) fills it exactly — no offset needed.
+    static constexpr float TRACK_CENTER_OFFSET_X = 0.0f;
+    NVGcolor ledColor = nvgRGBf(1.0f, 0.6f, 0.2f);
+
     VintageSlider() {
-        // Set the background (track) SVG - 8x60px (small compact version)
+        // Set the background (track) SVG - 12x60px
         setBackgroundSvg(
             Svg::load(asset::plugin(pluginInstance,
             "res/sliders/vintage_slider_track_small.svg"))
         );
 
-        // Set the handle SVG - 12x18px (small compact version)
+        // Set the handle SVG - 12x18px
         setHandleSvg(
             Svg::load(asset::plugin(pluginInstance,
             "res/sliders/vintage_slider_handle_small.svg"))
         );
 
-        // SVG dimensions: track is 8x60px, handle is 12x18px
-        // Widget box size matches track width and height
+        // Widget 12px wide; track (12px) and handle (12px) align perfectly.
+        // Travel: 60px track - 18px handle = 42px.
         box.size = Vec(12.f, 60.f);
+        maxHandlePos = Vec(0.f, 0.f);   // top  (param min = 0)
+        minHandlePos = Vec(0.f, 42.f);  // bottom (param max = 1)
+    }
 
-        // Configure the slider travel range
-        // Handle travels vertically within the track
-        // The handle is 18px tall, track is 60px tall
-        // So handle can travel (60 - 18) = 42px
-        // Position from top (0) to bottom (42)
-        maxHandlePos = Vec(-2.f, 0.f);      // Top position (param minimum = 0), offset left 2px to center
-        minHandlePos = Vec(-2.f, 42.f);     // Bottom position (param maximum = 1)
+    void draw(const DrawArgs& args) override {
+        app::SvgSlider::draw(args);
+
+        float value = 0.5f;
+        if (auto* pq = getParamQuantity()) {
+            value = pq->getScaledValue();
+        }
+
+        Vec ledPos = Vec(box.size.x * 0.5f, box.size.y * 0.5f);
+        if (handle) {
+            ledPos = Vec(handle->box.pos.x + handle->box.size.x * 0.5f,
+                         handle->box.pos.y + handle->box.size.y * 0.5f);
+        }
+
+        drawLED(args, ledPos, value);
+        drawSlotRim(args);
+    }
+
+    // Draws a machined-edge bevel, inner depth shadows, and handle contact
+    // shadows around the slot opening to make the slider look embedded in panel.
+    void drawSlotRim(const DrawArgs& args) {
+        // Channel geometry: x=1.5, width=9 (→ channel 1.5..10.5, center at 6)
+        // in the 12px-wide track SVG.  slotY: 1 for small (60px), 2 for large.
+        const float slotX = 1.5f;
+        const float slotW = 9.0f;
+        const float slotR = 2.5f;
+        const float slotY = (box.size.y > 90.f) ? 2.0f : 1.0f;
+        const float slotH = box.size.y - slotY * 2.0f;
+
+        // ---- Outer definition stroke — crisp dark outline around slot opening ----
+        nvgBeginPath(args.vg);
+        nvgRoundedRect(args.vg, slotX - 0.3f, slotY - 0.3f,
+                       slotW + 0.6f, slotH + 0.6f, slotR + 0.3f);
+        nvgStrokeWidth(args.vg, 0.6f);
+        nvgStrokeColor(args.vg, nvgRGBA(0, 0, 0, 100));
+        nvgStroke(args.vg);
+
+        // ---- Machined bevel rim ----
+        // Top rim: light catches the upper machined lip
+        nvgBeginPath(args.vg);
+        nvgMoveTo(args.vg, slotX + slotR * 0.4f, slotY);
+        nvgLineTo(args.vg, slotX + slotW - slotR * 0.4f, slotY);
+        nvgStrokeWidth(args.vg, 1.0f);
+        nvgStrokeColor(args.vg, nvgRGBA(220, 220, 220, 90));
+        nvgStroke(args.vg);
+
+        // Bottom rim: shadow at lower lip
+        nvgBeginPath(args.vg);
+        nvgMoveTo(args.vg, slotX + slotR * 0.4f, slotY + slotH);
+        nvgLineTo(args.vg, slotX + slotW - slotR * 0.4f, slotY + slotH);
+        nvgStrokeWidth(args.vg, 1.0f);
+        nvgStrokeColor(args.vg, nvgRGBA(0, 0, 0, 100));
+        nvgStroke(args.vg);
+
+        // Left wall: subtle highlight from the chamfered left edge
+        nvgBeginPath(args.vg);
+        nvgMoveTo(args.vg, slotX, slotY + slotR * 0.6f);
+        nvgLineTo(args.vg, slotX, slotY + slotH - slotR * 0.6f);
+        nvgStrokeWidth(args.vg, 1.0f);
+        nvgStrokeColor(args.vg, nvgRGBA(190, 190, 190, 55));
+        nvgStroke(args.vg);
+
+        // Right wall: shadow from chamfered right edge
+        nvgBeginPath(args.vg);
+        nvgMoveTo(args.vg, slotX + slotW, slotY + slotR * 0.6f);
+        nvgLineTo(args.vg, slotX + slotW, slotY + slotH - slotR * 0.6f);
+        nvgStrokeWidth(args.vg, 1.0f);
+        nvgStrokeColor(args.vg, nvgRGBA(0, 0, 0, 70));
+        nvgStroke(args.vg);
+
+        // ---- Inner depth shadows — top fades out as handle approaches top so LED glow is unobstructed ----
+        float topFade = 1.0f;
+        if (handle) {
+            topFade = rack::math::clamp(handle->box.pos.y / 18.0f, 0.0f, 1.0f);
+        }
+        NVGpaint topDepth = nvgLinearGradient(args.vg,
+            0.f, slotY + 0.5f, 0.f, slotY + 13.0f,
+            nvgRGBA(0, 0, 0, (int)(165.f * topFade)), nvgRGBA(0, 0, 0, 0));
+        nvgBeginPath(args.vg);
+        nvgRoundedRect(args.vg, slotX + 0.3f, slotY + 0.5f,
+                       slotW - 0.6f, 13.0f, slotR * 0.3f);
+        nvgFillPaint(args.vg, topDepth);
+        nvgFill(args.vg);
+
+        // Bottom: shadow cast from lower rim upward into the channel
+        const float botY = slotY + slotH - 13.5f;
+        NVGpaint botDepth = nvgLinearGradient(args.vg,
+            0.f, botY, 0.f, botY + 13.0f,
+            nvgRGBA(0, 0, 0, 0), nvgRGBA(0, 0, 0, 130));
+        nvgBeginPath(args.vg);
+        nvgRoundedRect(args.vg, slotX + 0.3f, botY,
+                       slotW - 0.6f, 13.0f, slotR * 0.3f);
+        nvgFillPaint(args.vg, botDepth);
+        nvgFill(args.vg);
+
+        // ---- Handle contact shadows ----
+        // Darkens the slot just above/below the handle body, showing that the
+        // handle physically sits in the channel and blocks light at its edges.
+        if (handle) {
+            const float hTop = handle->box.pos.y;
+            const float hBot = handle->box.pos.y + handle->box.size.y;
+            const float contactH = 6.0f;
+            const float slotEnd = slotY + slotH;
+
+            // Shadow above handle (fades downward into slot → handle)
+            if (hTop > slotY + 1.0f) {
+                float shadowTop = std::max(slotY + 0.5f, hTop - contactH);
+                NVGpaint topContact = nvgLinearGradient(args.vg,
+                    0.f, shadowTop, 0.f, hTop,
+                    nvgRGBA(0, 0, 0, 0), nvgRGBA(0, 0, 0, 120));
+                nvgBeginPath(args.vg);
+                nvgRoundedRect(args.vg, slotX + 0.5f, shadowTop,
+                               slotW - 1.0f, hTop - shadowTop, slotR * 0.2f);
+                nvgFillPaint(args.vg, topContact);
+                nvgFill(args.vg);
+            }
+
+            // Shadow below handle (fades upward into slot ← handle)
+            if (hBot < slotEnd - 1.0f) {
+                float shadowBot = std::min(slotEnd - 0.5f, hBot + contactH);
+                NVGpaint botContact = nvgLinearGradient(args.vg,
+                    0.f, hBot, 0.f, shadowBot,
+                    nvgRGBA(0, 0, 0, 120), nvgRGBA(0, 0, 0, 0));
+                nvgBeginPath(args.vg);
+                nvgRoundedRect(args.vg, slotX + 0.5f, hBot,
+                               slotW - 1.0f, shadowBot - hBot, slotR * 0.2f);
+                nvgFillPaint(args.vg, botContact);
+                nvgFill(args.vg);
+            }
+        }
+    }
+
+    void drawLED(const DrawArgs& args, Vec pos, float brightness) {
+        brightness = rack::math::clamp(brightness, 0.f, 1.f);
+        if (brightness <= 0.f) {
+            return;
+        }
+
+        nvgSave(args.vg);
+        nvgGlobalCompositeOperation(args.vg, NVG_LIGHTER);
+
+        float glowAlpha = brightness * 0.55f;
+        NVGcolor glowColor = nvgRGBAf(ledColor.r, ledColor.g, ledColor.b, glowAlpha);
+
+        nvgBeginPath(args.vg);
+        nvgCircle(args.vg, pos.x, pos.y, LED_GLOW_RADIUS);
+        NVGpaint glowPaint = nvgRadialGradient(
+            args.vg,
+            pos.x, pos.y,
+            0.f,
+            LED_GLOW_RADIUS,
+            glowColor,
+            nvgRGBAf(ledColor.r, ledColor.g, ledColor.b, 0.f)
+        );
+        nvgFillPaint(args.vg, glowPaint);
+        nvgFill(args.vg);
+
+        float coreAlpha = brightness * 0.95f;
+        NVGcolor coreColor = nvgRGBAf(
+            rack::math::clamp(ledColor.r * 1.1f, 0.f, 1.f),
+            rack::math::clamp(ledColor.g * 1.1f, 0.f, 1.f),
+            rack::math::clamp(ledColor.b * 0.95f, 0.f, 1.f),
+            coreAlpha
+        );
+
+        nvgBeginPath(args.vg);
+        nvgCircle(args.vg, pos.x, pos.y, LED_RADIUS);
+        NVGpaint corePaint = nvgRadialGradient(
+            args.vg,
+            pos.x, pos.y - LED_RADIUS * 0.3f,
+            0.f,
+            LED_RADIUS,
+            nvgRGBAf(1.f, 0.92f, 0.6f, coreAlpha),
+            coreColor
+        );
+        nvgFillPaint(args.vg, corePaint);
+        nvgFill(args.vg);
+
+        nvgRestore(args.vg);
+    }
+};
+
+// Large-height variant used by modules that need the long Torsion-style throw.
+struct VintageSliderLarge : VintageSlider {
+    VintageSliderLarge() {
+        setBackgroundSvg(
+            Svg::load(asset::plugin(pluginInstance,
+            "res/sliders/vintage_slider_track_large.svg"))
+        );
+        setHandleSvg(
+            Svg::load(asset::plugin(pluginInstance,
+            "res/sliders/vintage_slider_handle_small.svg"))
+        );
+
+        // Track 12x120px. Travel: 120 - 18 = 102px. Track and handle align exactly.
+        box.size = Vec(12.f, 120.f);
+        maxHandlePos = Vec(0.f, 0.f);
+        minHandlePos = Vec(0.f, 102.f);
+    }
+};
+
+// ---------------------------------------------------------------------------
+// ShapetakerModuleWidget
+// Base class for all Shapetaker module widgets.  Handles the shared leather-
+// grain panel background (fixed-height tiling + seam-softening pass +
+// darkening overlay) and the inner black frame that masks SVG edge tinting.
+// Subclasses just call ModuleWidget::draw() as normal — the background renders
+// before children and the frame renders after, producing a consistent look
+// across all panels without any per-module duplication.
+// ---------------------------------------------------------------------------
+struct ShapetakerModuleWidget : ModuleWidget {
+    static constexpr float BG_TEXTURE_ASPECT = 2880.f / 4553.f; // panel_background.png
+    static constexpr float BG_INSET          = 2.0f;
+    static constexpr float BG_OFFSET_OPACITY = 0.35f;
+    static constexpr int   BG_DARKEN_ALPHA   = 18;
+    static constexpr float FRAME_WIDTH       = 1.0f;
+
+    void draw(const DrawArgs& args) override {
+        std::shared_ptr<Image> bg = APP->window->loadImage(
+            asset::plugin(pluginInstance, "res/panels/panel_background.png"));
+        if (bg) {
+            float tileH = box.size.y + BG_INSET * 2.f;
+            float tileW = tileH * BG_TEXTURE_ASPECT;
+            float x = -BG_INSET;
+            float y = -BG_INSET;
+
+            nvgSave(args.vg);
+
+            nvgBeginPath(args.vg);
+            nvgRect(args.vg, 0.f, 0.f, box.size.x, box.size.y);
+            NVGpaint paintA = nvgImagePattern(args.vg, x, y, tileW, tileH, 0.f, bg->handle, 1.0f);
+            nvgFillPaint(args.vg, paintA);
+            nvgFill(args.vg);
+
+            nvgBeginPath(args.vg);
+            nvgRect(args.vg, 0.f, 0.f, box.size.x, box.size.y);
+            NVGpaint paintB = nvgImagePattern(args.vg, x + tileW * 0.5f, y, tileW, tileH, 0.f, bg->handle, BG_OFFSET_OPACITY);
+            nvgFillPaint(args.vg, paintB);
+            nvgFill(args.vg);
+
+            nvgBeginPath(args.vg);
+            nvgRect(args.vg, 0.f, 0.f, box.size.x, box.size.y);
+            nvgFillColor(args.vg, nvgRGBA(0, 0, 0, BG_DARKEN_ALPHA));
+            nvgFill(args.vg);
+
+            nvgRestore(args.vg);
+        }
+
+        ModuleWidget::draw(args);
+
+        // Black inner frame masks any SVG edge colour bleed
+        nvgBeginPath(args.vg);
+        nvgRect(args.vg, 0.f, 0.f, box.size.x, box.size.y);
+        nvgRect(args.vg, FRAME_WIDTH, FRAME_WIDTH,
+                box.size.x - 2.f * FRAME_WIDTH, box.size.y - 2.f * FRAME_WIDTH);
+        nvgPathWinding(args.vg, NVG_HOLE);
+        nvgFillColor(args.vg, nvgRGB(0, 0, 0));
+        nvgFill(args.vg);
     }
 };
 

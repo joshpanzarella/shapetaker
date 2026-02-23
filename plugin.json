@@ -131,6 +131,25 @@
         "Effect",
         "Stereo"
       ]
+    },
+    {
+      "slug": "UtilityPanel",
+      "name": "Utility Panel",
+      "description": "Resizable blank utility panel with Shapetaker leather background finish.",
+      "tags": [
+        "Utility",
+        "Blank"
+      ]
+    },
+    {
+      "slug": "NocturneTV",
+      "name": "Nocturne TV",
+      "description": "Spooky VHS-era visualizer with four signal inputs and CV-controlled CRT chaos.",
+      "tags": [
+        "Utility",
+        "Analyzer",
+        "Scope"
+      ]
     }
   ]
 }

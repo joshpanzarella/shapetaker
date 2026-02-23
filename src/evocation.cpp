@@ -3,10 +3,8 @@
 #include <vector>
 #include <algorithm>
 #include <cmath>
-#include <cstdio>
 #include <memory>
 #include <string>
-#include <cctype>
 #include "ui/menu_helpers.hpp"
 
 // Forward declaration
@@ -55,9 +53,6 @@ struct TouchStripWidget : Widget {
     float lastSampleTime = -1.0f;
     // Capture gesture samples at ~480 Hz for higher resolution playback
     static constexpr float MIN_SAMPLE_INTERVAL = 1.f / 960.f;
-    float lastADSRSustainLevel = -1.f;
-    float lastADSRReleaseTime = -1.f;
-    float lastADSRReleaseContour = -1.f;
 
     TouchStripWidget(Evocation* module);
 
@@ -78,13 +73,9 @@ struct TouchStripWidget : Widget {
     void drawLayer(const DrawArgs& args, int layer) override;
     void drawTouchStrip(const DrawArgs& args);
     void drawBackground(const DrawArgs& args);
-    void drawEnvelope(const DrawArgs& args);
-    void drawEnvelopeStandard(const DrawArgs& args);
-    void drawEnvelopeVoltageTime(const DrawArgs& args);
     void drawCurrentTouch(const DrawArgs& args);
     void drawPulses(const DrawArgs& args);
     void drawBorder(const DrawArgs& args);
-    void drawInstructions(const DrawArgs& args);
     void applyADSRTouch(bool initial);
     float computeNormalizedHorizontal() const;
 };
@@ -181,6 +172,11 @@ struct Evocation : Module {
 
     static constexpr int NUM_ENVELOPES = 4;
     static constexpr int NUM_EDIT_PARAMS = static_cast<int>(EditableParam::Count);
+    static constexpr float ADSR_TIME_MIN = 0.01f;
+    static constexpr float ADSR_TIME_MAX = 5.0f;
+    static constexpr float ADSR_TIME_RANGE = ADSR_TIME_MAX - ADSR_TIME_MIN;
+    static constexpr float VALUE_EPSILON = 0.01f;
+    static constexpr float MIN_POSITIVE_VALUE = 1e-4f;
 
     enum class EnvelopeMode {
         GESTURE = 0,
@@ -190,7 +186,7 @@ struct Evocation : Module {
     EnvelopeMode mode = EnvelopeMode::GESTURE;
 
     // ADSR parameters (times in seconds, contour controls stored 0-1 with 0.5 = linear)
-    float adsrAttackTime = 0.01f;    // Fast attack (10ms)
+    float adsrAttackTime = ADSR_TIME_MIN;    // Fast attack (10ms)
     float adsrDecayTime = 0.5f;      // Medium decay (500ms)
     float adsrSustainLevel = 0.5f;   // Mid-level sustain
     float adsrReleaseTime = 2.0f;    // 2 second release
@@ -216,7 +212,7 @@ struct Evocation : Module {
     int oledTheme = 0;
 
     // Polyphony configuration
-    static const int MAX_POLY_CHANNELS = 8;
+    static const int MAX_POLY_CHANNELS = 6;
 
     // Parameter smoothers to keep CV-driven speed/phase motion smooth
     shapetaker::FastSmoother speedSmoothers[NUM_ENVELOPES];
@@ -229,10 +225,10 @@ struct Evocation : Module {
     float cachedPhaseOffset[NUM_ENVELOPES] = {0.f, 0.f, 0.f, 0.f};
 
     // Individual loop states for each envelope player
-    bool loopStates[4] = {false, false, false, false};
+    bool loopStates[NUM_ENVELOPES] = {false, false, false, false};
 
     // Invert states for each speed output
-    bool invertStates[4] = {false, false, false, false};
+    bool invertStates[NUM_ENVELOPES] = {false, false, false, false};
 
     // Playback state for each output - now supports up to 6 voices per output
     struct PlaybackState {
@@ -244,7 +240,7 @@ struct Evocation : Module {
         float releaseValue[MAX_POLY_CHANNELS] = {0.0f};
     };
 
-    PlaybackState playback[4]; // Four independent envelope players (each with 6 voices)
+    PlaybackState playback[NUM_ENVELOPES]; // Four independent envelope players (each with 6 voices)
     bool adsrSurfaceGate = false;
     bool previousGateHigh[MAX_POLY_CHANNELS] = {false}; // Track gate state per voice
     bool adsrGateHeld[MAX_POLY_CHANNELS] = {false};      // Sustain hold per voice
@@ -430,7 +426,7 @@ struct Evocation : Module {
         if (trimTailPressed) {
             trimTailLightPulse.trigger(0.25f);
         }
-        for (int i = 0; i < 4; ++i) {
+        for (int i = 0; i < NUM_ENVELOPES; ++i) {
             if (envSelectTriggers[i].process(params[ENV_SELECT_1_PARAM + i].getValue())) {
                 selectEnvelope(i);
             }
@@ -501,8 +497,8 @@ struct Evocation : Module {
                     // Sustain level: 0-1
                     targetValue = speedControl;
                 } else {
-                    // Attack/Decay/Release: 0.01-5 seconds
-                    targetValue = 0.01f + speedControl * 4.99f;
+                    // Attack/Decay/Release: ADSR_TIME_MIN-ADSR_TIME_MAX seconds
+                    targetValue = ADSR_TIME_MIN + speedControl * ADSR_TIME_RANGE;
                 }
 
                 bool changed = false;
@@ -515,11 +511,11 @@ struct Evocation : Module {
                             adsrAttackTime = targetValue;
                             changed = true;
                         } else {
-                            // Sync knob to current value (inverse: 0.01-5s -> 0-1 -> 0-16)
-                            float normalized = (adsrAttackTime - 0.01f) / 4.99f;
+                            // Sync knob to current value (inverse: ADSR time range -> 0-1 -> 0-16)
+                            float normalized = (adsrAttackTime - ADSR_TIME_MIN) / ADSR_TIME_RANGE;
                             float currentKnobValue = normalized * 16.0f;
                             float actualKnobValue = params[ENV_SPEED_PARAM].getValue();
-                            if (std::fabs(currentKnobValue - actualKnobValue) > 0.01f) {
+                            if (std::fabs(currentKnobValue - actualKnobValue) > VALUE_EPSILON) {
                                 params[ENV_SPEED_PARAM].setValue(currentKnobValue);
                             }
                         }
@@ -529,10 +525,10 @@ struct Evocation : Module {
                             adsrDecayTime = targetValue;
                             changed = true;
                         } else {
-                            float normalized = (adsrDecayTime - 0.01f) / 4.99f;
+                            float normalized = (adsrDecayTime - ADSR_TIME_MIN) / ADSR_TIME_RANGE;
                             float currentKnobValue = normalized * 16.0f;
                             float actualKnobValue = params[ENV_SPEED_PARAM].getValue();
-                            if (std::fabs(currentKnobValue - actualKnobValue) > 0.01f) {
+                            if (std::fabs(currentKnobValue - actualKnobValue) > VALUE_EPSILON) {
                                 params[ENV_SPEED_PARAM].setValue(currentKnobValue);
                             }
                         }
@@ -544,7 +540,7 @@ struct Evocation : Module {
                         } else {
                             float currentKnobValue = adsrSustainLevel * 16.0f;
                             float actualKnobValue = params[ENV_SPEED_PARAM].getValue();
-                            if (std::fabs(currentKnobValue - actualKnobValue) > 0.01f) {
+                            if (std::fabs(currentKnobValue - actualKnobValue) > VALUE_EPSILON) {
                                 params[ENV_SPEED_PARAM].setValue(currentKnobValue);
                             }
                         }
@@ -554,10 +550,10 @@ struct Evocation : Module {
                             adsrReleaseTime = targetValue;
                             changed = true;
                         } else {
-                            float normalized = (adsrReleaseTime - 0.01f) / 4.99f;
+                            float normalized = (adsrReleaseTime - ADSR_TIME_MIN) / ADSR_TIME_RANGE;
                             float currentKnobValue = normalized * 16.0f;
                             float actualKnobValue = params[ENV_SPEED_PARAM].getValue();
-                            if (std::fabs(currentKnobValue - actualKnobValue) > 0.01f) {
+                            if (std::fabs(currentKnobValue - actualKnobValue) > VALUE_EPSILON) {
                                 params[ENV_SPEED_PARAM].setValue(currentKnobValue);
                             }
                         }
@@ -697,7 +693,7 @@ struct Evocation : Module {
             }
 
             // Process each output
-            for (int i = 0; i < 4; i++) {
+            for (int i = 0; i < NUM_ENVELOPES; i++) {
                 processPlayback(i, args.sampleTime);
             }
         }
@@ -718,7 +714,7 @@ struct Evocation : Module {
         if (mode == EnvelopeMode::ADSR) {
             // In ADSR mode: show which stage is active
             // Button 1 = Attack, 2 = Decay, 3 = Sustain, 4 = Release
-            float stageBrightness[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+            float stageBrightness[NUM_ENVELOPES] = {0.0f, 0.0f, 0.0f, 0.0f};
 
             // Check all voices to find active stages
             for (int voice = 0; voice < MAX_POLY_CHANNELS; voice++) {
@@ -744,12 +740,12 @@ struct Evocation : Module {
             }
 
             // Set LED brightness for each stage
-            for (int i = 0; i < 4; i++) {
+            for (int i = 0; i < NUM_ENVELOPES; i++) {
                 lights[ENV_SELECT_1_LIGHT + i].setBrightness(stageBrightness[i]);
             }
         } else {
             // In Gesture mode: show envelope output intensity
-            for (int i = 0; i < 4; i++) {
+            for (int i = 0; i < NUM_ENVELOPES; i++) {
                 float maxVoltage = 0.0f;
 
                 // Use internal playback state so LEDs track envelopes even if outputs aren't connected
@@ -916,7 +912,7 @@ struct Evocation : Module {
         }
     }
 
-    bool trimGestureLeadingSilence(float threshold = 0.01f) {
+    bool trimGestureLeadingSilence(float threshold = VALUE_EPSILON) {
         if (mode != EnvelopeMode::GESTURE) {
             return false;
         }
@@ -952,7 +948,7 @@ struct Evocation : Module {
             float shifted = (point.time - firstTime) / remaining;
             shifted = clamp(shifted, 0.0f, 1.0f);
             if (trimmed.size() == 1) {
-                shifted = std::max(shifted, 1e-4f);
+                shifted = std::max(shifted, MIN_POSITIVE_VALUE);
             }
             point.time = shifted;
             point.x = shifted;
@@ -976,7 +972,7 @@ struct Evocation : Module {
         return true;
     }
 
-    bool trimGestureTrailingSilence(float threshold = 0.01f) {
+    bool trimGestureTrailingSilence(float threshold = VALUE_EPSILON) {
         if (mode != EnvelopeMode::GESTURE) {
             return false;
         }
@@ -994,7 +990,7 @@ struct Evocation : Module {
         }
 
         float lastTime = envelope[(size_t)lastIdx].time;
-        lastTime = clamp(lastTime, 1e-4f, 1.0f);
+        lastTime = clamp(lastTime, MIN_POSITIVE_VALUE, 1.0f);
         if (!(lastTime > 0.f && lastTime <= 1.f)) {
             return false;
         }
@@ -1081,7 +1077,7 @@ struct Evocation : Module {
             return;
         }
 
-        for (int i = 0; i < 4; i++) {
+        for (int i = 0; i < NUM_ENVELOPES; i++) {
             for (int c = 0; c < MAX_POLY_CHANNELS; c++) {
                 playback[i].active[c] = true;
                 playback[i].phase[c] = 0.0f;
@@ -1113,7 +1109,7 @@ struct Evocation : Module {
         float currentVoltage = 0.0f;
         bool wasActive = false;
 
-        for (int i = 0; i < 4; i++) {
+        for (int i = 0; i < NUM_ENVELOPES; i++) {
             if (playback[i].active[channel]) {
                 wasActive = true;
                 // Get the current envelope value from output 0
@@ -1131,12 +1127,12 @@ struct Evocation : Module {
 
         // If retriggering, find the closest phase point to current voltage to avoid clicks
         float startPhase = 0.0f;
-        if (!forceRestart && wasActive && currentVoltage > 0.01f) {
+        if (!forceRestart && wasActive && currentVoltage > VALUE_EPSILON) {
             // Find the earliest phase in the envelope that matches current voltage
             startPhase = findPhaseForVoltage(currentVoltage);
         }
 
-        for (int i = 0; i < 4; i++) {
+        for (int i = 0; i < NUM_ENVELOPES; i++) {
             playback[i].active[channel] = true;
             playback[i].phase[channel] = startPhase;
             playback[i].eocPulse[channel] = dsp::PulseGenerator();
@@ -1173,7 +1169,7 @@ struct Evocation : Module {
     void stopEnvelope(int channel) {
         if (channel < 0 || channel >= MAX_POLY_CHANNELS) return;
 
-        for (int i = 0; i < 4; i++) {
+        for (int i = 0; i < NUM_ENVELOPES; i++) {
             playback[i].active[channel] = false;
             playback[i].phase[channel] = 0.0f;
             playback[i].eocPulse[channel] = dsp::PulseGenerator();
@@ -1190,7 +1186,7 @@ struct Evocation : Module {
     void startGestureRelease(int channel) {
         if (channel < 0 || channel >= MAX_POLY_CHANNELS)
             return;
-        for (int i = 0; i < 4; i++) {
+        for (int i = 0; i < NUM_ENVELOPES; i++) {
             PlaybackState& pb = playback[i];
             if (!pb.active[channel])
                 continue;
@@ -1413,7 +1409,7 @@ struct Evocation : Module {
                 }
                 case shapetaker::dsp::EnvelopeGenerator::IDLE:
                 default: {
-                    phaseNorm = ((adsrGateSignals[voice] || adsrTriggerOneShot[voice]) || adsrValues[voice] > 1e-3f) ? 1.f : 0.f;
+                    phaseNorm = isADSRVoiceActive(voice) ? 1.f : 0.f;
                     break;
                 }
             }
@@ -1424,7 +1420,7 @@ struct Evocation : Module {
         int expectedChannels = std::max(currentTriggerChannels, currentGateChannels);
         int outputChannels = std::max(expectedChannels, 1);
 
-        for (int outputIndex = 0; outputIndex < 4; ++outputIndex) {
+        for (int outputIndex = 0; outputIndex < NUM_ENVELOPES; ++outputIndex) {
             PlaybackState& pb = playback[outputIndex];
 
             outputs[ENV_1_OUTPUT + outputIndex].setChannels(outputChannels);
@@ -1438,7 +1434,7 @@ struct Evocation : Module {
 
                 for (int voice = 0; voice < MAX_POLY_CHANNELS; ++voice) {
                     float voiceEnv = clamp(adsrValues[voice], 0.f, 1.f);
-                    bool voiceGate = adsrGateSignals[voice] || adsrTriggerOneShot[voice] || adsrValues[voice] > 1e-3f;
+                    bool voiceGate = isADSRVoiceActive(voice);
                     bool completed = adsrCompleted[voice];
 
                     if (completed) {
@@ -1485,7 +1481,7 @@ struct Evocation : Module {
                     float outputVoltage = envValue * 10.f;
                     outputs[ENV_1_OUTPUT + outputIndex].setVoltage(outputVoltage, c);
 
-                    bool gateHigh = adsrGateSignals[voice] || adsrTriggerOneShot[voice] || adsrValues[voice] > 1e-3f;
+                    bool gateHigh = isADSRVoiceActive(voice);
                     outputs[ENV_1_GATE_OUTPUT + outputIndex].setVoltage(gateHigh ? 10.f : 0.f, c);
 
                     bool completed = adsrCompleted[voice];
@@ -1665,7 +1661,7 @@ struct Evocation : Module {
                     phaseOffset += inputs[PHASE_1_INPUT + outputIndex].getPolyVoltage(c) / 10.0f;
                 }
                 if (paramDecim == 0) {
-                    cachedPhaseOffset[outputIndex] = phaseSmoothers[outputIndex].process(phaseOffset, sampleTime, 0.01f);
+                    cachedPhaseOffset[outputIndex] = phaseSmoothers[outputIndex].process(phaseOffset, sampleTime, VALUE_EPSILON);
                 }
                 phaseOffset = cachedPhaseOffset[outputIndex];
 
@@ -1740,7 +1736,7 @@ struct Evocation : Module {
             if (voice < 0 || voice >= MAX_POLY_CHANNELS) {
                 voice = -1;
                 for (int v = 0; v < MAX_POLY_CHANNELS; ++v) {
-                    if (adsrGateSignals[v] || adsrTriggerOneShot[v] || adsrValues[v] > 1e-3f) {
+                    if (isADSRVoiceActive(v)) {
                         voice = v;
                         break;
                     }
@@ -1758,10 +1754,10 @@ struct Evocation : Module {
     bool isPlaybackActive(int index, int channel = 0) const {
         if (mode == EnvelopeMode::ADSR) {
             if (channel >= 0 && channel < MAX_POLY_CHANNELS) {
-                return adsrGateSignals[channel] || adsrTriggerOneShot[channel] || adsrValues[channel] > 1e-3f;
+                return isADSRVoiceActive(channel);
             }
             for (int v = 0; v < MAX_POLY_CHANNELS; ++v) {
-                if (adsrGateSignals[v] || adsrTriggerOneShot[v] || adsrValues[v] > 1e-3f)
+                if (isADSRVoiceActive(v))
                     return true;
             }
             return false;
@@ -1776,7 +1772,7 @@ struct Evocation : Module {
             int activeVoices = 0;
             int highestVoice = -1;
             for (int v = 0; v < MAX_POLY_CHANNELS; ++v) {
-                if (adsrGateSignals[v] || adsrTriggerOneShot[v] || adsrValues[v] > 1e-3f) {
+                if (isADSRVoiceActive(v)) {
                     activeVoices++;
                     highestVoice = v;
                 }
@@ -1809,6 +1805,13 @@ struct Evocation : Module {
         return getRecordedDuration();
     }
 
+    bool isADSRVoiceActive(int voice) const {
+        if (voice < 0 || voice >= MAX_POLY_CHANNELS) {
+            return false;
+        }
+        return adsrGateSignals[voice] || adsrTriggerOneShot[voice] || adsrValues[voice] > 1e-3f;
+    }
+
     // Map stored 0-1 contour control to a bipolar -1 to 1 range
     static float mapContourControl(float value) {
         return clamp((value - 0.5f) * 2.0f, -1.0f, 1.0f);
@@ -1817,7 +1820,7 @@ struct Evocation : Module {
     // Apply contour curve to a linear 0-1 value
     // contour 0.0 = logarithmic, 0.5 = linear, 1.0 = exponential
     float applyContour(float linear, float contour) {
-        if (std::fabs(contour - 0.5f) < 0.01f) {
+        if (std::fabs(contour - 0.5f) < VALUE_EPSILON) {
             // Near center = linear
             return linear;
         } else if (contour > 0.5f) {
@@ -1935,10 +1938,10 @@ struct Evocation : Module {
             // ADSR mode: sync knob to ADSR parameter values
             float normalized = 0.0f;
             switch (currentEnvelopeIndex) {
-                case 0: normalized = (adsrAttackTime - 0.01f) / 4.99f; break;
-                case 1: normalized = (adsrDecayTime - 0.01f) / 4.99f; break;
+                case 0: normalized = (adsrAttackTime - ADSR_TIME_MIN) / ADSR_TIME_RANGE; break;
+                case 1: normalized = (adsrDecayTime - ADSR_TIME_MIN) / ADSR_TIME_RANGE; break;
                 case 2: normalized = adsrSustainLevel; break;
-                case 3: normalized = (adsrReleaseTime - 0.01f) / 4.99f; break;
+                case 3: normalized = (adsrReleaseTime - ADSR_TIME_MIN) / ADSR_TIME_RANGE; break;
             }
             normalized = clamp(normalized, 0.0f, 1.0f);
             float knobValue = normalized * 16.0f;
@@ -1996,7 +1999,7 @@ struct Evocation : Module {
             recordedDuration = 2.0f;
         }
         onEnvelopeSelectionChanged(false);
-        for (int i = 0; i < 4; i++) {
+        for (int i = 0; i < NUM_ENVELOPES; i++) {
             for (int c = 0; c < MAX_POLY_CHANNELS; c++) {
                 playback[i].smoothedVoltage[c] = 0.0f;
                 playback[i].releaseActive[c] = false;
@@ -2023,7 +2026,7 @@ struct Evocation : Module {
         generateADSREnvelope();
         onEnvelopeSelectionChanged(false);
         resetADSREngine();
-        for (int i = 0; i < 4; i++) {
+        for (int i = 0; i < NUM_ENVELOPES; i++) {
             for (int c = 0; c < MAX_POLY_CHANNELS; c++) {
                 playback[i].smoothedVoltage[c] = 0.0f;
                 playback[i].releaseActive[c] = false;
@@ -2121,12 +2124,12 @@ struct Evocation : Module {
     bool isAnyPlaybackActive() {
         if (mode == EnvelopeMode::ADSR) {
             for (int v = 0; v < MAX_POLY_CHANNELS; ++v) {
-                if (adsrGateSignals[v] || adsrTriggerOneShot[v] || adsrValues[v] > 1e-3f)
+                if (isADSRVoiceActive(v))
                     return true;
             }
             return false;
         }
-        for (int i = 0; i < 4; i++) {
+        for (int i = 0; i < NUM_ENVELOPES; i++) {
             for (int c = 0; c < MAX_POLY_CHANNELS; c++) {
                 if (playback[i].active[c]) return true;
             }
@@ -2135,7 +2138,7 @@ struct Evocation : Module {
     }
 
     void stopAllPlayback() {
-        for (int i = 0; i < 4; i++) {
+        for (int i = 0; i < NUM_ENVELOPES; i++) {
             for (int c = 0; c < MAX_POLY_CHANNELS; c++) {
                 playback[i].active[c] = false;
                 playback[i].phase[c] = 0.0f;
@@ -2176,14 +2179,14 @@ struct Evocation : Module {
 
         // Save individual loop states
         json_t* loopStatesJ = json_array();
-        for (int i = 0; i < 4; i++) {
+        for (int i = 0; i < NUM_ENVELOPES; i++) {
             json_array_append_new(loopStatesJ, json_boolean(loopStates[i]));
         }
         json_object_set_new(rootJ, "loopStates", loopStatesJ);
 
         // Save invert states
         json_t* invertStatesJ = json_array();
-        for (int i = 0; i < 4; i++) {
+        for (int i = 0; i < NUM_ENVELOPES; i++) {
             json_array_append_new(invertStatesJ, json_boolean(invertStates[i]));
         }
         json_object_set_new(rootJ, "invertStates", invertStatesJ);
@@ -2202,7 +2205,7 @@ struct Evocation : Module {
         }
 
         json_t* phaseOffsetsJ = json_array();
-        for (int i = 0; i < 4; i++) {
+        for (int i = 0; i < NUM_ENVELOPES; i++) {
             json_array_append_new(phaseOffsetsJ, json_real(phaseOffsets[i]));
         }
         json_object_set_new(rootJ, "phaseOffsets", phaseOffsetsJ);
@@ -2251,9 +2254,9 @@ struct Evocation : Module {
         json_t* adsrReleaseTimeJ = json_object_get(rootJ, "adsrReleaseTime");
         if (adsrReleaseTimeJ) adsrReleaseTime = json_real_value(adsrReleaseTimeJ);
 
-        adsrAttackTime = clamp(adsrAttackTime, 0.01f, 5.0f);
-        adsrDecayTime = clamp(adsrDecayTime, 0.01f, 5.0f);
-        adsrReleaseTime = clamp(adsrReleaseTime, 0.01f, 5.0f);
+        adsrAttackTime = clamp(adsrAttackTime, ADSR_TIME_MIN, ADSR_TIME_MAX);
+        adsrDecayTime = clamp(adsrDecayTime, ADSR_TIME_MIN, ADSR_TIME_MAX);
+        adsrReleaseTime = clamp(adsrReleaseTime, ADSR_TIME_MIN, ADSR_TIME_MAX);
         adsrSustainLevel = clamp(adsrSustainLevel, 0.0f, 1.0f);
 
         json_t* adsrAttackContourJ = json_object_get(rootJ, "adsrAttackContour");
@@ -2401,7 +2404,7 @@ struct Evocation : Module {
 
     void onReset() override {
         Module::onReset();
-        for (int i = 0; i < 4; ++i) {
+        for (int i = 0; i < NUM_ENVELOPES; ++i) {
             loopStates[i] = false;
             invertStates[i] = false;
             phaseOffsets[i] = 0.f;
@@ -2438,7 +2441,7 @@ std::string ADSRSpeedParamQuantity::getLabel() {
         // Return label based on current envelope selection
         int envIndex = evocation->getCurrentEnvelopeIndex();
         const char* adsrLabels[] = {"Attack Time", "Decay Time", "Sustain Level", "Release Time"};
-        if (envIndex >= 0 && envIndex < 4) {
+        if (envIndex >= 0 && envIndex < Evocation::NUM_ENVELOPES) {
             return adsrLabels[envIndex];
         }
         return "ADSR Parameter";
@@ -2609,9 +2612,6 @@ void TouchStripWidget::onDragEnd(const event::DragEnd& e) {
 
     if (module->mode == Evocation::EnvelopeMode::ADSR) {
         module->setADSRTouchActive(false);
-        lastADSRSustainLevel = -1.f;
-        lastADSRReleaseTime = -1.f;
-        lastADSRReleaseContour = -1.f;
         return;
     }
 
@@ -2721,9 +2721,6 @@ void TouchStripWidget::resetForNewRecording() {
     showTouch = false;
     glowIntensity = 0.0f;
     lastSampleTime = -1.f;
-    lastADSRSustainLevel = -1.f;
-    lastADSRReleaseTime = -1.f;
-    lastADSRReleaseContour = -1.f;
 }
 
 void TouchStripWidget::logTouchDebug(const char* stage, const Vec& localPos, float normalizedTime, float normalizedVoltage) {
@@ -2752,7 +2749,7 @@ void TouchStripWidget::applyADSRTouch(bool initial) {
 
     float sustainLevel = computeNormalizedVoltage();
     float releaseMix = computeNormalizedHorizontal();
-    float releaseTime = 0.01f + releaseMix * 4.99f;
+    float releaseTime = Evocation::ADSR_TIME_MIN + releaseMix * Evocation::ADSR_TIME_RANGE;
     float releaseContour = clamp(sustainLevel, 0.0f, 1.0f);
 
     bool changed = false;
@@ -2779,7 +2776,7 @@ void TouchStripWidget::applyADSRTouch(bool initial) {
         module->envSpeedControlCache = knobValue;
         module->params[Evocation::ENV_SPEED_PARAM].setValue(knobValue);
     } else if (currentStage == 3) {
-        float normalized = clamp((module->adsrReleaseTime - 0.01f) / 4.99f, 0.0f, 1.0f);
+        float normalized = clamp((module->adsrReleaseTime - Evocation::ADSR_TIME_MIN) / Evocation::ADSR_TIME_RANGE, 0.0f, 1.0f);
         float knobValue = normalized * 16.0f;
         module->envSpeedControlCache = knobValue;
         module->params[Evocation::ENV_SPEED_PARAM].setValue(knobValue);
@@ -2789,9 +2786,6 @@ void TouchStripWidget::applyADSRTouch(bool initial) {
 
     module->generateADSREnvelope();
 
-    lastADSRSustainLevel = sustainLevel;
-    lastADSRReleaseTime = releaseTime;
-    lastADSRReleaseContour = releaseContour;
 }
 
 void TouchStripWidget::step() {
@@ -2934,155 +2928,6 @@ void TouchStripWidget::drawBackground(const DrawArgs& args) {
     nvgRestore(args.vg);
 }
 
-void TouchStripWidget::drawEnvelope(const DrawArgs& args) {
-    if (!module || module->envelope.empty()) return;
-
-    if (!module->isRecording && module->hasRecordedEnvelope()) {
-        drawEnvelopeVoltageTime(args);
-    } else {
-        drawEnvelopeStandard(args);
-    }
-}
-
-void TouchStripWidget::drawEnvelopeStandard(const DrawArgs& args) {
-    nvgStrokeColor(args.vg, nvgRGBA(255, 222, 150, 180));
-    nvgStrokeWidth(args.vg, 2.2f);
-    nvgLineCap(args.vg, NVG_ROUND);
-    nvgLineJoin(args.vg, NVG_ROUND);
-
-    // Draw glow effect
-    nvgGlobalCompositeOperation(args.vg, NVG_LIGHTER);
-    nvgStrokeWidth(args.vg, 4.0f);
-    nvgStrokeColor(args.vg, nvgRGBA(255, 210, 110, 60));
-
-    nvgBeginPath(args.vg);
-    bool first = true;
-    for (const auto& point : module->envelope) {
-        float x = point.time * box.size.x;
-        float y = (1.f - point.y) * box.size.y;
-
-        if (first) {
-            nvgMoveTo(args.vg, x, y);
-            first = false;
-        } else {
-            nvgLineTo(args.vg, x, y);
-        }
-    }
-    nvgStroke(args.vg);
-
-    // Draw main line
-    nvgGlobalCompositeOperation(args.vg, NVG_SOURCE_OVER);
-    nvgStrokeWidth(args.vg, 1.8f);
-    nvgStrokeColor(args.vg, nvgRGBA(255, 238, 200, 220));
-
-    nvgBeginPath(args.vg);
-    first = true;
-    for (const auto& point : module->envelope) {
-        float x = point.time * box.size.x;
-        float y = (1.f - point.y) * box.size.y;
-
-        if (first) {
-            nvgMoveTo(args.vg, x, y);
-            first = false;
-        } else {
-            nvgLineTo(args.vg, x, y);
-        }
-    }
-    nvgStroke(args.vg);
-
-    // Draw envelope points as dots
-    nvgFillColor(args.vg, nvgRGBA(255, 244, 210, 200));
-    for (const auto& point : module->envelope) {
-        float x = point.time * box.size.x;
-        float y = (1.f - point.y) * box.size.y;
-
-        nvgBeginPath(args.vg);
-        nvgCircle(args.vg, x, y, 1.8f);
-        nvgFill(args.vg);
-    }
-
-}
-
-void TouchStripWidget::drawEnvelopeVoltageTime(const DrawArgs& args) {
-    constexpr int samples = 256;
-    float width = box.size.x;
-    float height = box.size.y;
-    float duration = module->getRecordedDuration();
-
-    // Background grid for time vs voltage reference
-    nvgSave(args.vg);
-    nvgStrokeWidth(args.vg, 1.0f);
-    nvgStrokeColor(args.vg, nvgRGBA(180, 140, 90, 40));
-    const int timeDivisions = 6;
-    for (int i = 1; i < timeDivisions; ++i) {
-        float y = (height / timeDivisions) * i;
-        nvgBeginPath(args.vg);
-        nvgMoveTo(args.vg, 0.0f, y);
-        nvgLineTo(args.vg, width, y);
-        nvgStroke(args.vg);
-    }
-    const int voltageDivisions = 5;
-    for (int i = 1; i < voltageDivisions; ++i) {
-        float x = (width / voltageDivisions) * i;
-        nvgBeginPath(args.vg);
-        nvgMoveTo(args.vg, x, 0.0f);
-        nvgLineTo(args.vg, x, height);
-        nvgStroke(args.vg);
-    }
-    nvgRestore(args.vg);
-
-    nvgLineCap(args.vg, NVG_ROUND);
-    nvgLineJoin(args.vg, NVG_ROUND);
-
-    auto drawSampledPath = [&](float strokeWidth, NVGcolor color) {
-        nvgGlobalCompositeOperation(args.vg, strokeWidth > 3.5f ? NVG_LIGHTER : NVG_SOURCE_OVER);
-        nvgStrokeWidth(args.vg, strokeWidth);
-        nvgStrokeColor(args.vg, color);
-
-        nvgBeginPath(args.vg);
-        for (int i = 0; i < samples; ++i) {
-            float phase = (float)i / (float)(samples - 1);
-            float value = clamp(module->interpolateEnvelope(phase), 0.0f, 1.0f);
-            float x = value * width;
-            float y = phase * height;
-            if (i == 0) {
-                nvgMoveTo(args.vg, x, y);
-            } else {
-                nvgLineTo(args.vg, x, y);
-            }
-        }
-        nvgStroke(args.vg);
-    };
-
-    drawSampledPath(4.0f, nvgRGBA(255, 200, 110, 60));
-    drawSampledPath(2.0f, nvgRGBA(255, 238, 200, 220));
-
-    // Draw original samples for reference
-    nvgFillColor(args.vg, nvgRGBA(255, 244, 210, 170));
-    for (const auto& point : module->envelope) {
-        float x = clamp(point.y, 0.0f, 1.0f) * width;
-        float y = clamp(point.time, 0.0f, 1.0f) * height;
-        nvgBeginPath(args.vg);
-        nvgCircle(args.vg, x, y, 1.5f);
-        nvgFill(args.vg);
-    }
-
-    // Axis labels (simple markers)
-    nvgFontSize(args.vg, 11.0f);
-    nvgFontFaceId(args.vg, APP->window->uiFont->handle);
-    nvgFillColor(args.vg, nvgRGBA(230, 210, 170, 180));
-    nvgTextAlign(args.vg, NVG_ALIGN_LEFT | NVG_ALIGN_TOP);
-    char timeLabel[32];
-    snprintf(timeLabel, sizeof(timeLabel), "%.2fs", duration);
-    nvgText(args.vg, 4.0f, 4.0f, "0V", nullptr);
-    nvgText(args.vg, 4.0f, 18.0f, "0s", nullptr);
-    nvgTextAlign(args.vg, NVG_ALIGN_RIGHT | NVG_ALIGN_TOP);
-    nvgText(args.vg, width - 4.0f, 4.0f, "10V", nullptr);
-    nvgTextAlign(args.vg, NVG_ALIGN_LEFT | NVG_ALIGN_BOTTOM);
-    nvgText(args.vg, 4.0f, height - 4.0f, timeLabel, nullptr);
-
-}
-
 void TouchStripWidget::drawCurrentTouch(const DrawArgs& args) {
     // Very subtle amber glow anchored to the finger position
     NVGpaint aura = nvgRadialGradient(
@@ -3189,100 +3034,6 @@ void TouchStripWidget::drawBorder(const DrawArgs& args) {
     nvgStroke(args.vg);
 }
 
-void TouchStripWidget::drawInstructions(const DrawArgs& args) {
-    nvgFontSize(args.vg, 11);
-    nvgFontFaceId(args.vg, APP->window->uiFont->handle);
-    nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-    nvgFillColor(args.vg, nvgRGBA(150, 150, 150, 200));
-    
-    nvgText(args.vg, box.size.x * 0.5f, box.size.y * 0.4f, "Click and drag", NULL);
-    nvgText(args.vg, box.size.x * 0.5f, box.size.y * 0.5f, "to cast spell", NULL);
-    
-    nvgFontSize(args.vg, 9);
-    nvgText(args.vg, box.size.x * 0.5f, box.size.y * 0.7f, "Tap strip to record", NULL);
-    nvgText(args.vg, box.size.x * 0.5f, box.size.y * 0.8f, "Drag to sculpt envelope", NULL);
-}
-
-struct OutputProgressIndicator : Widget {
-    Evocation* module = nullptr;
-    int outputIndex = 0;
-
-    OutputProgressIndicator(Evocation* module, int outputIndex) {
-        this->module = module;
-        this->outputIndex = outputIndex;
-    }
-
-    void draw(const DrawArgs& args) override {
-        if (!module)
-            return;
-
-        bool hasEnvelope = module->hasRecordedEnvelope();
-        bool active = hasEnvelope && module->isPlaybackActive(outputIndex);
-        float phase = hasEnvelope ? clamp(module->getPlaybackPhase(outputIndex), 0.0f, 1.0f) : 0.0f;
-
-        NVGcontext* vg = args.vg;
-        Vec center = box.size.div(2.0f);
-        float maxDiameter = std::min(box.size.x, box.size.y);
-        float radius = maxDiameter * 0.5f - 4.0f; // keep everything inside the bezel "screen"
-        if (radius <= 0.f)
-            return;
-
-        // Base bezel / screen border
-        NVGcolor bezelColor = hasEnvelope ? nvgRGBA(120, 110, 100, 160) : nvgRGBA(70, 60, 50, 140);
-        nvgBeginPath(vg);
-        nvgCircle(vg, center.x, center.y, radius + 3.0f);
-        nvgStrokeWidth(vg, 1.2f);
-        nvgStrokeColor(vg, bezelColor);
-        nvgStroke(vg);
-
-        // Dark faceplate area where the light lives
-        nvgBeginPath(vg);
-        nvgCircle(vg, center.x, center.y, radius + 2.0f);
-        nvgFillColor(vg, nvgRGBA(8, 8, 12, 235));
-        nvgFill(vg);
-
-        // Inner screen glow (subtle) so the port feels inset
-        NVGpaint screenGlow = nvgRadialGradient(
-            vg,
-            center.x,
-            center.y,
-            radius * 0.1f,
-            radius + 2.0f,
-            nvgRGBA(40, 30, 45, 120),
-            nvgRGBA(5, 5, 10, 0)
-        );
-        nvgBeginPath(vg);
-        nvgCircle(vg, center.x, center.y, radius + 2.0f);
-        nvgFillPaint(vg, screenGlow);
-        nvgFill(vg);
-
-        if (!hasEnvelope)
-            return;
-        if (!active)
-            return;
-
-        float angleStart = -M_PI / 2.0f;
-        float angleEnd = angleStart + phase * 2.0f * (float)M_PI;
-
-        float arcRadius = radius;
-
-        // Progress arc
-        nvgBeginPath(vg);
-        nvgArc(vg, center.x, center.y, arcRadius, angleStart, angleEnd, NVG_CW);
-        nvgStrokeWidth(vg, 3.0f);
-        nvgLineCap(vg, NVG_ROUND);
-        nvgStrokeColor(vg, nvgRGBA(255, 214, 130, 200));
-        nvgStroke(vg);
-
-        // Leading indicator
-        Vec tip = center.plus(Vec(cosf(angleEnd), sinf(angleEnd)).mult(arcRadius));
-        nvgBeginPath(vg);
-        nvgCircle(vg, tip.x, tip.y, 4.0f);
-        nvgFillColor(vg, nvgRGBA(255, 244, 200, 220));
-        nvgFill(vg);
-    }
-};
-
 // Main Widget
 
 // OLED screen color theme palette
@@ -3299,7 +3050,7 @@ struct OledThemePalette {
     NVGcolor progressFill;  // Progress bar fill
     NVGcolor envPoints;     // Envelope sample dots
     NVGcolor emptyText;     // Placeholder text
-    NVGcolor voiceColors[8]; // Per-voice playback scanlines
+    NVGcolor voiceColors[Evocation::MAX_POLY_CHANNELS]; // Per-voice playback scanlines
 };
 
 static const OledThemePalette OLED_THEMES[] = {
@@ -3323,9 +3074,7 @@ static const OledThemePalette OLED_THEMES[] = {
             nvgRGBA(140, 235, 170, 225),
             nvgRGBA(120, 225, 155, 210),
             nvgRGBA(100, 215, 140, 195),
-            nvgRGBA(85, 205, 125, 180),
-            nvgRGBA(70, 195, 110, 165),
-            nvgRGBA(55, 185, 100, 150)
+            nvgRGBA(85, 205, 125, 180)
         }
     },
     // 1: Ice - Cool cyan (more cyan, less blue for better visibility)
@@ -3348,9 +3097,7 @@ static const OledThemePalette OLED_THEMES[] = {
             nvgRGBA(160, 215, 250, 225),
             nvgRGBA(140, 200, 245, 210),
             nvgRGBA(120, 185, 240, 195),
-            nvgRGBA(100, 170, 230, 180),
-            nvgRGBA(80, 155, 220, 165),
-            nvgRGBA(60, 140, 210, 150)
+            nvgRGBA(100, 170, 230, 180)
         }
     },
     // 2: Solar - Warm yellow/gold
@@ -3373,9 +3120,7 @@ static const OledThemePalette OLED_THEMES[] = {
             nvgRGBA(245, 230, 140, 225),
             nvgRGBA(235, 220, 120, 210),
             nvgRGBA(225, 210, 100, 195),
-            nvgRGBA(215, 200, 85, 180),
-            nvgRGBA(200, 185, 70, 165),
-            nvgRGBA(185, 170, 55, 150)
+            nvgRGBA(215, 200, 85, 180)
         }
     },
     // 3: Amber - Classic warm CRT orange/amber
@@ -3398,9 +3143,7 @@ static const OledThemePalette OLED_THEMES[] = {
             nvgRGBA(245, 180, 90, 225),
             nvgRGBA(235, 165, 75, 210),
             nvgRGBA(225, 150, 60, 195),
-            nvgRGBA(215, 135, 50, 180),
-            nvgRGBA(200, 120, 40, 165),
-            nvgRGBA(185, 110, 30, 150)
+            nvgRGBA(215, 135, 50, 180)
         }
     }
 };
@@ -3409,13 +3152,14 @@ static const int NUM_OLED_THEMES = 4;
 static const char* const OLED_THEME_NAMES[] = {"Phosphor", "Ice", "Solar", "Amber"};
 
 // OLED Display Widget
-struct EvocationOLEDDisplay : Widget {
+struct EvocationOLEDDisplay : FramebufferWidget {
     Evocation* module = nullptr;
     widget::SvgWidget* background = nullptr;
     std::shared_ptr<Font> font;
 
     explicit EvocationOLEDDisplay(Evocation* module) {
         this->module = module;
+        oversample = 2.f;
         background = new widget::SvgWidget();
         background->setSvg(Svg::load(asset::plugin(pluginInstance, "res/ui/feedback_oled.svg")));
         addChild(background);
@@ -3423,11 +3167,12 @@ struct EvocationOLEDDisplay : Widget {
     }
 
     void step() override {
-        Widget::step();
         if (background) {
             background->box.pos = Vec();
             background->box.size = box.size;
         }
+        dirty = true;
+        FramebufferWidget::step();
     }
 
     void draw(const DrawArgs& args) override {
@@ -3671,9 +3416,9 @@ struct EvocationOLEDDisplay : Widget {
                     nvgFill(args.vg);
                 }
 
-                // Draw per-voice playback scanlines (up to 8 shades)
+                // Draw per-voice playback scanlines (one shade per supported voice)
                 std::vector<int> activeVoices;
-                const int maxVoiceVisuals = std::min(8, Evocation::MAX_POLY_CHANNELS);
+                const int maxVoiceVisuals = Evocation::MAX_POLY_CHANNELS;
                 for (int voice = 0; voice < maxVoiceVisuals; ++voice) {
                     if (module->isPlaybackActive(envIndex, voice)) {
                         activeVoices.push_back(voice);
@@ -3685,7 +3430,7 @@ struct EvocationOLEDDisplay : Widget {
                     float phase = clamp(module->getPlaybackPhase(envIndex, voice), 0.f, 1.f);
                     float playheadX = graphX + phase * graphWidth;
 
-                    NVGcolor color = t.voiceColors[std::min(idx, (size_t)7)];
+                    NVGcolor color = t.voiceColors[std::min(idx, (size_t)(Evocation::MAX_POLY_CHANNELS - 1))];
                     nvgBeginPath(args.vg);
                     nvgMoveTo(args.vg, playheadX, graphY);
                     nvgLineTo(args.vg, playheadX, graphY + graphHeight);

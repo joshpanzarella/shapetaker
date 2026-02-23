@@ -82,7 +82,14 @@
       "Bash(pip3:*)",
       "Bash(/opt/homebrew/bin/python3.13:*)",
       "Bash(git -C /Users/joshpanzarella/vcv-dev/shapetaker status)",
-      "Bash(git -C /Users/joshpanzarella/vcv-dev/shapetaker diff --stat)"
+      "Bash(git -C /Users/joshpanzarella/vcv-dev/shapetaker diff --stat)",
+      "WebFetch(domain:library.vcvrack.com)",
+      "WebFetch(domain:empresseffects.com)",
+      "WebFetch(domain:assets.empresseffects.com)",
+      "Bash(git -C /Users/joshpanzarella/vcv-dev/shapetaker log --oneline -5)",
+      "Bash(git -C /Users/joshpanzarella/vcv-dev/shapetaker add plugin.json res/panels/Chiaroscuro.svg res/panels/Chimera.svg res/panels/Evocation.svg res/panels/Fatebinder.svg res/panels/Incantation.svg res/panels/Involution.svg res/panels/Patina.svg res/panels/Specula.svg res/panels/Tessellation.svg res/panels/Reverie.svg src/chimera.cpp src/fatebinder.cpp src/incantation.cpp src/involution.cpp src/involution/chaos_visualizer_impl.hpp src/involution/liquid_filter.hpp src/plugin.cpp src/plugin.hpp src/reverie.cpp src/reverie/ src/specula.cpp src/torsion.cpp src/transmutation.cpp src/transmutation/widgets.cpp src/ui/widgets.hpp)",
+      "Bash(git -C:*)",
+      "WebFetch(domain:www.strumentimusicali.net)"
     ],
     "deny": [],
     "ask": []

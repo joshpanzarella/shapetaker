@@ -18,4 +18,6 @@ void init(Plugin* p) {
     p->addModel(modelTessellation);
     p->addModel(modelPatina);
     p->addModel(modelReverie);
+    p->addModel(modelUtilityPanel);
+    p->addModel(modelNocturneTV);
 }

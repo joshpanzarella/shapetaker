@@ -5,6 +5,8 @@
 #include <cmath>
 
 struct Specula : Module {
+    static constexpr int MAX_CHANNELS = 6;
+
     enum ParamIds {
         NUM_PARAMS
     };
@@ -59,7 +61,7 @@ struct Specula : Module {
 
 private:
     void passThroughAudio(int inputId, int outputId) {
-        int channels = inputs[inputId].getChannels();
+        int channels = std::min(inputs[inputId].getChannels(), MAX_CHANNELS);
         outputs[outputId].setChannels(channels);
         for (int c = 0; c < channels; ++c) {
             outputs[outputId].setVoltage(inputs[inputId].getVoltage(c), c);
@@ -67,7 +69,7 @@ private:
     }
 
     float getPeakVoltage(Input& input) {
-        int channels = input.getChannels();
+        int channels = std::min(input.getChannels(), MAX_CHANNELS);
         float peak = 0.f;
         for (int c = 0; c < channels; ++c) {
             peak = std::max(peak, std::fabs(input.getVoltage(c)));

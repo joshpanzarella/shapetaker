@@ -516,8 +516,8 @@ struct Chimera : Module {
             auto& cfg = channelCfg[ch];
             cfg.hasL = inputs[CH_INPUT_L + ch].isConnected();
             cfg.hasR = inputs[CH_INPUT_R + ch].isConnected();
-            int lChannels = cfg.hasL ? inputs[CH_INPUT_L + ch].getChannels() : 0;
-            int rChannels = cfg.hasR ? inputs[CH_INPUT_R + ch].getChannels() : 0;
+            int lChannels = cfg.hasL ? std::min(inputs[CH_INPUT_L + ch].getChannels(), kMaxPoly) : 0;
+            int rChannels = cfg.hasR ? std::min(inputs[CH_INPUT_R + ch].getChannels(), kMaxPoly) : 0;
             cfg.channels = std::max(lChannels, rChannels);
             cfg.active = cfg.hasL || cfg.hasR;
             voiceCount = std::max(voiceCount, cfg.channels);
@@ -793,9 +793,10 @@ struct Chimera : Module {
             outputs[OUT_R_OUTPUT].setVoltage(mixOutR[voice], voice);
         }
 
-        outputs[MORPH_A_OUTPUT].setChannels(voiceCount * 2);
-        outputs[MORPH_B_OUTPUT].setChannels(voiceCount * 2);
-        for (int voice = 0; voice < voiceCount; ++voice) {
+        int morphVoices = std::min(voiceCount, kMaxPoly / 2);
+        outputs[MORPH_A_OUTPUT].setChannels(morphVoices * 2);
+        outputs[MORPH_B_OUTPUT].setChannels(morphVoices * 2);
+        for (int voice = 0; voice < morphVoices; ++voice) {
             outputs[MORPH_A_OUTPUT].setVoltage(morphSendAL[voice], 2 * voice);
             outputs[MORPH_A_OUTPUT].setVoltage(morphSendAR[voice], 2 * voice + 1);
             outputs[MORPH_B_OUTPUT].setVoltage(morphSendBL[voice], 2 * voice);

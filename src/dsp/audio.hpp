@@ -103,7 +103,21 @@ public:
             writePos = (writePos + 1) % MAX_DELAY;
             return output;
         }
-        
+
+        // Fractional delay with linear interpolation — eliminates zipper stepping
+        float processInterpolated(float input, float fracDelay) {
+            fracDelay = rack::math::clamp(fracDelay, 0.f, (float)(MAX_DELAY - 2));
+            int d0 = (int)fracDelay;
+            float frac = fracDelay - (float)d0;
+            buffer[writePos] = input;
+            int rp0 = (writePos - d0 + MAX_DELAY) % MAX_DELAY;
+            int rp1 = (writePos - d0 - 1 + MAX_DELAY) % MAX_DELAY;
+            float out0 = buffer[rp0];
+            float out1 = buffer[rp1];
+            writePos = (writePos + 1) % MAX_DELAY;
+            return out0 + frac * (out1 - out0);
+        }
+
         void clear() {
             for (int i = 0; i < MAX_DELAY; i++) {
                 buffer[i] = 0.f;
